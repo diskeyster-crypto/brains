@@ -7,10 +7,12 @@ namespace Modules\ProfManager;
 /**
  * ProfManagerService
  *
- * Paper-only Profit Manager.
+ * Profit Manager — monitors positions and plans profit locks.
+ * Primary mode: demo (reads positions from bot/storage/active_positions.json
+ * which is synced from Bybit Demo by the bot module).
  *
  * Architecture:
- *   position_reader  → reads active positions from bot storage
+ *   position_reader  → reads active positions from bot storage cache
  *   validator        → validates each position
  *   profile_legacy_safe → runs per-position lifecycle logic
  *   profit_lock_planner → decides lock price via step-trailing algorithm
@@ -23,7 +25,8 @@ namespace Modules\ProfManager;
  *   setEnabled(bool)  — toggle enabled flag and persist to active.php
  *   saveConfig(array) — persist arbitrary config keys to active.php
  *
- * Mode is always 'paper'; no exchange calls are ever made.
+ * No exchange calls are ever made from this module.
+ * All actions are planned locally; execution is reserved for future.
  */
 final class ProfManagerService
 {
@@ -105,12 +108,15 @@ final class ProfManagerService
 
         try {
             // ── Module enabled? ───────────────────────────────────────────────
+            $configMode = (string)($this->config['mode'] ?? 'demo');
             if (!$this->runtimeEnabled) {
                 $result = [
                     'ok'         => true,
                     'ts'         => $ts,
                     'enabled'    => false,
-                    'mode'       => 'paper',
+                    'mode'       => $configMode,
+                    'account'    => ($configMode === 'demo') ? 'bybit_demo' : 'local',
+                    'source'     => ($configMode === 'demo') ? 'bybit_demo_positions_cache' : 'local_cache',
                     'skipped'    => 'module_disabled',
                     'skip_reason'=> 'module_disabled',
                     'positions'  => 0,
@@ -137,10 +143,14 @@ final class ProfManagerService
                     'ok'                                     => true,
                     'ts'                                     => $ts,
                     'enabled'                                => true,
-                    'mode'                                   => 'paper',
+                    'mode'                                   => $configMode,
+                    'account'                                => ($configMode === 'demo') ? 'bybit_demo' : 'local',
+                    'source'                                 => ($configMode === 'demo')
+                        ? 'bybit_demo_positions_cache'
+                        : $readResult['source'],
+                    'positions_runtime'                      => [],
                     'profile'                                => $activeProfile,
                     'positions'                              => 0,
-                    'source'                                 => $readResult['source'],
                     'diagnostics'                            => $earlyDiag,
                     'executed_count'                         => 0,
                     'skipped_count'                          => 0,
@@ -306,9 +316,12 @@ final class ProfManagerService
                 'ok'                                     => true,
                 'ts'                                     => $ts,
                 'enabled'                                => true,
-                'mode'                                   => 'paper',
+                'mode'                                   => $configMode,
+                'account'                                => ($configMode === 'demo') ? 'bybit_demo' : 'local',
+                'source'                                 => ($configMode === 'demo')
+                    ? 'bybit_demo_positions_cache'
+                    : $readResult['source'],
                 'profile'                                => $activeProfile,
-                'source'                                 => $readResult['source'],
                 'positions'                              => $positionsTotal,
                 'valid_positions'                        => $validCount,
                 'invalid_positions'                      => $invalidCount,
@@ -388,7 +401,8 @@ final class ProfManagerService
 
         return [
             'enabled'          => $this->runtimeEnabled,
-            'mode'             => 'paper',
+            'mode'             => (string)($this->config['mode'] ?? 'demo'),
+            'account'          => ((string)($this->config['mode'] ?? 'demo') === 'demo') ? 'bybit_demo' : 'local',
             'active_profile'   => $this->config['active_profile'] ?? 'legacy_safe',
             'last_tick'        => $lastRun['ts'] ?? null,
             'positions_tracked'=> (int) ($lastRun['valid_positions'] ?? $lastRun['positions'] ?? 0),

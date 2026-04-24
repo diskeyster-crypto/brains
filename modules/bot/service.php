@@ -9,7 +9,7 @@ declare(strict_types=1);
  *   strategy modules → find signals, each writes storage/bot_handoff_queue.json
  *   bot module       → autodiscovers strategies, reads operator overrides, owns
  *                      order_queue.json / active_orders.json
- *   profit manager   → separate, not implemented yet
+ *   profit manager   → separate, monitors profit locks
  *
  * Control layer (this step):
  *   - strategy autodiscovery via manifest.json scan
@@ -25,11 +25,19 @@ declare(strict_types=1);
  *   withdrawn — signal disappeared from handoff before TTL
  *
  * Bot execution modes:
+ *   demo     — PRIMARY: real execution on Bybit Demo account (api-demo.bybit.com)
  *   disabled — ingest/runtime only; no local entries created
  *   passive  — ingest/queue/runtime only; no execution promotion
- *   paper    — full local execution simulation in storage; no exchange interaction
+ *   paper    — full local execution simulation in storage; no exchange interaction (legacy)
  *   smoke    — legacy alias for paper
- *   active   — legacy alias for paper (live exchange not yet implemented)
+ *   active   — legacy alias for paper
+ *
+ * Order lifecycle states (demo mode):
+ *   created          — order record built from ready queue item
+ *   submitted_demo   — market order submitted to Bybit Demo
+ *   confirmed_demo   — position verified open on Bybit Demo
+ *   cancelled        — order cancelled before fill
+ *   expired          — order TTL elapsed before fill
  *
  * Order lifecycle states (paper mode):
  *   created          — order record built from ready queue item
@@ -39,13 +47,13 @@ declare(strict_types=1);
  *   expired          — order TTL elapsed before fill
  *
  * Position lifecycle states:
- *   open    — active paper position
+ *   open    — active position (demo or paper)
  *   closing — close in progress (reserved)
  *   closed  — position closed
  *
  * Storage files:
- *   active_orders.json      — open paper orders
- *   active_positions.json   — open paper positions
+ *   active_orders.json      — open orders (demo or paper)
+ *   active_positions.json   — open positions cache (demo: synced from Bybit Demo; paper: local)
  *   closed_positions.json   — historical closed positions
  *   execution_log.ndjson    — append-only execution event log
  */
@@ -282,6 +290,8 @@ final class BotService
         $stats['orders_created_total']                    += $execResult['orders_created'];
         $stats['orders_submitted_paper_total']            += $execResult['orders_submitted_paper'];
         $stats['orders_filled_paper_total']               += $execResult['orders_filled_paper'];
+        $stats['orders_submitted_demo_total']             += $execResult['orders_submitted_demo'];
+        $stats['orders_confirmed_demo_total']             += $execResult['orders_confirmed_demo'];
         $stats['positions_opened_total']                  += $execResult['positions_opened'];
         $stats['positions_closed_total']                  += $execResult['positions_closed'];
         $stats['positions_closed_expired_total']          += $execResult['positions_closed_expired'];
@@ -334,6 +344,8 @@ final class BotService
             'orders_created'                         => $execResult['orders_created'],
             'orders_submitted_paper'                 => $execResult['orders_submitted_paper'],
             'orders_filled_paper'                    => $execResult['orders_filled_paper'],
+            'orders_submitted_demo'                  => $execResult['orders_submitted_demo'],
+            'orders_confirmed_demo'                  => $execResult['orders_confirmed_demo'],
             'positions_opened'                       => $execResult['positions_opened'],
             'positions_closed'                       => $execResult['positions_closed'],
             'positions_closed_expired'               => $execResult['positions_closed_expired'],
@@ -663,11 +675,17 @@ final class BotService
      * Process execution for the current tick.
      *
      * Modes:
+     *   demo     → real execution on Bybit Demo account; submit market orders, sync positions from Bybit Demo.
      *   disabled → skip execution; count skipped ready items as mode_disabled.
      *   passive  → skip execution; count skipped ready items as mode_passive.
      *   paper    → deterministic local execution in storage/state; no real exchange.
      *   smoke    → legacy alias for paper.
-     *   active   → legacy alias for paper (live exchange not yet implemented).
+     *   active   → legacy alias for paper.
+     *
+     * Demo tick flow:
+     *   queue ready  → check symbol on Bybit Demo (dedup)
+     *                → submit market order to Bybit Demo
+     *                → sync all Bybit Demo positions into active_positions.json
      *
      * Paper tick flow (all in one pass):
      *   queue ready  → create order (created)
@@ -675,7 +693,7 @@ final class BotService
      *                → fill order   (filled_paper)
      *                → open position (open)
      *
-     * Position close conditions checked each tick:
+     * Position close conditions checked each tick (paper mode):
      *   expired_by_signal_ttl — position expires_at has passed
      *
      * @return array{
@@ -686,6 +704,8 @@ final class BotService
      *   orders_created: int,
      *   orders_submitted_paper: int,
      *   orders_filled_paper: int,
+     *   orders_submitted_demo: int,
+     *   orders_confirmed_demo: int,
      *   positions_opened: int,
      *   positions_closed: int,
      *   positions_closed_expired: int,
@@ -708,6 +728,8 @@ final class BotService
         $ordersCreated                  = 0;
         $ordersSubmittedPaper           = 0;
         $ordersFilledPaper              = 0;
+        $ordersSubmittedDemo            = 0;
+        $ordersConfirmedDemo            = 0;
         $positionsOpened                = 0;
         $positionsClosed                = 0;
         $positionsClosedExpired         = 0;
@@ -717,10 +739,28 @@ final class BotService
         $queueSkippedModePassive        = 0;
         $logEvents                      = 0;
 
+        // demo mode: real execution on Bybit Demo account
+        $isDemoMode     = ($mode === 'demo');
         // paper, smoke, and active all mean local paper execution
         $isPaperMode    = in_array($mode, ['paper', 'smoke', 'active'], true);
         $isPassiveMode  = ($mode === 'passive');
         $isDisabledMode = ($mode === 'disabled');
+
+        // ── Demo mode execution path ──────────────────────────────────────────
+        if ($isDemoMode) {
+            $demoResult = $this->processDemoExecution(
+                $orderQueue, $activeOrders, $activePositions, $closedPositions, $config, $tickAt
+            );
+            return array_merge($demoResult, [
+                'orders_submitted_paper'           => 0,
+                'orders_filled_paper'              => 0,
+                'positions_closed_expired'         => $demoResult['positions_closed_expired'] ?? 0,
+                'positions_closed_withdrawn'       => $demoResult['positions_closed_withdrawn'] ?? 0,
+                'positions_closed_reverse_pattern' => 0,
+                'queue_items_skipped_mode_disabled'=> 0,
+                'queue_items_skipped_mode_passive' => 0,
+            ]);
+        }
 
         // Build order lookup by composite key {strategy_id}:{signal_id}
         $orderMap = [];
@@ -944,6 +984,8 @@ final class BotService
             'queue_items_skipped_mode_disabled' => $queueSkippedModeDisabled,
             'queue_items_skipped_mode_passive'  => $queueSkippedModePassive,
             'execution_log_events'             => $logEvents,
+            'orders_submitted_demo'            => 0,
+            'orders_confirmed_demo'            => 0,
         ];
     }
 
@@ -986,6 +1028,370 @@ final class BotService
             'expires_at'        => (string)($qItem['expires_at'] ?? ''),
             'created_at'        => $tickAt,
             'last_updated_at'   => $tickAt,
+        ];
+    }
+
+    /**
+     * Build a bot-owned active position record from a filled Bybit Demo position response.
+     *
+     * Called in demo mode after syncing positions from Bybit Demo.
+     * Merges queue item context (strategy_id, signal_id, budget, leverage) with
+     * live position data (entry_price, mark_price, unrealised_pnl, liq_price).
+     *
+     * @param array $bybitPos  Single position from Bybit Demo /v5/position/list
+     * @param array $qItem     Matching queue item (for strategy context); may be empty
+     * @param string $tickAt   Current tick timestamp
+     */
+    private function buildPositionFromDemoData(array $bybitPos, array $qItem, string $tickAt): array
+    {
+        $symbol     = (string)($bybitPos['symbol']        ?? $qItem['symbol'] ?? '');
+        $bybitSide  = (string)($bybitPos['side']          ?? 'Buy');
+        $side       = (strtolower($bybitSide) === 'sell') ? 'short' : 'long';
+        $entryPrice = (float)($bybitPos['avgPrice']       ?? $bybitPos['entryPrice'] ?? $qItem['entry_price'] ?? 0.0);
+        $markPrice  = (float)($bybitPos['markPrice']      ?? 0.0);
+        $leverage   = (int)($bybitPos['leverage']         ?? $qItem['bot_leverage'] ?? 5);
+        if ($leverage <= 0) {
+            $leverage = 5;
+        }
+        $budget     = (float)($qItem['bot_budget']        ?? 0.0);
+        if ($budget <= 0.0) {
+            $budget = 6.0;
+        }
+        $size       = (float)($bybitPos['size']           ?? 0.0);
+        $unrealisedPnl = (float)($bybitPos['unrealisedPnl'] ?? 0.0);
+        $liqPrice   = (float)($bybitPos['liqPrice']       ?? 0.0);
+        $openedAt   = isset($bybitPos['createdTime'])
+            ? date('c', (int)($bybitPos['createdTime'] / 1000))
+            : $tickAt;
+
+        return [
+            // Ownership — from queue item when available
+            'owner_strategy'  => (string)($qItem['owner_strategy'] ?? ''),
+            'strategy_id'     => (string)($qItem['strategy_id']    ?? ''),
+            'signal_id'       => (string)($qItem['signal_id']      ?? ''),
+
+            // Signal geometry
+            'symbol'      => $symbol,
+            'side'        => $side,
+            'timeframe'   => (string)($qItem['timeframe']  ?? 'H4'),
+            'entry_mode'  => (string)($qItem['entry_mode'] ?? 'market'),
+            'entry_type'  => (string)($qItem['entry_type'] ?? 'breakout'),
+            'entry_price' => $entryPrice,
+
+            // Execution parameters
+            'bot_budget'     => $budget,
+            'bot_leverage'   => $leverage,
+            'budget'         => $budget,
+            'leverage'       => (float)$leverage,
+            'size'           => $size,
+            'budget_source'  => (string)($qItem['budget_source']   ?? 'config'),
+            'leverage_source'=> (string)($qItem['leverage_source'] ?? 'config'),
+
+            // Live price / PnL from Bybit Demo
+            'mark_price'     => $markPrice > 0.0 ? $markPrice : null,
+            'current_price'  => $markPrice > 0.0 ? $markPrice : null,
+            'unrealised_pnl' => $unrealisedPnl,
+            'liq_price'      => $liqPrice > 0.0 ? $liqPrice : null,
+
+            // Position lifecycle
+            'position_status'   => 'open',
+            'execution_mode'    => 'demo',
+            'account'           => 'bybit_demo',
+            'transition_reason' => 'synced_from_bybit_demo',
+            'opened_at'         => $openedAt,
+            'entered_at'        => $openedAt,
+            'last_updated_at'   => $tickAt,
+        ];
+    }
+
+    /**
+     * Get a Bybit gateway client configured for Bybit Demo account.
+     *
+     * Uses demo_api_key / demo_api_secret / demo_api_base_url from bot config.
+     * Returns null when credentials are not set.
+     */
+    private function getDemoGateway(array $config): ?\Core\Gateway\Bybit
+    {
+        $apiKey    = (string)($config['demo_api_key']     ?? '');
+        $apiSecret = (string)($config['demo_api_secret']  ?? '');
+        $baseUrl   = (string)($config['demo_api_base_url']?? 'https://api-demo.bybit.com');
+
+        if ($apiKey === '' || $apiSecret === '') {
+            return null;
+        }
+
+        try {
+            $gw = \Core\Gateway\Bybit::client('bybit_demo');
+            $gw->setCredentials($apiKey, $apiSecret);
+            $gw->setBaseUrl($baseUrl);
+            return $gw;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Fetch all open linear USDT-settled positions from Bybit Demo.
+     *
+     * Returns a list of raw Bybit position records (from result.list).
+     * Returns an empty array on error.
+     */
+    private function fetchDemoPositions(\Core\Gateway\Bybit $gw): array
+    {
+        try {
+            $resp = $gw->request('/v5/position/list', [
+                'category'   => 'linear',
+                'settleCoin' => 'USDT',
+                'limit'      => 200,
+            ], true);
+
+            if (!($resp['success'] ?? false) || ($resp['ret_code'] ?? -1) !== 0) {
+                return [];
+            }
+
+            $list = $resp['result']['list'] ?? [];
+            if (!is_array($list)) {
+                return [];
+            }
+
+            // Only include positions with non-zero size
+            $open = [];
+            foreach ($list as $pos) {
+                if (is_array($pos) && (float)($pos['size'] ?? 0) > 0) {
+                    $open[] = $pos;
+                }
+            }
+            return $open;
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Demo mode execution:
+     *   1. Fetch current open positions from Bybit Demo.
+     *   2. For each ready queue item, check dedup by symbol, submit market order.
+     *   3. Re-sync positions from Bybit Demo after submitting.
+     *   4. Build active_positions cache from Bybit Demo data.
+     */
+    private function processDemoExecution(
+        array $orderQueue,
+        array $activeOrders,
+        array $activePositions,
+        array $closedPositions,
+        array $config,
+        string $tickAt
+    ): array {
+        $ordersCreated       = 0;
+        $ordersSubmittedDemo = 0;
+        $ordersConfirmedDemo = 0;
+        $positionsOpened     = 0;
+        $positionsClosed     = 0;
+        $positionsClosedExp  = 0;
+        $positionsClosedWith = 0;
+        $logEvents           = 0;
+
+        $gw = $this->getDemoGateway($config);
+
+        // No credentials → skip all ready items, keep positions cache unchanged
+        if ($gw === null) {
+            foreach ($orderQueue as &$qItem) {
+                if (($qItem['queue_status'] ?? '') === 'ready') {
+                    $qItem['skip_reason'] = 'demo_credentials_missing';
+                }
+            }
+            unset($qItem);
+
+            return [
+                'order_queue'        => array_values($orderQueue),
+                'active_orders'      => $activeOrders,
+                'active_positions'   => $activePositions,
+                'closed_positions'   => $closedPositions,
+                'orders_created'     => 0,
+                'orders_submitted_demo' => 0,
+                'orders_confirmed_demo' => 0,
+                'positions_opened'   => 0,
+                'positions_closed'   => 0,
+                'positions_closed_expired'   => 0,
+                'positions_closed_withdrawn' => 0,
+                'execution_log_events' => 0,
+            ];
+        }
+
+        // Fetch current positions from Bybit Demo
+        $demoPositions = $this->fetchDemoPositions($gw);
+
+        // Build symbol → Bybit position map for dedup
+        $symbolMap = [];
+        foreach ($demoPositions as $pos) {
+            $sym = (string)($pos['symbol'] ?? '');
+            if ($sym !== '') {
+                $symbolMap[$sym] = $pos;
+            }
+        }
+
+        // Build queue key → queue item map for signal context lookup
+        $queueMap = [];
+        foreach ($orderQueue as $q) {
+            $k = $this->queueKey($q);
+            if ($k !== '') {
+                $queueMap[$k] = $q;
+            }
+        }
+
+        $maxPos = (int)($config['max_active_positions'] ?? 10);
+
+        // Process ready queue items
+        foreach ($orderQueue as &$qItem) {
+            if (($qItem['queue_status'] ?? '') !== 'ready') {
+                continue;
+            }
+
+            $key    = $this->queueKey($qItem);
+            $symbol = (string)($qItem['symbol'] ?? '');
+            $side   = (string)($qItem['side']   ?? 'long');
+
+            if ($symbol === '') {
+                continue;
+            }
+
+            // Skip if symbol already open on Bybit Demo
+            if (isset($symbolMap[$symbol])) {
+                $qItem['skip_reason'] = 'symbol_already_active_on_demo';
+                continue;
+            }
+
+            // Skip if max positions reached
+            if ($maxPos > 0 && count($symbolMap) >= $maxPos) {
+                $qItem['skip_reason'] = 'max_active_positions_reached';
+                continue;
+            }
+
+            $entryPrice = (float)($qItem['entry_price'] ?? 0.0);
+            $budget     = (float)($qItem['bot_budget']  ?? 6.0);
+            $leverage   = max(1, (int)($qItem['bot_leverage'] ?? 5));
+
+            if ($entryPrice <= 0.0 || $budget <= 0.0) {
+                $qItem['skip_reason'] = 'invalid_entry_price_or_budget';
+                continue;
+            }
+
+            // Calculate position size: (budget × leverage) / entry_price
+            $size = round(($budget * $leverage) / $entryPrice, 6);
+            if ($size <= 0.0) {
+                $qItem['skip_reason'] = 'calculated_size_zero';
+                continue;
+            }
+
+            $bybitSide = ($side === 'short') ? 'Sell' : 'Buy';
+
+            try {
+                $orderResp = $gw->request('/v5/order/create', [
+                    'category'    => 'linear',
+                    'symbol'      => $symbol,
+                    'side'        => $bybitSide,
+                    'orderType'   => 'Market',
+                    'qty'         => (string)$size,
+                    'timeInForce' => 'IOC',
+                    'positionIdx' => 0,
+                ], true);
+            } catch (\Throwable) {
+                $qItem['skip_reason'] = 'demo_submit_exception';
+                continue;
+            }
+
+            $ordersCreated++;
+
+            if (($orderResp['success'] ?? false) && ($orderResp['ret_code'] ?? -1) === 0) {
+                $ordersSubmittedDemo++;
+                $qItem['queue_status']       = 'submitted';
+                $qItem['submitted_at']       = $tickAt;
+                $qItem['last_change_reason'] = 'submitted_to_demo';
+                $qItem['demo_order_id']      = $orderResp['result']['orderId'] ?? null;
+
+                // Optimistically add to symbolMap so subsequent items see correct count
+                $symbolMap[$symbol] = ['symbol' => $symbol, 'size' => $size, '_pending' => true];
+                $positionsOpened++;
+
+                $this->appendExecutionLog([
+                    'timestamp'      => $tickAt,
+                    'event_type'     => 'demo_order_submitted',
+                    'strategy_id'    => $qItem['strategy_id'] ?? '',
+                    'owner_strategy' => $qItem['owner_strategy'] ?? '',
+                    'signal_id'      => $qItem['signal_id'] ?? '',
+                    'symbol'         => $symbol,
+                    'side'           => $side,
+                    'entry_price'    => $entryPrice,
+                    'size'           => $size,
+                    'bot_budget'     => $budget,
+                    'bot_leverage'   => $leverage,
+                    'execution_mode' => 'demo',
+                    'bybit_side'     => $bybitSide,
+                    'demo_order_id'  => $qItem['demo_order_id'],
+                    'reason'         => 'submitted_market_order_to_bybit_demo',
+                ]);
+                $logEvents++;
+            } else {
+                $qItem['skip_reason']     = 'demo_order_rejected';
+                $qItem['demo_error_code'] = $orderResp['ret_code'] ?? null;
+                $qItem['demo_error_msg']  = $orderResp['ret_msg']  ?? null;
+            }
+        }
+        unset($qItem);
+
+        // Re-sync positions from Bybit Demo after submitting orders
+        $freshDemoPositions = $this->fetchDemoPositions($gw);
+
+        // Build a queue-item context map: symbol → first matching queue item
+        $symbolQueueContext = [];
+        foreach ($orderQueue as $q) {
+            $sym = (string)($q['symbol'] ?? '');
+            if ($sym !== '' && !isset($symbolQueueContext[$sym])) {
+                $symbolQueueContext[$sym] = $q;
+            }
+        }
+
+        // Build new active_positions from Bybit Demo data
+        $newActivePositions = [];
+        foreach ($freshDemoPositions as $pos) {
+            $sym     = (string)($pos['symbol'] ?? '');
+            $qCtx    = $symbolQueueContext[$sym] ?? [];
+            $record  = $this->buildPositionFromDemoData($pos, $qCtx, $tickAt);
+            $newActivePositions[] = $record;
+            $ordersConfirmedDemo++;
+        }
+
+        // Detect positions that were in cache but are no longer open on Bybit Demo
+        $freshSymbols = array_flip(array_map(
+            fn($p) => (string)($p['symbol'] ?? ''),
+            $freshDemoPositions
+        ));
+        foreach ($activePositions as $pos) {
+            $sym = (string)($pos['symbol'] ?? '');
+            if ($sym !== '' && !isset($freshSymbols[$sym]) && ($pos['execution_mode'] ?? '') === 'demo') {
+                // Position gone from Bybit Demo — move to closed
+                $pos['position_status']   = 'closed';
+                $pos['closed_at']         = $tickAt;
+                $pos['close_reason']      = 'position_gone_from_bybit_demo';
+                $pos['last_updated_at']   = $tickAt;
+                $closedPositions[]        = $pos;
+                $positionsClosed++;
+            }
+        }
+
+        return [
+            'order_queue'                      => array_values($orderQueue),
+            'active_orders'                    => $activeOrders,
+            'active_positions'                 => array_values($newActivePositions),
+            'closed_positions'                 => $closedPositions,
+            'orders_created'                   => $ordersCreated,
+            'orders_submitted_demo'            => $ordersSubmittedDemo,
+            'orders_confirmed_demo'            => $ordersConfirmedDemo,
+            'positions_opened'                 => $positionsOpened,
+            'positions_closed'                 => $positionsClosed,
+            'positions_closed_expired'         => $positionsClosedExp,
+            'positions_closed_withdrawn'       => $positionsClosedWith,
+            'execution_log_events'             => $logEvents,
         ];
     }
 
@@ -1230,6 +1636,8 @@ final class BotService
                 'orders_created'                            => 0,
                 'orders_submitted_paper'                    => 0,
                 'orders_filled_paper'                       => 0,
+                'orders_submitted_demo'                     => 0,
+                'orders_confirmed_demo'                     => 0,
                 'positions_opened'                          => 0,
                 'positions_closed'                          => 0,
                 'positions_closed_expired'                  => 0,
@@ -1306,6 +1714,8 @@ final class BotService
             'orders_created_total'                    => 0,
             'orders_submitted_paper_total'            => 0,
             'orders_filled_paper_total'               => 0,
+            'orders_submitted_demo_total'             => 0,
+            'orders_confirmed_demo_total'             => 0,
             'positions_opened_total'                  => 0,
             'positions_closed_total'                  => 0,
             'positions_closed_expired_total'          => 0,

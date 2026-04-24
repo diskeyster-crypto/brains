@@ -9,10 +9,10 @@ declare(strict_types=1);
  *   strategy modules → produce signals and position parameters
  *   bot module       → owns position lifecycle (active_positions.json)
  *   stop_manager     → sole owner of stop-loss computation and state
- *   profit manager   → separate, not implemented yet
+ *   profit manager   → separate, handles profit locks
  *
  * This module must NOT place or move stops on any exchange.
- * All computation is local/paper only.
+ * All computation is local only (same math for demo and paper modes).
  *
  * Stop modes:
  *   entry_liq_percent — stop is placed above liq (long) or below liq (short)
@@ -46,7 +46,8 @@ declare(strict_types=1);
  *
  * Execution modes:
  *   disabled — initialize storage only; no stop computation
- *   paper    — full local computation; no exchange interaction
+ *   demo     — local stop computation for Bybit Demo positions (same math as paper)
+ *   paper    — local stop computation for paper/local positions (legacy)
  */
 
 namespace Modules\StopManager;
@@ -249,7 +250,7 @@ final class StopManagerService
         $breakevenApplied           = 0;
         $stopsClosedReference       = 0;
 
-        $isPaperMode = in_array($mode, ['paper'], true);
+        $isPaperMode = in_array($mode, ['paper', 'demo'], true);
 
         // Index positions by execution key
         $posMap = [];

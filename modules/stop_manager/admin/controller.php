@@ -464,7 +464,7 @@ HTML;
         try {
             $active = [
                 'enabled'                   => (bool)(int)($_POST['enabled']                   ?? 0),
-                'mode'                      => in_array($_POST['mode'] ?? '', ['disabled', 'paper'], true)
+                'mode'                      => in_array($_POST['mode'] ?? '', ['disabled', 'paper', 'demo'], true)
                     ? (string)$_POST['mode']
                     : 'disabled',
                 'stop_mode'                 => 'entry_liq_percent',

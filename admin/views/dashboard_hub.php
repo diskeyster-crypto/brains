@@ -102,7 +102,8 @@ function renderDashboardHub(): string
 
     $pmEnabled       = ($pmStatus['enabled']          ?? false) ? 'Вкл' : 'Выкл';
     $pmEnabledBool   = ($pmStatus['enabled']          ?? false);
-    $pmMode          = (string) ($pmStatus['mode']          ?? 'paper');
+    $pmMode          = (string) ($pmStatus['mode']          ?? 'demo');
+    $pmAccount       = (string) ($pmStatus['account']       ?? ($pmMode === 'demo' ? 'bybit_demo' : 'local'));
     $pmProfile       = (string) ($pmStatus['active_profile'] ?? 'legacy_safe');
     $pmLastTick      = (string) ($pmStatus['last_tick']      ?? '—');
     $pmPosTracked    = (int)    ($pmStatus['positions_tracked'] ?? 0);
@@ -152,6 +153,8 @@ function renderDashboardHub(): string
 
     $pmCfgEnYes = ($pmCfg['enabled'] ?? false) ? ' selected' : '';
     $pmCfgEnNo  = !($pmCfg['enabled'] ?? false) ? ' selected' : '';
+    $pmCfgModeDemoSel  = ((string)($pmCfg['mode'] ?? 'demo') === 'demo')  ? ' selected' : '';
+    $pmCfgModePaperSel = ((string)($pmCfg['mode'] ?? 'demo') === 'paper') ? ' selected' : '';
 
     $pmCfgInitRoi      = (string) ($pmCfgProfileCfg['init_roi']               ?? 2.0);
     $pmCfgActivRoi     = (string) ($pmCfgProfileCfg['activation_roi']         ?? 10.0);
@@ -582,6 +585,7 @@ HTML;
     $gcfgModeP  = $cfgMode === 'passive'  ? ' selected' : '';
     $gcfgModeA  = $cfgMode === 'active'   ? ' selected' : '';
     $gcfgModeD  = $cfgMode === 'disabled' ? ' selected' : '';
+    $gcfgModeDe = $cfgMode === 'demo'     ? ' selected' : '';
     $gcfgEntN   = $cfgDefEntry === ''       ? ' selected' : '';
     $gcfgEntL   = $cfgDefEntry === 'limit'  ? ' selected' : '';
     $gcfgEntM   = $cfgDefEntry === 'market' ? ' selected' : '';
@@ -701,8 +705,9 @@ ROWS;
     // ── stop_manager config for Control tab (mirrored) ───────────────────
     $smCfgEnYes = ($smConfig['enabled'] ?? false) ? ' selected' : '';
     $smCfgEnNo  = !($smConfig['enabled'] ?? false) ? ' selected' : '';
-    $smCfgModeD = $smMode === 'disabled' ? ' selected' : '';
-    $smCfgModeP = $smMode === 'paper'    ? ' selected' : '';
+    $smCfgModeD  = $smMode === 'disabled' ? ' selected' : '';
+    $smCfgModeP  = $smMode === 'paper'    ? ' selected' : '';
+    $smCfgModeDe = $smMode === 'demo'     ? ' selected' : '';
     $smCfgBeEnYes = ($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
     $smCfgBeEnNo  = !($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
     $smCfgBuf   = $e($smBuf);
@@ -1574,7 +1579,7 @@ HTML;
       type="button"
       onclick="dhResetRuntime()"
       style="background:rgba(248,81,73,.12);border:1px solid #f85149;color:#f85149;padding:6px 16px;border-radius:5px;cursor:pointer;font-size:13px;"
-    ><i class="bi bi-trash3" style="margin-right:5px;"></i>Сбросить данные (paper)</button>
+    ><i class="bi bi-trash3" style="margin-right:5px;"></i>Сбросить runtime (cache)</button>
   </div>
 </div>
 
@@ -1725,7 +1730,7 @@ HTML;
         </form>
       </div>
       <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
-        Только paper/local. Биржевые стопы не размещаются.
+        Вычисление стопов — локально. Биржевые стопы не размещаются.
       </div>
     </div>
   </div>
@@ -1740,6 +1745,7 @@ HTML;
         <table style="width:100%;font-size:13px;border-collapse:collapse;">
           <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Включён</td><td>{$pmEnabled}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$pmMode}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Аккаунт</td><td><code>{$e($pmAccount)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Профиль</td><td><code>{$pmProfile}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний тик</td><td><code>{$pmLastTick}</code></td></tr>
         </table>
@@ -1787,7 +1793,7 @@ HTML;
         </form>
       </div>
       <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
-        Только paper. PM управляет исключительно прибыльными lock-ами — биржевые ордера не размещаются.
+        Режим demo. PM планирует profit-lock только — биржевые ордера не размещаются.
       </div>
     </div>
   </div>
@@ -1811,6 +1817,7 @@ HTML;
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим бота</label>
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="demo"{$gcfgModeDe}>demo</option>
               <option value="passive"{$gcfgModeP}>passive</option>
               <option value="active"{$gcfgModeA}>active</option>
               <option value="disabled"{$gcfgModeD}>disabled</option>
@@ -1891,6 +1898,7 @@ HTML;
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
               <option value="disabled"{$smCfgModeD}>disabled</option>
+              <option value="demo"{$smCfgModeDe}>demo</option>
               <option value="paper"{$smCfgModeP}>paper</option>
             </select>
           </div>
@@ -1932,7 +1940,7 @@ HTML;
   <div class="card" style="margin-top:16px;">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
       <span><i class="bi bi-graph-up-arrow" style="margin-right:6px;"></i>Profit Manager — Быстрые настройки</span>
-      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало config/active.php · paper-only profit-lock</small>
+      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало config/active.php · demo profit-lock (без биржевых ордеров)</small>
     </div>
     <div class="card-body">
       <form method="post" action="{$pmConfigSaveUrl}">
@@ -1947,7 +1955,8 @@ HTML;
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="paper" selected>paper</option>
+              <option value="demo"{$pmCfgModeDemoSel}>demo</option>
+              <option value="paper"{$pmCfgModePaperSel}>paper</option>
             </select>
           </div>
           <div>
@@ -2040,7 +2049,7 @@ function dhToggleEdit(id) {
     if (el) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; }
 }
 function dhResetRuntime() {
-    if (!confirm('Вы уверены? Это удалит все текущие paper позиции и runtime PM данные.')) {
+    if (!confirm('Сбросить локальный runtime/cache?\n\nСброс очищает только локальный runtime/cache, не закрывает позиции на Bybit Demo.\n\nПродолжить?')) {
         return;
     }
     fetch('{$resetRuntimeUrl}', {
@@ -2145,14 +2154,14 @@ function handleDashboardGlobalSave(): void
     }
 
     $enabled   = (int)($_POST['enabled']    ?? 0);
-    $mode      = trim((string)($_POST['mode'] ?? 'passive'));
+    $mode      = trim((string)($_POST['mode'] ?? 'demo'));
     $defEntry  = trim((string)($_POST['default_entry_mode']          ?? ''));
     $budget    = (float)($_POST['max_bot_budget']                    ?? 0.0);
     $leverage  = (int)($_POST['max_bot_leverage']                    ?? 0);
     $defMaxPos = (int)($_POST['default_max_active_positions']        ?? 0);
 
-    if (!in_array($mode, ['passive', 'active', 'disabled'], true)) {
-        $mode = 'passive';
+    if (!in_array($mode, ['demo', 'passive', 'active', 'disabled'], true)) {
+        $mode = 'demo';
     }
     if (!in_array($defEntry, ['limit', 'market'], true)) {
         $defEntry = '';
@@ -2756,7 +2765,8 @@ function handleDashboardPmConfigSave(): void
 
     // ── Top-level fields ─────────────────────────────────────────────────
     $existing['enabled']        = (bool)(int)($_POST['enabled'] ?? 0);
-    $existing['mode']           = 'paper'; // always paper
+    $postMode = trim((string)($_POST['mode'] ?? 'demo'));
+    $existing['mode']           = in_array($postMode, ['demo', 'paper'], true) ? $postMode : 'demo';
     $existing['active_profile'] = trim((string)($_POST['active_profile'] ?? 'legacy_safe'));
     if ($existing['active_profile'] === '') {
         $existing['active_profile'] = 'legacy_safe';

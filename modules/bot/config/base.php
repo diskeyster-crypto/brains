@@ -5,7 +5,7 @@ declare(strict_types=1);
 /**
  * Bot Module — Base Config
  *
- * Foundation-only. No exchange execution yet.
+ * Primary test mode: demo (Bybit Demo account, api-demo.bybit.com).
  * Override individual values in active.php without touching this file.
  *
  * Strategy sources are managed through:
@@ -17,7 +17,17 @@ return [
     // Core identity
     'bot_id'  => 'bot',
     'enabled' => false,
-    'mode'    => 'passive',   // paper | disabled | passive  (paper = local simulation; disabled/passive = ingest only; smoke/active = legacy aliases for paper)
+    'mode'    => 'demo',   // demo | paper | passive | disabled
+                           // demo    = Bybit Demo account execution (api-demo.bybit.com); primary test mode
+                           // paper   = local simulation, no exchange interaction (legacy)
+                           // passive = ingest/queue only, no execution
+                           // disabled/inactive = ingest only, no queue promotion
+
+    // Bybit Demo account credentials (stored locally in config — not live account).
+    // Used only when mode = demo.  Do NOT put live/mainnet keys here.
+    'demo_api_key'     => '',
+    'demo_api_secret'  => '',
+    'demo_api_base_url'=> 'https://api-demo.bybit.com',
 
     // Strategy autodiscovery
     // Bot scans these repo-relative directories for strategy modules.
@@ -43,9 +53,9 @@ return [
     // Per-trade execution defaults.
     // Resolution order: signal value → operator override → these config values → hard fallback.
     // 0 means "not set at config level" — the hard fallbacks (leverage=5, budget=6) will apply.
-    'leverage'             => 5,     // default leverage for paper positions
+    'leverage'             => 5,     // default leverage for demo/paper positions
     'budget_per_trade'     => 6.0,   // default USDT allocated per position
-    'max_active_positions' => 10,    // maximum concurrently open paper positions (0 = unlimited)
+    'max_active_positions' => 10,    // maximum concurrently open positions (0 = unlimited)
 
     // Global budget / leverage caps enforced at bot level (0 = use per-strategy value).
     // Per-strategy overrides in operator_overrides.json take precedence over signal values.

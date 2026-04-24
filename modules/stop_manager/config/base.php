@@ -21,14 +21,18 @@ declare(strict_types=1);
  *
  * Execution modes:
  *   disabled — initialize storage only, no stop computation
- *   paper    — full local stop computation, no exchange interaction
+ *   demo     — local stop computation for Bybit Demo positions (same math as paper)
+ *   paper    — local stop computation for paper positions (legacy)
  */
 
 return [
     // Core identity
     'module_id' => 'stop_manager',
     'enabled'   => false,
-    'mode'      => 'disabled',  // disabled | paper
+    'mode'      => 'disabled',  // disabled | paper | demo
+                                // demo     = local stop computation for Bybit Demo positions (same math as paper)
+                                // paper    = local stop computation for paper positions (legacy)
+                                // disabled = initialize storage only, no stop computation
 
     // Stop computation
     'stop_mode'                => 'entry_liq_percent',

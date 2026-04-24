@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 return [
     'enabled'                  => false,
-    'mode'                     => 'paper',
+    'mode'                     => 'demo',
     'active_profile'           => 'legacy_safe',
     'paper_position_ttl_hours' => 6,
     'profiles'       => [

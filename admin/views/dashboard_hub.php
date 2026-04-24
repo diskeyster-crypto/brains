@@ -949,9 +949,9 @@ ROWS;
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Размер рассчитан</td>'
             . '<td><code style="color:#f0883e;">' . (int)$pmDiagEnrichment['sizes_calculated'] . '</code></td></tr>';
     }
-    if (!empty($pmDiagEnrichment['prices_from_bybit'])) {
-        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Цена с Bybit API</td>'
-            . '<td><code style="color:#3fb950;">' . (int)$pmDiagEnrichment['prices_from_bybit'] . '</code></td></tr>';
+    if (!empty($pmDiagEnrichment['prices_from_position'])) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Цена из позиции</td>'
+            . '<td><code style="color:#3fb950;">' . (int)$pmDiagEnrichment['prices_from_position'] . '</code></td></tr>';
     }
     if (!empty($pmDiagEnrichment['prices_from_gateway'])) {
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Цена via Gateway</td>'

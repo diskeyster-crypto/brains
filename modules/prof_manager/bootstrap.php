@@ -13,6 +13,7 @@ declare(strict_types=1);
 $libDir = __DIR__ . '/lib';
 
 require_once $libDir . '/store.php';
+require_once $libDir . '/price_provider.php';
 require_once $libDir . '/position_reader.php';
 require_once $libDir . '/validator.php';
 require_once $libDir . '/risk_math.php';

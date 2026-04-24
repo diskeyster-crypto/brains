@@ -8,11 +8,11 @@ namespace Modules\ProfManager\Lib;
  * PriceProvider
  *
  * Fetches current market price for a symbol using the centralized Bybit gateway.
- * Falls back to a direct public REST call if the gateway is unavailable.
  *
  * ── SAFETY CONTRACT ──────────────────────────────────────────────────────────
  * Profit Manager may use the centralized exchange client ONLY for read-only
  * market data (market.tickers, signed=false).
+ * Paper mode forbids trading actions, not read-only price access.
  *
  * Profit Manager must NEVER call trading mutation endpoints in paper mode.
  *
@@ -20,6 +20,9 @@ namespace Modules\ProfManager\Lib;
  *   - submitOrder / createOrder / cancelOrder
  *   - closePosition / updatePositionStops / setTradingStop
  *   - any private endpoint that mutates positions or orders
+ *
+ * Profit Manager does NOT create its own separate Bybit HTTP client.
+ * It uses only the existing centralized Core\Gateway\Bybit connection model.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 class PriceProvider
@@ -39,9 +42,9 @@ class PriceProvider
     /**
      * Get the current market price for a symbol.
      *
-     * Attempts the centralized Core\Gateway\Bybit client first (read-only,
-     * market.tickers, signed=false — no API key required).
-     * Falls back to a direct public cURL call if the gateway is unavailable.
+     * Uses the centralized Core\Gateway\Bybit client (read-only, market.tickers,
+     * signed=false — no API key required).
+     * Profit Manager does not create its own Bybit HTTP client.
      *
      * @param string $symbol e.g. "BTCUSDT"
      * @return float|null  null when price cannot be obtained
@@ -66,21 +69,6 @@ class PriceProvider
             }
         } catch (\Throwable $e) {
             $error = $e->getMessage();
-        }
-
-        // ── Fallback: direct public cURL ──────────────────────────────────
-        if ($price === null) {
-            try {
-                [$price, $priceField] = $this->fetchViaCurl($symbol);
-                if ($price !== null) {
-                    $source = 'bybit_public';
-                    $error  = null; // gateway failed but curl succeeded — not a net error
-                }
-            } catch (\Throwable $e) {
-                if ($error === null) {
-                    $error = $e->getMessage();
-                }
-            }
         }
 
         if ($error !== null && $this->providerError === null) {
@@ -164,52 +152,6 @@ class PriceProvider
         }
 
         $list = $resp['result']['list'] ?? [];
-        if (!is_array($list) || empty($list)) {
-            return [null, null];
-        }
-
-        return $this->extractPrice($list[0]);
-    }
-
-    /**
-     * Direct public Bybit REST call (fallback when gateway is unavailable).
-     *
-     * @return array{0: float|null, 1: string|null}  [price, priceField]
-     */
-    private function fetchViaCurl(string $symbol): array
-    {
-        $url  = 'https://api.bybit.com/v5/market/tickers?category=linear&symbol=' . urlencode($symbol);
-        $body = null;
-
-        if (function_exists('curl_init')) {
-            $ch = curl_init($url);
-            curl_setopt_array($ch, [
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT        => 3,
-                CURLOPT_CONNECTTIMEOUT => 2,
-                CURLOPT_FOLLOWLOCATION => false,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_USERAGENT      => 'BrainsPM/1.0',
-                CURLOPT_HTTPHEADER     => ['Accept: application/json'],
-            ]);
-            $raw = curl_exec($ch);
-            curl_close($ch);
-            if (is_string($raw) && $raw !== '') {
-                $body = @json_decode($raw, true);
-            }
-        } elseif ((bool) ini_get('allow_url_fopen')) {
-            $ctx = stream_context_create(['http' => ['timeout' => 3, 'ignore_errors' => true]]);
-            $raw = @file_get_contents($url, false, $ctx);
-            if (is_string($raw) && $raw !== '') {
-                $body = @json_decode($raw, true);
-            }
-        }
-
-        if (!is_array($body)) {
-            return [null, null];
-        }
-
-        $list = $body['result']['list'] ?? [];
         if (!is_array($list) || empty($list)) {
             return [null, null];
         }

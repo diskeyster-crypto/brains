@@ -84,9 +84,8 @@ class PositionReader
             }
 
             $enrichmentStats = [
-                'prices_from_bybit'     => 0,
+                'prices_from_position'  => 0,
                 'prices_from_gateway'   => 0,
-                'prices_from_positions' => 0,
                 'prices_missing'        => 0,
                 'sizes_calculated'      => 0,
                 'leverage_defaulted'    => 0,
@@ -174,8 +173,8 @@ class PositionReader
      *   leverage  → default 10; _leverage_source = explicit|default
      *   budget    → from bot_budget/budget, else default 6; _budget_source = explicit|default
      *   size      → calculated as (budget × leverage) / entry_price; _size_calculated = true
-     *   current_price → fetched via PriceProvider (gateway or public REST fallback);
-     *                   _price_source = active_positions|bybit_gateway_readonly|bybit_public|unavailable
+     *   current_price → fetched via PriceProvider (centralized gateway, read-only);
+     *                   _price_source = active_positions|bybit_gateway_readonly|unavailable
      *   unrealised_pnl → calculated from size and prices when available
      *
      * @param list<mixed> $raw
@@ -308,7 +307,7 @@ class PositionReader
             }
             if ($priceFound) {
                 $pos['_price_source'] = 'active_positions';
-                $enrichmentStats['prices_from_positions']++;
+                $enrichmentStats['prices_from_position']++;
             }
 
             // Bybit price via PriceProvider — only when price is still missing
@@ -318,17 +317,13 @@ class PositionReader
                 if ($fetchedPrice !== null) {
                     $pos['current_price'] = $fetchedPrice;
                     $diag                 = $this->priceProvider()->getLastDiagnostics();
-                    $providerSource       = (string) ($diag['source'] ?? 'bybit_public');
+                    $providerSource       = (string) ($diag['source'] ?? 'bybit_gateway_readonly');
                     $pos['_price_source'] = $providerSource;
                     if (isset($diag['price_field_used'])) {
                         $pos['_price_field_used'] = $diag['price_field_used'];
                     }
                     $priceFound = true;
-                    if ($providerSource === 'bybit_gateway_readonly') {
-                        $enrichmentStats['prices_from_gateway']++;
-                    } else {
-                        $enrichmentStats['prices_from_bybit']++;
-                    }
+                    $enrichmentStats['prices_from_gateway']++;
                 }
             }
 

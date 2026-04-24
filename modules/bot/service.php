@@ -375,7 +375,7 @@ final class BotService
     private function scanDirForStrategies(string $dir, int $depth, int $maxDepth, array &$found): void
     {
         $manifestPath = $dir . '/manifest.json';
-        if (file_exists($manifestPath) && is_dir($dir . '/storage')) {
+        if (file_exists($manifestPath)) {
             $raw      = @file_get_contents($manifestPath);
             $manifest = ($raw !== false) ? json_decode($raw, true) : null;
             if (is_array($manifest) && ($manifest['category'] ?? '') === 'strategy') {
@@ -405,7 +405,8 @@ final class BotService
 
         $modulePath = ltrim(str_replace($this->repoRoot . '/', '', $absDir), '/');
 
-        // Handoff queue presence determines bot_ready status
+        // Storage directory and handoff queue presence determine status
+        $hasStorage     = is_dir($absDir . '/storage');
         $handoffRelPath = $modulePath . '/storage/bot_handoff_queue.json';
         $handoffAbsPath = $absDir . '/storage/bot_handoff_queue.json';
         $hasHandoff     = file_exists($handoffAbsPath);
@@ -429,7 +430,7 @@ final class BotService
             'handoff_queue_path' => $hasHandoff ? $handoffRelPath : null,
             'supports_long'      => $supportsLong,
             'supports_short'     => $supportsShort,
-            'status'             => $hasHandoff ? 'bot_ready' : 'discovered',
+            'status'             => $hasHandoff ? 'bot_ready' : ($hasStorage ? 'discovered' : 'storage_not_initialized'),
             'discovered_at'      => date('c'),
         ];
     }

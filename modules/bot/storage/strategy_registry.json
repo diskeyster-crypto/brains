@@ -1,1 +1,41 @@
-[]
+[
+    {
+        "strategy_id": "fish",
+        "module_path": "modules\/strategy\/fish",
+        "manifest_path": "modules\/strategy\/fish\/manifest.json",
+        "title": "Fish Strategy",
+        "category": "strategy",
+        "enabled_by_default": true,
+        "handoff_queue_path": null,
+        "supports_long": true,
+        "supports_short": true,
+        "status": "discovered",
+        "discovered_at": "2026-04-24T05:09:58+00:00"
+    },
+    {
+        "strategy_id": "pattern",
+        "module_path": "modules\/strategy\/pattern",
+        "manifest_path": "modules\/strategy\/pattern\/manifest.json",
+        "title": "Pattern Strategy",
+        "category": "strategy",
+        "enabled_by_default": true,
+        "handoff_queue_path": null,
+        "supports_long": true,
+        "supports_short": true,
+        "status": "discovered",
+        "discovered_at": "2026-04-24T05:09:58+00:00"
+    },
+    {
+        "strategy_id": "double_bottom_long",
+        "module_path": "modules\/strategy\/pattern\/double_bottom_long",
+        "manifest_path": "modules\/strategy\/pattern\/double_bottom_long\/manifest.json",
+        "title": "Double Bottom Long · Лонг-модуль по двойному дну",
+        "category": "strategy",
+        "enabled_by_default": true,
+        "handoff_queue_path": null,
+        "supports_long": true,
+        "supports_short": false,
+        "status": "storage_not_initialized",
+        "discovered_at": "2026-04-24T05:09:58+00:00"
+    }
+]

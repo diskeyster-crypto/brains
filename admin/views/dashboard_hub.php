@@ -1525,22 +1525,22 @@ HTML;
 
 <!-- Top tab navigation (vanilla JS) -->
 <nav class="dh-tab-nav" role="tablist">
-  <button class="dh-tab-btn dh-active" data-tab-target="dh-overview" type="button">
+  <button class="dh-tab-btn dh-active" data-tab-target="dh-overview" onclick="dhSwitchToTab('dh-overview')" type="button">
     <i class="bi bi-grid-1x2" style="margin-right:5px;"></i>Обзор
   </button>
-  <button class="dh-tab-btn" data-tab-target="dh-strat" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-strat" onclick="dhSwitchToTab('dh-strat')" type="button">
     <i class="bi bi-layers" style="margin-right:5px;"></i>Стратегии
   </button>
-  <button class="dh-tab-btn" data-tab-target="dh-bot" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-bot" onclick="dhSwitchToTab('dh-bot')" type="button">
     <i class="bi bi-cpu" style="margin-right:5px;"></i>Бот
   </button>
-  <button class="dh-tab-btn" data-tab-target="dh-sm" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-sm" onclick="dhSwitchToTab('dh-sm')" type="button">
     <i class="bi bi-shield-exclamation" style="margin-right:5px;"></i>Стоп
   </button>
-  <button class="dh-tab-btn" data-tab-target="dh-pm" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-pm" onclick="dhSwitchToTab('dh-pm')" type="button">
     <i class="bi bi-graph-up-arrow" style="margin-right:5px;"></i>Профит
   </button>
-  <button class="dh-tab-btn" data-tab-target="dh-ctrl" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-ctrl" onclick="dhSwitchToTab('dh-ctrl')" type="button">
     <i class="bi bi-sliders" style="margin-right:5px;"></i>Управление
   </button>
 </nav>
@@ -2085,10 +2085,7 @@ function dhResetRuntime() {
     if (tab && valid.indexOf(tab) !== -1) {
         dhTab(tab);
     }
-    // Wire click handlers for tab buttons via data-tab-target
-    document.querySelectorAll('.dh-tab-btn[data-tab-target]').forEach(function(btn) {
-        btn.addEventListener('click', function() { dhTab(btn.getAttribute('data-tab-target')); });
-    });
+    // Click handlers are wired via onclick="dhSwitchToTab(...)" on each .dh-tab-btn button.
 })();
 </script>
 HTML;

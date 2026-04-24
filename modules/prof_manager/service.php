@@ -357,13 +357,21 @@ final class ProfManagerService
         $locks   = $this->store->readLocks();
 
         $lastError = null;
-        $lastErrRaw = $this->store->readLastError();
-        if ($lastErrRaw !== '') {
-            $decoded = json_decode($lastErrRaw, true);
-            if (is_array($decoded) && isset($decoded['message'])) {
-                $lastError = $decoded['message'];
+        // Only surface an active error when the most recent tick actually failed.
+        // Do NOT show historical error.log entries when last_run ok=true.
+        if (($lastRun['ok'] ?? null) !== true) {
+            if (!empty($lastRun['error'])) {
+                $lastError = (string) $lastRun['error'];
             } else {
-                $lastError = $lastErrRaw;
+                $lastErrRaw = $this->store->readLastError();
+                if ($lastErrRaw !== '') {
+                    $decoded = json_decode($lastErrRaw, true);
+                    if (is_array($decoded) && isset($decoded['message'])) {
+                        $lastError = $decoded['message'];
+                    } else {
+                        $lastError = $lastErrRaw;
+                    }
+                }
             }
         }
 

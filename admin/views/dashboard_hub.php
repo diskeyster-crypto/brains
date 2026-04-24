@@ -118,6 +118,13 @@ function renderDashboardHub(): string
     $pmCronStatusText = $pmCronConfigured ? 'Настроен ✓' : 'Токен не задан';
     $pmCronPath      = 'public/cron/prof_manager.php';
 
+    // ── PM historical error log presence check ────────────────────────────
+    $pmHasHistoricalErrors = false;
+    $pmErrLogPath = $pmModuleDir . '/storage/logs/error.log';
+    if (is_file($pmErrLogPath) && @filesize($pmErrLogPath) > 0) {
+        $pmHasHistoricalErrors = true;
+    }
+
     $pmToggleTarget  = $pmEnabledBool ? '0' : '1';
     $pmToggleLabel   = $pmEnabledBool ? 'Выключить PM' : 'Включить PM';
     $pmToggleBg      = $pmEnabledBool ? 'rgba(248,81,73,.10)' : 'rgba(63,185,80,.10)';
@@ -909,14 +916,16 @@ ROWS;
     }
 
     // Build badge HTML helper
-    $scBadge = static function (string $label, string $state, string $reason) use ($scColor, $e): string {
+    $scBadge = static function (string $label, string $state, string $reason, string $tabId = '') use ($scColor, $e): string {
         [$clr, $bg] = $scColor($state);
         $title = $reason !== '' ? ' title="' . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . '"' : '';
         $sub   = $reason !== ''
             ? '<div style="font-size:10px;color:' . $clr . ';opacity:.8;margin-top:1px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
               . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . '</div>'
             : '';
-        return '<div style="display:flex;flex-direction:column;align-items:center;padding:6px 14px;background:' . $bg . ';border:1px solid ' . $clr . '55;border-radius:8px;min-width:80px;"' . $title . '>'
+        $pointer = $tabId !== '' ? 'cursor:pointer;' : '';
+        $onclick = $tabId !== '' ? ' onclick="dhSwitchToTab(\'' . $tabId . '\')"' : '';
+        return '<div style="' . $pointer . 'display:flex;flex-direction:column;align-items:center;padding:6px 14px;background:' . $bg . ';border:1px solid ' . $clr . '55;border-radius:8px;min-width:80px;"' . $title . $onclick . '>'
             . '<div style="font-size:11px;color:var(--ui-text-muted);margin-bottom:2px;">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</div>'
             . '<div style="font-size:13px;font-weight:700;color:' . $clr . ';">' . $state . '</div>'
             . $sub
@@ -925,15 +934,15 @@ ROWS;
 
     $scHtml = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;padding:10px 14px;background:var(--ui-card);border:1px solid var(--ui-border);border-radius:10px;">'
         . '<span style="font-size:11px;color:var(--ui-text-muted);margin-right:4px;white-space:nowrap;">Статус цепочки:</span>'
-        . $scBadge('Стратегии', $scStratState, $scStratReason)
+        . $scBadge('Стратегии', $scStratState, $scStratReason, 'dh-strat')
         . '<span style="color:var(--ui-text-muted);font-size:18px;align-self:center;">→</span>'
-        . $scBadge('Бот', $scBotState, $scBotReason)
+        . $scBadge('Бот', $scBotState, $scBotReason, 'dh-bot')
         . '<span style="color:var(--ui-text-muted);font-size:18px;align-self:center;">→</span>'
-        . $scBadge('Stop', $scSmState, $scSmReason)
+        . $scBadge('Stop', $scSmState, $scSmReason, 'dh-sm')
         . '<span style="color:var(--ui-text-muted);font-size:18px;align-self:center;">→</span>'
-        . $scBadge('Profit', $scPmState, $scPmReason)
+        . $scBadge('Profit', $scPmState, $scPmReason, 'dh-pm')
         . '<span style="color:var(--ui-text-muted);font-size:18px;align-self:center;">→</span>'
-        . $scBadge('Cron', $scCronState, $scCronReason)
+        . $scBadge('Cron', $scCronState, $scCronReason, 'dh-ctrl')
         . '</div>';
 
     $pmRuntimeNote = '';
@@ -1210,6 +1219,148 @@ HTML;
         $compactStratRows = '<tr><td colspan="5" style="padding:12px 10px;color:var(--ui-text-muted);">Стратегии не обнаружены.</td></tr>';
     }
 
+    // ── PM "Последняя ошибка" table row HTML ─────────────────────────────
+    if ($pmLastError !== '') {
+        $pmLastErrorRow = '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td>'
+            . '<td style="color:#f85149;font-size:12px;">' . $e($pmLastError) . '</td></tr>';
+    } else {
+        $pmHistNote = $pmHasHistoricalErrors
+            ? ' <span style="font-size:11px;opacity:.65;">(исторические ошибки есть в error.log)</span>'
+            : '';
+        $pmLastErrorRow = '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td>'
+            . '<td style="font-size:12px;color:var(--ui-text-muted);">—' . $pmHistNote . '</td></tr>';
+    }
+
+    // ── Open positions table for Overview pane ────────────────────────────
+    $overviewPositionsHtml = '';
+    if (!empty($positions)) {
+        $posRows = '';
+        foreach ($positions as $pos) {
+            if (!is_array($pos)) {
+                continue;
+            }
+            $pSymbol   = $e((string)($pos['symbol']          ?? ''));
+            $pSide     = $e((string)($pos['side']            ?? ''));
+            $pStrategy = $e((string)($pos['strategy_id']     ?? $pos['source'] ?? '—'));
+            $pEntry    = isset($pos['entry_price'])     ? number_format((float)$pos['entry_price'],    4) : '—';
+            $pCur      = isset($pos['current_price'])   ? number_format((float)$pos['current_price'],  4) : '—';
+            $pRoiRaw   = $pos['roi']                    ?? null;
+            $pRoi      = ($pRoiRaw !== null)            ? number_format((float)$pRoiRaw, 2) . '%'          : '—';
+            $pPnl      = isset($pos['unrealised_pnl'])  ? number_format((float)$pos['unrealised_pnl'], 4)  : '—';
+            $pLev      = $e((string)($pos['leverage']   ?? '—'));
+            $pSize     = $e((string)($pos['size']       ?? $pos['amount'] ?? '—'));
+            $pOpenedAt = $e((string)($pos['opened_at']  ?? $pos['created_at'] ?? '—'));
+            $pRoiColor = ($pRoiRaw !== null && (float)$pRoiRaw > 0) ? '#3fb950' : '#f85149';
+            $posRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
+                . '<td style="padding:4px 8px;font-weight:600;">' . $pSymbol . '</td>'
+                . '<td style="padding:4px 8px;color:#8b949e;">' . $pSide . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $pStrategy . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $pEntry . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $pCur . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;color:' . $pRoiColor . ';font-weight:600;">' . $pRoi . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $pPnl . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $pLev . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $pSize . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $pOpenedAt . '</td>'
+                . '</tr>';
+        }
+        $overviewPositionsHtml = <<<HTML
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span><i class="bi bi-bar-chart-line" style="margin-right:6px;"></i>Открытые позиции ({$posCount})</span>
+    <small style="color:var(--ui-text-muted);font-size:11px;">read-only · биржевых действий нет</small>
+  </div>
+  <div class="card-body" style="padding:0;">
+    <div style="overflow-x:auto;">
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead>
+          <tr style="border-bottom:2px solid var(--ui-border);">
+            <th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Symbol</th>
+            <th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Side</th>
+            <th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Стратегия</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Вход</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Текущая</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">ROI%</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">PnL</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Плечо</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Размер</th>
+            <th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Открыто</th>
+          </tr>
+        </thead>
+        <tbody>{$posRows}</tbody>
+      </table>
+    </div>
+  </div>
+</div>
+HTML;
+    }
+
+    // ── Module state strip for Overview pane ─────────────────────────────
+    $modStripRows = '';
+    // Bot
+    [$modBotClr] = $scColor($scBotState);
+    $modStripRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
+        . '<td style="padding:5px 10px;font-weight:600;width:70px;">Бот</td>'
+        . '<td style="padding:5px 10px;color:' . $modBotClr . ';font-weight:600;width:55px;">' . $scBotState . '</td>'
+        . '<td style="padding:5px 10px;width:90px;"><code style="font-size:11px;">' . $e($botMode) . '</code></td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;width:160px;">' . $e($tickAt) . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">позиций: ' . $posCount . ' · очередь: ' . $queueSize . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#f85149;">' . $e($scBotReason) . '</td>'
+        . '</tr>';
+    // Stop Manager
+    [$modSmClr] = $scColor($scSmState);
+    $modStripRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
+        . '<td style="padding:5px 10px;font-weight:600;">Stop</td>'
+        . '<td style="padding:5px 10px;color:' . $modSmClr . ';font-weight:600;">' . $scSmState . '</td>'
+        . '<td style="padding:5px 10px;"><code style="font-size:11px;">' . $e($smMode) . '</code></td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . $e($smLastTick) . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">стопов: ' . $smActiveStops . ' · позиций: ' . $smPosSeen . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#f85149;">' . $e($scSmReason) . '</td>'
+        . '</tr>';
+    // Profit Manager
+    [$modPmClr] = $scColor($scPmState);
+    $modPmActivity = 'отслеж.: ' . $pmPosTracked . ' · пропущено: ' . $pmSkipped;
+    $modPmIssue    = $pmLastError !== '' ? $pmLastError : $scPmReason;
+    $modStripRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
+        . '<td style="padding:5px 10px;font-weight:600;">Profit</td>'
+        . '<td style="padding:5px 10px;color:' . $modPmClr . ';font-weight:600;">' . $scPmState . '</td>'
+        . '<td style="padding:5px 10px;"><code style="font-size:11px;">' . $e($pmMode) . '</code></td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . $e($pmLastTick) . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . $e($modPmActivity) . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#f85149;">' . $e($modPmIssue) . '</td>'
+        . '</tr>';
+    // Cron
+    [$modCronClr] = $scColor($scCronState);
+    $modCronLastRunStr = $pmCronLastRunTs !== null ? date('d.m H:i', $pmCronLastRunTs) : '—';
+    $modStripRows .= '<tr>'
+        . '<td style="padding:5px 10px;font-weight:600;">Cron</td>'
+        . '<td style="padding:5px 10px;color:' . $modCronClr . ';font-weight:600;">' . $scCronState . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . ($pmCronTaskEnabled ? 'включён' : 'выключен') . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . $e($modCronLastRunStr) . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;"><code style="font-size:10px;">' . $e($pmCronPath) . '</code></td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#f85149;">' . $e($scCronReason) . '</td>'
+        . '</tr>';
+    $modStripHtml = <<<HTML
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header"><i class="bi bi-hdd-stack" style="margin-right:6px;"></i>Состояние модулей</div>
+  <div class="card-body" style="padding:0;">
+    <table style="width:100%;font-size:13px;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--ui-border);">
+          <th style="padding:5px 10px;text-align:left;color:var(--ui-text-muted);">Модуль</th>
+          <th style="padding:5px 10px;text-align:left;color:var(--ui-text-muted);">Статус</th>
+          <th style="padding:5px 10px;text-align:left;color:var(--ui-text-muted);">Режим</th>
+          <th style="padding:5px 10px;text-align:left;color:var(--ui-text-muted);">Последний тик</th>
+          <th style="padding:5px 10px;text-align:left;color:var(--ui-text-muted);">Активность</th>
+          <th style="padding:5px 10px;text-align:left;color:var(--ui-text-muted);">Ошибка/Причина</th>
+        </tr>
+      </thead>
+      <tbody>{$modStripRows}</tbody>
+    </table>
+  </div>
+</div>
+HTML;
+
     $flashHtml = '';
     if ($flash) {
         $ftype = ($flash['type'] === 'success') ? 'success' : 'danger';
@@ -1321,6 +1472,8 @@ HTML;
       </table>
     </div>
   </div>
+  {$overviewPositionsHtml}
+  {$modStripHtml}
 </div>
 
 <!-- ── Strategies pane ──────────────────────────────────────────────── -->
@@ -1499,7 +1652,7 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Плановых обновлений</td><td><code>{$pmPlanned}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Пропущено</td><td><code>{$pmSkipped}</code></td></tr>
           {$pmDiagRows}
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td><td style="color:#f85149;font-size:12px;">{$pmLastError}</td></tr>
+          {$pmLastErrorRow}
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Cron-обработчик</td><td><code>{$pmCronPath}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Интервал крона</td><td>{$pmCronInterval} сек</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус токена</td><td>{$pmCronStatusText}</td></tr>
@@ -1772,9 +1925,13 @@ HTML;
 function dhTab(btn, panelId) {
     document.querySelectorAll('.dh-tab-btn').forEach(function(b){ b.classList.remove('dh-active'); });
     document.querySelectorAll('.dh-pane').forEach(function(p){ p.classList.remove('dh-visible'); });
-    btn.classList.add('dh-active');
+    if (btn) { btn.classList.add('dh-active'); }
     var panel = document.getElementById(panelId);
     if (panel) { panel.classList.add('dh-visible'); }
+}
+function dhSwitchToTab(panelId) {
+    var navBtn = document.querySelector('.dh-tab-btn[onclick*="\'' + panelId + '\'"]');
+    dhTab(navBtn || null, panelId);
 }
 function dhToggleEdit(id) {
     var el = document.getElementById(id);

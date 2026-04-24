@@ -859,9 +859,10 @@ ROWS;
             if (!empty($pmSkipReasonsSummary)) {
                 $topReason    = (string) array_key_first($pmSkipReasonsSummary);
                 $totalSkipped = (int) array_sum($pmSkipReasonsSummary);
-                $scPmReason   = $topReason . ' ×' . $totalSkipped;
+                $topReasonLabel = $pmReasonLabels[$topReason] ?? $topReason;
+                $scPmReason   = $topReasonLabel . ' ×' . $totalSkipped;
             } else {
-                $scPmReason = $pmRawSkipped;
+                $scPmReason = $pmReasonLabels[$pmRawSkipped] ?? $pmRawSkipped;
             }
         } elseif (!empty($pmSkipReasonsSummary)) {
             // Positions processed; some skipped for normal reasons (skip_reason='' globally)
@@ -875,7 +876,8 @@ ROWS;
             $scPmState    = $allNormal ? 'WARN' : 'ERR';
             $topReason    = (string) array_key_first($pmSkipReasonsSummary);
             $totalSkipped = (int) array_sum($pmSkipReasonsSummary);
-            $scPmReason   = $topReason . ' ×' . $totalSkipped;
+            $topReasonLabel = $pmReasonLabels[$topReason] ?? $topReason;
+            $scPmReason   = $topReasonLabel . ' ×' . $totalSkipped;
         } elseif ($pmDiagInvalidPos > 0 && $pmDiagErrSum !== '') {
             $scPmState  = 'WARN';
             $scPmReason = $pmDiagErrSum;
@@ -1231,6 +1233,31 @@ HTML;
             . '<td style="font-size:12px;color:var(--ui-text-muted);">—' . $pmHistNote . '</td></tr>';
     }
 
+    // ── Build PM runtime lookup by symbol+side for position merging ──────
+    $pmRtLookup = [];
+    foreach ($pmPositionsRuntime as $pr) {
+        $pKey = strtolower((string)($pr['symbol'] ?? '')) . '_' . strtolower((string)($pr['side'] ?? ''));
+        $pmRtLookup[$pKey] = $pr;
+        // Also index by symbol only as fallback
+        $pKeySymbol = strtolower((string)($pr['symbol'] ?? ''));
+        if (!isset($pmRtLookup[$pKeySymbol])) {
+            $pmRtLookup[$pKeySymbol] = $pr;
+        }
+    }
+
+    // Helper: format seconds as human-readable duration
+    $fmtDuration = static function (int $sec): string {
+        if ($sec < 60) {
+            return $sec . 'с';
+        }
+        if ($sec < 3600) {
+            return floor($sec / 60) . 'м';
+        }
+        $h = floor($sec / 3600);
+        $m = floor(($sec % 3600) / 60);
+        return $m > 0 ? $h . 'ч ' . $m . 'м' : $h . 'ч';
+    };
+
     // ── Open positions table for Overview pane ────────────────────────────
     $overviewPositionsHtml = '';
     if (!empty($positions)) {
@@ -1239,18 +1266,62 @@ HTML;
             if (!is_array($pos)) {
                 continue;
             }
-            $pSymbol   = $e((string)($pos['symbol']          ?? ''));
-            $pSide     = $e((string)($pos['side']            ?? ''));
-            $pStrategy = $e((string)($pos['strategy_id']     ?? $pos['source'] ?? '—'));
+            $posSymbol = (string)($pos['symbol'] ?? '');
+            $posSide   = (string)($pos['side']   ?? '');
+            // Look up PM runtime data: try symbol+side first, then symbol only
+            $pmKey     = strtolower($posSymbol) . '_' . strtolower($posSide);
+            $pmRt      = $pmRtLookup[$pmKey] ?? $pmRtLookup[strtolower($posSymbol)] ?? [];
+
+            $pSymbol   = $e($posSymbol);
+            $pSide     = $e($posSide);
+            $pStrategy = $e((string)($pos['strategy_id']     ?? $pos['owner_strategy'] ?? $pos['source'] ?? '—'));
             $pEntry    = isset($pos['entry_price'])     ? number_format((float)$pos['entry_price'],    4) : '—';
-            $pCur      = isset($pos['current_price'])   ? number_format((float)$pos['current_price'],  4) : '—';
-            $pRoiRaw   = $pos['roi']                    ?? null;
-            $pRoi      = ($pRoiRaw !== null)            ? number_format((float)$pRoiRaw, 2) . '%'          : '—';
-            $pPnl      = isset($pos['unrealised_pnl'])  ? number_format((float)$pos['unrealised_pnl'], 4)  : '—';
-            $pLev      = $e((string)($pos['leverage']   ?? '—'));
-            $pSize     = $e((string)($pos['size']       ?? $pos['amount'] ?? '—'));
-            $pOpenedAt = $e((string)($pos['opened_at']  ?? $pos['created_at'] ?? '—'));
+
+            // current_price: prefer PM runtime, fallback to bot position
+            $curPriceRaw = $pmRt['current_price'] ?? $pos['current_price'] ?? null;
+            $pCur        = ($curPriceRaw !== null && (float)$curPriceRaw > 0)
+                ? number_format((float)$curPriceRaw, 4) : '—';
+
+            // ROI: prefer PM runtime, fallback to bot position
+            $pRoiRaw   = $pmRt['roi'] ?? $pos['roi'] ?? null;
+            $pRoi      = ($pRoiRaw !== null) ? number_format((float)$pRoiRaw, 2) . '%' : '—';
             $pRoiColor = ($pRoiRaw !== null && (float)$pRoiRaw > 0) ? '#3fb950' : '#f85149';
+
+            // unrealised_pnl: bot position only (PM does not compute PnL)
+            $pPnl      = isset($pos['unrealised_pnl'])  ? number_format((float)$pos['unrealised_pnl'], 4)  : '—';
+
+            // budget: from bot signal fields
+            $budgetRaw = $pos['bot_budget'] ?? $pos['budget'] ?? null;
+            $pBudget   = ($budgetRaw !== null) ? number_format((float)$budgetRaw, 2) : '—';
+
+            $pLev      = $e((string)($pos['bot_leverage'] ?? $pos['leverage'] ?? '—'));
+            $pSize     = $e((string)($pos['size'] ?? $pos['amount'] ?? '—'));
+
+            // opened_at
+            $openedAtRaw = (string)($pos['opened_at'] ?? $pos['created_at'] ?? $pos['entered_at'] ?? '');
+            $pOpenedAt   = $e($openedAtRaw !== '' ? $openedAtRaw : '—');
+
+            // time_in_position: compute from opened_at
+            $pTimeInPos = '—';
+            if ($openedAtRaw !== '') {
+                $openedTs = @strtotime($openedAtRaw);
+                if ($openedTs !== false && $openedTs > 0) {
+                    $elapsed = max(0, time() - $openedTs);
+                    $pTimeInPos = $fmtDuration($elapsed);
+                }
+            }
+
+            // status
+            $pStatus = $e((string)($pos['position_status'] ?? $pos['status'] ?? '—'));
+
+            // PM action and skip_reason (human-readable)
+            $pmAction      = (string)($pmRt['action'] ?? '');
+            $pmSkipRaw     = (string)($pmRt['skip_reason'] ?? '');
+            $pmSkipLabel   = $pmSkipRaw !== ''
+                ? ($pmReasonLabels[$pmSkipRaw] ?? $pmSkipRaw)
+                : '—';
+            $pmPriceSource = $e((string)($pmRt['price_source'] ?? '—'));
+
             $posRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
                 . '<td style="padding:4px 8px;font-weight:600;">' . $pSymbol . '</td>'
                 . '<td style="padding:4px 8px;color:#8b949e;">' . $pSide . '</td>'
@@ -1259,9 +1330,13 @@ HTML;
                 . '<td style="padding:4px 8px;text-align:right;">' . $pCur . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;color:' . $pRoiColor . ';font-weight:600;">' . $pRoi . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;">' . $pPnl . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $pBudget . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;">' . $pLev . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;">' . $pSize . '</td>'
                 . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $pOpenedAt . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:#58a6ff;">' . $pTimeInPos . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $pStatus . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:#f0883e;">' . $e($pmSkipLabel) . '</td>'
                 . '</tr>';
         }
         $overviewPositionsHtml = <<<HTML
@@ -1282,9 +1357,13 @@ HTML;
             <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Текущая</th>
             <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">ROI%</th>
             <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">PnL</th>
+            <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Бюджет</th>
             <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Плечо</th>
             <th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Размер</th>
             <th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Открыто</th>
+            <th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">В позиции</th>
+            <th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Статус</th>
+            <th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">PM причина</th>
           </tr>
         </thead>
         <tbody>{$posRows}</tbody>

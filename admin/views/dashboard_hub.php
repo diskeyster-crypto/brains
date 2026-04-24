@@ -726,6 +726,16 @@ ROWS;
         }
     }
 
+    // ── PM diagnostic fields from last_run.json ───────────────────────────
+    $pmDiagPositions  = isset($pmRawLastRun['positions'])          ? (int)$pmRawLastRun['positions']         : -1;
+    $pmDiagValidPos   = isset($pmRawLastRun['valid_positions'])    ? (int)$pmRawLastRun['valid_positions']   : -1;
+    $pmDiagInvalidPos = isset($pmRawLastRun['invalid_positions'])  ? (int)$pmRawLastRun['invalid_positions'] : -1;
+    $pmDiagSource     = (string)($pmRawLastRun['source'] ?? '');
+    $pmDiagErrSumRaw  = $pmRawLastRun['validation_errors_summary'] ?? [];
+    $pmDiagErrSum     = is_array($pmDiagErrSumRaw)
+        ? implode(', ', $pmDiagErrSumRaw)
+        : (string)$pmDiagErrSumRaw;
+
     // ── PM cron task check ────────────────────────────────────────────────
     $pmCronTaskExists  = false;
     $pmCronTaskEnabled = false;
@@ -800,6 +810,9 @@ ROWS;
         if ($pmRawSkipped !== '' && $pmRawSkipped !== 'module_disabled') {
             $scPmState  = 'WARN';
             $scPmReason = $pmRawSkipped;
+        } elseif ($pmDiagInvalidPos > 0 && $pmDiagErrSum !== '') {
+            $scPmState  = 'WARN';
+            $scPmReason = $pmDiagErrSum;
         } else {
             $scPmState  = 'ON';
             $scPmReason = '';
@@ -864,9 +877,45 @@ ROWS;
         $noteReason = $pmRawSkipped !== '' ? $pmRawSkipped : 'module_disabled';
         $pmRuntimeNote = '<div style="color:#f0883e;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(240,136,62,.08);border-radius:6px;border-left:3px solid #f0883e77;">'
             . 'Последний тик был, но PM выключен: <strong>' . $e($noteReason) . '</strong></div>';
+    } elseif ($pmEnabledBool && $pmRawSkipped === 'all_positions_invalid') {
+        $errDetail = $pmDiagErrSum !== '' ? ' (' . $e($pmDiagErrSum) . ')' : '';
+        $pmRuntimeNote = '<div style="color:#f85149;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(248,81,73,.08);border-radius:6px;border-left:3px solid #f8514977;">'
+            . 'Позиции найдены, но все невалидны для PM' . $errDetail . '</div>';
     } elseif ($pmEnabledBool && $pmRawSkipped !== '') {
         $pmRuntimeNote = '<div style="color:#f0883e;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(240,136,62,.08);border-radius:6px;border-left:3px solid #f0883e77;">'
             . 'Тик пропущен: <strong>' . $e($pmRawSkipped) . '</strong></div>';
+    } elseif ($pmEnabledBool && $pmDiagInvalidPos > 0 && $pmDiagValidPos === 0 && $pmDiagPositions > 0) {
+        $errDetail = $pmDiagErrSum !== '' ? ' (' . $e($pmDiagErrSum) . ')' : '';
+        $pmRuntimeNote = '<div style="color:#f85149;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(248,81,73,.08);border-radius:6px;border-left:3px solid #f8514977;">'
+            . 'Позиции найдены, но все невалидны для PM' . $errDetail . '</div>';
+    }
+
+    // ── PM extra diagnostic rows for Runtime table ────────────────────────
+    $pmDiagRows = '';
+    if ($pmDiagPositions >= 0) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Найдено позиций</td>'
+            . '<td><code>' . $pmDiagPositions . '</code></td></tr>';
+    }
+    if ($pmDiagValidPos >= 0) {
+        $validColor = ($pmDiagValidPos === 0 && $pmDiagPositions > 0) ? '#f85149' : 'inherit';
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Валидных позиций</td>'
+            . '<td><code style="color:' . $validColor . ';">' . $pmDiagValidPos . '</code></td></tr>';
+    }
+    if ($pmDiagInvalidPos > 0) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Невалидных позиций</td>'
+            . '<td><code style="color:#f85149;">' . $pmDiagInvalidPos . '</code></td></tr>';
+    }
+    if ($pmRawSkipped !== '') {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Skip reason</td>'
+            . '<td style="color:#f0883e;font-size:12px;">' . $e($pmRawSkipped) . '</td></tr>';
+    }
+    if ($pmDiagErrSum !== '') {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибки валидации</td>'
+            . '<td style="color:#f85149;font-size:12px;">' . $e($pmDiagErrSum) . '</td></tr>';
+    }
+    if ($pmDiagSource !== '' && $pmDiagSource !== 'none') {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Источник позиций</td>'
+            . '<td style="font-size:11px;"><code>' . $e($pmDiagSource) . '</code></td></tr>';
     }
 
     $flashHtml = '';
@@ -1127,6 +1176,7 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Локов активно</td><td><code>{$pmLocksActive}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Плановых обновлений</td><td><code>{$pmPlanned}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Пропущено</td><td><code>{$pmSkipped}</code></td></tr>
+          {$pmDiagRows}
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td><td style="color:#f85149;font-size:12px;">{$pmLastError}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Cron-обработчик</td><td><code>{$pmCronPath}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Интервал крона</td><td>{$pmCronInterval} сек</td></tr>

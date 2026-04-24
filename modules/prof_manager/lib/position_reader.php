@@ -128,12 +128,18 @@ class PositionReader
     /**
      * Normalize position fields to a canonical form.
      *
-     * Mappings:
-     *   qty → size
-     *   avg_price → entry_price (if entry_price not set)
+     * Supports common field-name aliases used across project position sources:
+     *   size       : size, qty, quantity, position_size, positionQty, contracts, amount, bot_budget
+     *   leverage   : leverage, lev, bot_leverage, position_leverage
+     *   entry_price: entry_price, avg_price, avgPrice, average_price, entryPrice
+     *   current_price: current_price, mark_price, markPrice, last_price, price, currentPrice,
+     *                  runtime.current_price, market.mark_price
+     *   pnl        : unrealised_pnl, unrealized_pnl, unrealisedPnl, unrealizedPnl, pnl
      *
-     * If current_price / mark_price is missing, position is kept but
-     * tagged with no_price_data so the planner can skip ROI calculation.
+     * Nested unwrapping: position.*, data.*
+     * Original data preserved under _raw.
+     *
+     * If current_price is still missing, position is tagged with _no_price_data.
      *
      * @param list<mixed> $raw
      * @return list<array>
@@ -146,18 +152,85 @@ class PositionReader
                 continue;
             }
 
-            // qty → size
-            if (!isset($pos['size']) && isset($pos['qty'])) {
-                $pos['size'] = $pos['qty'];
+            // ── Unwrap common nesting ─────────────────────────────────────────
+            if (!isset($pos['symbol']) && isset($pos['position']) && is_array($pos['position'])) {
+                $nested = $pos['position'];
+                unset($pos['position']);
+                $pos = array_merge($nested, $pos);
+            }
+            if (!isset($pos['symbol']) && isset($pos['data']) && is_array($pos['data'])) {
+                $nested = $pos['data'];
+                unset($pos['data']);
+                $pos = array_merge($nested, $pos);
             }
 
-            // avg_price → entry_price
-            if (!isset($pos['entry_price']) && isset($pos['avg_price'])) {
-                $pos['entry_price'] = $pos['avg_price'];
+            // ── Store original data for diagnostics ───────────────────────────
+            if (!isset($pos['_raw'])) {
+                $pos['_raw'] = $pos;
             }
 
-            // tag positions lacking price data
-            $currentPrice = (float) ($pos['current_price'] ?? $pos['mark_price'] ?? 0.0);
+            // ── size ──────────────────────────────────────────────────────────
+            if (!isset($pos['size']) || (float) $pos['size'] <= 0.0) {
+                foreach (['qty', 'quantity', 'position_size', 'positionQty', 'contracts', 'amount', 'bot_budget'] as $alias) {
+                    if (isset($pos[$alias]) && (float) $pos[$alias] > 0.0) {
+                        $pos['size'] = $pos[$alias];
+                        break;
+                    }
+                }
+            }
+
+            // ── leverage ──────────────────────────────────────────────────────
+            if (!isset($pos['leverage']) || (float) $pos['leverage'] <= 0.0) {
+                foreach (['lev', 'bot_leverage', 'position_leverage'] as $alias) {
+                    if (isset($pos[$alias]) && (float) $pos[$alias] > 0.0) {
+                        $pos['leverage'] = $pos[$alias];
+                        break;
+                    }
+                }
+            }
+
+            // ── entry_price ───────────────────────────────────────────────────
+            if (!isset($pos['entry_price']) || (float) $pos['entry_price'] <= 0.0) {
+                foreach (['avg_price', 'avgPrice', 'average_price', 'entryPrice'] as $alias) {
+                    if (isset($pos[$alias]) && (float) $pos[$alias] > 0.0) {
+                        $pos['entry_price'] = $pos[$alias];
+                        break;
+                    }
+                }
+            }
+
+            // ── current_price ─────────────────────────────────────────────────
+            if (!isset($pos['current_price']) || (float) $pos['current_price'] <= 0.0) {
+                foreach (['mark_price', 'markPrice', 'last_price', 'price', 'currentPrice'] as $alias) {
+                    if (isset($pos[$alias]) && (float) $pos[$alias] > 0.0) {
+                        $pos['current_price'] = $pos[$alias];
+                        break;
+                    }
+                }
+            }
+            // Nested: runtime.current_price
+            if ((!isset($pos['current_price']) || (float) $pos['current_price'] <= 0.0)
+                && isset($pos['runtime']['current_price']) && (float) $pos['runtime']['current_price'] > 0.0) {
+                $pos['current_price'] = $pos['runtime']['current_price'];
+            }
+            // Nested: market.mark_price
+            if ((!isset($pos['current_price']) || (float) $pos['current_price'] <= 0.0)
+                && isset($pos['market']['mark_price']) && (float) $pos['market']['mark_price'] > 0.0) {
+                $pos['current_price'] = $pos['market']['mark_price'];
+            }
+
+            // ── unrealised_pnl ────────────────────────────────────────────────
+            if (!isset($pos['unrealised_pnl'])) {
+                foreach (['unrealized_pnl', 'unrealisedPnl', 'unrealizedPnl', 'pnl'] as $alias) {
+                    if (isset($pos[$alias])) {
+                        $pos['unrealised_pnl'] = $pos[$alias];
+                        break;
+                    }
+                }
+            }
+
+            // ── tag positions lacking price data ──────────────────────────────
+            $currentPrice = (float) ($pos['current_price'] ?? 0.0);
             if ($currentPrice <= 0.0) {
                 $pos['_no_price_data'] = true;
             }

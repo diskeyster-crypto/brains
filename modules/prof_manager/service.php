@@ -196,21 +196,45 @@ final class ProfManagerService
             $this->store->writePositionsState($positionsState);
             $this->store->writeLocks($execResult['locks']);
 
+            // ── Compute validation error summaries ────────────────────────────
+            $positionsTotal   = count($rawPositions);
+            $invalidCount     = count($validationErrors);
+            $validCount       = $positionsTotal - $invalidCount;
+
+            $allErrorCodes = [];
+            $errorsBySymbol = [];
+            foreach ($validationErrors as $ve) {
+                $sym = (string) ($ve['symbol'] ?? '?');
+                $errs = is_array($ve['errors']) ? $ve['errors'] : [$ve['errors']];
+                foreach ($errs as $code) {
+                    $allErrorCodes[] = (string) $code;
+                }
+                $errorsBySymbol[$sym] = $errs;
+            }
+            $errorsSummary = array_values(array_unique($allErrorCodes));
+
+            $skipReason = ($positionsTotal > 0 && $validCount === 0)
+                ? 'all_positions_invalid'
+                : '';
+
             $result = [
-                'ok'                => true,
-                'ts'                => $ts,
-                'enabled'           => true,
-                'mode'              => 'paper',
-                'profile'           => $activeProfile,
-                'source'            => $readResult['source'],
-                'positions'         => count($rawPositions),
-                'valid_positions'   => count($rawPositions) - count($validationErrors),
-                'executed_count'    => $execResult['summary']['executed'],
-                'skipped_count'     => $execResult['summary']['skipped'],
-                'executed'          => $execResult['executed'],
-                'skipped'           => $execResult['skipped'],
-                'skip_reason'       => '',
-                'validation_errors' => $validationErrors,
+                'ok'                        => true,
+                'ts'                        => $ts,
+                'enabled'                   => true,
+                'mode'                      => 'paper',
+                'profile'                   => $activeProfile,
+                'source'                    => $readResult['source'],
+                'positions'                 => $positionsTotal,
+                'valid_positions'           => $validCount,
+                'invalid_positions'         => $invalidCount,
+                'executed_count'            => $execResult['summary']['executed'],
+                'skipped_count'             => $execResult['summary']['skipped'],
+                'executed'                  => $execResult['executed'],
+                'skipped'                   => $execResult['skipped'],
+                'skip_reason'               => $skipReason,
+                'validation_errors'         => $validationErrors,
+                'validation_errors_summary' => $errorsSummary,
+                'validation_errors_by_symbol' => $errorsBySymbol,
             ];
 
             $this->store->writeLastRun($result);

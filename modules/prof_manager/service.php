@@ -221,21 +221,17 @@ final class ProfManagerService
                 ];
             }
 
-            // ── Build skip-reason summary (with priority deduplication) ───────
-            // Priority: no_price_data > below_init_roi > below_activation_roi > …
-            // If below_init_roi is present, below_activation_roi is implied and
-            // removed to avoid showing redundant reasons.
-            $rawSkipCounts = [];
+            // ── Build skip-reason summary ─────────────────────────────────────
+            // Count each position's final skip_reason independently.
+            // below_activation_roi and below_init_roi may both appear if different
+            // positions have different states — do NOT remove either globally.
+            $skipReasonsSummary = [];
             foreach ($plans as $plan) {
                 if (($plan['action'] ?? '') === 'skip' && !empty($plan['skip_reason'])) {
                     $r = (string) $plan['skip_reason'];
-                    $rawSkipCounts[$r] = ($rawSkipCounts[$r] ?? 0) + 1;
+                    $skipReasonsSummary[$r] = ($skipReasonsSummary[$r] ?? 0) + 1;
                 }
             }
-            if (isset($rawSkipCounts['below_init_roi'], $rawSkipCounts['below_activation_roi'])) {
-                unset($rawSkipCounts['below_activation_roi']);
-            }
-            $skipReasonsSummary = $rawSkipCounts;
 
             // ── Paper execution ───────────────────────────────────────────────
             $execResult = $this->executor->execute($plans, $locks, $maxUpdates);

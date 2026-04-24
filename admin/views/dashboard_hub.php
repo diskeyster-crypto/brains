@@ -241,20 +241,16 @@ function renderDashboardHub(): string
             $opEnabled   = array_key_exists('enabled', $op)
                 ? (bool)$op['enabled']
                 : (bool)($rec['enabled_by_default'] ?? true);
-            $opMode      = (string)($op['mode']        ?? 'passive');
-            $opBudget    = (float)($op['bot_budget']   ?? 0);
-            $opLev       = (int)($op['bot_leverage']   ?? 0);
-            $opEntry     = (string)($op['entry_mode']  ?? '');
-            $opMax       = (int)($op['max_active_positions'] ?? 0);
+            // Mode: use stored override if present; fall back to manifest default_mode; then 'passive'
+            $defaultMode = (string)($rec['default_mode'] ?? 'passive');
+            $opMode      = array_key_exists('mode', $op)
+                ? (string)$op['mode']
+                : $defaultMode;
 
             $esId    = $e($stratId);
             $esTitle = $e($title);
             $esPath  = $e($modulePath);
-            $esBudget   = $e($opBudget);
-            $esLev      = $e($opLev);
-            $esEntry    = $e($opEntry);
-            $esMax      = $e($opMax);
-            $esMode     = $e($opMode);
+            $esMode  = $e($opMode);
 
             // Status badge colour
             $statusColor = $status === 'bot_ready' ? '#3fb950' : '#8b949e';
@@ -279,11 +275,6 @@ function renderDashboardHub(): string
             $modePassive  = $opMode === 'passive'  ? ' selected' : '';
             $modeActive   = $opMode === 'active'   ? ' selected' : '';
             $modeDisabled = $opMode === 'disabled' ? ' selected' : '';
-
-            // Options: entry_mode select
-            $entryNone    = $opEntry === ''       ? ' selected' : '';
-            $entryLimit   = $opEntry === 'limit'  ? ' selected' : '';
-            $entryMarket  = $opEntry === 'market' ? ' selected' : '';
 
             // Options: enabled select
             $enYes = $opEnabled ? ' selected' : '';
@@ -519,24 +510,44 @@ HTML;
     // ── Control tab: per-strategy mirrored overrides ──────────────────────
     $mirrorRows = '';
     foreach ($registry as $rec) {
-        $sid = (string)($rec['strategy_id'] ?? '');
+        $sid    = (string)($rec['strategy_id'] ?? '');
         $stitle = $e($rec['title'] ?? $sid);
-        $op  = (array)($overrides[$sid] ?? []);
-        $opEnabled = $op['enabled'] ?? true;
-        $enColor = $opEnabled ? '#3fb950' : '#8b949e';
-        $enLbl   = $opEnabled ? '✓' : '—';
+        $op     = (array)($overrides[$sid] ?? []);
+
+        // Use same consistent logic as summary counts and strategy cards
+        $mEnabled = array_key_exists('enabled', $op)
+            ? (bool)$op['enabled']
+            : (bool)($rec['enabled_by_default'] ?? true);
+        $mDefaultMode = (string)($rec['default_mode'] ?? 'passive');
+        $mMode = array_key_exists('mode', $op)
+            ? (string)$op['mode']
+            : $mDefaultMode;
+
+        $enColor  = $mEnabled ? '#3fb950' : '#8b949e';
+        $enLbl    = $mEnabled ? 'Включено' : 'Выключено';
+        // Toggle points to the opposite state
+        $toggleTo    = $mEnabled ? '0' : '1';
+        $toggleLabel = $mEnabled ? 'Выкл' : 'Вкл';
+        $toggleBg    = $mEnabled ? 'rgba(248,81,73,.10)' : 'rgba(63,185,80,.10)';
+        $toggleClr   = $mEnabled ? '#f85149' : '#3fb950';
+        $eSid = $e($sid);
+
         $mirrorRows .= '<tr>';
         $mirrorRows .= '<td><strong>' . $stitle . '</strong><br><code style="font-size:11px;color:#58a6ff;">' . $e($sid) . '</code></td>';
-        $mirrorRows .= '<td style="color:' . $enColor . ';">' . $enLbl . '</td>';
-        $mirrorRows .= '<td><code>' . $e($op['mode'] ?? 'passive') . '</code></td>';
-        $mirrorRows .= '<td><code>' . $e($op['bot_budget'] ?? 0) . '</code></td>';
-        $mirrorRows .= '<td><code>' . $e($op['bot_leverage'] ?? 0) . '</code></td>';
-        $mirrorRows .= '<td><code>' . $e($op['entry_mode'] ?? '—') . '</code></td>';
-        $mirrorRows .= '<td><code>' . $e($op['max_active_positions'] ?? 0) . '</code></td>';
+        $mirrorRows .= '<td style="color:' . $enColor . ';font-weight:600;">' . $enLbl . '</td>';
+        $mirrorRows .= '<td><code>' . $e($mMode) . '</code></td>';
+        $mirrorRows .= '<td>'
+            . '<form method="post" action="' . $e($stratToggleUrl) . '" style="margin:0;">'
+            . '<input type="hidden" name="strategy_id" value="' . $eSid . '">'
+            . '<input type="hidden" name="enabled" value="' . $toggleTo . '">'
+            . '<button type="submit" class="btn btn-sm" style="background:' . $toggleBg . ';color:' . $toggleClr . ';border:1px solid ' . $toggleClr . '55;font-size:11px;padding:2px 8px;">'
+            . $toggleLabel . '</button>'
+            . '</form>'
+            . '</td>';
         $mirrorRows .= '</tr>';
     }
     if ($mirrorRows === '') {
-        $mirrorRows = '<tr><td colspan="7" style="color:var(--ui-text-muted);padding:12px 0;">Нет данных. Стратегии ещё не обнаружены.</td></tr>';
+        $mirrorRows = '<tr><td colspan="4" style="color:var(--ui-text-muted);padding:12px 0;">Нет данных. Стратегии ещё не обнаружены.</td></tr>';
     }
 
     // ── Bot tab: last-tick trace block ────────────────────────────────────
@@ -907,19 +918,16 @@ HTML;
   <div class="card">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
       <span>Переопределения по стратегиям</span>
-      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало: operator_overrides.json · редактировать через карточки стратегий</small>
+      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало: operator_overrides.json · тот же источник истины что и карточки</small>
     </div>
     <div class="card-body" style="padding:0;">
       <table class="table" style="margin:0;font-size:13px;">
         <thead>
           <tr>
             <th>Стратегия</th>
-            <th>Вкл</th>
+            <th>Состояние</th>
             <th>Режим</th>
-            <th>Бюджет</th>
-            <th>Плечо</th>
-            <th>Вход</th>
-            <th>Макс.поз</th>
+            <th>Действие</th>
           </tr>
         </thead>
         <tbody>{$mirrorRows}</tbody>

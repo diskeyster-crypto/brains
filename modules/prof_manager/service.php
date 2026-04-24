@@ -156,8 +156,9 @@ final class ProfManagerService
             $locks          = $this->store->readLocks();
 
             // ── Validate + run profile ────────────────────────────────────────
-            $plans           = [];
+            $plans            = [];
             $validationErrors = [];
+            $allWarningCodes  = [];
 
             foreach ($rawPositions as $pos) {
                 if (!is_array($pos)) {
@@ -168,6 +169,12 @@ final class ProfManagerService
                 $pos['side'] = $this->validator->normalizeSide($pos['side'] ?? '');
 
                 $validation = $this->validator->validatePosition($pos);
+
+                // Collect warnings regardless of validity
+                foreach ($validation['warnings'] as $wCode) {
+                    $allWarningCodes[] = (string) $wCode;
+                }
+
                 if (!$validation['ok']) {
                     $validationErrors[] = [
                         'symbol' => $pos['symbol'] ?? '?',
@@ -196,15 +203,41 @@ final class ProfManagerService
             $this->store->writePositionsState($positionsState);
             $this->store->writeLocks($execResult['locks']);
 
-            // ── Compute validation error summaries ────────────────────────────
-            $positionsTotal   = count($rawPositions);
-            $invalidCount     = count($validationErrors);
-            $validCount       = $positionsTotal - $invalidCount;
+            // ── Enrichment summary from position reader ───────────────────────
+            $enrichmentSummary = $readResult['enrichment_summary'] ?? [];
 
-            $allErrorCodes = [];
+            // ── Count positions missing price data ────────────────────────────
+            $priceMissingCount = 0;
+            foreach ($rawPositions as $pos) {
+                if (is_array($pos) && !empty($pos['_no_price_data'])) {
+                    $priceMissingCount++;
+                }
+            }
+
+            // ── Build warnings summary ────────────────────────────────────────
+            if ($priceMissingCount > 0) {
+                $allWarningCodes[] = 'no_price_data';
+            }
+            if (!empty($enrichmentSummary['sizes_calculated'])) {
+                $allWarningCodes[] = 'size_calculated';
+            }
+            if (!empty($enrichmentSummary['leverage_defaulted'])) {
+                $allWarningCodes[] = 'leverage_defaulted';
+            }
+            if (!empty($enrichmentSummary['budget_defaulted'])) {
+                $allWarningCodes[] = 'budget_defaulted';
+            }
+            $warningsSummary = array_values(array_unique($allWarningCodes));
+
+            // ── Compute validation error summaries ────────────────────────────
+            $positionsTotal = count($rawPositions);
+            $invalidCount   = count($validationErrors);
+            $validCount     = $positionsTotal - $invalidCount;
+
+            $allErrorCodes  = [];
             $errorsBySymbol = [];
             foreach ($validationErrors as $ve) {
-                $sym = (string) ($ve['symbol'] ?? '?');
+                $sym  = (string) ($ve['symbol'] ?? '?');
                 $errs = is_array($ve['errors']) ? $ve['errors'] : [$ve['errors']];
                 foreach ($errs as $code) {
                     $allErrorCodes[] = (string) $code;
@@ -218,23 +251,26 @@ final class ProfManagerService
                 : '';
 
             $result = [
-                'ok'                        => true,
-                'ts'                        => $ts,
-                'enabled'                   => true,
-                'mode'                      => 'paper',
-                'profile'                   => $activeProfile,
-                'source'                    => $readResult['source'],
-                'positions'                 => $positionsTotal,
-                'valid_positions'           => $validCount,
-                'invalid_positions'         => $invalidCount,
-                'executed_count'            => $execResult['summary']['executed'],
-                'skipped_count'             => $execResult['summary']['skipped'],
-                'executed'                  => $execResult['executed'],
-                'skipped'                   => $execResult['skipped'],
-                'skip_reason'               => $skipReason,
-                'validation_errors'         => $validationErrors,
-                'validation_errors_summary' => $errorsSummary,
+                'ok'                          => true,
+                'ts'                          => $ts,
+                'enabled'                     => true,
+                'mode'                        => 'paper',
+                'profile'                     => $activeProfile,
+                'source'                      => $readResult['source'],
+                'positions'                   => $positionsTotal,
+                'valid_positions'             => $validCount,
+                'invalid_positions'           => $invalidCount,
+                'price_missing_positions'     => $priceMissingCount,
+                'executed_count'              => $execResult['summary']['executed'],
+                'skipped_count'               => $execResult['summary']['skipped'],
+                'executed'                    => $execResult['executed'],
+                'skipped'                     => $execResult['skipped'],
+                'skip_reason'                 => $skipReason,
+                'validation_errors'           => $validationErrors,
+                'validation_errors_summary'   => $errorsSummary,
                 'validation_errors_by_symbol' => $errorsBySymbol,
+                'warnings_summary'            => $warningsSummary,
+                'enrichment_summary'          => $enrichmentSummary,
             ];
 
             $this->store->writeLastRun($result);

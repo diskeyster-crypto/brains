@@ -727,14 +727,21 @@ ROWS;
     }
 
     // ── PM diagnostic fields from last_run.json ───────────────────────────
-    $pmDiagPositions  = isset($pmRawLastRun['positions'])          ? (int)$pmRawLastRun['positions']         : -1;
-    $pmDiagValidPos   = isset($pmRawLastRun['valid_positions'])    ? (int)$pmRawLastRun['valid_positions']   : -1;
-    $pmDiagInvalidPos = isset($pmRawLastRun['invalid_positions'])  ? (int)$pmRawLastRun['invalid_positions'] : -1;
-    $pmDiagSource     = (string)($pmRawLastRun['source'] ?? '');
-    $pmDiagErrSumRaw  = $pmRawLastRun['validation_errors_summary'] ?? [];
-    $pmDiagErrSum     = is_array($pmDiagErrSumRaw)
+    $pmDiagPositions   = isset($pmRawLastRun['positions'])               ? (int)$pmRawLastRun['positions']              : -1;
+    $pmDiagValidPos    = isset($pmRawLastRun['valid_positions'])         ? (int)$pmRawLastRun['valid_positions']        : -1;
+    $pmDiagInvalidPos  = isset($pmRawLastRun['invalid_positions'])       ? (int)$pmRawLastRun['invalid_positions']      : -1;
+    $pmDiagPriceMiss   = isset($pmRawLastRun['price_missing_positions']) ? (int)$pmRawLastRun['price_missing_positions']: -1;
+    $pmDiagSource      = (string)($pmRawLastRun['source'] ?? '');
+    $pmDiagErrSumRaw   = $pmRawLastRun['validation_errors_summary'] ?? [];
+    $pmDiagErrSum      = is_array($pmDiagErrSumRaw)
         ? implode(', ', $pmDiagErrSumRaw)
         : (string)$pmDiagErrSumRaw;
+    $pmDiagWarnSumRaw  = $pmRawLastRun['warnings_summary'] ?? [];
+    $pmDiagWarnSum     = is_array($pmDiagWarnSumRaw)
+        ? implode(', ', $pmDiagWarnSumRaw)
+        : (string)$pmDiagWarnSumRaw;
+    $pmDiagEnrichment  = is_array($pmRawLastRun['enrichment_summary'] ?? null)
+        ? $pmRawLastRun['enrichment_summary'] : [];
 
     // ── PM cron task check ────────────────────────────────────────────────
     $pmCronTaskExists  = false;
@@ -813,6 +820,12 @@ ROWS;
         } elseif ($pmDiagInvalidPos > 0 && $pmDiagErrSum !== '') {
             $scPmState  = 'WARN';
             $scPmReason = $pmDiagErrSum;
+        } elseif ($pmDiagPriceMiss > 0) {
+            $scPmState  = 'WARN';
+            $scPmReason = 'no_price_data';
+        } elseif ($pmDiagWarnSum !== '') {
+            $scPmState  = 'WARN';
+            $scPmReason = $pmDiagWarnSum;
         } else {
             $scPmState  = 'ON';
             $scPmReason = '';
@@ -888,6 +901,12 @@ ROWS;
         $errDetail = $pmDiagErrSum !== '' ? ' (' . $e($pmDiagErrSum) . ')' : '';
         $pmRuntimeNote = '<div style="color:#f85149;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(248,81,73,.08);border-radius:6px;border-left:3px solid #f8514977;">'
             . 'Позиции найдены, но все невалидны для PM' . $errDetail . '</div>';
+    } elseif ($pmEnabledBool && $pmDiagValidPos > 0 && $pmDiagPriceMiss > 0) {
+        $pmRuntimeNote = '<div style="color:#f0883e;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(240,136,62,.08);border-radius:6px;border-left:3px solid #f0883e77;">'
+            . 'Нет текущей цены для расчёта ROI (' . $pmDiagPriceMiss . ' поз.)</div>';
+    } elseif ($pmEnabledBool && !empty($pmDiagEnrichment['sizes_calculated'])) {
+        $pmRuntimeNote = '<div style="color:#58a6ff;font-size:12px;margin-top:8px;padding:7px 12px;background:rgba(88,166,255,.08);border-radius:6px;border-left:3px solid #58a6ff77;">'
+            . 'Размер позиции рассчитан из budget/leverage (' . (int)$pmDiagEnrichment['sizes_calculated'] . ' поз.)</div>';
     }
 
     // ── PM extra diagnostic rows for Runtime table ────────────────────────
@@ -905,6 +924,10 @@ ROWS;
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Невалидных позиций</td>'
             . '<td><code style="color:#f85149;">' . $pmDiagInvalidPos . '</code></td></tr>';
     }
+    if ($pmDiagPriceMiss > 0) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Без текущей цены</td>'
+            . '<td><code style="color:#f0883e;">' . $pmDiagPriceMiss . '</code></td></tr>';
+    }
     if ($pmRawSkipped !== '') {
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Skip reason</td>'
             . '<td style="color:#f0883e;font-size:12px;">' . $e($pmRawSkipped) . '</td></tr>';
@@ -912,6 +935,26 @@ ROWS;
     if ($pmDiagErrSum !== '') {
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибки валидации</td>'
             . '<td style="color:#f85149;font-size:12px;">' . $e($pmDiagErrSum) . '</td></tr>';
+    }
+    if ($pmDiagWarnSum !== '') {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Предупреждения</td>'
+            . '<td style="color:#f0883e;font-size:12px;">' . $e($pmDiagWarnSum) . '</td></tr>';
+    }
+    if (!empty($pmDiagEnrichment['sizes_calculated'])) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Размер рассчитан</td>'
+            . '<td><code style="color:#f0883e;">' . (int)$pmDiagEnrichment['sizes_calculated'] . '</code></td></tr>';
+    }
+    if (!empty($pmDiagEnrichment['prices_from_bybit'])) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Цена с Bybit API</td>'
+            . '<td><code style="color:#3fb950;">' . (int)$pmDiagEnrichment['prices_from_bybit'] . '</code></td></tr>';
+    }
+    if (!empty($pmDiagEnrichment['leverage_defaulted'])) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Плечо по умолч.</td>'
+            . '<td><code style="color:#f0883e;">' . (int)$pmDiagEnrichment['leverage_defaulted'] . '</code></td></tr>';
+    }
+    if (!empty($pmDiagEnrichment['budget_defaulted'])) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Бюджет по умолч.</td>'
+            . '<td><code style="color:#f0883e;">' . (int)$pmDiagEnrichment['budget_defaulted'] . '</code></td></tr>';
     }
     if ($pmDiagSource !== '' && $pmDiagSource !== 'none') {
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Источник позиций</td>'

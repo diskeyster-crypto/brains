@@ -13,7 +13,7 @@ namespace Modules\ProfManager\Lib;
  *
  * Normalizes all common field variants into PM canonical format.
  * Enriches missing fields: leverage default, budget default, calculated size,
- * current_price from Bybit public REST API, and PnL calculation.
+ * current_price via PriceProvider (gateway or public REST fallback), and PnL calculation.
  *
  * Does NOT invent fake positions and does NOT call any authenticated or
  * trading API endpoints.
@@ -22,8 +22,8 @@ class PositionReader
 {
     private string $repoRoot;
 
-    /** Per-instance price cache; symbol → float (0.0 means unavailable). */
-    private array $priceCache = [];
+    /** Shared PriceProvider instance (created lazily). */
+    private ?PriceProvider $priceProvider = null;
 
     public function __construct(string $repoRoot)
     {
@@ -84,21 +84,26 @@ class PositionReader
             }
 
             $enrichmentStats = [
-                'prices_from_bybit'    => 0,
+                'prices_from_bybit'     => 0,
+                'prices_from_gateway'   => 0,
                 'prices_from_positions' => 0,
-                'prices_missing'       => 0,
-                'sizes_calculated'     => 0,
-                'leverage_defaulted'   => 0,
-                'budget_defaulted'     => 0,
+                'prices_missing'        => 0,
+                'sizes_calculated'      => 0,
+                'leverage_defaulted'    => 0,
+                'budget_defaulted'      => 0,
             ];
 
             $positions = $this->normalizePositions($rawPositions, $enrichmentStats);
 
+            $provider = $this->priceProvider();
+
             return [
-                'positions'          => $positions,
-                'source'             => $relPath,
-                'enrichment_summary' => $enrichmentStats,
-                'diagnostics'        => [
+                'positions'              => $positions,
+                'source'                 => $relPath,
+                'enrichment_summary'     => $enrichmentStats,
+                'price_provider_error'   => $provider->getProviderError(),
+                'price_provider_source'  => $provider->getProviderSource(),
+                'diagnostics'            => [
                     'path'  => $absPath,
                     'count' => count($positions),
                     'tried' => $tried,
@@ -169,7 +174,8 @@ class PositionReader
      *   leverage  → default 10; _leverage_source = explicit|default
      *   budget    → from bot_budget/budget, else default 6; _budget_source = explicit|default
      *   size      → calculated as (budget × leverage) / entry_price; _size_calculated = true
-     *   current_price → fetched from Bybit public REST API; _price_source = active_positions|bybit_public|unavailable
+     *   current_price → fetched via PriceProvider (gateway or public REST fallback);
+     *                   _price_source = active_positions|bybit_gateway_readonly|bybit_public|unavailable
      *   unrealised_pnl → calculated from size and prices when available
      *
      * @param list<mixed> $raw
@@ -305,15 +311,24 @@ class PositionReader
                 $enrichmentStats['prices_from_positions']++;
             }
 
-            // Bybit public REST API — only when price is still missing
+            // Bybit price via PriceProvider — only when price is still missing
             $symbol = (string) ($pos['symbol'] ?? '');
             if (!$priceFound && $symbol !== '') {
-                $fetchedPrice = $this->fetchBybitPrice($symbol);
+                $fetchedPrice = $this->priceProvider()->getPrice($symbol);
                 if ($fetchedPrice !== null) {
                     $pos['current_price'] = $fetchedPrice;
-                    $pos['_price_source'] = 'bybit_public';
-                    $priceFound           = true;
-                    $enrichmentStats['prices_from_bybit']++;
+                    $diag                 = $this->priceProvider()->getLastDiagnostics();
+                    $providerSource       = (string) ($diag['source'] ?? 'bybit_public');
+                    $pos['_price_source'] = $providerSource;
+                    if (isset($diag['price_field_used'])) {
+                        $pos['_price_field_used'] = $diag['price_field_used'];
+                    }
+                    $priceFound = true;
+                    if ($providerSource === 'bybit_gateway_readonly') {
+                        $enrichmentStats['prices_from_gateway']++;
+                    } else {
+                        $enrichmentStats['prices_from_bybit']++;
+                    }
                 }
             }
 
@@ -353,75 +368,13 @@ class PositionReader
     }
 
     /**
-     * Fetch current mark price from Bybit public REST API (no auth required).
-     *
-     * Uses a per-instance cache so repeated calls for the same symbol within one
-     * tick do not make multiple network requests.
-     *
-     * Returns null when the price cannot be retrieved (network error, unknown symbol, etc.).
-     *
-     * @param string $symbol e.g. "BTCUSDT"
-     * @return float|null
+     * Lazy-initialise the shared PriceProvider instance.
      */
-    private function fetchBybitPrice(string $symbol): ?float
+    private function priceProvider(): PriceProvider
     {
-        if (array_key_exists($symbol, $this->priceCache)) {
-            $v = $this->priceCache[$symbol];
-            return $v > 0.0 ? $v : null;
+        if ($this->priceProvider === null) {
+            $this->priceProvider = new PriceProvider();
         }
-
-        $url   = 'https://api.bybit.com/v5/market/tickers?category=linear&symbol=' . urlencode($symbol);
-        $price = null;
-
-        try {
-            if (function_exists('curl_init')) {
-                $ch = curl_init($url);
-                curl_setopt_array($ch, [
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_TIMEOUT        => 3,
-                    CURLOPT_CONNECTTIMEOUT => 2,
-                    CURLOPT_FOLLOWLOCATION => false,
-                    CURLOPT_SSL_VERIFYPEER => false,
-                    CURLOPT_USERAGENT      => 'BrainsPM/1.0',
-                    CURLOPT_HTTPHEADER     => ['Accept: application/json'],
-                ]);
-                $resp = curl_exec($ch);
-                curl_close($ch);
-                if (is_string($resp) && $resp !== '') {
-                    $price = $this->extractBybitPrice(@json_decode($resp, true));
-                }
-            } elseif ((bool) ini_get('allow_url_fopen')) {
-                $ctx  = stream_context_create(['http' => ['timeout' => 3, 'ignore_errors' => true]]);
-                $resp = @file_get_contents($url, false, $ctx);
-                if (is_string($resp) && $resp !== '') {
-                    $price = $this->extractBybitPrice(@json_decode($resp, true));
-                }
-            }
-        } catch (\Throwable) {
-            // Network failure — price stays null; position tagged _no_price_data
-        }
-
-        $this->priceCache[$symbol] = $price ?? 0.0;
-        return $price;
-    }
-
-    /**
-     * Extract markPrice (preferred) or lastPrice from a Bybit v5 tickers response.
-     *
-     * @param mixed $data decoded JSON response
-     * @return float|null
-     */
-    private function extractBybitPrice(mixed $data): ?float
-    {
-        if (!is_array($data)) {
-            return null;
-        }
-        $list = $data['result']['list'] ?? [];
-        if (!is_array($list) || empty($list)) {
-            return null;
-        }
-        $ticker = $list[0];
-        $price  = (float) ($ticker['markPrice'] ?? $ticker['lastPrice'] ?? 0.0);
-        return $price > 0.0 ? $price : null;
+        return $this->priceProvider;
     }
 }

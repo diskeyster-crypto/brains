@@ -989,6 +989,9 @@ final class BotService
             // Execution parameters
             'bot_budget'                    => (float)($order['bot_budget']                    ?? 0.0),
             'bot_leverage'                  => $leverage,
+            // Canonical PM fields (mirrors bot_budget / bot_leverage for live-like paper format)
+            'budget'                        => (float)($order['bot_budget']                    ?? 0.0),
+            'leverage'                      => (float)$leverage,
             'stop_mode'                     => (string)($order['stop_mode']                    ?? 'fixed_from_liq_zone'),
             'stop_from_liq_buffer_value'    => (float)($order['stop_from_liq_buffer_value']   ?? 0.002),
             'stop_from_liq_buffer_type'     => (string)($order['stop_from_liq_buffer_type']   ?? 'percent'),

@@ -204,7 +204,9 @@ final class ProfManagerService
             $this->store->writeLocks($execResult['locks']);
 
             // ── Enrichment summary from position reader ───────────────────────
-            $enrichmentSummary = $readResult['enrichment_summary'] ?? [];
+            $enrichmentSummary    = $readResult['enrichment_summary'] ?? [];
+            $priceProviderError   = $readResult['price_provider_error'] ?? null;
+            $priceProviderSource  = $readResult['price_provider_source'] ?? 'none';
 
             // ── Count positions missing price data ────────────────────────────
             $priceMissingCount = 0;
@@ -271,6 +273,8 @@ final class ProfManagerService
                 'validation_errors_by_symbol' => $errorsBySymbol,
                 'warnings_summary'            => $warningsSummary,
                 'enrichment_summary'          => $enrichmentSummary,
+                'price_provider_error'        => $priceProviderError,
+                'price_provider_source'       => $priceProviderSource,
             ];
 
             $this->store->writeLastRun($result);

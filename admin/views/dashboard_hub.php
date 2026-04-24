@@ -742,6 +742,8 @@ ROWS;
         : (string)$pmDiagWarnSumRaw;
     $pmDiagEnrichment  = is_array($pmRawLastRun['enrichment_summary'] ?? null)
         ? $pmRawLastRun['enrichment_summary'] : [];
+    $pmDiagPriceProvErr    = (string)($pmRawLastRun['price_provider_error']  ?? '');
+    $pmDiagPriceProvSource = (string)($pmRawLastRun['price_provider_source'] ?? '');
 
     // ── PM cron task check ────────────────────────────────────────────────
     $pmCronTaskExists  = false;
@@ -813,6 +815,9 @@ ROWS;
     if ($pmLastError !== '') {
         $scPmState  = 'ERR';
         $scPmReason = $pmLastError;
+    } elseif ($pmDiagPriceProvErr !== '') {
+        $scPmState  = 'ERR';
+        $scPmReason = 'price_provider: ' . $pmDiagPriceProvErr;
     } elseif ($pmEnabledBool) {
         if ($pmRawSkipped !== '' && $pmRawSkipped !== 'module_disabled') {
             $scPmState  = 'WARN';
@@ -947,6 +952,18 @@ ROWS;
     if (!empty($pmDiagEnrichment['prices_from_bybit'])) {
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Цена с Bybit API</td>'
             . '<td><code style="color:#3fb950;">' . (int)$pmDiagEnrichment['prices_from_bybit'] . '</code></td></tr>';
+    }
+    if (!empty($pmDiagEnrichment['prices_from_gateway'])) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Цена via Gateway</td>'
+            . '<td><code style="color:#3fb950;">' . (int)$pmDiagEnrichment['prices_from_gateway'] . '</code></td></tr>';
+    }
+    if ($pmDiagPriceProvErr !== '') {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Price provider error</td>'
+            . '<td style="color:#f85149;font-size:11px;">' . $e($pmDiagPriceProvErr) . '</td></tr>';
+    }
+    if ($pmDiagPriceProvSource !== '' && $pmDiagPriceProvSource !== 'none') {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Price provider source</td>'
+            . '<td style="font-size:11px;"><code>' . $e($pmDiagPriceProvSource) . '</code></td></tr>';
     }
     if (!empty($pmDiagEnrichment['leverage_defaulted'])) {
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Плечо по умолч.</td>'

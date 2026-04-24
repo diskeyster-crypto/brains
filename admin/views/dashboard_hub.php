@@ -131,9 +131,9 @@ function renderDashboardHub(): string
     $pmToggleBg      = $pmEnabledBool ? 'rgba(248,81,73,.10)' : 'rgba(63,185,80,.10)';
     $pmToggleColor   = $pmEnabledBool ? '#f85149' : '#3fb950';
 
-    $pmTickUrl         = System::web('admin/dashboard/profit-manager/tick');
-    $pmToggleUrl       = System::web('admin/dashboard/profit-manager/toggle');
-    $pmConfigSaveUrl   = System::web('admin/dashboard/profit-manager/config/save');
+    $pmTickUrl         = System::web('admin/dashboard');
+    $pmToggleUrl       = System::web('admin/dashboard');
+    $pmConfigSaveUrl   = System::web('admin/dashboard');
 
     // ── prof_manager config (for Управление form) ─────────────────────────
     $pmCfg = [];
@@ -299,13 +299,12 @@ function renderDashboardHub(): string
     $sigProc           = $sigProcFromStrats > 0 ? $sigProcFromStrats : $sigProcFromBot;
 
     // ── strategy cards HTML ───────────────────────────────────────────────
-    $saveUrl      = System::web('admin/dashboard/overrides/save');
-    $stratActUrl  = System::web('admin/dashboard/strategy/action');
-    $stratToggleUrl = System::web('admin/dashboard/strategy/toggle');
-    $botToggleUrl   = System::web('admin/dashboard/bot/toggle');
-    $smToggleUrl    = System::web('admin/dashboard/stop-manager/toggle');
-    $chainRunUrl    = System::web('admin/dashboard/chain-run');
-    $resetRuntimeUrl = System::web('admin/dashboard/reset-runtime');
+    $saveUrl        = System::web('admin/dashboard');
+    $stratActUrl    = System::web('admin/dashboard');
+    $stratToggleUrl = System::web('admin/dashboard');
+    $botToggleUrl   = System::web('admin/dashboard');
+    $smToggleUrl    = System::web('admin/dashboard');
+    $chainRunUrl    = System::web('admin/dashboard');
     $stratCards = '';
     if (empty($registry)) {
         $stratCards = '<p style="color:var(--ui-text-muted);padding:20px 0;">Стратегии не обнаружены.</p>';
@@ -423,6 +422,7 @@ function renderDashboardHub(): string
             if ($supportsManualRun) {
                 $actionButtonsHtml = <<<BTN
       <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
         <input type="hidden" name="strategy_id" value="{$esId}">
         <input type="hidden" name="action" value="queue_run">
         <input type="hidden" name="active_tab" value="dh-strat">
@@ -431,6 +431,7 @@ function renderDashboardHub(): string
         </button>
       </form>
       <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
         <input type="hidden" name="strategy_id" value="{$esId}">
         <input type="hidden" name="action" value="tick_batch">
         <input type="hidden" name="active_tab" value="dh-strat">
@@ -439,6 +440,7 @@ function renderDashboardHub(): string
         </button>
       </form>
       <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
         <input type="hidden" name="strategy_id" value="{$esId}">
         <input type="hidden" name="action" value="refresh">
         <input type="hidden" name="active_tab" value="dh-strat">
@@ -511,6 +513,7 @@ BTN;
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <!-- Quick enable/disable toggle -->
       <form method="post" action="{$stratToggleUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_toggle">
         <input type="hidden" name="strategy_id" value="{$esId}">
         <input type="hidden" name="enabled" value="{$toggleTarget}">
         <input type="hidden" name="active_tab" value="dh-strat">
@@ -527,6 +530,7 @@ BTN;
     <!-- Inline edit form (hidden by default) -->
     <div id="{$cardId}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
       <form method="post" action="{$saveUrl}">
+        <input type="hidden" name="dashboard_action" value="overrides_save">
         <input type="hidden" name="strategy_id" value="{$esId}">
         <input type="hidden" name="active_tab" value="dh-strat">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-bottom:12px;">
@@ -595,7 +599,7 @@ HTML;
     $gcfgEntL   = $cfgDefEntry === 'limit'  ? ' selected' : '';
     $gcfgEntM   = $cfgDefEntry === 'market' ? ' selected' : '';
 
-    $globalSaveUrl = System::web('admin/dashboard/global/save');
+    $globalSaveUrl = System::web('admin/dashboard');
 
     // ── Control tab: per-strategy mirrored overrides ──────────────────────
     $mirrorRows = '';
@@ -628,6 +632,7 @@ HTML;
         $mirrorRows .= '<td><code>' . $e($mMode) . '</code></td>';
         $mirrorRows .= '<td>'
             . '<form method="post" action="' . $e($stratToggleUrl) . '" style="margin:0;">'
+            . '<input type="hidden" name="dashboard_action" value="strategy_toggle">'
             . '<input type="hidden" name="strategy_id" value="' . $eSid . '">'
             . '<input type="hidden" name="enabled" value="' . $toggleTo . '">'
             . '<input type="hidden" name="active_tab" value="dh-ctrl">'
@@ -687,8 +692,8 @@ ROWS;
     }
 
     // ── flash HTML ────────────────────────────────────────────────────────
-    $botTickUrl = System::web('admin/dashboard/bot/tick');
-    $smTickUrl  = System::web('admin/dashboard/stop-manager/tick');
+    $botTickUrl = System::web('admin/dashboard');
+    $smTickUrl  = System::web('admin/dashboard');
     $smPageUrl  = System::web('admin/stop-manager');
 
     // ── stop_manager display values ───────────────────────────────────────
@@ -719,7 +724,7 @@ ROWS;
     $smCfgBuf   = $e($smBuf);
     $smCfgTrig  = $e($smBeTrig);
     $smCfgLock  = $e($smBeLock);
-    $smConfigSaveUrl = System::web('admin/stop-manager/config/save');
+    $smConfigSaveUrl = System::web('admin/dashboard');
 
     // ── PM direct last_run.json read (for status chain + runtime note) ────
     $pmRawLastRun = [];
@@ -1494,6 +1499,7 @@ HTML;
   </div>
   <!-- One-button chain run -->
   <form method="post" action="{$chainRunUrl}" style="margin:0;">
+    <input type="hidden" name="dashboard_action" value="chain_run">
     <input type="hidden" name="active_tab" value="dh-overview">
     <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid #58a6ff66;padding:7px 20px;font-weight:600;font-size:13px;">
       <i class="bi bi-lightning-fill" style="margin-right:5px;"></i>Запустить цепочку
@@ -1570,11 +1576,14 @@ HTML;
   {$overviewPositionsHtml}
   {$modStripHtml}
   <div style="margin-top:16px;text-align:right;">
-    <button
-      type="button"
-      onclick="dhResetRuntime()"
-      style="background:rgba(248,81,73,.12);border:1px solid #f85149;color:#f85149;padding:6px 16px;border-radius:5px;cursor:pointer;font-size:13px;"
-    ><i class="bi bi-trash3" style="margin-right:5px;"></i>Сбросить runtime (cache)</button>
+    <form method="post" action="{$chainRunUrl}" style="margin:0;display:inline;"
+      onsubmit="return confirm('Сбросить локальный runtime/cache?\n\nСброс очищает только локальный runtime/cache, не закрывает позиции на Bybit Demo.\n\nПродолжить?');">
+      <input type="hidden" name="dashboard_action" value="reset_runtime">
+      <input type="hidden" name="active_tab" value="dh-overview">
+      <button type="submit"
+        style="background:rgba(248,81,73,.12);border:1px solid #f85149;color:#f85149;padding:6px 16px;border-radius:5px;cursor:pointer;font-size:13px;"
+      ><i class="bi bi-trash3" style="margin-right:5px;"></i>Сбросить runtime (cache)</button>
+    </form>
   </div>
 </div>
 
@@ -1620,6 +1629,7 @@ HTML;
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
         <!-- Bot quick toggle -->
         <form method="post" action="{$botToggleUrl}" style="margin:0;">
+          <input type="hidden" name="dashboard_action" value="bot_toggle">
           <input type="hidden" name="enabled" value="{$botToggleTarget}">
           <input type="hidden" name="active_tab" value="dh-bot">
           <button type="submit" class="btn btn-sm" style="background:{$botToggleBg};color:{$botToggleColor};border:1px solid {$botToggleColor}55;padding:6px 18px;font-weight:600;">
@@ -1627,6 +1637,7 @@ HTML;
           </button>
         </form>
         <form method="post" action="{$botTickUrl}" style="margin:0;">
+          <input type="hidden" name="dashboard_action" value="bot_tick">
           <input type="hidden" name="action" value="tick">
           <input type="hidden" name="active_tab" value="dh-bot">
           <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;padding:6px 18px;">
@@ -1634,6 +1645,7 @@ HTML;
           </button>
         </form>
         <form method="post" action="{$botTickUrl}" style="margin:0;">
+          <input type="hidden" name="dashboard_action" value="bot_tick">
           <input type="hidden" name="action" value="refresh">
           <input type="hidden" name="active_tab" value="dh-bot">
           <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;padding:6px 18px;">
@@ -1709,6 +1721,7 @@ HTML;
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
         <!-- SM quick toggle -->
         <form method="post" action="{$smToggleUrl}" style="margin:0;">
+          <input type="hidden" name="dashboard_action" value="stop_manager_toggle">
           <input type="hidden" name="enabled" value="{$smToggleTarget}">
           <input type="hidden" name="active_tab" value="dh-sm">
           <button type="submit" class="btn btn-sm" style="background:{$smToggleBg};color:{$smToggleColor};border:1px solid {$smToggleColor}55;padding:6px 18px;font-weight:600;">
@@ -1716,6 +1729,7 @@ HTML;
           </button>
         </form>
         <form method="post" action="{$smTickUrl}" style="margin:0;">
+          <input type="hidden" name="dashboard_action" value="stop_manager_tick">
           <input type="hidden" name="action" value="tick">
           <input type="hidden" name="active_tab" value="dh-sm">
           <button type="submit" class="btn btn-sm" style="background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid #a78bfa55;padding:6px 18px;">
@@ -1723,6 +1737,7 @@ HTML;
           </button>
         </form>
         <form method="post" action="{$smTickUrl}" style="margin:0;">
+          <input type="hidden" name="dashboard_action" value="stop_manager_tick">
           <input type="hidden" name="action" value="refresh">
           <input type="hidden" name="active_tab" value="dh-sm">
           <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;padding:6px 18px;">
@@ -1778,6 +1793,7 @@ HTML;
     <div class="card-body">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
         <form method="post" action="{$pmToggleUrl}" style="margin:0;">
+          <input type="hidden" name="dashboard_action" value="profit_manager_toggle">
           <input type="hidden" name="enabled" value="{$pmToggleTarget}">
           <input type="hidden" name="active_tab" value="dh-pm">
           <button type="submit" class="btn btn-sm" style="background:{$pmToggleBg};color:{$pmToggleColor};border:1px solid {$pmToggleColor}55;padding:6px 18px;font-weight:600;">
@@ -1785,6 +1801,7 @@ HTML;
           </button>
         </form>
         <form method="post" action="{$pmTickUrl}" style="margin:0;">
+          <input type="hidden" name="dashboard_action" value="profit_manager_tick">
           <input type="hidden" name="action" value="tick">
           <input type="hidden" name="active_tab" value="dh-pm">
           <button type="submit" class="btn btn-sm" style="background:rgba(240,136,62,.12);color:#f0883e;border:1px solid #f0883e55;padding:6px 18px;">
@@ -1792,6 +1809,7 @@ HTML;
           </button>
         </form>
         <form method="post" action="{$pmTickUrl}" style="margin:0;">
+          <input type="hidden" name="dashboard_action" value="profit_manager_tick">
           <input type="hidden" name="action" value="refresh">
           <input type="hidden" name="active_tab" value="dh-pm">
           <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;padding:6px 18px;">
@@ -1813,6 +1831,7 @@ HTML;
     <div class="card-header">Глобальные настройки бота</div>
     <div class="card-body">
       <form method="post" action="{$globalSaveUrl}">
+        <input type="hidden" name="dashboard_action" value="global_save">
         <input type="hidden" name="active_tab" value="dh-ctrl">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;margin-bottom:14px;">
           <div>
@@ -1894,8 +1913,8 @@ HTML;
     </div>
     <div class="card-body">
       <form method="post" action="{$smConfigSaveUrl}">
+        <input type="hidden" name="dashboard_action" value="stop_manager_config_save">
         <input type="hidden" name="active_tab" value="dh-ctrl">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;margin-bottom:14px;">
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включён</label>
             <select name="enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
@@ -1953,8 +1972,8 @@ HTML;
     </div>
     <div class="card-body">
       <form method="post" action="{$pmConfigSaveUrl}">
+        <input type="hidden" name="dashboard_action" value="profit_manager_config_save">
         <input type="hidden" name="active_tab" value="dh-ctrl">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;margin-bottom:14px;">
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включён</label>
             <select name="enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
@@ -2055,25 +2074,6 @@ function dhSwitchToTab(panelId) { dhTab(panelId); }
 function dhToggleEdit(id) {
     var el = document.getElementById(id);
     if (el) { el.style.display = el.style.display === 'none' ? 'block' : 'none'; }
-}
-function dhResetRuntime() {
-    if (!confirm('Сбросить локальный runtime/cache?\n\nСброс очищает только локальный runtime/cache, не закрывает позиции на Bybit Demo.\n\nПродолжить?')) {
-        return;
-    }
-    fetch('{$resetRuntimeUrl}', {
-        method: 'POST',
-        headers: {'X-Requested-With': 'XMLHttpRequest'},
-        credentials: 'same-origin'
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-        if (d && d.ok) {
-            window.location.href = window.location.pathname + '?tab=dh-overview';
-        } else {
-            alert('Ошибка сброса: ' + (d && d.error ? d.error : 'неизвестная ошибка'));
-        }
-    })
-    .catch(function(){ alert('Не удалось выполнить сброс. Повторите попытку.'); });
 }
 // Event delegation — handles tab-nav buttons and status-chain badges via [data-tab-target]
 document.addEventListener('click', function(e) {
@@ -2890,12 +2890,8 @@ function handleDashboardPmConfigSave(): void
 if (!function_exists('handleDashboardResetRuntime')) {
 function handleDashboardResetRuntime(): void
 {
-    header('Content-Type: application/json');
-
-    if (!\Core\Auth\Auth::check()) {
-        http_response_code(403);
-        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
-        exit;
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
     }
 
     // Fixed absolute paths — no user input, no path injection possible
@@ -2935,7 +2931,87 @@ function handleDashboardResetRuntime(): void
         file_put_contents($path, $content);
     }
 
-    echo json_encode(['ok' => true]);
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Runtime/cache сброшен'];
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-overview'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-overview'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
     exit;
 }
 } // end if (!function_exists('handleDashboardResetRuntime'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST dispatcher: single POST /admin/dashboard endpoint for all dashboard actions
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('dispatchDashboardPost')) {
+function dispatchDashboardPost(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+
+    $action    = trim((string)($_POST['dashboard_action'] ?? ''));
+    $activeTab = trim((string)($_POST['active_tab']       ?? 'dh-overview'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    if (!in_array($activeTab, $validTabs, true)) {
+        $activeTab = 'dh-overview';
+    }
+
+    switch ($action) {
+        case 'chain_run':
+            handleDashboardChainRun();
+            break;
+        case 'reset_runtime':
+            handleDashboardResetRuntime();
+            break;
+        case 'strategy_toggle':
+            handleDashboardStrategyToggle();
+            break;
+        case 'strategy_action':
+            handleDashboardStrategyAction();
+            break;
+        case 'overrides_save':
+            handleDashboardOverridesSave();
+            break;
+        case 'global_save':
+            handleDashboardGlobalSave();
+            break;
+        case 'bot_toggle':
+            handleDashboardBotToggle();
+            break;
+        case 'bot_tick':
+            handleDashboardBotTick();
+            break;
+        case 'stop_manager_toggle':
+            handleDashboardSmToggle();
+            break;
+        case 'stop_manager_tick':
+            handleDashboardStopManagerTick();
+            break;
+        case 'stop_manager_config_save':
+            \Modules\StopManager\Admin\StopManagerAdminController::instance()->configSave();
+            break;
+        case 'profit_manager_toggle':
+            handleDashboardPmToggle();
+            break;
+        case 'profit_manager_tick':
+            handleDashboardPmTick();
+            break;
+        case 'profit_manager_config_save':
+            handleDashboardPmConfigSave();
+            break;
+        default:
+            $_SESSION['dashboard_flash'] = [
+                'type' => 'error',
+                'msg'  => 'Неизвестное действие: ' . htmlspecialchars($action, ENT_QUOTES, 'UTF-8'),
+            ];
+            header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
+            exit;
+    }
+}
+} // end if (!function_exists('dispatchDashboardPost'))

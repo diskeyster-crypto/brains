@@ -281,6 +281,14 @@ Router::get('/admin/dashboard', function () {
     echo renderLayout('Оперативный центр', renderDashboardHub(), 'dashboard');
 });
 
+Router::post('/admin/dashboard', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    dispatchDashboardPost();
+});
+
 Router::post('/admin/dashboard/overrides/save', function () {
     if (!Auth::check()) {
         http_response_code(403);

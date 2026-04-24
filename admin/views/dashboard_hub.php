@@ -425,6 +425,7 @@ function renderDashboardHub(): string
       <form method="post" action="{$stratActUrl}" style="margin:0;">
         <input type="hidden" name="strategy_id" value="{$esId}">
         <input type="hidden" name="action" value="queue_run">
+        <input type="hidden" name="active_tab" value="dh-strat">
         <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;">
           Запуск цикла
         </button>
@@ -432,6 +433,7 @@ function renderDashboardHub(): string
       <form method="post" action="{$stratActUrl}" style="margin:0;">
         <input type="hidden" name="strategy_id" value="{$esId}">
         <input type="hidden" name="action" value="tick_batch">
+        <input type="hidden" name="active_tab" value="dh-strat">
         <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.12);color:#58a6ff;border:1px solid #58a6ff55;">
           Тик батча
         </button>
@@ -439,6 +441,7 @@ function renderDashboardHub(): string
       <form method="post" action="{$stratActUrl}" style="margin:0;">
         <input type="hidden" name="strategy_id" value="{$esId}">
         <input type="hidden" name="action" value="refresh">
+        <input type="hidden" name="active_tab" value="dh-strat">
         <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;">
           Обновить runtime
         </button>
@@ -510,6 +513,7 @@ BTN;
       <form method="post" action="{$stratToggleUrl}" style="margin:0;">
         <input type="hidden" name="strategy_id" value="{$esId}">
         <input type="hidden" name="enabled" value="{$toggleTarget}">
+        <input type="hidden" name="active_tab" value="dh-strat">
         <button type="submit" class="btn btn-sm" style="background:{$toggleBg};color:{$toggleColor};border:1px solid {$toggleColor}55;font-weight:600;">
           {$toggleLabel}
         </button>
@@ -524,6 +528,7 @@ BTN;
     <div id="{$cardId}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
       <form method="post" action="{$saveUrl}">
         <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="active_tab" value="dh-strat">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-bottom:12px;">
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включено</label>
@@ -625,6 +630,7 @@ HTML;
             . '<form method="post" action="' . $e($stratToggleUrl) . '" style="margin:0;">'
             . '<input type="hidden" name="strategy_id" value="' . $eSid . '">'
             . '<input type="hidden" name="enabled" value="' . $toggleTo . '">'
+            . '<input type="hidden" name="active_tab" value="dh-ctrl">'
             . '<button type="submit" class="btn btn-sm" style="background:' . $toggleBg . ';color:' . $toggleClr . ';border:1px solid ' . $toggleClr . '55;font-size:11px;padding:2px 8px;">'
             . $toggleLabel . '</button>'
             . '</form>'
@@ -757,12 +763,7 @@ ROWS;
         ? $pmRawLastRun['enrichment_summary'] : [];
     $pmDiagPriceProvErr    = (string)($pmRawLastRun['price_provider_error']  ?? '');
     $pmDiagPriceProvSource = (string)($pmRawLastRun['price_provider_source'] ?? '');
-    $pmDiagIgnoredDisabled = isset($pmRawLastRun['ignored_disabled_strategy_positions'])
-        ? (int)$pmRawLastRun['ignored_disabled_strategy_positions'] : -1;
-    $pmDiagIgnoredStale    = isset($pmRawLastRun['ignored_stale_positions'])
-        ? (int)$pmRawLastRun['ignored_stale_positions'] : -1;
-    $pmDiagStaleTtl        = isset($pmRawLastRun['stale_ttl_hours'])
-        ? (int)$pmRawLastRun['stale_ttl_hours'] : -1;
+    $pmDiagSourceAuthority = (string)($pmRawLastRun['diagnostics']['source_authority'] ?? 'bot_active_positions_demo_cache');
 
     // ── PM per-position runtime rows (new diagnostics) ────────────────────
     $pmPositionsRuntime   = is_array($pmRawLastRun['positions_runtime']    ?? null)
@@ -937,9 +938,9 @@ ROWS;
             ? '<div style="font-size:10px;color:' . $clr . ';opacity:.8;margin-top:1px;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'
               . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . '</div>'
             : '';
-        $pointer = $tabId !== '' ? 'cursor:pointer;' : '';
-        $onclick = $tabId !== '' ? ' onclick="dhSwitchToTab(\'' . $tabId . '\')"' : '';
-        return '<div style="' . $pointer . 'display:flex;flex-direction:column;align-items:center;padding:6px 14px;background:' . $bg . ';border:1px solid ' . $clr . '55;border-radius:8px;min-width:80px;"' . $title . $onclick . '>'
+        $pointer    = $tabId !== '' ? 'cursor:pointer;' : '';
+        $dataTarget = $tabId !== '' ? ' data-tab-target="' . htmlspecialchars($tabId, ENT_QUOTES, 'UTF-8') . '" onclick="dhSwitchToTab(\'' . htmlspecialchars($tabId, ENT_QUOTES, 'UTF-8') . '\')"' : '';
+        return '<div style="' . $pointer . 'display:flex;flex-direction:column;align-items:center;padding:6px 14px;background:' . $bg . ';border:1px solid ' . $clr . '55;border-radius:8px;min-width:80px;"' . $title . $dataTarget . '>'
             . '<div style="font-size:11px;color:var(--ui-text-muted);margin-bottom:2px;">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</div>'
             . '<div style="font-size:13px;font-weight:700;color:' . $clr . ';">' . $state . '</div>'
             . $sub
@@ -1056,15 +1057,8 @@ ROWS;
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Источник позиций</td>'
             . '<td style="font-size:11px;"><code>' . $e($pmDiagSource) . '</code></td></tr>';
     }
-    if ($pmDiagIgnoredDisabled > 0) {
-        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Проигнор. (выкл. стратегия)</td>'
-            . '<td><code style="color:#f0883e;">' . $pmDiagIgnoredDisabled . '</code></td></tr>';
-    }
-    if ($pmDiagIgnoredStale > 0) {
-        $ttlLabel = $pmDiagStaleTtl > 0 ? ' (TTL ' . $pmDiagStaleTtl . 'h)' : '';
-        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Проигнор. устаревших' . $ttlLabel . '</td>'
-            . '<td><code style="color:#f0883e;">' . $pmDiagIgnoredStale . '</code></td></tr>';
-    }
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Source authority</td>'
+        . '<td style="font-size:11px;"><code style="color:#3fb950;">' . $e($pmDiagSourceAuthority) . '</code></td></tr>';
     if (!empty($pmSkipReasonsSummary)) {
         $skipSummaryParts = [];
         foreach ($pmSkipReasonsSummary as $reason => $cnt) {
@@ -1500,6 +1494,7 @@ HTML;
   </div>
   <!-- One-button chain run -->
   <form method="post" action="{$chainRunUrl}" style="margin:0;">
+    <input type="hidden" name="active_tab" value="dh-overview">
     <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid #58a6ff66;padding:7px 20px;font-weight:600;font-size:13px;">
       <i class="bi bi-lightning-fill" style="margin-right:5px;"></i>Запустить цепочку
     </button>
@@ -1530,22 +1525,22 @@ HTML;
 
 <!-- Top tab navigation (vanilla JS) -->
 <nav class="dh-tab-nav" role="tablist">
-  <button class="dh-tab-btn dh-active" onclick="dhTab(this,'dh-overview')" type="button">
+  <button class="dh-tab-btn dh-active" data-tab-target="dh-overview" type="button">
     <i class="bi bi-grid-1x2" style="margin-right:5px;"></i>Обзор
   </button>
-  <button class="dh-tab-btn" onclick="dhTab(this,'dh-strat')" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-strat" type="button">
     <i class="bi bi-layers" style="margin-right:5px;"></i>Стратегии
   </button>
-  <button class="dh-tab-btn" onclick="dhTab(this,'dh-bot')" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-bot" type="button">
     <i class="bi bi-cpu" style="margin-right:5px;"></i>Бот
   </button>
-  <button class="dh-tab-btn" onclick="dhTab(this,'dh-sm')" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-sm" type="button">
     <i class="bi bi-shield-exclamation" style="margin-right:5px;"></i>Стоп
   </button>
-  <button class="dh-tab-btn" onclick="dhTab(this,'dh-pm')" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-pm" type="button">
     <i class="bi bi-graph-up-arrow" style="margin-right:5px;"></i>Профит
   </button>
-  <button class="dh-tab-btn" onclick="dhTab(this,'dh-ctrl')" type="button">
+  <button class="dh-tab-btn" data-tab-target="dh-ctrl" type="button">
     <i class="bi bi-sliders" style="margin-right:5px;"></i>Управление
   </button>
 </nav>
@@ -1626,18 +1621,21 @@ HTML;
         <!-- Bot quick toggle -->
         <form method="post" action="{$botToggleUrl}" style="margin:0;">
           <input type="hidden" name="enabled" value="{$botToggleTarget}">
+          <input type="hidden" name="active_tab" value="dh-bot">
           <button type="submit" class="btn btn-sm" style="background:{$botToggleBg};color:{$botToggleColor};border:1px solid {$botToggleColor}55;padding:6px 18px;font-weight:600;">
             {$botToggleLabel}
           </button>
         </form>
         <form method="post" action="{$botTickUrl}" style="margin:0;">
           <input type="hidden" name="action" value="tick">
+          <input type="hidden" name="active_tab" value="dh-bot">
           <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;padding:6px 18px;">
             <i class="bi bi-play-fill" style="margin-right:4px;"></i>Тик бота
           </button>
         </form>
         <form method="post" action="{$botTickUrl}" style="margin:0;">
           <input type="hidden" name="action" value="refresh">
+          <input type="hidden" name="active_tab" value="dh-bot">
           <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;padding:6px 18px;">
             <i class="bi bi-arrow-clockwise" style="margin-right:4px;"></i>Обновить runtime
           </button>
@@ -1712,18 +1710,21 @@ HTML;
         <!-- SM quick toggle -->
         <form method="post" action="{$smToggleUrl}" style="margin:0;">
           <input type="hidden" name="enabled" value="{$smToggleTarget}">
+          <input type="hidden" name="active_tab" value="dh-sm">
           <button type="submit" class="btn btn-sm" style="background:{$smToggleBg};color:{$smToggleColor};border:1px solid {$smToggleColor}55;padding:6px 18px;font-weight:600;">
             {$smToggleLabel}
           </button>
         </form>
         <form method="post" action="{$smTickUrl}" style="margin:0;">
           <input type="hidden" name="action" value="tick">
+          <input type="hidden" name="active_tab" value="dh-sm">
           <button type="submit" class="btn btn-sm" style="background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid #a78bfa55;padding:6px 18px;">
             <i class="bi bi-play-fill" style="margin-right:4px;"></i>Тик стоп-менеджера
           </button>
         </form>
         <form method="post" action="{$smTickUrl}" style="margin:0;">
           <input type="hidden" name="action" value="refresh">
+          <input type="hidden" name="active_tab" value="dh-sm">
           <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;padding:6px 18px;">
             <i class="bi bi-arrow-clockwise" style="margin-right:4px;"></i>Обновить runtime
           </button>
@@ -1731,6 +1732,9 @@ HTML;
       </div>
       <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
         Вычисление стопов — локально. Биржевые стопы не размещаются.
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:#f0883e;padding:6px 10px;background:rgba(240,136,62,.08);border-radius:6px;border-left:3px solid #f0883e77;">
+        Demo mode: local stop calculation only, no Bybit stop placement in this pass.
       </div>
     </div>
   </div>
@@ -1775,18 +1779,21 @@ HTML;
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
         <form method="post" action="{$pmToggleUrl}" style="margin:0;">
           <input type="hidden" name="enabled" value="{$pmToggleTarget}">
+          <input type="hidden" name="active_tab" value="dh-pm">
           <button type="submit" class="btn btn-sm" style="background:{$pmToggleBg};color:{$pmToggleColor};border:1px solid {$pmToggleColor}55;padding:6px 18px;font-weight:600;">
             {$pmToggleLabel}
           </button>
         </form>
         <form method="post" action="{$pmTickUrl}" style="margin:0;">
           <input type="hidden" name="action" value="tick">
+          <input type="hidden" name="active_tab" value="dh-pm">
           <button type="submit" class="btn btn-sm" style="background:rgba(240,136,62,.12);color:#f0883e;border:1px solid #f0883e55;padding:6px 18px;">
             <i class="bi bi-play-fill" style="margin-right:4px;"></i>Тик PM
           </button>
         </form>
         <form method="post" action="{$pmTickUrl}" style="margin:0;">
           <input type="hidden" name="action" value="refresh">
+          <input type="hidden" name="active_tab" value="dh-pm">
           <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;padding:6px 18px;">
             <i class="bi bi-arrow-clockwise" style="margin-right:4px;"></i>Обновить runtime
           </button>
@@ -1806,6 +1813,7 @@ HTML;
     <div class="card-header">Глобальные настройки бота</div>
     <div class="card-body">
       <form method="post" action="{$globalSaveUrl}">
+        <input type="hidden" name="active_tab" value="dh-ctrl">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;margin-bottom:14px;">
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Бот включён</label>
@@ -1886,6 +1894,7 @@ HTML;
     </div>
     <div class="card-body">
       <form method="post" action="{$smConfigSaveUrl}">
+        <input type="hidden" name="active_tab" value="dh-ctrl">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;margin-bottom:14px;">
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включён</label>
@@ -1944,6 +1953,7 @@ HTML;
     </div>
     <div class="card-body">
       <form method="post" action="{$pmConfigSaveUrl}">
+        <input type="hidden" name="active_tab" value="dh-ctrl">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;margin-bottom:14px;">
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включён</label>
@@ -2033,16 +2043,16 @@ HTML;
 </div><!-- /max-width -->
 
 <script>
-function dhTab(btn, panelId) {
+function dhTab(panelId) {
     document.querySelectorAll('.dh-tab-btn').forEach(function(b){ b.classList.remove('dh-active'); });
     document.querySelectorAll('.dh-pane').forEach(function(p){ p.classList.remove('dh-visible'); });
+    var btn = document.querySelector('.dh-tab-btn[data-tab-target="' + panelId + '"]');
     if (btn) { btn.classList.add('dh-active'); }
     var panel = document.getElementById(panelId);
     if (panel) { panel.classList.add('dh-visible'); }
 }
 function dhSwitchToTab(panelId) {
-    var navBtn = document.querySelector('.dh-tab-btn[onclick*="\'' + panelId + '\'"]');
-    dhTab(navBtn || null, panelId);
+    dhTab(panelId);
 }
 function dhToggleEdit(id) {
     var el = document.getElementById(id);
@@ -2060,13 +2070,26 @@ function dhResetRuntime() {
     .then(function(r){ return r.json(); })
     .then(function(d){
         if (d && d.ok) {
-            window.location.reload();
+            window.location.href = window.location.pathname + '?tab=dh-overview';
         } else {
             alert('Ошибка сброса: ' + (d && d.error ? d.error : 'неизвестная ошибка'));
         }
     })
     .catch(function(){ alert('Не удалось выполнить сброс. Повторите попытку.'); });
 }
+// Activate tab from URL ?tab= on page load
+(function() {
+    var valid = ['dh-overview','dh-strat','dh-bot','dh-sm','dh-pm','dh-ctrl'];
+    var params = new URLSearchParams(window.location.search);
+    var tab = params.get('tab');
+    if (tab && valid.indexOf(tab) !== -1) {
+        dhTab(tab);
+    }
+    // Wire click handlers for tab buttons via data-tab-target
+    document.querySelectorAll('.dh-tab-btn[data-tab-target]').forEach(function(btn) {
+        btn.addEventListener('click', function() { dhTab(btn.getAttribute('data-tab-target')); });
+    });
+})();
 </script>
 HTML;
 }
@@ -2084,7 +2107,7 @@ function handleDashboardOverridesSave(): void
     $stratId = trim((string)($_POST['strategy_id'] ?? ''));
     if ($stratId === '') {
         $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'strategy_id не указан'];
-        header('Location: ' . System::web('admin/dashboard'));
+        header('Location: ' . System::web('admin/dashboard') . '?tab=dh-strat');
         exit;
     }
 
@@ -2123,7 +2146,10 @@ function handleDashboardOverridesSave(): void
     file_put_contents($overridesFile, json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Настройки стратегии «{$stratId}» сохранены"];
-    header('Location: ' . System::web('admin/dashboard'));
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-strat'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-strat'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
     exit;
 }
 
@@ -2185,7 +2211,10 @@ function handleDashboardGlobalSave(): void
     file_put_contents($activeFile, $php);
 
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Глобальные настройки бота сохранены'];
-    header('Location: ' . System::web('admin/dashboard') . '#dh-ctrl');
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
     exit;
 }
 } // end if (!function_exists('handleDashboardGlobalSave'))
@@ -2209,7 +2238,10 @@ function handleDashboardStrategyAction(): void
 
     $stratId = trim((string)($_POST['strategy_id'] ?? ''));
     $action  = trim((string)($_POST['action']      ?? ''));
-    $dashUrl = System::web('admin/dashboard');
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab   = trim((string)($_POST['active_tab'] ?? 'dh-strat'));
+    $activeTab = in_array($postTab, $validTabs, true) ? $postTab : 'dh-strat';
+    $dashUrl = System::web('admin/dashboard') . '?tab=' . $activeTab;
 
     if ($stratId === '' || $action === '') {
         $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'strategy_id или action не указаны'];
@@ -2280,7 +2312,10 @@ function handleDashboardBotTick(): void
     }
 
     $action  = trim((string)($_POST['action'] ?? 'tick'));
-    $dashUrl = System::web('admin/dashboard');
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab   = trim((string)($_POST['active_tab'] ?? 'dh-bot'));
+    $activeTab = in_array($postTab, $validTabs, true) ? $postTab : 'dh-bot';
+    $dashUrl = System::web('admin/dashboard') . '?tab=' . $activeTab;
 
     if ($action === 'refresh') {
         // No-op: page reload re-reads storage
@@ -2326,7 +2361,10 @@ function handleDashboardStopManagerTick(): void
     }
 
     $action  = trim((string)($_POST['action'] ?? 'tick'));
-    $dashUrl = System::web('admin/dashboard');
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab   = trim((string)($_POST['active_tab'] ?? 'dh-sm'));
+    $activeTab = in_array($postTab, $validTabs, true) ? $postTab : 'dh-sm';
+    $dashUrl = System::web('admin/dashboard') . '?tab=' . $activeTab;
 
     if ($action === 'refresh') {
         $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Stop Manager runtime обновлён'];
@@ -2370,7 +2408,10 @@ function handleDashboardStrategyToggle(): void
 
     $stratId = trim((string)($_POST['strategy_id'] ?? ''));
     $enabled = (bool)(int)($_POST['enabled'] ?? 0);
-    $dashUrl = System::web('admin/dashboard');
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab   = trim((string)($_POST['active_tab'] ?? 'dh-strat'));
+    $activeTab = in_array($postTab, $validTabs, true) ? $postTab : 'dh-strat';
+    $dashUrl = System::web('admin/dashboard') . '?tab=' . $activeTab;
 
     if ($stratId === '') {
         $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'strategy_id не указан'];
@@ -2425,7 +2466,10 @@ function handleDashboardBotToggle(): void
     }
 
     $enabled    = (bool)(int)($_POST['enabled'] ?? 0);
-    $dashUrl    = System::web('admin/dashboard');
+    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-bot'));
+    $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-bot';
+    $dashUrl    = System::web('admin/dashboard') . '?tab=' . $activeTab;
     $activeFile = System::path('root') . '/modules/bot/config/active.php';
 
     $current = [];
@@ -2473,7 +2517,10 @@ function handleDashboardSmToggle(): void
     }
 
     $enabled    = (bool)(int)($_POST['enabled'] ?? 0);
-    $dashUrl    = System::web('admin/dashboard');
+    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-sm'));
+    $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-sm';
+    $dashUrl    = System::web('admin/dashboard') . '?tab=' . $activeTab;
     $activeFile = System::path('root') . '/modules/stop_manager/config/active.php';
 
     $current = [];
@@ -2520,7 +2567,7 @@ function handleDashboardChainRun(): void
         exit;
     }
 
-    $dashUrl = System::web('admin/dashboard');
+    $dashUrl = System::web('admin/dashboard') . '?tab=dh-overview';
     $steps   = [];
     $hasErr  = false;
 
@@ -2642,7 +2689,10 @@ function handleDashboardPmTick(): void
     }
 
     $action  = trim((string)($_POST['action'] ?? 'tick'));
-    $dashUrl = System::web('admin/dashboard');
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab   = trim((string)($_POST['active_tab'] ?? 'dh-pm'));
+    $activeTab = in_array($postTab, $validTabs, true) ? $postTab : 'dh-pm';
+    $dashUrl = System::web('admin/dashboard') . '?tab=' . $activeTab;
 
     if ($action === 'refresh') {
         $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Profit Manager runtime обновлён'];
@@ -2688,7 +2738,10 @@ function handleDashboardPmToggle(): void
     }
 
     $enabled    = (bool)(int)($_POST['enabled'] ?? 0);
-    $dashUrl    = System::web('admin/dashboard');
+    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-pm'));
+    $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-pm';
+    $dashUrl    = System::web('admin/dashboard') . '?tab=' . $activeTab;
     $activeFile = System::path('root') . '/modules/prof_manager/config/active.php';
 
     $current = [];
@@ -2736,7 +2789,10 @@ function handleDashboardPmConfigSave(): void
         exit;
     }
 
-    $dashUrl    = System::web('admin/dashboard') . '#dh-ctrl';
+    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
+    $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-ctrl';
+    $dashUrl    = System::web('admin/dashboard') . '?tab=' . $activeTab;
     $moduleDir  = System::path('root') . '/modules/prof_manager';
     $activeFile = $moduleDir . '/config/active.php';
 

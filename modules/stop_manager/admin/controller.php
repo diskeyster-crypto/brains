@@ -459,7 +459,12 @@ HTML;
             exit;
         }
 
-        $selfUrl = System::web('admin/stop-manager');
+        $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+        $postTab   = trim((string)($_POST['active_tab'] ?? ''));
+        $fromDash  = in_array($postTab, $validTabs, true);
+        $selfUrl   = $fromDash
+            ? System::web('admin/dashboard') . '?tab=' . $postTab
+            : System::web('admin/stop-manager');
 
         try {
             $active = [
@@ -475,9 +480,11 @@ HTML;
             ];
 
             $this->writeActive($active);
-            $_SESSION['sm_flash'] = ['type' => 'success', 'msg' => 'Конфигурация сохранена'];
+            $flashKey = $fromDash ? 'dashboard_flash' : 'sm_flash';
+            $_SESSION[$flashKey] = ['type' => 'success', 'msg' => 'Конфигурация сохранена'];
         } catch (\Throwable $ex) {
-            $_SESSION['sm_flash'] = ['type' => 'error', 'msg' => 'Ошибка сохранения: ' . $ex->getMessage()];
+            $flashKey = $fromDash ? 'dashboard_flash' : 'sm_flash';
+            $_SESSION[$flashKey] = ['type' => 'error', 'msg' => 'Ошибка сохранения: ' . $ex->getMessage()];
         }
 
         header('Location: ' . $selfUrl);

@@ -449,6 +449,18 @@ final class BotService
             'queue_items_skipped_mode_passive'       => $execResult['queue_items_skipped_mode_passive'],
             'execution_log_events'                   => $execResult['execution_log_events'],
 
+            // Demo execution diagnostics (this tick)
+            'demo_orders_prepared'           => $execResult['demo_orders_prepared']           ?? 0,
+            'demo_orders_rejected'           => $execResult['demo_orders_rejected']           ?? 0,
+            'demo_orders_submitted'          => $execResult['orders_submitted_demo']           ?? 0,
+            'demo_orders_confirmed'          => $execResult['orders_confirmed_demo']           ?? 0,
+            'demo_last_error_code'           => $execResult['demo_last_error_code']           ?? null,
+            'demo_last_error_msg'            => $execResult['demo_last_error_msg']            ?? null,
+            'demo_last_rejected_symbol'      => $execResult['demo_last_rejected_symbol']      ?? null,
+            'demo_qty_invalid_count'         => $execResult['demo_qty_invalid_count']         ?? 0,
+            'demo_leverage_clamped_count'    => $execResult['demo_leverage_clamped_count']    ?? 0,
+            'demo_set_leverage_failed_count' => $execResult['demo_set_leverage_failed_count'] ?? 0,
+
             // Current queue/execution state
             'order_queue_total'      => $stats['order_queue_total'],
             'active_orders_count'    => count($activeOrders),
@@ -1199,6 +1211,89 @@ final class BotService
     }
 
     /**
+     * Fetch symbol instrument info from Bybit Demo (market endpoint, no auth).
+     *
+     * Returns leverage and lot-size constraints for the given linear symbol.
+     * Returns an empty array on error or when symbol is not found.
+     *
+     * @return array{
+     *   bybit_max_leverage: int|null,
+     *   min_order_qty: float|null,
+     *   qty_step: float|null,
+     *   max_order_qty: float|null,
+     *   min_notional_value: float|null
+     * }
+     */
+    private function fetchSymbolInstrumentInfo(\Core\Gateway\Bybit $gw, string $symbol): array
+    {
+        try {
+            $resp = $gw->request('/v5/market/instruments-info', [
+                'category' => 'linear',
+                'symbol'   => $symbol,
+            ], false);
+
+            if (!($resp['success'] ?? false) || ($resp['ret_code'] ?? -1) !== 0) {
+                return [];
+            }
+
+            $list = $resp['result']['list'] ?? [];
+            if (!is_array($list) || empty($list)) {
+                return [];
+            }
+
+            $info           = $list[0];
+            $leverageFilter = (array)($info['leverageFilter'] ?? []);
+            $lotSizeFilter  = (array)($info['lotSizeFilter']  ?? []);
+
+            $maxLeverage = (float)($leverageFilter['maxLeverage'] ?? 0.0);
+            $minOrderQty = (float)($lotSizeFilter['minOrderQty']  ?? 0.0);
+            $qtyStep     = (float)($lotSizeFilter['qtyStep']      ?? 0.0);
+            $maxOrderQty = (float)($lotSizeFilter['maxOrderQty']  ?? 0.0);
+            $minNotional = (float)($info['minNotionalValue']      ?? 0.0);
+
+            return [
+                'bybit_max_leverage'  => $maxLeverage > 0.0 ? (int)floor($maxLeverage) : null,
+                'min_order_qty'       => $minOrderQty > 0.0 ? $minOrderQty : null,
+                'qty_step'            => $qtyStep     > 0.0 ? $qtyStep     : null,
+                'max_order_qty'       => $maxOrderQty > 0.0 ? $maxOrderQty : null,
+                'min_notional_value'  => $minNotional > 0.0 ? $minNotional : null,
+            ];
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Set isolated leverage for a symbol on Bybit Demo.
+     *
+     * Treats retCode 110043 ("leverage not modified") as success.
+     * Never logs credentials.
+     *
+     * @return array{ok: bool, ret_code: int, ret_msg: string}
+     */
+    private function setDemoLeverage(\Core\Gateway\Bybit $gw, string $symbol, int $leverage): array
+    {
+        try {
+            $resp = $gw->request('/v5/position/set-leverage', [
+                'category'     => 'linear',
+                'symbol'       => $symbol,
+                'buyLeverage'  => (string)$leverage,
+                'sellLeverage' => (string)$leverage,
+            ], true);
+
+            $retCode = (int)($resp['ret_code'] ?? -1);
+            $retMsg  = (string)($resp['ret_msg'] ?? '');
+
+            // 0 = success; 110043 = "Leverage not modified" (already set) → treat as OK
+            $ok = ($resp['success'] ?? false) && ($retCode === 0 || $retCode === 110043);
+
+            return ['ok' => $ok, 'ret_code' => $retCode, 'ret_msg' => $retMsg];
+        } catch (\Throwable $ex) {
+            return ['ok' => false, 'ret_code' => -1, 'ret_msg' => $ex->getMessage()];
+        }
+    }
+
+    /**
      * Get a Bybit gateway client configured for Bybit Demo account.
      *
      * Uses demo_api_key / demo_api_secret / demo_api_base_url from bot config.
@@ -1285,6 +1380,16 @@ final class BotService
         $positionsClosedWith = 0;
         $logEvents           = 0;
 
+        // Demo execution diagnostics
+        $demoOrdersPrepared       = 0;
+        $demoOrdersRejected       = 0;
+        $demoLeverageClampedCount = 0;
+        $demoSetLevFailedCount    = 0;
+        $demoQtyInvalidCount      = 0;
+        $demoLastErrorCode        = null;
+        $demoLastErrorMsg         = null;
+        $demoLastRejectedSymbol   = null;
+
         $gw = $this->getDemoGateway($config);
 
         // No credentials → skip all ready items, keep positions cache unchanged
@@ -1333,7 +1438,7 @@ final class BotService
             }
         }
 
-        $maxPos = (int)($config['max_active_positions'] ?? 10);
+        $maxPos = max(0, (int)($config['max_active_positions'] ?? $config['default_max_active_positions'] ?? 10));
 
         // Process ready queue items
         foreach ($orderQueue as &$qItem) {
@@ -1361,22 +1466,121 @@ final class BotService
                 continue;
             }
 
-            $entryPrice = (float)($qItem['entry_price'] ?? 0.0);
-            $budget     = (float)($qItem['bot_budget']  ?? 6.0);
-            $leverage   = max(1, (int)($qItem['bot_leverage'] ?? 5));
+            $entryPrice        = (float)($qItem['entry_price'] ?? 0.0);
+            $budget            = (float)($qItem['bot_budget']  ?? 6.0);
+            $requestedLeverage = max(1, (int)($qItem['bot_leverage'] ?? 5));
 
             if ($entryPrice <= 0.0 || $budget <= 0.0) {
                 $qItem['skip_reason'] = 'invalid_entry_price_or_budget';
+                $demoOrdersRejected++;
                 continue;
             }
 
-            // Calculate position size: (budget × leverage) / entry_price
-            $size = round(($budget * $leverage) / $entryPrice, 6);
-            if ($size <= 0.0) {
-                $qItem['skip_reason'] = 'calculated_size_zero';
+            $demoOrdersPrepared++;
+
+            // ── Step 1: Fetch symbol instrument info ──────────────────────────
+            $symbolInfo  = $this->fetchSymbolInstrumentInfo($gw, $symbol);
+            $bybitMaxLev = $symbolInfo['bybit_max_leverage'] ?? null;
+            $minOrderQty = $symbolInfo['min_order_qty']      ?? null;
+            $qtyStep     = $symbolInfo['qty_step']           ?? null;
+            $maxOrderQty = $symbolInfo['max_order_qty']      ?? null;
+            $minNotional = $symbolInfo['min_notional_value'] ?? null;
+
+            // ── Step 2: Clamp leverage ────────────────────────────────────────
+            $effectiveLeverage  = $requestedLeverage;
+            $leverageWasClamped = false;
+
+            if ($bybitMaxLev !== null && $bybitMaxLev > 0 && $requestedLeverage > $bybitMaxLev) {
+                $effectiveLeverage  = $bybitMaxLev;
+                $leverageWasClamped = true;
+                $demoLeverageClampedCount++;
+            } elseif ($bybitMaxLev === null) {
+                $this->appendExecutionLog([
+                    'timestamp'          => $tickAt,
+                    'event_type'         => 'leverage_limit_unknown',
+                    'symbol'             => $symbol,
+                    'requested_leverage' => $requestedLeverage,
+                    'reason'             => 'bybit_max_leverage_unknown',
+                ]);
+                $logEvents++;
+            }
+
+            // Store leverage diagnostics in queue item
+            $qItem['requested_leverage']  = $requestedLeverage;
+            $qItem['bybit_max_leverage']  = $bybitMaxLev;
+            $qItem['effective_leverage']  = $effectiveLeverage;
+            $qItem['leverage_was_clamped']= $leverageWasClamped;
+            $qItem['qty_step']            = $qtyStep;
+            $qItem['min_order_qty']       = $minOrderQty;
+            $qItem['min_notional_value']  = $minNotional;
+
+            // ── Step 3: Set leverage on Bybit Demo ────────────────────────────
+            $levResult = $this->setDemoLeverage($gw, $symbol, $effectiveLeverage);
+            $qItem['set_leverage_attempted'] = true;
+            $qItem['set_leverage_ok']        = $levResult['ok'];
+            $qItem['set_leverage_ret_code']  = $levResult['ret_code'];
+            $qItem['set_leverage_ret_msg']   = $levResult['ret_msg'];
+
+            if (!$levResult['ok']) {
+                $qItem['skip_reason']     = 'set_leverage_failed';
+                $qItem['demo_error_code'] = $levResult['ret_code'];
+                $qItem['demo_error_msg']  = $levResult['ret_msg'];
+                $demoSetLevFailedCount++;
+                $demoOrdersRejected++;
+                $demoLastErrorCode      = $levResult['ret_code'];
+                $demoLastErrorMsg       = $levResult['ret_msg'];
+                $demoLastRejectedSymbol = $symbol;
                 continue;
             }
 
+            // ── Step 4: Calculate qty using effective leverage ────────────────
+            $rawQty = ($budget * $effectiveLeverage) / $entryPrice;
+            $qItem['raw_qty'] = $rawQty;
+
+            // ── Step 5: Normalize qty ─────────────────────────────────────────
+            $normalizedQty = $rawQty;
+            if ($qtyStep !== null && $qtyStep > 0.0) {
+                // Determine decimal places from qtyStep (e.g. 0.001 → 3 places)
+                $decPlaces     = max(0, (int)ceil(-log10($qtyStep)));
+                $normalizedQty = floor($rawQty / $qtyStep) * $qtyStep;
+                $normalizedQty = round($normalizedQty, $decPlaces);
+            }
+            $qItem['normalized_qty'] = $normalizedQty;
+
+            // Validate normalized qty
+            if ($normalizedQty <= 0.0) {
+                $qItem['skip_reason'] = 'qty_invalid_after_normalization';
+                $demoQtyInvalidCount++;
+                $demoOrdersRejected++;
+                $demoLastRejectedSymbol = $symbol;
+                continue;
+            }
+            if ($minOrderQty !== null && $normalizedQty < $minOrderQty) {
+                $qItem['skip_reason'] = 'qty_below_min_order_qty';
+                $demoQtyInvalidCount++;
+                $demoOrdersRejected++;
+                $demoLastRejectedSymbol = $symbol;
+                continue;
+            }
+            if ($maxOrderQty !== null && $maxOrderQty > 0.0 && $normalizedQty > $maxOrderQty) {
+                $qItem['skip_reason'] = 'qty_above_max_order_qty';
+                $demoQtyInvalidCount++;
+                $demoOrdersRejected++;
+                $demoLastRejectedSymbol = $symbol;
+                continue;
+            }
+            if ($minNotional !== null && $minNotional > 0.0
+                && ($normalizedQty * $entryPrice) < $minNotional
+            ) {
+                $qItem['skip_reason'] = 'qty_below_min_notional';
+                $demoQtyInvalidCount++;
+                $demoOrdersRejected++;
+                $demoLastRejectedSymbol = $symbol;
+                continue;
+            }
+
+            // Format qty string without trailing zeros
+            $qtyStr    = rtrim(rtrim(number_format($normalizedQty, 8, '.', ''), '0'), '.');
             $bybitSide = ($side === 'short') ? 'Sell' : 'Buy';
 
             try {
@@ -1385,12 +1589,14 @@ final class BotService
                     'symbol'      => $symbol,
                     'side'        => $bybitSide,
                     'orderType'   => 'Market',
-                    'qty'         => (string)$size,
+                    'qty'         => $qtyStr,
                     'timeInForce' => 'IOC',
                     'positionIdx' => 0,
                 ], true);
             } catch (\Throwable) {
-                $qItem['skip_reason'] = 'demo_submit_exception';
+                $qItem['skip_reason']     = 'demo_submit_exception';
+                $demoOrdersRejected++;
+                $demoLastRejectedSymbol   = $symbol;
                 continue;
             }
 
@@ -1404,31 +1610,44 @@ final class BotService
                 $qItem['demo_order_id']      = $orderResp['result']['orderId'] ?? null;
 
                 // Optimistically add to symbolMap so subsequent items see correct count
-                $symbolMap[$symbol] = ['symbol' => $symbol, 'size' => $size, '_pending' => true];
+                $symbolMap[$symbol] = ['symbol' => $symbol, 'size' => $normalizedQty, '_pending' => true];
                 $positionsOpened++;
 
                 $this->appendExecutionLog([
-                    'timestamp'      => $tickAt,
-                    'event_type'     => 'demo_order_submitted',
-                    'strategy_id'    => $qItem['strategy_id'] ?? '',
-                    'owner_strategy' => $qItem['owner_strategy'] ?? '',
-                    'signal_id'      => $qItem['signal_id'] ?? '',
-                    'symbol'         => $symbol,
-                    'side'           => $side,
-                    'entry_price'    => $entryPrice,
-                    'size'           => $size,
-                    'bot_budget'     => $budget,
-                    'bot_leverage'   => $leverage,
-                    'execution_mode' => 'demo',
-                    'bybit_side'     => $bybitSide,
-                    'demo_order_id'  => $qItem['demo_order_id'],
-                    'reason'         => 'submitted_market_order_to_bybit_demo',
+                    'timestamp'            => $tickAt,
+                    'event_type'           => 'demo_order_submitted',
+                    'strategy_id'          => $qItem['strategy_id'] ?? '',
+                    'owner_strategy'       => $qItem['owner_strategy'] ?? '',
+                    'signal_id'            => $qItem['signal_id'] ?? '',
+                    'symbol'               => $symbol,
+                    'side'                 => $side,
+                    'entry_price'          => $entryPrice,
+                    'budget'               => $budget,
+                    'requested_leverage'   => $requestedLeverage,
+                    'effective_leverage'   => $effectiveLeverage,
+                    'leverage_was_clamped' => $leverageWasClamped,
+                    'raw_qty'              => $rawQty,
+                    'normalized_qty'       => $normalizedQty,
+                    'qty_step'             => $qtyStep,
+                    'min_order_qty'        => $minOrderQty,
+                    'min_notional_value'   => $minNotional,
+                    'order_type'           => 'Market',
+                    'execution_mode'       => 'demo',
+                    'bybit_side'           => $bybitSide,
+                    'demo_order_id'        => $qItem['demo_order_id'],
+                    'reason'               => 'submitted_market_order_to_bybit_demo',
                 ]);
                 $logEvents++;
             } else {
+                $retCode = $orderResp['ret_code'] ?? null;
+                $retMsg  = $orderResp['ret_msg']  ?? null;
                 $qItem['skip_reason']     = 'demo_order_rejected';
-                $qItem['demo_error_code'] = $orderResp['ret_code'] ?? null;
-                $qItem['demo_error_msg']  = $orderResp['ret_msg']  ?? null;
+                $qItem['demo_error_code'] = $retCode;
+                $qItem['demo_error_msg']  = $retMsg;
+                $demoOrdersRejected++;
+                $demoLastErrorCode      = $retCode;
+                $demoLastErrorMsg       = $retMsg;
+                $demoLastRejectedSymbol = $symbol;
             }
         }
         unset($qItem);
@@ -1486,6 +1705,15 @@ final class BotService
             'positions_closed_expired'         => $positionsClosedExp,
             'positions_closed_withdrawn'       => $positionsClosedWith,
             'execution_log_events'             => $logEvents,
+            // Demo execution diagnostics
+            'demo_orders_prepared'             => $demoOrdersPrepared,
+            'demo_orders_rejected'             => $demoOrdersRejected,
+            'demo_leverage_clamped_count'      => $demoLeverageClampedCount,
+            'demo_set_leverage_failed_count'   => $demoSetLevFailedCount,
+            'demo_qty_invalid_count'           => $demoQtyInvalidCount,
+            'demo_last_error_code'             => $demoLastErrorCode,
+            'demo_last_error_msg'              => $demoLastErrorMsg,
+            'demo_last_rejected_symbol'        => $demoLastRejectedSymbol,
         ];
     }
 
@@ -1629,6 +1857,9 @@ final class BotService
 
         if ($botBudget <= 0.0) {
             $cfgBudget = (float)($config['budget_per_trade'] ?? 0.0);
+            if ($cfgBudget <= 0.0) {
+                $cfgBudget = (float)($config['max_bot_budget'] ?? 0.0);
+            }
             if ($cfgBudget > 0.0) {
                 $botBudget    = $cfgBudget;
                 $budgetSource = 'config';
@@ -1639,6 +1870,9 @@ final class BotService
         }
         if ($botLeverage <= 0) {
             $cfgLeverage = (int)($config['leverage'] ?? 0);
+            if ($cfgLeverage <= 0) {
+                $cfgLeverage = (int)($config['max_bot_leverage'] ?? 0);
+            }
             if ($cfgLeverage > 0) {
                 $botLeverage    = $cfgLeverage;
                 $leverageSource = 'config';

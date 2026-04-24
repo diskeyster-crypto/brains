@@ -272,6 +272,18 @@ function renderDashboardHub(): string
     $lrDemoConnError       = (string)($lastRun['demo_connection_error']     ?? '');
     $lrAccount             = (string)($lastRun['account']                   ?? ($botMode === 'demo' ? 'bybit_demo' : 'local'));
 
+    // ── Demo execution diagnostics from last_run.json ─────────────────────
+    $lrDemoOrdersPrepared      = (int)($lastRun['demo_orders_prepared']           ?? 0);
+    $lrDemoOrdersRejected      = (int)($lastRun['demo_orders_rejected']           ?? 0);
+    $lrDemoOrdersSubmitted     = (int)($lastRun['demo_orders_submitted']          ?? 0);
+    $lrDemoOrdersConfirmed     = (int)($lastRun['demo_orders_confirmed']          ?? 0);
+    $lrDemoLastErrCode         = $lastRun['demo_last_error_code']                 ?? null;
+    $lrDemoLastErrMsg          = (string)($lastRun['demo_last_error_msg']         ?? '');
+    $lrDemoLastRejectedSym     = (string)($lastRun['demo_last_rejected_symbol']   ?? '');
+    $lrDemoQtyInvalidCount     = (int)($lastRun['demo_qty_invalid_count']         ?? 0);
+    $lrDemoLevClampedCount     = (int)($lastRun['demo_leverage_clamped_count']    ?? 0);
+    $lrDemoSetLevFailedCount   = (int)($lastRun['demo_set_leverage_failed_count'] ?? 0);
+
     // ── escape helper ─────────────────────────────────────────────────────
     $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 
@@ -1496,6 +1508,45 @@ HTML;
         ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибка</td><td style="color:#f85149;font-size:12px;">' . $e($lrDemoConnError) . '</td></tr>'
         : '';
 
+    // ── Demo execution diagnostics HTML ──────────────────────────────────
+    $demoExecDiagHtml = '';
+    if ($botMode === 'demo') {
+        $lastErrMsgHtml = '';
+        if ($lrDemoLastErrMsg !== '') {
+            $userMsg = $lrDemoLastErrMsg;
+            if (strpos($lrDemoLastErrMsg, 'Qty invalid') !== false
+                || strpos($lrDemoLastErrMsg, '10001') !== false
+                || $lrDemoLastErrCode === 10001
+            ) {
+                $userMsg .= ' — Qty invalid: проверь qtyStep/minOrderQty/minNotionalValue';
+            }
+            $lastErrMsgHtml = '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td>'
+                . '<td style="color:#f85149;font-size:12px;">' . $e($userMsg) . '</td></tr>';
+        }
+        $lastRejSymHtml = $lrDemoLastRejectedSym !== ''
+            ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний откат</td>'
+              . '<td style="color:#f0883e;"><code>' . $e($lrDemoLastRejectedSym) . '</code></td></tr>'
+            : '';
+        $levClampedNote = $lrDemoLevClampedCount > 0
+            ? ' <span style="color:#f0883e;font-size:11px;">— Плечо снижено до максимального Bybit для монеты</span>'
+            : '';
+        $demoExecDiagHtml = '<div class="card" style="margin-bottom:16px;">'
+            . '<div class="card-header">Demo — диагностика исполнения</div>'
+            . '<div class="card-body">'
+            . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:200px;">Ордеров подготовлено</td><td><code>' . $e($lrDemoOrdersPrepared) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ордеров отклонено</td><td><code style="color:' . ($lrDemoOrdersRejected > 0 ? '#f85149' : 'inherit') . ';">' . $e($lrDemoOrdersRejected) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ордеров отправлено</td><td><code style="color:#3fb950;">' . $e($lrDemoOrdersSubmitted) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Позиций подтверждено</td><td><code>' . $e($lrDemoOrdersConfirmed) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Qty invalid (тик)</td><td><code style="color:' . ($lrDemoQtyInvalidCount > 0 ? '#f85149' : 'inherit') . ';">' . $e($lrDemoQtyInvalidCount) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Плечо снижено (тик)</td><td><code>' . $e($lrDemoLevClampedCount) . '</code>' . $levClampedNote . '</td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Set leverage ошибок</td><td><code style="color:' . ($lrDemoSetLevFailedCount > 0 ? '#f85149' : 'inherit') . ';">' . $e($lrDemoSetLevFailedCount) . '</code></td></tr>'
+            . $lastRejSymHtml
+            . $lastErrMsgHtml
+            . '</table>'
+            . '</div></div>';
+    }
+
     // ── render ────────────────────────────────────────────────────────────
     return <<<HTML
 <style>
@@ -1666,6 +1717,7 @@ HTML;
       </div>
     </div>
   </div>
+  {$demoExecDiagHtml}
   <div class="card">
     <div class="card-header">Ручное управление</div>
     <div class="card-body">
@@ -2989,6 +3041,8 @@ function handleDashboardResetRuntime(): void
     $root = defined('ROOT') ? rtrim(ROOT, '/') : dirname(__DIR__, 2);
 
     $files = [
+        $root . '/modules/bot/storage/order_queue.json'      => '[]',
+        $root . '/modules/bot/storage/active_orders.json'    => '[]',
         $root . '/modules/bot/storage/active_positions.json' => '[]',
         $root . '/modules/prof_manager/storage/runtime/last_run.json' => json_encode([
             'ok'                 => true,

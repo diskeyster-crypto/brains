@@ -1,0 +1,17 @@
+{
+    "status": "disabled",
+    "tick_at": "2026-04-24T04:43:54+00:00",
+    "elapsed_sec": 0,
+    "module_enabled": false,
+    "module_mode": "disabled",
+    "positions_seen": 0,
+    "positions_with_real_liq": 0,
+    "positions_with_estimated_liq": 0,
+    "positions_without_liq": 0,
+    "stops_initialized": 0,
+    "stops_recalculated": 0,
+    "breakeven_applied": 0,
+    "stops_closed_reference": 0,
+    "stops_active_count": 0,
+    "ticks_total": 0
+}

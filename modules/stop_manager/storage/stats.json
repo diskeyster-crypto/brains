@@ -1,0 +1,12 @@
+{
+    "ticks_total": 0,
+    "positions_seen_total": 0,
+    "positions_with_real_liq_total": 0,
+    "positions_with_estimated_liq_total": 0,
+    "positions_without_liq_total": 0,
+    "stops_initialized_total": 0,
+    "stops_recalculated_total": 0,
+    "breakeven_applied_total": 0,
+    "stops_closed_reference_total": 0,
+    "stops_active_total": 0
+}

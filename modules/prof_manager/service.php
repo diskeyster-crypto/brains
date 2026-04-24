@@ -106,12 +106,13 @@ final class ProfManagerService
             // ── Module enabled? ───────────────────────────────────────────────
             if (!$this->runtimeEnabled) {
                 $result = [
-                    'ok'        => true,
-                    'ts'        => $ts,
-                    'enabled'   => false,
-                    'mode'      => 'paper',
-                    'skipped'   => 'module_disabled',
-                    'positions' => 0,
+                    'ok'         => true,
+                    'ts'         => $ts,
+                    'enabled'    => false,
+                    'mode'       => 'paper',
+                    'skipped'    => 'module_disabled',
+                    'skip_reason'=> 'module_disabled',
+                    'positions'  => 0,
                 ];
                 $this->store->writeLastRun($result);
                 return $result;
@@ -127,6 +128,9 @@ final class ProfManagerService
             $rawPositions = $readResult['positions'];
 
             if (empty($rawPositions)) {
+                $skipReason = ($readResult['source'] === 'none')
+                    ? 'no_positions_source_found'
+                    : 'no_positions';
                 $result = [
                     'ok'             => true,
                     'ts'             => $ts,
@@ -140,6 +144,7 @@ final class ProfManagerService
                     'skipped_count'  => 0,
                     'executed'       => [],
                     'skipped'        => [],
+                    'skip_reason'    => $skipReason,
                     'validation_errors' => [],
                 ];
                 $this->store->writeLastRun($result);
@@ -204,6 +209,7 @@ final class ProfManagerService
                 'skipped_count'     => $execResult['summary']['skipped'],
                 'executed'          => $execResult['executed'],
                 'skipped'           => $execResult['skipped'],
+                'skip_reason'       => '',
                 'validation_errors' => $validationErrors,
             ];
 

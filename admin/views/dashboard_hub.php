@@ -109,7 +109,10 @@ function renderDashboardHub(): string
     $pmLocksActive   = (int)    ($pmStatus['locks_active']   ?? 0);
     $pmPlanned       = (int)    ($pmStatus['planned_updates'] ?? 0);
     $pmSkipped       = (int)    ($pmStatus['skipped']        ?? 0);
-    $pmLastError     = (string) ($pmStatus['last_error']     ?? '');
+    $pmLastErrorRaw  = $pmStatus['last_error'] ?? '';
+    $pmLastError     = is_array($pmLastErrorRaw)
+        ? implode(', ', array_filter(array_map('strval', $pmLastErrorRaw)))
+        : (string)$pmLastErrorRaw;
     $pmCronInterval  = (int)    ($pmStatus['cron_interval_sec'] ?? 60);
     $pmCronConfigured = (bool)  ($pmStatus['cron_configured'] ?? false);
     $pmCronStatusText = $pmCronConfigured ? 'Настроен ✓' : 'Токен не задан';
@@ -711,7 +714,17 @@ ROWS;
             }
         }
     }
-    $pmRawSkipped = (string)($pmRawLastRun['skipped'] ?? '');
+    $pmRawSkipped = (string)($pmRawLastRun['skip_reason'] ?? '');
+    // Fallback: if skip_reason is absent (old last_run.json), derive from legacy 'skipped' field
+    if ($pmRawSkipped === '' && isset($pmRawLastRun['skipped'])) {
+        $legacySkipped = $pmRawLastRun['skipped'];
+        if (is_string($legacySkipped) && $legacySkipped !== '') {
+            $pmRawSkipped = $legacySkipped;
+        } elseif (is_array($legacySkipped) && count($legacySkipped) > 0) {
+            $reasons = array_unique(array_filter(array_column($legacySkipped, 'reason')));
+            $pmRawSkipped = implode(', ', $reasons);
+        }
+    }
 
     // ── PM cron task check ────────────────────────────────────────────────
     $pmCronTaskExists  = false;

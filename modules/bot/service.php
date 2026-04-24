@@ -169,25 +169,14 @@ final class BotService
         if (empty($config)) {
             return;
         }
-        if (!(bool)($config['enabled'] ?? false)) {
-            // Bot disabled: write a truthful disabled last_run so the UI
-            // can show the correct state without running any processing.
-            $this->writeJson('storage/last_run.json', array_merge(
-                $this->readJson('storage/last_run.json', []),
-                [
-                    'status'      => 'disabled',
-                    'tick_at'     => date('c'),
-                    'bot_enabled' => false,
-                    'bot_mode'    => $config['mode'] ?? 'passive',
-                ]
-            ));
-            return;
-        }
 
         $tickAt = date('c');
         $tStart = microtime(true);
 
         // ── 1. Strategy discovery ─────────────────────────────────────────────
+        // Registry must stay fresh even when the bot is disabled so dashboard
+        // and runtime views do not show a stale strategy count after modules are
+        // added, removed, or cleaned.
         $registry  = $this->refreshRegistry($config);
         $overrides = $this->readJson('storage/operator_overrides.json', []);
 
@@ -201,6 +190,39 @@ final class BotService
             } else {
                 $disabledStrategies[] = $rec;
             }
+        }
+
+        if (!(bool)($config['enabled'] ?? false)) {
+            // Bot disabled: still write truthful last_run including fresh strategy
+            // discovery totals so the dashboard can render the current registry.
+            $stats = array_merge($this->zeroStats(), $this->getStats(), [
+                'strategies_discovered_total' => count($registry),
+                'strategies_enabled_total'    => count($enabledStrategies),
+                'strategies_disabled_total'   => count($disabledStrategies),
+            ]);
+            $this->writeJson('storage/stats.json', $stats);
+            $this->writeJson('storage/last_run.json', array_merge(
+                $this->readJson('storage/last_run.json', []),
+                [
+                    'status'                     => 'disabled',
+                    'tick_at'                    => $tickAt,
+                    'elapsed_sec'                => round(microtime(true) - $tStart, 6),
+                    'bot_enabled'                => false,
+                    'bot_mode'                   => $config['mode'] ?? 'passive',
+                    'strategies_discovered_total'=> count($registry),
+                    'strategies_enabled_total'   => count($enabledStrategies),
+                    'strategies_disabled_total'  => count($disabledStrategies),
+                    'handoff_sources_active_total' => 0,
+                    'handoff_signals_processed'  => 0,
+                    'order_queue_total'          => count($this->readJson('storage/order_queue.json', [])),
+                    'active_orders_count'        => count($this->readJson('storage/active_orders.json', [])),
+                    'active_positions_count'     => count($this->readJson('storage/active_positions.json', [])),
+                    'ticks_total'                => (int)($stats['ticks_total'] ?? 0),
+                    'handoff_signals_seen_total' => (int)($stats['handoff_signals_seen_total'] ?? 0),
+                ]
+            ));
+            $this->writeRuntimeSnapshot($config, $this->readJson('storage/last_run.json', []), count($registry), count($enabledStrategies));
+            return;
         }
 
         $handoffSourcesActive = 0;

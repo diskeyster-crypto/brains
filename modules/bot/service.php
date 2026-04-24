@@ -1284,8 +1284,10 @@ final class BotService
             $retCode = (int)($resp['ret_code'] ?? -1);
             $retMsg  = (string)($resp['ret_msg'] ?? '');
 
-            // 0 = success; 110043 = "Leverage not modified" (already set) → treat as OK
-            $ok = ($resp['success'] ?? false) && ($retCode === 0 || $retCode === 110043);
+            // 0 = success; 110043 = "Leverage not modified" (already set) → treat as OK.
+            // NOTE: The gateway only sets success=true when retCode===0, so we check
+            // retCode directly here to correctly handle the 110043 "already set" case.
+            $ok = ($retCode === 0 || $retCode === 110043);
 
             return ['ok' => $ok, 'ret_code' => $retCode, 'ret_msg' => $retMsg];
         } catch (\Throwable $ex) {
@@ -1466,9 +1468,14 @@ final class BotService
                 continue;
             }
 
-            $entryPrice        = (float)($qItem['entry_price'] ?? 0.0);
-            $budget            = (float)($qItem['bot_budget']  ?? 6.0);
-            $requestedLeverage = max(1, (int)($qItem['bot_leverage'] ?? 5));
+            $entryPrice = (float)($qItem['entry_price'] ?? 0.0);
+            $budget     = (float)($qItem['bot_budget']  ?? 0.0);
+            if ($budget <= 0.0) {
+                $budget = 6.0;
+            }
+            // Do NOT default to leverage=1; use 5 as hard fallback per spec.
+            $botLev            = (int)($qItem['bot_leverage'] ?? 0);
+            $requestedLeverage = $botLev > 0 ? $botLev : 5;
 
             if ($entryPrice <= 0.0 || $budget <= 0.0) {
                 $qItem['skip_reason'] = 'invalid_entry_price_or_budget';

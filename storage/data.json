@@ -1,15 +1,15 @@
 {
-    "system\/theme": {
+    "system/theme": {
         "active_theme": "system-dark",
         "updated_at": "2026-01-26 14:31:55",
         "layout_mode": "2-columns"
     },
-    "system\/github": {
+    "system/github": {
         "username": "diskeyster-crypto",
         "token": "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",
-        "update_repo": "diskeyster-crypto\/debagg",
-        "backup_repo": "diskeyster-crypto\/modbecap",
-        "branch": "copilot\/fix-admin-brain-output",
+        "update_repo": "diskeyster-crypto/debagg",
+        "backup_repo": "diskeyster-crypto/modbecap",
+        "branch": "copilot/fix-admin-brain-output",
         "auto_backup": true,
         "include_all_files": true,
         "last_fetch": "2026-02-19T17:35:57+03:00",
@@ -119,11 +119,11 @@
             "3dd3d9c"
         ]
     },
-    "system\/pages_registry": {
+    "system/pages_registry": {
         "1": {
             "id": 1,
             "title": "Dashboard",
-            "route": "\/admin",
+            "route": "/admin",
             "type": "system",
             "roles": [
                 "admin"
@@ -136,7 +136,7 @@
         "2": {
             "id": 2,
             "title": "Система",
-            "route": "\/admin\/system",
+            "route": "/admin/system",
             "type": "system",
             "roles": [
                 "admin"
@@ -149,7 +149,7 @@
         "3": {
             "id": 3,
             "title": "GitHub Center",
-            "route": "\/admin\/github",
+            "route": "/admin/github",
             "type": "module",
             "roles": [
                 "admin"
@@ -162,7 +162,7 @@
         "4": {
             "id": 4,
             "title": "Темы",
-            "route": "\/admin\/theme",
+            "route": "/admin/theme",
             "type": "module",
             "roles": [
                 "admin"
@@ -175,7 +175,7 @@
         "5": {
             "id": 5,
             "title": "Модули",
-            "route": "\/admin\/modules",
+            "route": "/admin/modules",
             "type": "system",
             "roles": [
                 "admin"
@@ -188,7 +188,7 @@
         "6": {
             "id": 6,
             "title": "Cron",
-            "route": "\/admin\/cron",
+            "route": "/admin/cron",
             "type": "system",
             "roles": [
                 "admin"
@@ -201,7 +201,7 @@
         "7": {
             "id": 7,
             "title": "Storage",
-            "route": "\/admin\/storage",
+            "route": "/admin/storage",
             "type": "system",
             "roles": [
                 "admin"
@@ -214,7 +214,7 @@
         "8": {
             "id": 8,
             "title": "Логи",
-            "route": "\/admin\/logs",
+            "route": "/admin/logs",
             "type": "system",
             "roles": [
                 "admin"
@@ -227,7 +227,7 @@
         "9": {
             "id": 9,
             "title": "Страницы",
-            "route": "\/admin\/pages",
+            "route": "/admin/pages",
             "type": "system",
             "roles": [
                 "admin"
@@ -240,7 +240,7 @@
         "10": {
             "id": 10,
             "title": "Парсеры",
-            "route": "\/admin\/parser",
+            "route": "/admin/parser",
             "type": "custom",
             "roles": [
                 "admin"
@@ -254,7 +254,7 @@
         "11": {
             "id": 11,
             "title": "Сигналы",
-            "route": "\/admin\/signal",
+            "route": "/admin/signal",
             "type": "custom",
             "roles": [
                 "admin"
@@ -268,7 +268,7 @@
         "12": {
             "id": 12,
             "title": "Бот Трейдинг",
-            "route": "\/admin\/trading",
+            "route": "/admin/trading",
             "type": "custom",
             "roles": [
                 "admin"
@@ -282,7 +282,7 @@
         "13": {
             "id": 13,
             "title": "Мозг",
-            "route": "\/admin\/brain",
+            "route": "/admin/brain",
             "type": "custom",
             "roles": [
                 "admin"
@@ -296,7 +296,7 @@
         "14": {
             "id": 14,
             "title": "Копи Трейд",
-            "route": "\/admin\/copytrading",
+            "route": "/admin/copytrading",
             "type": "custom",
             "roles": [
                 "admin"
@@ -310,7 +310,7 @@
         "15": {
             "id": 15,
             "title": "Симулятор",
-            "route": "\/admin\/simulator",
+            "route": "/admin/simulator",
             "type": "custom",
             "roles": [
                 "admin"
@@ -323,8 +323,8 @@
         },
         "16": {
             "id": 16,
-            "title": "smart_brain\/",
-            "route": "\/admin\/smart_brain\/",
+            "title": "smart_brain/",
+            "route": "/admin/smart_brain/",
             "type": "custom",
             "roles": [
                 "admin"
@@ -346,7 +346,7 @@
             "last_run": 1770381902,
             "next_run": 1770383702,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/copytrading"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/copytrading"
         },
         "example:execute": {
             "module": "example",
@@ -357,7 +357,7 @@
             "last_run": 1769543224,
             "next_run": 61769543224,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/example"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/example"
         },
         "delist_parser0:execute": {
             "module": "delist_parser0",
@@ -368,7 +368,7 @@
             "last_run": 1773337660,
             "next_run": 1773341260,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/parser\/delist_parser0"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/parser/delist_parser0"
         },
         "parser15_history_sync:execute": {
             "module": "parser15_history_sync",
@@ -379,7 +379,7 @@
             "last_run": 1770461882,
             "next_run": 1770462002,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/parser\/parser15_history_sync"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/parser/parser15_history_sync"
         },
         "parser1_market_registry:execute": {
             "module": "parser1_market_registry",
@@ -390,7 +390,7 @@
             "last_run": 1773337661,
             "next_run": 1773343061,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/parser\/parser1_market_registry"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/parser/parser1_market_registry"
         },
         "parser2_history_accumulator:execute": {
             "module": "parser2_history_accumulator",
@@ -401,7 +401,7 @@
             "last_run": 1773337662,
             "next_run": 1773337722,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/parser\/parser2_history_accumulator"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/parser/parser2_history_accumulator"
         },
         "parser3_manager_behavior:execute": {
             "module": "parser3_manager_behavior",
@@ -412,18 +412,18 @@
             "last_run": 1773337664,
             "next_run": 1773337744,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/parser\/parser3_manager_behavior"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/parser/parser3_manager_behavior"
         },
         "parser4_analyzer:execute": {
             "module": "parser4_analyzer",
             "handler": "execute",
             "interval": 60,
             "enabled": true,
-            "description": "Analyze Parser2 history, calculate rolling metrics, output blocklist\/watchlist\/candidates",
+            "description": "Analyze Parser2 history, calculate rolling metrics, output blocklist/watchlist/candidates",
             "last_run": 1773337664,
             "next_run": 1773337724,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/parser\/parser4_analyzer"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/parser/parser4_analyzer"
         },
         "parser5_signal_monitor:execute": {
             "module": "parser5_signal_monitor",
@@ -434,7 +434,7 @@
             "last_run": 1773337664,
             "next_run": 1773337724,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/parser\/parser5_signal_monitor"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/parser/parser5_signal_monitor"
         },
         "parser6_simulator:execute": {
             "module": "parser6_simulator",
@@ -445,7 +445,7 @@
             "last_run": 1773337665,
             "next_run": 1773337725,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/simulator\/parser6_simulator"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/simulator/parser6_simulator"
         },
         "brain:execute": {
             "module": "brain",
@@ -456,7 +456,7 @@
             "last_run": 1773337665,
             "next_run": 1773337785,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/brain"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/brain"
         },
         "brain:runPipeline": {
             "module": "brain",
@@ -467,18 +467,7 @@
             "last_run": 1773337665,
             "next_run": 1773337785,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/brain"
-        },
-        "profit_manager:execute": {
-            "module": "profit_manager",
-            "handler": "execute",
-            "interval": 60,
-            "enabled": true,
-            "description": "Run profit management: step trailing (SL ratchet) and dumb trailing (armed\/re-arm)",
-            "last_run": 1773337665,
-            "next_run": 1773337725,
-            "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/profit_manager"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/brain"
         },
         "trading_bot:execute": {
             "module": "trading_bot",
@@ -489,7 +478,7 @@
             "last_run": 1773337666,
             "next_run": 1773337726,
             "from_module": true,
-            "module_path": "\/var\/www\/tredercopis\/data\/www\/tredersolo.online\/modules\/system\/trading_bot"
+            "module_path": "/var/www/tredercopis/data/www/tredersolo.online/modules/system/trading_bot"
         }
     },
     "cron_log": [
@@ -498,21 +487,14 @@
             "timestamp": "2026-03-12 17:47:46",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.86509999999999998
-        },
-        {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-03-12 17:47:45",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 0.21249999999999999
+            "duration": 0.8651
         },
         {
             "task_id": "brain:runPipeline",
             "timestamp": "2026-03-12 17:47:45",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.076999999999999999
+            "duration": 0.077
         },
         {
             "task_id": "brain:execute",
@@ -526,7 +508,7 @@
             "timestamp": "2026-03-12 17:47:45",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.81230000000000002
+            "duration": 0.8123
         },
         {
             "task_id": "parser5_signal_monitor:execute",
@@ -539,8 +521,8 @@
             "task_id": "parser4_analyzer:execute",
             "timestamp": "2026-03-12 17:47:44",
             "success": false,
-            "message": "SystemPaths: Unknown path key 'parser.parser3.storage'. All paths must be registered via module manifests (manifest.json \/ manifest.php). Use SystemPaths::instance()->dump() to see available keys.",
-            "duration": 0.00080000000000000004
+            "message": "SystemPaths: Unknown path key 'parser.parser3.storage'. All paths must be registered via module manifests (manifest.json / manifest.php). Use SystemPaths::instance()->dump() to see available keys.",
+            "duration": 0.0008
         },
         {
             "task_id": "parser3_manager_behavior:execute",
@@ -554,28 +536,28 @@
             "timestamp": "2026-03-12 17:47:42",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.3676999999999999
+            "duration": 1.3677
         },
         {
             "task_id": "parser1_market_registry:execute",
             "timestamp": "2026-03-12 17:47:41",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.60150000000000003
+            "duration": 0.6015
         },
         {
             "task_id": "delist_parser0:execute",
             "timestamp": "2026-03-12 17:47:40",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.3935999999999999
+            "duration": 1.3936
         },
         {
             "task_id": "brain:runPipeline",
             "timestamp": "2026-02-17 17:21:03",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.87260000000000004
+            "duration": 0.8726
         },
         {
             "task_id": "parser2_history_accumulator:execute",
@@ -589,49 +571,42 @@
             "timestamp": "2026-02-17 17:20:12",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 5.3860000000000001
-        },
-        {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-02-17 17:20:06",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 0.3533
+            "duration": 5.386
         },
         {
             "task_id": "parser6_simulator:execute",
             "timestamp": "2026-02-17 17:20:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.88390000000000002
+            "duration": 0.8839
         },
         {
             "task_id": "parser5_signal_monitor:execute",
             "timestamp": "2026-02-17 17:20:05",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.12970000000000001
+            "duration": 0.1297
         },
         {
             "task_id": "parser4_analyzer:execute",
             "timestamp": "2026-02-17 17:20:05",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.5355000000000001
+            "duration": 1.5355
         },
         {
             "task_id": "parser3_manager_behavior:execute",
             "timestamp": "2026-02-17 17:20:03",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.8740000000000001
+            "duration": 1.874
         },
         {
             "task_id": "parser2_history_accumulator:execute",
             "timestamp": "2026-02-17 17:20:01",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.58940000000000003
+            "duration": 0.5894
         },
         {
             "task_id": "brain:execute",
@@ -645,28 +620,21 @@
             "timestamp": "2026-02-17 17:18:10",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.4505999999999999
-        },
-        {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-02-17 17:18:09",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 1.2144999999999999
+            "duration": 1.4506
         },
         {
             "task_id": "brain:runPipeline",
             "timestamp": "2026-02-17 17:18:08",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.84730000000000005
+            "duration": 0.8473
         },
         {
             "task_id": "parser6_simulator:execute",
             "timestamp": "2026-02-17 17:18:07",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.79359999999999997
+            "duration": 0.7936
         },
         {
             "task_id": "parser5_signal_monitor:execute",
@@ -680,7 +648,7 @@
             "timestamp": "2026-02-17 17:18:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.4771000000000001
+            "duration": 1.4771
         },
         {
             "task_id": "parser3_manager_behavior:execute",
@@ -694,21 +662,14 @@
             "timestamp": "2026-02-17 17:18:03",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.3322000000000001
+            "duration": 1.3322
         },
         {
             "task_id": "trading_bot:execute",
             "timestamp": "2026-02-17 17:16:09",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.4267000000000001
-        },
-        {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-02-17 17:16:07",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 0.71560000000000001
+            "duration": 1.4267
         },
         {
             "task_id": "brain:execute",
@@ -722,7 +683,7 @@
             "timestamp": "2026-02-17 17:16:07",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.74490000000000001
+            "duration": 0.7449
         },
         {
             "task_id": "parser5_signal_monitor:execute",
@@ -743,49 +704,42 @@
             "timestamp": "2026-02-17 17:16:04",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.9177999999999999
+            "duration": 1.9178
         },
         {
             "task_id": "parser2_history_accumulator:execute",
             "timestamp": "2026-02-17 17:16:02",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.3680000000000001
+            "duration": 1.368
         },
         {
             "task_id": "brain:runPipeline",
             "timestamp": "2026-02-17 17:15:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.75590000000000002
+            "duration": 0.7559
         },
         {
             "task_id": "delist_parser0:execute",
             "timestamp": "2026-02-17 17:15:05",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 3.7000000000000002
+            "duration": 3.7
         },
         {
             "task_id": "trading_bot:execute",
             "timestamp": "2026-02-17 17:14:09",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.4424999999999999
-        },
-        {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-02-17 17:14:07",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 0.69669999999999999
+            "duration": 1.4425
         },
         {
             "task_id": "parser6_simulator:execute",
             "timestamp": "2026-02-17 17:14:07",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.74339999999999995
+            "duration": 0.7434
         },
         {
             "task_id": "parser5_signal_monitor:execute",
@@ -799,7 +753,7 @@
             "timestamp": "2026-02-17 17:14:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.4622999999999999
+            "duration": 1.4623
         },
         {
             "task_id": "parser3_manager_behavior:execute",
@@ -813,84 +767,77 @@
             "timestamp": "2026-02-17 17:14:03",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.0028999999999999
+            "duration": 1.0029
         },
         {
             "task_id": "brain:execute",
             "timestamp": "2026-02-17 17:13:02",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.0040000000000000001
+            "duration": 0.004
         },
         {
             "task_id": "parser2_history_accumulator:execute",
             "timestamp": "2026-02-17 17:13:02",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.71840000000000004
+            "duration": 0.7184
         },
         {
             "task_id": "trading_bot:execute",
             "timestamp": "2026-02-17 17:12:09",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.3554999999999999
-        },
-        {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-02-17 17:12:08",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 0.68889999999999996
+            "duration": 1.3555
         },
         {
             "task_id": "brain:runPipeline",
             "timestamp": "2026-02-17 17:12:07",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.81520000000000004
+            "duration": 0.8152
         },
         {
             "task_id": "parser6_simulator:execute",
             "timestamp": "2026-02-17 17:12:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.70309999999999995
+            "duration": 0.7031
         },
         {
             "task_id": "parser5_signal_monitor:execute",
             "timestamp": "2026-02-17 17:12:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.12959999999999999
+            "duration": 0.1296
         },
         {
             "task_id": "parser4_analyzer:execute",
             "timestamp": "2026-02-17 17:12:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.4970000000000001
+            "duration": 1.497
         },
         {
             "task_id": "parser3_manager_behavior:execute",
             "timestamp": "2026-02-17 17:12:04",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.8475999999999999
+            "duration": 1.8476
         },
         {
             "task_id": "parser2_history_accumulator:execute",
             "timestamp": "2026-02-17 17:12:02",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.0475000000000001
+            "duration": 1.0475
         },
         {
             "task_id": "brain:execute",
             "timestamp": "2026-02-17 17:11:01",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.0040000000000000001
+            "duration": 0.004
         },
         {
             "task_id": "trading_bot:execute",
@@ -900,18 +847,11 @@
             "duration": 1.4192
         },
         {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-02-17 17:10:07",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 1.0052000000000001
-        },
-        {
             "task_id": "parser6_simulator:execute",
             "timestamp": "2026-02-17 17:10:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.72399999999999998
+            "duration": 0.724
         },
         {
             "task_id": "parser5_signal_monitor:execute",
@@ -939,42 +879,35 @@
             "timestamp": "2026-02-17 17:10:02",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.70709999999999995
+            "duration": 0.7071
         },
         {
             "task_id": "brain:runPipeline",
             "timestamp": "2026-02-17 17:09:02",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.87439999999999996
+            "duration": 0.8744
         },
         {
             "task_id": "brain:execute",
             "timestamp": "2026-02-17 17:09:01",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.0038999999999999998
+            "duration": 0.0039
         },
         {
             "task_id": "trading_bot:execute",
             "timestamp": "2026-02-17 17:08:09",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.3939999999999999
-        },
-        {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-02-17 17:08:07",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 0.66849999999999998
+            "duration": 1.394
         },
         {
             "task_id": "parser6_simulator:execute",
             "timestamp": "2026-02-17 17:08:07",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.75109999999999999
+            "duration": 0.7511
         },
         {
             "task_id": "parser5_signal_monitor:execute",
@@ -988,14 +921,14 @@
             "timestamp": "2026-02-17 17:08:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.5649999999999999
+            "duration": 1.565
         },
         {
             "task_id": "parser3_manager_behavior:execute",
             "timestamp": "2026-02-17 17:08:04",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.8092999999999999
+            "duration": 1.8093
         },
         {
             "task_id": "parser2_history_accumulator:execute",
@@ -1016,35 +949,28 @@
             "timestamp": "2026-02-17 17:06:09",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.4504999999999999
-        },
-        {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-02-17 17:06:07",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 0.64059999999999995
+            "duration": 1.4505
         },
         {
             "task_id": "brain:runPipeline",
             "timestamp": "2026-02-17 17:06:07",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.81259999999999999
+            "duration": 0.8126
         },
         {
             "task_id": "parser6_simulator:execute",
             "timestamp": "2026-02-17 17:06:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.72770000000000001
+            "duration": 0.7277
         },
         {
             "task_id": "parser5_signal_monitor:execute",
             "timestamp": "2026-02-17 17:06:05",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.11070000000000001
+            "duration": 0.1107
         },
         {
             "task_id": "parser4_analyzer:execute",
@@ -1058,49 +984,42 @@
             "timestamp": "2026-02-17 17:06:04",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.7248000000000001
+            "duration": 1.7248
         },
         {
             "task_id": "parser2_history_accumulator:execute",
             "timestamp": "2026-02-17 17:06:02",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.75700000000000001
+            "duration": 0.757
         },
         {
             "task_id": "brain:execute",
             "timestamp": "2026-02-17 17:05:01",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.0038999999999999998
+            "duration": 0.0039
         },
         {
             "task_id": "trading_bot:execute",
             "timestamp": "2026-02-17 17:04:09",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.5781000000000001
-        },
-        {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-02-17 17:04:07",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 0.7228
+            "duration": 1.5781
         },
         {
             "task_id": "parser6_simulator:execute",
             "timestamp": "2026-02-17 17:04:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.75109999999999999
+            "duration": 0.7511
         },
         {
             "task_id": "parser5_signal_monitor:execute",
             "timestamp": "2026-02-17 17:04:05",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.14080000000000001
+            "duration": 0.1408
         },
         {
             "task_id": "parser4_analyzer:execute",
@@ -1114,28 +1033,28 @@
             "timestamp": "2026-02-17 17:04:04",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.8071999999999999
+            "duration": 1.8072
         },
         {
             "task_id": "parser2_history_accumulator:execute",
             "timestamp": "2026-02-17 17:04:02",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.67679999999999996
+            "duration": 0.6768
         },
         {
             "task_id": "brain:runPipeline",
             "timestamp": "2026-02-17 17:03:02",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.79969999999999997
+            "duration": 0.7997
         },
         {
             "task_id": "brain:execute",
             "timestamp": "2026-02-17 17:03:01",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.0041000000000000003
+            "duration": 0.0041
         },
         {
             "task_id": "trading_bot:execute",
@@ -1145,32 +1064,25 @@
             "duration": 1.4216
         },
         {
-            "task_id": "profit_manager:execute",
-            "timestamp": "2026-02-17 17:02:08",
-            "success": true,
-            "message": "Task completed successfully",
-            "duration": 0.73319999999999996
-        },
-        {
             "task_id": "parser6_simulator:execute",
             "timestamp": "2026-02-17 17:02:07",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.82679999999999998
+            "duration": 0.8268
         },
         {
             "task_id": "parser5_signal_monitor:execute",
             "timestamp": "2026-02-17 17:02:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.082799999999999999
+            "duration": 0.0828
         },
         {
             "task_id": "parser4_analyzer:execute",
             "timestamp": "2026-02-17 17:02:06",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.4802999999999999
+            "duration": 1.4803
         },
         {
             "task_id": "parser3_manager_behavior:execute",
@@ -1184,19 +1096,19 @@
             "timestamp": "2026-02-17 17:02:03",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 1.0044999999999999
+            "duration": 1.0045
         },
         {
             "task_id": "parser2_history_accumulator:execute",
             "timestamp": "2026-02-17 17:01:02",
             "success": true,
             "message": "Task completed successfully",
-            "duration": 0.66300000000000003
+            "duration": 0.663
         }
     ],
     "users": {
         "admin": {
-            "password": "$2y$10$6Bovp\/CytVNf79du.OCbA.O5pbOD1xjKOvHqXscmZNS1XfbOuwbUe",
+            "password": "$2y$10$6Bovp/CytVNf79du.OCbA.O5pbOD1xjKOvHqXscmZNS1XfbOuwbUe",
             "role": "admin",
             "created_at": "2026-01-26 15:54:42",
             "initial_password": true

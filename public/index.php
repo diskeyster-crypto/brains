@@ -870,6 +870,38 @@ Router::post('/admin/dashboard/stop-manager/tick', function () {
     handleDashboardStopManagerTick();
 });
 
+Router::post('/admin/dashboard/strategy/toggle', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardStrategyToggle();
+});
+
+Router::post('/admin/dashboard/bot/toggle', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardBotToggle();
+});
+
+Router::post('/admin/dashboard/stop-manager/toggle', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardSmToggle();
+});
+
+Router::post('/admin/dashboard/chain-run', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardChainRun();
+});
+
 // ============================================================
 // ADMIN API ROUTES
 // ============================================================

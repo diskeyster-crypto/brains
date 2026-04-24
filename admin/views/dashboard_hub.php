@@ -206,6 +206,10 @@ function renderDashboardHub(): string
     // ── strategy cards HTML ───────────────────────────────────────────────
     $saveUrl      = System::web('admin/dashboard/overrides/save');
     $stratActUrl  = System::web('admin/dashboard/strategy/action');
+    $stratToggleUrl = System::web('admin/dashboard/strategy/toggle');
+    $botToggleUrl   = System::web('admin/dashboard/bot/toggle');
+    $smToggleUrl    = System::web('admin/dashboard/stop-manager/toggle');
+    $chainRunUrl    = System::web('admin/dashboard/chain-run');
     $stratCards = '';
     if (empty($registry)) {
         $stratCards = '<p style="color:var(--ui-text-muted);padding:20px 0;">Стратегии не обнаружены.</p>';
@@ -309,6 +313,19 @@ function renderDashboardHub(): string
 
             $cardId      = 'card-edit-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $stratId);
 
+            // Quick toggle button: shows action to flip enabled state
+            if ($opEnabled) {
+                $toggleTarget = '0';
+                $toggleLabel  = 'Выключить';
+                $toggleBg     = 'rgba(248,81,73,.10)';
+                $toggleColor  = '#f85149';
+            } else {
+                $toggleTarget = '1';
+                $toggleLabel  = 'Включить';
+                $toggleBg     = 'rgba(63,185,80,.10)';
+                $toggleColor  = '#3fb950';
+            }
+
             // Manual run action buttons — only active for strategies with a wired service.
             // All other strategies show disabled/unavailable buttons so the operator can see
             // the actions exist but are not yet supported for that module.
@@ -410,7 +427,15 @@ BTN;
     </table>
 
     <!-- Toggle edit / manual action buttons -->
-    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <!-- Quick enable/disable toggle -->
+      <form method="post" action="{$stratToggleUrl}" style="margin:0;">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="enabled" value="{$toggleTarget}">
+        <button type="submit" class="btn btn-sm" style="background:{$toggleBg};color:{$toggleColor};border:1px solid {$toggleColor}55;font-weight:600;">
+          {$toggleLabel}
+        </button>
+      </form>
       <button type="button" class="btn btn-sm btn-primary" onclick="dhToggleEdit('{$cardId}')">
         Изменить
       </button>
@@ -482,6 +507,20 @@ HTML;
     $cfgMaxAgeSec   = (int)($botConfig['max_signal_age_sec'] ?? 0);
     $cfgDedupWindow = (int)($botConfig['queue_dedup_ttl_sec'] ?? 0);
     $cfgScanRoots   = $e(implode(', ', (array)($botConfig['strategy_scan_roots'] ?? [])));
+
+    // Bot quick-toggle values
+    $botCurrentlyEnabled = ($botConfig['enabled'] ?? false);
+    $botToggleTarget     = $botCurrentlyEnabled ? '0' : '1';
+    $botToggleLabel      = $botCurrentlyEnabled ? 'Выключить бота' : 'Включить бота';
+    $botToggleBg         = $botCurrentlyEnabled ? 'rgba(248,81,73,.10)' : 'rgba(63,185,80,.10)';
+    $botToggleColor      = $botCurrentlyEnabled ? '#f85149' : '#3fb950';
+
+    // SM quick-toggle values
+    $smCurrentlyEnabled  = ($smConfig['enabled'] ?? false);
+    $smToggleTarget      = $smCurrentlyEnabled ? '0' : '1';
+    $smToggleLabel       = $smCurrentlyEnabled ? 'Выключить Stop Manager' : 'Включить Stop Manager';
+    $smToggleBg          = $smCurrentlyEnabled ? 'rgba(248,81,73,.10)' : 'rgba(63,185,80,.10)';
+    $smToggleColor       = $smCurrentlyEnabled ? '#f85149' : '#3fb950';
 
     $gcfgEnYes  = $cfgEnabled === '1' ? ' selected' : '';
     $gcfgEnNo   = $cfgEnabled === '0' ? ' selected' : '';
@@ -627,9 +666,17 @@ HTML;
 {$flashHtml}
 
 <!-- Page header -->
-<div style="margin-bottom:16px;">
-  <h4 style="margin:0 0 2px;"><i class="bi bi-layout-text-sidebar-reverse" style="margin-right:8px;"></i>Оперативный центр</h4>
-  <div style="font-size:12px;color:var(--ui-text-muted);">Управление стратегиями · Бот · Контроль</div>
+<div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+  <div>
+    <h4 style="margin:0 0 2px;"><i class="bi bi-layout-text-sidebar-reverse" style="margin-right:8px;"></i>Оперативный центр</h4>
+    <div style="font-size:12px;color:var(--ui-text-muted);">Управление стратегиями · Бот · Контроль</div>
+  </div>
+  <!-- One-button chain run -->
+  <form method="post" action="{$chainRunUrl}" style="margin:0;">
+    <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid #58a6ff66;padding:7px 20px;font-weight:600;font-size:13px;">
+      <i class="bi bi-lightning-fill" style="margin-right:5px;"></i>Запустить цепочку
+    </button>
+  </form>
 </div>
 
 <!-- Summary strip -->
@@ -703,7 +750,14 @@ HTML;
   <div class="card">
     <div class="card-header">Ручное управление</div>
     <div class="card-body">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <!-- Bot quick toggle -->
+        <form method="post" action="{$botToggleUrl}" style="margin:0;">
+          <input type="hidden" name="enabled" value="{$botToggleTarget}">
+          <button type="submit" class="btn btn-sm" style="background:{$botToggleBg};color:{$botToggleColor};border:1px solid {$botToggleColor}55;padding:6px 18px;font-weight:600;">
+            {$botToggleLabel}
+          </button>
+        </form>
         <form method="post" action="{$botTickUrl}" style="margin:0;">
           <input type="hidden" name="action" value="tick">
           <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;padding:6px 18px;">
@@ -782,7 +836,14 @@ HTML;
   <div class="card">
     <div class="card-header">Ручное управление</div>
     <div class="card-body">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <!-- SM quick toggle -->
+        <form method="post" action="{$smToggleUrl}" style="margin:0;">
+          <input type="hidden" name="enabled" value="{$smToggleTarget}">
+          <button type="submit" class="btn btn-sm" style="background:{$smToggleBg};color:{$smToggleColor};border:1px solid {$smToggleColor}55;padding:6px 18px;font-weight:600;">
+            {$smToggleLabel}
+          </button>
+        </form>
         <form method="post" action="{$smTickUrl}" style="margin:0;">
           <input type="hidden" name="action" value="tick">
           <button type="submit" class="btn btn-sm" style="background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid #a78bfa55;padding:6px 18px;">
@@ -1249,3 +1310,276 @@ function handleDashboardStopManagerTick(): void
     exit;
 }
 } // end if (!function_exists('handleDashboardStopManagerTick'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: quick strategy enable/disable toggle
+// Registered as: POST /admin/dashboard/strategy/toggle
+// Only flips the `enabled` flag; all other override fields are preserved.
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardStrategyToggle')) {
+function handleDashboardStrategyToggle(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+
+    $stratId = trim((string)($_POST['strategy_id'] ?? ''));
+    $enabled = (bool)(int)($_POST['enabled'] ?? 0);
+    $dashUrl = System::web('admin/dashboard');
+
+    if ($stratId === '') {
+        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'strategy_id не указан'];
+        header('Location: ' . $dashUrl);
+        exit;
+    }
+
+    $storageDir    = System::path('root') . '/modules/bot/storage';
+    $overridesFile = $storageDir . '/operator_overrides.json';
+
+    $overrides = [];
+    if (file_exists($overridesFile)) {
+        $raw = file_get_contents($overridesFile);
+        if ($raw !== false && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $overrides = $decoded;
+            }
+        }
+    }
+
+    $prev = (array)($overrides[$stratId] ?? []);
+    $overrides[$stratId] = array_merge($prev, ['enabled' => $enabled]);
+
+    if (!is_dir($storageDir)) {
+        mkdir($storageDir, 0755, true);
+    }
+    file_put_contents($overridesFile, json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    $label = $enabled ? 'включена' : 'выключена';
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Стратегия «{$stratId}» {$label}"];
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardStrategyToggle'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: quick bot enable/disable toggle
+// Registered as: POST /admin/dashboard/bot/toggle
+// Only flips the `enabled` flag in modules/bot/config/active.php.
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardBotToggle')) {
+function handleDashboardBotToggle(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+
+    $enabled    = (bool)(int)($_POST['enabled'] ?? 0);
+    $dashUrl    = System::web('admin/dashboard');
+    $activeFile = System::path('root') . '/modules/bot/config/active.php';
+
+    $current = [];
+    if (file_exists($activeFile)) {
+        $loaded = @include $activeFile;
+        if (is_array($loaded)) {
+            $current = $loaded;
+        }
+    }
+
+    $current['enabled'] = $enabled;
+
+    $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Bot Module — Active Config Overrides\n * Written by the admin UI. Edit via the config page.\n */\n\nreturn ";
+    $php .= var_export($current, true);
+    $php .= ";\n";
+
+    $dir = dirname($activeFile);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    file_put_contents($activeFile, $php);
+
+    $label = $enabled ? 'включён' : 'выключен';
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Бот {$label}"];
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardBotToggle'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: quick stop_manager enable/disable toggle
+// Registered as: POST /admin/dashboard/stop-manager/toggle
+// Only flips the `enabled` flag in modules/stop_manager/config/active.php.
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardSmToggle')) {
+function handleDashboardSmToggle(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+
+    $enabled    = (bool)(int)($_POST['enabled'] ?? 0);
+    $dashUrl    = System::web('admin/dashboard');
+    $activeFile = System::path('root') . '/modules/stop_manager/config/active.php';
+
+    $current = [];
+    if (file_exists($activeFile)) {
+        $loaded = @include $activeFile;
+        if (is_array($loaded)) {
+            $current = $loaded;
+        }
+    }
+
+    $current['enabled'] = $enabled;
+
+    $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Stop Manager Module — Active Config Overrides\n * Written by the admin UI. Edit via the config page.\n */\n\nreturn ";
+    $php .= var_export($current, true);
+    $php .= ";\n";
+
+    $dir = dirname($activeFile);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    file_put_contents($activeFile, $php);
+
+    $label = $enabled ? 'включён' : 'выключен';
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Stop Manager {$label}"];
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardSmToggle'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: one-button chain run
+// Registered as: POST /admin/dashboard/chain-run
+// Order: enabled strategy batch ticks → bot tick → stop_manager tick
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardChainRun')) {
+function handleDashboardChainRun(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+
+    $dashUrl = System::web('admin/dashboard');
+    $steps   = [];
+    $hasErr  = false;
+
+    // ── Step 1: strategy batch ticks for enabled strategies with manual runtime ──
+    $storageDir    = System::path('root') . '/modules/bot/storage';
+    $registryFile  = $storageDir . '/strategy_registry.json';
+    $overridesFile = $storageDir . '/operator_overrides.json';
+
+    $registry  = [];
+    $overrides = [];
+    if (file_exists($registryFile)) {
+        $raw = file_get_contents($registryFile);
+        if ($raw !== false) {
+            $dec = json_decode($raw, true);
+            if (is_array($dec)) {
+                $registry = $dec;
+            }
+        }
+    }
+    if (file_exists($overridesFile)) {
+        $raw = file_get_contents($overridesFile);
+        if ($raw !== false) {
+            $dec = json_decode($raw, true);
+            if (is_array($dec)) {
+                $overrides = $dec;
+            }
+        }
+    }
+
+    // Strategies wired for manual runtime
+    $manualStrategyIds = ['double_bottom_long'];
+
+    foreach ($registry as $rec) {
+        $sid = (string)($rec['strategy_id'] ?? '');
+        if (!in_array($sid, $manualStrategyIds, true)) {
+            continue;
+        }
+        $op      = (array)($overrides[$sid] ?? []);
+        $enabled = $op['enabled'] ?? true;
+        if (!$enabled) {
+            $steps[] = "Стратегия «{$sid}»: пропущена (выключена)";
+            continue;
+        }
+
+        $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.' . $sid);
+        try {
+            require_once $moduleDir . '/bootstrap.php';
+            require_once $moduleDir . '/service.php';
+            $svcClass = match ($sid) {
+                'double_bottom_long' => \Modules\Strategy\DoubleBottomLong\DoubleBottomLongService::class,
+                default              => null,
+            };
+            if ($svcClass === null) {
+                $steps[] = "Стратегия «{$sid}»: сервис не подключён";
+                continue;
+            }
+            /** @var object $svc */
+            $svc = $svcClass::instance($moduleDir);
+            $svc->tickBatch();
+            $steps[] = "Стратегия «{$sid}»: тик батча выполнен";
+        } catch (\Throwable $ex) {
+            $steps[]  = "Стратегия «{$sid}»: ошибка — " . $ex->getMessage();
+            $hasErr   = true;
+        }
+    }
+
+    // ── Step 2: bot tick ──────────────────────────────────────────────────────
+    $botDir = \Core\System\SystemPaths::instance()->get('bot.bot');
+    try {
+        require_once $botDir . '/bootstrap.php';
+        require_once $botDir . '/service.php';
+        $botSvc = \Modules\Bot\BotService::instance($botDir);
+        $botSvc->tick();
+        $steps[] = 'Бот: тик выполнен';
+    } catch (\Throwable $ex) {
+        $steps[] = 'Бот: ошибка — ' . $ex->getMessage();
+        $hasErr  = true;
+    }
+
+    // ── Step 3: stop_manager tick ────────────────────────────────────────────
+    $smDir = System::path('root') . '/modules/stop_manager';
+    try {
+        require_once $smDir . '/bootstrap.php';
+        require_once $smDir . '/service.php';
+        $smSvc = \Modules\StopManager\StopManagerService::instance($smDir);
+        $smSvc->tick();
+        $steps[] = 'Stop Manager: тик выполнен';
+    } catch (\Throwable $ex) {
+        $steps[] = 'Stop Manager: ошибка — ' . $ex->getMessage();
+        $hasErr  = true;
+    }
+
+    $summary = implode(' · ', $steps);
+    $_SESSION['dashboard_flash'] = [
+        'type' => $hasErr ? 'error' : 'success',
+        'msg'  => 'Цепочка: ' . $summary,
+    ];
+
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardChainRun'))

@@ -73,6 +73,36 @@ class ProfitLockPlanner
             return $this->skip($symbol, $side, 'below_activation_roi', $lockState, $positionState, $currentRoi, $peakRoi);
         }
 
+        // ── Early lock-touch check (BEFORE new lock calculation) ─────────────
+        // If there is already an existing lock and the current price has crossed
+        // it, report would_close_on_lock_touch immediately without computing a
+        // new lock price.
+        $oldLockPrice = (float) ($lockState['lock_price'] ?? 0.0);
+        $currentPrice = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
+        if ($oldLockPrice > 0.0 && $currentPrice > 0.0) {
+            $lockCrossed = false;
+            if (($side === 'long' || $side === 'buy') && $currentPrice <= $oldLockPrice) {
+                $lockCrossed = true;
+            } elseif (($side === 'short' || $side === 'sell') && $currentPrice >= $oldLockPrice) {
+                $lockCrossed = true;
+            }
+            if ($lockCrossed) {
+                return [
+                    'action'         => 'would_close_on_lock_touch',
+                    'symbol'         => $symbol,
+                    'side'           => $side,
+                    'skip_reason'    => null,
+                    'note'           => 'current_price_crossed_lock',
+                    'current_roi'    => $currentRoi,
+                    'peak_roi'       => $peakRoi,
+                    'current_lock'   => $oldLockPrice,
+                    'proposed_lock'  => null,
+                    'proposed_roi'   => null,
+                    'position_state' => $positionState,
+                ];
+            }
+        }
+
         // ── Target lock ROI ───────────────────────────────────────────────────
         $targetLockRoi = $this->riskMath->calculateStepTrailingLockRoi($peakRoi, $profileConfig);
         if ($targetLockRoi === null) {
@@ -95,7 +125,6 @@ class ProfitLockPlanner
         }
 
         // ── Ratchet check ─────────────────────────────────────────────────────
-        $oldLockPrice = (float) ($lockState['lock_price'] ?? 0.0);
         if (!$this->riskMath->isImprovingLock($position, $oldLockPrice, $targetLockPrice)) {
             return $this->skip($symbol, $side, 'lock_not_improving', $lockState, $positionState, $currentRoi, $peakRoi);
         }
@@ -117,20 +146,6 @@ class ProfitLockPlanner
         // ── Anti-spam: min_price_distance_pct ────────────────────────────────
         if (!$this->riskMath->isSafeDistance($position, $targetLockPrice, $profileConfig)) {
             return $this->skip($symbol, $side, 'lock_price_too_close_to_current', $lockState, $positionState, $currentRoi, $peakRoi);
-        }
-
-        // ── Check if current price has already crossed the lock ───────────────
-        $currentPrice = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
-        if ($oldLockPrice > 0.0 && $currentPrice > 0.0) {
-            $lockCrossed = false;
-            if (($side === 'long' || $side === 'buy') && $currentPrice <= $oldLockPrice) {
-                $lockCrossed = true;
-            } elseif (($side === 'short' || $side === 'sell') && $currentPrice >= $oldLockPrice) {
-                $lockCrossed = true;
-            }
-            if ($lockCrossed) {
-                return $this->buildPlan('would_close_on_lock_touch', $symbol, $side, $targetLockPrice, $targetLockRoi, $oldLockPrice, $currentRoi, $peakRoi, 'current_price_crossed_lock', $positionState);
-            }
         }
 
         // ── Plan the lock ─────────────────────────────────────────────────────

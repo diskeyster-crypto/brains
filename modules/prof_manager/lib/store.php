@@ -24,6 +24,55 @@ class Store
         $this->storageDir = rtrim($storageDir, '/');
     }
 
+    /**
+     * Ensure all required storage directories and empty files exist.
+     * Called lazily at service startup.
+     */
+    public function ensureStorageInit(): void
+    {
+        $runtimeDir = $this->storageDir . '/runtime';
+        $logsDir    = $this->storageDir . '/logs';
+
+        foreach ([$runtimeDir, $logsDir] as $dir) {
+            if (!is_dir($dir)) {
+                mkdir($dir, 0775, true);
+            }
+        }
+
+        $runtimeFiles = ['last_run.json', 'positions_state.json', 'locks.json'];
+        foreach ($runtimeFiles as $file) {
+            $path = $runtimeDir . '/' . $file;
+            if (!file_exists($path)) {
+                file_put_contents($path, "{}\n", LOCK_EX);
+            }
+        }
+
+        $errorLog = $logsDir . '/error.log';
+        if (!file_exists($errorLog)) {
+            file_put_contents($errorLog, '', LOCK_EX);
+        }
+    }
+
+    /**
+     * Read the last line from the error log (most recent error entry as raw string).
+     */
+    public function readLastError(): string
+    {
+        $logPath = $this->storageDir . '/logs/error.log';
+        if (!is_file($logPath) || !is_readable($logPath)) {
+            return '';
+        }
+        $content = file_get_contents($logPath);
+        if ($content === false || $content === '') {
+            return '';
+        }
+        $lines = array_filter(explode("\n", trim($content)));
+        if (empty($lines)) {
+            return '';
+        }
+        return end($lines);
+    }
+
     // =========================================================================
     // Public accessors
     // =========================================================================

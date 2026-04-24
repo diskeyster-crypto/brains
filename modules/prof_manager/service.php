@@ -70,6 +70,7 @@ final class ProfManagerService
         $storageDir           = $this->moduleDir . '/storage';
 
         $this->store          = new Lib\Store($storageDir);
+        $this->store->ensureStorageInit();
         $this->positionReader = new Lib\PositionReader($this->repoRoot);
         $this->validator      = new Lib\Validator();
         $this->riskMath       = new Lib\RiskMath();
@@ -238,14 +239,27 @@ final class ProfManagerService
         $lastRun = $this->store->readLastRun();
         $locks   = $this->store->readLocks();
 
+        $lastError = null;
+        $lastErrRaw = $this->store->readLastError();
+        if ($lastErrRaw !== '') {
+            $decoded = json_decode($lastErrRaw, true);
+            if (is_array($decoded) && isset($decoded['message'])) {
+                $lastError = $decoded['message'];
+            } else {
+                $lastError = $lastErrRaw;
+            }
+        }
+
         return [
-            'module'        => 'prof_manager',
-            'version'       => '0.1.0',
-            'enabled'       => $this->runtimeEnabled,
-            'mode'          => 'paper',
-            'profile'       => $this->config['active_profile'] ?? 'legacy_safe',
-            'active_locks'  => count($locks),
-            'last_run'      => $lastRun,
+            'enabled'          => $this->runtimeEnabled,
+            'mode'             => 'paper',
+            'active_profile'   => $this->config['active_profile'] ?? 'legacy_safe',
+            'last_tick'        => $lastRun['ts'] ?? null,
+            'positions_tracked'=> (int) ($lastRun['valid_positions'] ?? $lastRun['positions'] ?? 0),
+            'locks_active'     => count($locks),
+            'planned_updates'  => (int) ($lastRun['executed_count'] ?? 0),
+            'skipped'          => (int) ($lastRun['skipped_count'] ?? 0),
+            'last_error'       => $lastError,
         ];
     }
 
@@ -253,10 +267,12 @@ final class ProfManagerService
      * Enable or disable the module at runtime (does not persist to config file).
      *
      * @param bool $enabled
+     * @return array{ok: bool, enabled: bool}
      */
-    public function setEnabled(bool $enabled): void
+    public function setEnabled(bool $enabled): array
     {
         $this->runtimeEnabled = $enabled;
+        return ['ok' => true, 'enabled' => $enabled];
     }
 
     // =========================================================================
@@ -266,15 +282,25 @@ final class ProfManagerService
     private function loadConfig(): array
     {
         $configPath = $this->moduleDir . '/config/config.php';
-        if (!is_file($configPath)) {
-            return [];
-        }
+        $activePath = $this->moduleDir . '/config/active.php';
+        $cfg = [];
         try {
-            $cfg = require $configPath;
-            return is_array($cfg) ? $cfg : [];
+            if (is_file($configPath)) {
+                $base = require $configPath;
+                if (is_array($base)) {
+                    $cfg = $base;
+                }
+            }
+            if (is_file($activePath)) {
+                $active = require $activePath;
+                if (is_array($active)) {
+                    $cfg = array_merge($cfg, $active);
+                }
+            }
         } catch (\Throwable $e) {
-            return [];
+            // return whatever we have
         }
+        return $cfg;
     }
 
     private function positionKey(string $symbol, string $side): string

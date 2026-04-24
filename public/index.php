@@ -894,6 +894,22 @@ Router::post('/admin/dashboard/stop-manager/toggle', function () {
     handleDashboardSmToggle();
 });
 
+Router::post('/admin/dashboard/profit-manager/tick', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardPmTick();
+});
+
+Router::post('/admin/dashboard/profit-manager/toggle', function () {
+    if (!Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+    handleDashboardPmToggle();
+});
+
 Router::post('/admin/dashboard/chain-run', function () {
     if (!Auth::check()) {
         http_response_code(403);

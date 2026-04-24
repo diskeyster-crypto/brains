@@ -84,6 +84,38 @@ function renderDashboardHub(): string
         // keep empty
     }
 
+    // ── prof_manager runtime data ─────────────────────────────────────────
+    $pmStatus = [];
+    try {
+        $pmModuleDir = System::path('root') . '/modules/prof_manager';
+        if (is_file($pmModuleDir . '/service.php')) {
+            require_once $pmModuleDir . '/service.php';
+            $pmSvc    = new \Modules\ProfManager\ProfManagerService($pmModuleDir);
+            $pmStatus = $pmSvc->getStatus();
+        }
+    } catch (\Throwable) {
+        // keep empty status
+    }
+
+    $pmEnabled       = ($pmStatus['enabled']          ?? false) ? 'Вкл' : 'Выкл';
+    $pmEnabledBool   = ($pmStatus['enabled']          ?? false);
+    $pmMode          = (string) ($pmStatus['mode']          ?? 'paper');
+    $pmProfile       = (string) ($pmStatus['active_profile'] ?? 'legacy_safe');
+    $pmLastTick      = (string) ($pmStatus['last_tick']      ?? '—');
+    $pmPosTracked    = (int)    ($pmStatus['positions_tracked'] ?? 0);
+    $pmLocksActive   = (int)    ($pmStatus['locks_active']   ?? 0);
+    $pmPlanned       = (int)    ($pmStatus['planned_updates'] ?? 0);
+    $pmSkipped       = (int)    ($pmStatus['skipped']        ?? 0);
+    $pmLastError     = (string) ($pmStatus['last_error']     ?? '');
+
+    $pmToggleTarget  = $pmEnabledBool ? '0' : '1';
+    $pmToggleLabel   = $pmEnabledBool ? 'Выключить PM' : 'Включить PM';
+    $pmToggleBg      = $pmEnabledBool ? 'rgba(248,81,73,.10)' : 'rgba(63,185,80,.10)';
+    $pmToggleColor   = $pmEnabledBool ? '#f85149' : '#3fb950';
+
+    $pmTickUrl   = System::web('admin/dashboard/profit-manager/tick');
+    $pmToggleUrl = System::web('admin/dashboard/profit-manager/toggle');
+
     // ── flash message ─────────────────────────────────────────────────────
     $flash = null;
     if (session_status() === PHP_SESSION_NONE) {
@@ -700,6 +732,9 @@ HTML;
   <button class="dh-tab-btn" onclick="dhTab(this,'dh-sm')" type="button">
     <i class="bi bi-shield-exclamation" style="margin-right:5px;"></i>Стоп
   </button>
+  <button class="dh-tab-btn" onclick="dhTab(this,'dh-pm')" type="button">
+    <i class="bi bi-graph-up-arrow" style="margin-right:5px;"></i>Профит
+  </button>
   <button class="dh-tab-btn" onclick="dhTab(this,'dh-ctrl')" type="button">
     <i class="bi bi-sliders" style="margin-right:5px;"></i>Управление
   </button>
@@ -853,6 +888,63 @@ HTML;
       </div>
       <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
         Только paper/local. Биржевые стопы не размещаются.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Profit Manager pane ──────────────────────────────────────────── -->
+<div id="dh-pm" class="dh-pane">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+    <div class="card">
+      <div class="card-header">Profit Manager — Статус</div>
+      <div class="card-body">
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Включён</td><td>{$pmEnabled}</td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$pmMode}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Профиль</td><td><code>{$pmProfile}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний тик</td><td><code>{$pmLastTick}</code></td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">Profit Manager — Runtime</div>
+      <div class="card-body">
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Позиций отслеживается</td><td><code>{$pmPosTracked}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Локов активно</td><td><code>{$pmLocksActive}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Плановых обновлений</td><td><code>{$pmPlanned}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Пропущено</td><td><code>{$pmSkipped}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td><td style="color:#f85149;font-size:12px;">{$pmLastError}</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">Ручное управление</div>
+    <div class="card-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <form method="post" action="{$pmToggleUrl}" style="margin:0;">
+          <input type="hidden" name="enabled" value="{$pmToggleTarget}">
+          <button type="submit" class="btn btn-sm" style="background:{$pmToggleBg};color:{$pmToggleColor};border:1px solid {$pmToggleColor}55;padding:6px 18px;font-weight:600;">
+            {$pmToggleLabel}
+          </button>
+        </form>
+        <form method="post" action="{$pmTickUrl}" style="margin:0;">
+          <input type="hidden" name="action" value="tick">
+          <button type="submit" class="btn btn-sm" style="background:rgba(240,136,62,.12);color:#f0883e;border:1px solid #f0883e55;padding:6px 18px;">
+            <i class="bi bi-play-fill" style="margin-right:4px;"></i>Тик PM
+          </button>
+        </form>
+        <form method="post" action="{$pmTickUrl}" style="margin:0;">
+          <input type="hidden" name="action" value="refresh">
+          <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;padding:6px 18px;">
+            <i class="bi bi-arrow-clockwise" style="margin-right:4px;"></i>Обновить runtime
+          </button>
+        </form>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
+        Только paper. PM управляет исключительно прибыльными lock-ами — биржевые ордера не размещаются.
       </div>
     </div>
   </div>
@@ -1563,3 +1655,94 @@ function handleDashboardChainRun(): void
     exit;
 }
 } // end if (!function_exists('handleDashboardChainRun'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: manual Profit Manager tick from dashboard
+// Registered as: POST /admin/dashboard/profit-manager/tick
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardPmTick')) {
+function handleDashboardPmTick(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        exit;
+    }
+
+    $action  = trim((string)($_POST['action'] ?? 'tick'));
+    $dashUrl = System::web('admin/dashboard');
+
+    if ($action === 'refresh') {
+        $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Profit Manager runtime обновлён'];
+        header('Location: ' . $dashUrl);
+        exit;
+    }
+
+    $moduleDir = System::path('root') . '/modules/prof_manager';
+
+    try {
+        require_once $moduleDir . '/service.php';
+        $service = new \Modules\ProfManager\ProfManagerService($moduleDir);
+        $service->setEnabled(true);
+        $service->tick();
+        $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Profit Manager tick выполнен'];
+    } catch (\Throwable $ex) {
+        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка Profit Manager tick: ' . $ex->getMessage()];
+    }
+
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardPmTick'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: quick Profit Manager enable/disable toggle
+// Registered as: POST /admin/dashboard/profit-manager/toggle
+// Persists the `enabled` flag to modules/prof_manager/config/active.php.
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardPmToggle')) {
+function handleDashboardPmToggle(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+
+    $enabled    = (bool)(int)($_POST['enabled'] ?? 0);
+    $dashUrl    = System::web('admin/dashboard');
+    $activeFile = System::path('root') . '/modules/prof_manager/config/active.php';
+
+    $current = [];
+    if (file_exists($activeFile)) {
+        $loaded = @include $activeFile;
+        if (is_array($loaded)) {
+            $current = $loaded;
+        }
+    }
+
+    $current['enabled'] = $enabled;
+
+    $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Profit Manager Module — Active Config Overrides\n * Written by the admin UI.\n */\n\nreturn ";
+    $php .= var_export($current, true);
+    $php .= ";\n";
+
+    $dir = dirname($activeFile);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    file_put_contents($activeFile, $php);
+
+    $label = $enabled ? 'включён' : 'выключен';
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Profit Manager {$label}"];
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardPmToggle'))

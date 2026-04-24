@@ -22,12 +22,16 @@ class PositionReader
 {
     private string $repoRoot;
 
+    /** Maximum age of strategy positions in hours; 0 = no limit. */
+    private int $positionTtlHours;
+
     /** Shared PriceProvider instance (created lazily). */
     private ?PriceProvider $priceProvider = null;
 
-    public function __construct(string $repoRoot)
+    public function __construct(string $repoRoot, int $positionTtlHours = 6)
     {
-        $this->repoRoot = rtrim($repoRoot, '/');
+        $this->repoRoot         = rtrim($repoRoot, '/');
+        $this->positionTtlHours = max(0, $positionTtlHours);
     }
 
     /**
@@ -46,14 +50,37 @@ class PositionReader
             'modules/bot/storage/active_positions.json',
         ];
 
-        $strategyCandidates = $this->resolveStrategyCandidates();
+        // Resolve enabled and disabled strategy candidates separately
+        $enabledStrategyCandidates  = $this->resolveStrategyCandidates(true);
+        $disabledStrategyCandidates = $this->resolveStrategyCandidates(false);
 
         $executorCandidates = [
             'modules/trading/executor_bot/storage/last_run.json',
         ];
 
-        $allCandidates = array_merge($fixedCandidates, $strategyCandidates, $executorCandidates);
+        // Count positions from disabled strategy sources without including them
+        $ignoredDisabledCount = 0;
+        foreach ($disabledStrategyCandidates as $relPath) {
+            $absPath = $this->repoRoot . '/' . $relPath;
+            if (!is_file($absPath) || !is_readable($absPath)) {
+                continue;
+            }
+            $raw = @file_get_contents($absPath);
+            if ($raw === false || $raw === '') {
+                continue;
+            }
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $ignoredDisabledCount += count(array_values($decoded));
+            }
+        }
+
+        $allCandidates = array_merge($fixedCandidates, $enabledStrategyCandidates, $executorCandidates);
         $tried = [];
+        $ignoredStaleCount  = 0;
+        $cutoffTs           = ($this->positionTtlHours > 0)
+            ? (time() - $this->positionTtlHours * 3600)
+            : 0;
 
         foreach ($allCandidates as $relPath) {
             $absPath = $this->repoRoot . '/' . $relPath;
@@ -83,6 +110,24 @@ class PositionReader
                 continue;
             }
 
+            // Apply TTL filter only for strategy sources
+            $isStrategySource = str_contains($relPath, 'modules/strategy/');
+            if ($isStrategySource && $cutoffTs > 0) {
+                $filtered = [];
+                foreach ($rawPositions as $pos) {
+                    $posTs = $this->extractPositionTimestamp($pos);
+                    if ($posTs !== null && $posTs < $cutoffTs) {
+                        $ignoredStaleCount++;
+                    } else {
+                        $filtered[] = $pos;
+                    }
+                }
+                $rawPositions = $filtered;
+                if (empty($rawPositions)) {
+                    continue; // all stale — try next candidate
+                }
+            }
+
             $enrichmentStats = [
                 'prices_from_position'  => 0,
                 'prices_from_gateway'   => 0,
@@ -97,15 +142,18 @@ class PositionReader
             $provider = $this->priceProvider();
 
             return [
-                'positions'              => $positions,
-                'source'                 => $relPath,
-                'enrichment_summary'     => $enrichmentStats,
-                'price_provider_error'   => $provider->getProviderError(),
-                'price_provider_source'  => $provider->getProviderSource(),
-                'diagnostics'            => [
-                    'path'  => $absPath,
-                    'count' => count($positions),
-                    'tried' => $tried,
+                'positions'                              => $positions,
+                'source'                                 => $relPath,
+                'enrichment_summary'                     => $enrichmentStats,
+                'price_provider_error'                   => $provider->getProviderError(),
+                'price_provider_source'                  => $provider->getProviderSource(),
+                'diagnostics'                            => [
+                    'path'                                   => $absPath,
+                    'count'                                  => count($positions),
+                    'tried'                                  => $tried,
+                    'ignored_disabled_strategy_positions'    => $ignoredDisabledCount,
+                    'ignored_stale_positions'                => $ignoredStaleCount,
+                    'stale_ttl_hours'                        => $this->positionTtlHours,
                 ],
             ];
         }
@@ -115,9 +163,12 @@ class PositionReader
             'source'             => 'none',
             'enrichment_summary' => [],
             'diagnostics'        => [
-                'reason'     => 'no_positions_source_found',
-                'candidates' => $allCandidates,
-                'tried'      => $tried,
+                'reason'                                 => 'no_positions_source_found',
+                'candidates'                             => $allCandidates,
+                'tried'                                  => $tried,
+                'ignored_disabled_strategy_positions'    => $ignoredDisabledCount,
+                'ignored_stale_positions'                => $ignoredStaleCount,
+                'stale_ttl_hours'                        => $this->positionTtlHours,
             ],
         ];
     }
@@ -127,11 +178,12 @@ class PositionReader
     // =========================================================================
 
     /**
-     * Resolve dynamic strategy sub-module candidates.
+     * Resolve dynamic strategy sub-module candidates filtered by enabled state.
      *
+     * @param bool $wantEnabled true = only enabled strategies, false = only disabled
      * @return list<string>
      */
-    private function resolveStrategyCandidates(): array
+    private function resolveStrategyCandidates(bool $wantEnabled = true): array
     {
         $candidates   = [];
         $strategyRoot = $this->repoRoot . '/modules/strategy';
@@ -145,13 +197,119 @@ class PositionReader
             return $candidates;
         }
 
+        $enabledMap = $this->resolveStrategyEnabledMap();
+
         foreach ($dirs as $storageDir) {
+            // Derive the strategy slug from the directory name two levels up
+            $strategySlug = basename(dirname($storageDir));
+            $isEnabled    = $enabledMap[$strategySlug] ?? true; // default enabled
+
+            if ($isEnabled !== $wantEnabled) {
+                continue;
+            }
+
             $base         = str_replace($this->repoRoot . '/', '', $storageDir);
             $candidates[] = $base . '/bot_active_positions.json';
             $candidates[] = $base . '/active_positions.json';
         }
 
         return $candidates;
+    }
+
+    /**
+     * Build a map of strategy_slug => bool (enabled) using operator_overrides.json
+     * and strategy_registry.json. Defaults to true when no data is available.
+     *
+     * @return array<string, bool>
+     */
+    private function resolveStrategyEnabledMap(): array
+    {
+        $map = [];
+
+        // Load operator overrides (keyed by strategy_id / slug)
+        $overridesPath = $this->repoRoot . '/modules/bot/storage/operator_overrides.json';
+        $overrides     = [];
+        if (is_file($overridesPath) && is_readable($overridesPath)) {
+            $raw = @file_get_contents($overridesPath);
+            if ($raw !== false && $raw !== '') {
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $overrides = $decoded;
+                }
+            }
+        }
+
+        // Load strategy registry to get enabled_by_default
+        $registryPath = $this->repoRoot . '/modules/bot/storage/strategy_registry.json';
+        $registry     = [];
+        if (is_file($registryPath) && is_readable($registryPath)) {
+            $raw = @file_get_contents($registryPath);
+            if ($raw !== false && $raw !== '') {
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $registry = $decoded;
+                }
+            }
+        }
+
+        // Build enabled_by_default map from registry
+        $defaultEnabled = [];
+        foreach ($registry as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $sid = (string) ($entry['strategy_id'] ?? '');
+            if ($sid !== '') {
+                $defaultEnabled[$sid] = (bool) ($entry['enabled_by_default'] ?? true);
+            }
+        }
+
+        // Merge: override takes precedence
+        // Collect all known slugs from both sources
+        $allSlugs = array_unique(array_merge(array_keys($overrides), array_keys($defaultEnabled)));
+        foreach ($allSlugs as $slug) {
+            if (isset($overrides[$slug]) && array_key_exists('enabled', $overrides[$slug])) {
+                $map[$slug] = (bool) $overrides[$slug]['enabled'];
+            } else {
+                $map[$slug] = $defaultEnabled[$slug] ?? true;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * Extract a UNIX timestamp from a position's timestamp field(s).
+     * Returns null if no recognisable timestamp field is present.
+     *
+     * Checked fields in order: opened_at, entered_at, last_updated_at, created_at, timestamp
+     *
+     * @param mixed $pos
+     * @return int|null
+     */
+    private function extractPositionTimestamp(mixed $pos): ?int
+    {
+        if (!is_array($pos)) {
+            return null;
+        }
+
+        foreach (['opened_at', 'entered_at', 'last_updated_at', 'created_at', 'timestamp'] as $field) {
+            if (!isset($pos[$field]) || $pos[$field] === '' || $pos[$field] === null) {
+                continue;
+            }
+            $val = $pos[$field];
+            if (is_int($val) && $val > 0) {
+                return $val;
+            }
+            if (is_string($val) && $val !== '') {
+                $ts = strtotime($val);
+                if ($ts !== false && $ts > 0) {
+                    return $ts;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

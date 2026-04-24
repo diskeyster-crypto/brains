@@ -752,6 +752,12 @@ ROWS;
         ? $pmRawLastRun['enrichment_summary'] : [];
     $pmDiagPriceProvErr    = (string)($pmRawLastRun['price_provider_error']  ?? '');
     $pmDiagPriceProvSource = (string)($pmRawLastRun['price_provider_source'] ?? '');
+    $pmDiagIgnoredDisabled = isset($pmRawLastRun['ignored_disabled_strategy_positions'])
+        ? (int)$pmRawLastRun['ignored_disabled_strategy_positions'] : -1;
+    $pmDiagIgnoredStale    = isset($pmRawLastRun['ignored_stale_positions'])
+        ? (int)$pmRawLastRun['ignored_stale_positions'] : -1;
+    $pmDiagStaleTtl        = isset($pmRawLastRun['stale_ttl_hours'])
+        ? (int)$pmRawLastRun['stale_ttl_hours'] : -1;
 
     // ── PM per-position runtime rows (new diagnostics) ────────────────────
     $pmPositionsRuntime   = is_array($pmRawLastRun['positions_runtime']    ?? null)
@@ -1044,6 +1050,15 @@ ROWS;
     if ($pmDiagSource !== '' && $pmDiagSource !== 'none') {
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Источник позиций</td>'
             . '<td style="font-size:11px;"><code>' . $e($pmDiagSource) . '</code></td></tr>';
+    }
+    if ($pmDiagIgnoredDisabled > 0) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Проигнор. (выкл. стратегия)</td>'
+            . '<td><code style="color:#f0883e;">' . $pmDiagIgnoredDisabled . '</code></td></tr>';
+    }
+    if ($pmDiagIgnoredStale > 0) {
+        $ttlLabel = $pmDiagStaleTtl > 0 ? ' (TTL ' . $pmDiagStaleTtl . 'h)' : '';
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Проигнор. устаревших' . $ttlLabel . '</td>'
+            . '<td><code style="color:#f0883e;">' . $pmDiagIgnoredStale . '</code></td></tr>';
     }
     if (!empty($pmSkipReasonsSummary)) {
         $skipSummaryParts = [];
@@ -2832,6 +2847,18 @@ function handleDashboardResetRuntime(): void
         $root . '/modules/prof_manager/storage/runtime/positions_state.json' => '{}',
         $root . '/modules/prof_manager/storage/runtime/locks.json'           => '{}',
     ];
+
+    // Also clear strategy runtime position files (bot_active_positions.json and active_positions.json
+    // inside each strategy's storage/ dir); do NOT touch configs, manifests, logs, or rules.
+    $strategyStorageDirs = glob($root . '/modules/strategy/*/storage', GLOB_ONLYDIR) ?: [];
+    foreach ($strategyStorageDirs as $storageDir) {
+        foreach (['bot_active_positions.json', 'active_positions.json'] as $filename) {
+            $path = $storageDir . '/' . $filename;
+            if (is_file($path)) {
+                $files[$path] = '[]';
+            }
+        }
+    }
 
     foreach ($files as $path => $content) {
         $dir = dirname($path);

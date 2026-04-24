@@ -3,9 +3,10 @@
 declare(strict_types=1);
 
 return [
-    'enabled'        => false,
-    'mode'           => 'paper',
-    'active_profile' => 'legacy_safe',
+    'enabled'                  => false,
+    'mode'                     => 'paper',
+    'active_profile'           => 'legacy_safe',
+    'paper_position_ttl_hours' => 6,
     'profiles'       => [
         'legacy_safe' => [
             'init_roi'               => 2.0,

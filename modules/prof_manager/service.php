@@ -72,7 +72,8 @@ final class ProfManagerService
 
         $this->store          = new Lib\Store($storageDir);
         $this->store->ensureStorageInit();
-        $this->positionReader = new Lib\PositionReader($this->repoRoot);
+        $ttlHours             = (int) ($this->config['paper_position_ttl_hours'] ?? 6);
+        $this->positionReader = new Lib\PositionReader($this->repoRoot, $ttlHours);
         $this->validator      = new Lib\Validator();
         $this->riskMath       = new Lib\RiskMath();
         $this->planner        = new Lib\ProfitLockPlanner($this->riskMath);
@@ -131,21 +132,25 @@ final class ProfManagerService
                 $skipReason = ($readResult['source'] === 'none')
                     ? 'no_positions_source_found'
                     : 'no_positions';
+                $earlyDiag = $readResult['diagnostics'] ?? [];
                 $result = [
-                    'ok'             => true,
-                    'ts'             => $ts,
-                    'enabled'        => true,
-                    'mode'           => 'paper',
-                    'profile'        => $activeProfile,
-                    'positions'      => 0,
-                    'source'         => $readResult['source'],
-                    'diagnostics'    => $readResult['diagnostics'],
-                    'executed_count' => 0,
-                    'skipped_count'  => 0,
-                    'executed'       => [],
-                    'skipped'        => [],
-                    'skip_reason'    => $skipReason,
-                    'validation_errors' => [],
+                    'ok'                                     => true,
+                    'ts'                                     => $ts,
+                    'enabled'                                => true,
+                    'mode'                                   => 'paper',
+                    'profile'                                => $activeProfile,
+                    'positions'                              => 0,
+                    'source'                                 => $readResult['source'],
+                    'diagnostics'                            => $earlyDiag,
+                    'executed_count'                         => 0,
+                    'skipped_count'                          => 0,
+                    'executed'                               => [],
+                    'skipped'                                => [],
+                    'skip_reason'                            => $skipReason,
+                    'validation_errors'                      => [],
+                    'ignored_disabled_strategy_positions'    => (int) ($earlyDiag['ignored_disabled_strategy_positions'] ?? 0),
+                    'ignored_stale_positions'                => (int) ($earlyDiag['ignored_stale_positions'] ?? 0),
+                    'stale_ttl_hours'                        => (int) ($earlyDiag['stale_ttl_hours'] ?? 6),
                 ];
                 $this->store->writeLastRun($result);
                 return $result;
@@ -292,35 +297,39 @@ final class ProfManagerService
             }
             $errorsSummary = array_values(array_unique($allErrorCodes));
 
+            $readDiag   = $readResult['diagnostics'] ?? [];
             $skipReason = ($positionsTotal > 0 && $validCount === 0)
                 ? 'all_positions_invalid'
                 : '';
 
             $result = [
-                'ok'                          => true,
-                'ts'                          => $ts,
-                'enabled'                     => true,
-                'mode'                        => 'paper',
-                'profile'                     => $activeProfile,
-                'source'                      => $readResult['source'],
-                'positions'                   => $positionsTotal,
-                'valid_positions'             => $validCount,
-                'invalid_positions'           => $invalidCount,
-                'price_missing_positions'     => $priceMissingCount,
-                'executed_count'              => $execResult['summary']['executed'],
-                'skipped_count'               => $execResult['summary']['skipped'],
-                'executed'                    => $execResult['executed'],
-                'skipped'                     => $execResult['skipped'],
-                'skip_reason'                 => $skipReason,
-                'skip_reasons_summary'        => $skipReasonsSummary,
-                'positions_runtime'           => $positionsRuntime,
-                'validation_errors'           => $validationErrors,
-                'validation_errors_summary'   => $errorsSummary,
-                'validation_errors_by_symbol' => $errorsBySymbol,
-                'warnings_summary'            => $warningsSummary,
-                'enrichment_summary'          => $enrichmentSummary,
-                'price_provider_error'        => $priceProviderError,
-                'price_provider_source'       => $priceProviderSource,
+                'ok'                                     => true,
+                'ts'                                     => $ts,
+                'enabled'                                => true,
+                'mode'                                   => 'paper',
+                'profile'                                => $activeProfile,
+                'source'                                 => $readResult['source'],
+                'positions'                              => $positionsTotal,
+                'valid_positions'                        => $validCount,
+                'invalid_positions'                      => $invalidCount,
+                'price_missing_positions'                => $priceMissingCount,
+                'executed_count'                         => $execResult['summary']['executed'],
+                'skipped_count'                          => $execResult['summary']['skipped'],
+                'executed'                               => $execResult['executed'],
+                'skipped'                                => $execResult['skipped'],
+                'skip_reason'                            => $skipReason,
+                'skip_reasons_summary'                   => $skipReasonsSummary,
+                'positions_runtime'                      => $positionsRuntime,
+                'validation_errors'                      => $validationErrors,
+                'validation_errors_summary'              => $errorsSummary,
+                'validation_errors_by_symbol'            => $errorsBySymbol,
+                'warnings_summary'                       => $warningsSummary,
+                'enrichment_summary'                     => $enrichmentSummary,
+                'price_provider_error'                   => $priceProviderError,
+                'price_provider_source'                  => $priceProviderSource,
+                'ignored_disabled_strategy_positions'    => (int) ($readDiag['ignored_disabled_strategy_positions'] ?? 0),
+                'ignored_stale_positions'                => (int) ($readDiag['ignored_stale_positions'] ?? 0),
+                'stale_ttl_hours'                        => (int) ($readDiag['stale_ttl_hours'] ?? 6),
             ];
 
             $this->store->writeLastRun($result);

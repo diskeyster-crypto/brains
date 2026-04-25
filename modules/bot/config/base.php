@@ -17,11 +17,9 @@ return [
     // Core identity
     'bot_id'  => 'bot',
     'enabled' => false,
-    'mode'    => 'demo',   // demo | paper | passive | disabled
+    'mode'    => 'demo',   // demo | live
                            // demo    = Bybit Demo account execution (api-demo.bybit.com); primary test mode
-                           // paper   = local simulation, no exchange interaction (legacy)
-                           // passive = ingest/queue only, no execution
-                           // disabled/inactive = ingest only, no queue promotion
+                           // live    = live account execution via KeyCenter
 
     // Bybit Demo account credentials (stored locally in config — not live account).
     // Used only when mode = demo.  Do NOT put live/mainnet keys here.
@@ -53,7 +51,7 @@ return [
     // Per-trade execution defaults.
     // Resolution order: signal value → operator override → these config values → hard fallback.
     // 0 means "not set at config level" — the hard fallbacks (leverage=5, budget=6) will apply.
-    'leverage'             => 5,     // default leverage for demo/paper positions
+    'leverage'             => 5,     // default leverage for demo/live positions
     'budget_per_trade'     => 6.0,   // default USDT allocated per position
     'max_active_positions' => 10,    // maximum concurrently open positions (0 = unlimited)
 

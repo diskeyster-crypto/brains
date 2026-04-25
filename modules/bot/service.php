@@ -332,7 +332,7 @@ final class BotService
         }
 
         // ── Demo credentials diagnostics ─────────────────────────────────────
-        $botMode            = (string)($config['mode'] ?? 'passive');
+        $botMode            = (string)($config['mode'] ?? 'demo');
         $demoApiKey         = (string)($config['demo_api_key']    ?? '');
         $demoApiSecret      = (string)($config['demo_api_secret'] ?? '');
         $demoCredsConfigured = ($demoApiKey !== '' && $demoApiSecret !== '');
@@ -750,7 +750,7 @@ final class BotService
         array $config,
         array $overrides,
         string $tickAt,
-        string $botMode = 'passive'
+        string $botMode = 'demo'
     ): array {
         $allowedModes = (array)($config['allowed_entry_modes'] ?? ['limit', 'market']);
         $maxAgeSec    = (int)($config['max_signal_age_sec'] ?? 0);
@@ -966,17 +966,12 @@ final class BotService
         $positionsClosedWithdrawn       = 0;
         $positionsClosedReversePattern  = 0;
         $queueSkippedModeDisabled       = 0;
-        $queueSkippedModePassive        = 0;
         $logEvents                      = 0;
 
         // demo mode: real execution on Bybit Demo account
-        $isDemoMode     = ($mode === 'demo');
+        $isDemoMode = ($mode === 'demo');
         // live mode: real execution on Bybit Live account via KeyCenter
-        $isLiveMode     = ($mode === 'live');
-        // paper, smoke, and active all mean local paper execution
-        $isPaperMode    = in_array($mode, ['paper', 'smoke', 'active'], true);
-        $isPassiveMode  = ($mode === 'passive');
-        $isDisabledMode = ($mode === 'disabled');
+        $isLiveMode = ($mode === 'live');
 
         // ── Demo mode execution path ──────────────────────────────────────────
         if ($isDemoMode) {
@@ -1040,181 +1035,12 @@ final class BotService
                 continue;
             }
 
-            if (!$isPaperMode) {
-                // Not in an execution mode — count and label truthfully
-                if ($isPassiveMode) {
-                    $queueSkippedModePassive++;
-                    $qItem['skip_reason'] = 'ignored_mode_passive';
-                } else {
-                    // disabled or any unknown mode
-                    $queueSkippedModeDisabled++;
-                    $qItem['skip_reason'] = 'ignored_mode_disabled';
-                }
-                continue;
-            }
-
-            // Already has an order record from a previous tick
-            if (isset($orderMap[$key])) {
-                continue;
-            }
-
-            // Create order record
-            $order = $this->buildOrderFromQueueItem($qItem, $tickAt);
-            $orderMap[$key] = $order;
-
-            // Mark queue item as submitted (terminal)
-            $qItem['queue_status']       = 'submitted';
-            $qItem['submitted_at']       = $tickAt;
-            $qItem['last_change_reason'] = 'submitted_to_execution';
-
-            $ordersCreated++;
-            $this->appendExecutionLog([
-                'timestamp'      => $tickAt,
-                'event_type'     => 'order_created',
-                'strategy_id'    => $order['strategy_id'],
-                'owner_strategy' => $order['owner_strategy'],
-                'signal_id'      => $order['signal_id'],
-                'symbol'         => $order['symbol'],
-                'side'           => $order['side'],
-                'entry_mode'     => $order['entry_mode'],
-                'entry_price'    => $order['entry_price'],
-                'execution_mode' => $order['execution_mode'],
-                'reason'         => 'created_from_ready_queue',
-            ]);
-            $logEvents++;
+            // Unknown mode (not demo or live): skip item
+            $queueSkippedModeDisabled++;
+            $qItem['skip_reason'] = 'ignored_unknown_mode';
+            continue;
         }
         unset($qItem);
-
-        // ── Step 2: paper submit + fill in one pass ───────────────────────────
-        if ($isPaperMode) {
-            foreach ($orderMap as $key => &$order) {
-                $oStatus = (string)($order['order_status'] ?? '');
-
-                if ($oStatus === 'created') {
-                    $order['order_status']      = 'submitted_paper';
-                    $order['submitted_at']      = $tickAt;
-                    $order['last_updated_at']   = $tickAt;
-                    $order['transition_reason'] = 'submitted_in_paper_mode';
-                    $oStatus = 'submitted_paper';
-                    $ordersSubmittedPaper++;
-                }
-
-                if ($oStatus === 'submitted_paper') {
-                    $order['order_status']      = 'filled_paper';
-                    $order['filled_at']         = $tickAt;
-                    $order['last_updated_at']   = $tickAt;
-                    $order['transition_reason'] = 'filled_in_paper_mode';
-                    $ordersFilledPaper++;
-
-                    // Open position if not already present
-                    if (!isset($positionMap[$key])) {
-                        // Max active positions guard
-                        $maxPos = (int)($config['max_active_positions'] ?? 10);
-                        if ($maxPos > 0 && count($positionMap) >= $maxPos) {
-                            $this->appendExecutionLog([
-                                'timestamp'     => $tickAt,
-                                'event_type'    => 'position_skipped',
-                                'symbol'        => $order['symbol'] ?? '',
-                                'reason'        => 'max_active_positions_reached',
-                                'max_positions' => $maxPos,
-                            ]);
-                            $logEvents++;
-                        } else {
-                            // Validate critical fields before creating position
-                            $epCheck  = (float)($order['entry_price'] ?? 0.0);
-                            $budCheck = (float)($order['bot_budget']  ?? 0.0);
-                            $levCheck = (int)($order['bot_leverage']  ?? 0);
-                            if ($epCheck <= 0.0 || $budCheck <= 0.0 || $levCheck <= 0) {
-                                $this->appendExecutionLog([
-                                    'timestamp'    => $tickAt,
-                                    'event_type'   => 'position_skipped',
-                                    'symbol'       => $order['symbol'] ?? '',
-                                    'entry_price'  => $epCheck,
-                                    'bot_budget'   => $budCheck,
-                                    'bot_leverage' => $levCheck,
-                                    'reason'       => 'invalid_entry_price_budget_or_leverage',
-                                ]);
-                                $logEvents++;
-                            } else {
-                                $position = $this->buildPositionFromOrder($order, $tickAt);
-                                $positionMap[$key] = $position;
-                                $positionsOpened++;
-                                $this->appendExecutionLog([
-                                    'timestamp'      => $tickAt,
-                                    'event_type'     => 'position_opened',
-                                    'strategy_id'    => $position['strategy_id'],
-                                    'owner_strategy' => $position['owner_strategy'],
-                                    'signal_id'      => $position['signal_id'],
-                                    'symbol'         => $position['symbol'],
-                                    'side'           => $position['side'],
-                                    'entry_mode'     => $position['entry_mode'],
-                                    'entry_price'    => $position['entry_price'],
-                                    'bot_leverage'   => $position['bot_leverage'],
-                                    'bot_budget'     => $position['bot_budget'],
-                                    'size'           => $position['size'],
-                                    'budget_source'  => $position['budget_source'],
-                                    'execution_mode' => $position['execution_mode'],
-                                    'reason'         => 'filled_in_paper_mode',
-                                ]);
-                                $logEvents++;
-                            }
-                        }
-                    }
-                }
-            }
-            unset($order);
-        }
-
-        // ── Step 3: check open positions for close conditions ─────────────────
-        if ($isPaperMode && !empty($positionMap)) {
-            // Collect keys to close (avoid mutating map during iteration)
-            $keysToClose = [];
-            foreach ($positionMap as $key => $pos) {
-                $expiresAt = (string)($pos['expires_at'] ?? '');
-                if ($expiresAt !== ''
-                    && ($ts = strtotime($expiresAt)) !== false
-                    && time() > $ts
-                ) {
-                    $keysToClose[$key] = 'expired_by_signal_ttl';
-                }
-            }
-
-            foreach ($keysToClose as $key => $closeReason) {
-                $pos                      = $positionMap[$key];
-                $pos['position_status']   = 'closed';
-                $pos['closed_at']         = $tickAt;
-                $pos['close_reason']      = $closeReason;
-                $pos['transition_reason'] = $closeReason;
-                $pos['last_updated_at']   = $tickAt;
-                $closedPositions[]        = $pos;
-                $positionsClosed++;
-
-                if ($closeReason === 'expired_by_signal_ttl') {
-                    $positionsClosedExpired++;
-                } elseif ($closeReason === 'withdrawn_by_strategy') {
-                    $positionsClosedWithdrawn++;
-                } elseif ($closeReason === 'reverse_pattern_close_requested') {
-                    $positionsClosedReversePattern++;
-                }
-
-                unset($positionMap[$key]);
-
-                $this->appendExecutionLog([
-                    'timestamp'      => $tickAt,
-                    'event_type'     => 'position_closed',
-                    'strategy_id'    => $pos['strategy_id'],
-                    'owner_strategy' => $pos['owner_strategy'],
-                    'signal_id'      => $pos['signal_id'],
-                    'symbol'         => $pos['symbol'],
-                    'side'           => $pos['side'],
-                    'entry_mode'     => $pos['entry_mode'],
-                    'entry_price'    => $pos['entry_price'],
-                    'execution_mode' => $pos['execution_mode'],
-                    'reason'         => $closeReason,
-                ]);
-                $logEvents++;
-            }
-        }
 
         return [
             'order_queue'                      => array_values($orderQueue),
@@ -1222,15 +1048,15 @@ final class BotService
             'active_positions'                 => array_values($positionMap),
             'closed_positions'                 => $closedPositions,
             'orders_created'                   => $ordersCreated,
-            'orders_submitted_paper'           => $ordersSubmittedPaper,
-            'orders_filled_paper'              => $ordersFilledPaper,
+            'orders_submitted_paper'           => 0,
+            'orders_filled_paper'              => 0,
             'positions_opened'                 => $positionsOpened,
             'positions_closed'                 => $positionsClosed,
             'positions_closed_expired'         => $positionsClosedExpired,
             'positions_closed_withdrawn'       => $positionsClosedWithdrawn,
             'positions_closed_reverse_pattern' => $positionsClosedReversePattern,
             'queue_items_skipped_mode_disabled' => $queueSkippedModeDisabled,
-            'queue_items_skipped_mode_passive'  => $queueSkippedModePassive,
+            'queue_items_skipped_mode_passive'  => 0,
             'execution_log_events'             => $logEvents,
             'orders_submitted_demo'            => 0,
             'orders_confirmed_demo'            => 0,
@@ -1271,7 +1097,7 @@ final class BotService
 
             // Order lifecycle
             'order_status'      => 'created',
-            'execution_mode'    => 'paper',
+            'execution_mode'    => 'demo',
             'transition_reason' => 'created_from_ready_queue',
             'expires_at'        => (string)($qItem['expires_at'] ?? ''),
             'created_at'        => $tickAt,
@@ -2683,14 +2509,14 @@ final class BotService
             'tp_value'                      => (float)($order['tp_value']                     ?? 2.0),
             'reverse_pattern_close_enabled' => (bool)($order['reverse_pattern_close_enabled'] ?? false),
 
-            // Liquidation context (paper-local; no real exchange liq in paper mode)
+            // Liquidation context (local estimate; no real exchange liq without exchange call)
             'liq_price'           => null,
             'estimated_liq_price' => $estimatedLiqPrice,
 
             // Position lifecycle
             'position_status'   => 'open',
-            'execution_mode'    => 'paper',
-            'transition_reason' => 'filled_in_paper_mode',
+            'execution_mode'    => 'demo',
+            'transition_reason' => 'filled_locally',
             'expires_at'        => (string)($order['expires_at'] ?? ''),
             'opened_at'         => $tickAt,
             'entered_at'        => $tickAt,
@@ -2743,7 +2569,7 @@ final class BotService
      * Deep strategy internals (pattern thresholds, TTL, corridor config, etc.)
      * are NOT exposed here — they stay inside each strategy module.
      */
-    private function buildQueueItem(array $signal, array $opOverrides, array $config, string $tickAt, string $executionMode = 'passive'): array
+    private function buildQueueItem(array $signal, array $opOverrides, array $config, string $tickAt, string $executionMode = 'demo'): array
     {
         // Resolve budget: signal → operator override → config → hard fallback
         $botBudget      = (float)($signal['bot_budget']  ?? 0.0);
@@ -2858,7 +2684,7 @@ final class BotService
                 'tick_at'                                   => null,
                 'elapsed_sec'                               => 0,
                 'bot_enabled'                               => false,
-                'bot_mode'                                  => 'passive',
+                'bot_mode'                                  => 'demo',
                 'strategies_discovered_total'               => 0,
                 'strategies_enabled_total'                  => 0,
                 'strategies_disabled_total'                 => 0,
@@ -2869,7 +2695,7 @@ final class BotService
                 'order_queue_refreshed_total'               => 0,
                 'order_queue_expired_total'                 => 0,
                 'order_queue_withdrawn_total'               => 0,
-                'execution_mode'                            => 'passive',
+                'execution_mode'                            => 'demo',
                 'orders_created'                            => 0,
                 'orders_submitted_paper'                    => 0,
                 'orders_filled_paper'                       => 0,
@@ -2976,7 +2802,7 @@ final class BotService
         $snap = [
             'snapshot_at'      => date('c'),
             'bot_id'           => 'bot',
-            'mode'             => $config['mode']    ?? 'passive',
+            'mode'             => $config['mode']    ?? 'demo',
             'enabled'          => $config['enabled'] ?? false,
             'tick_at'          => $lastRun['tick_at']    ?? null,
             'last_tick_result' => $lastRun['status']     ?? 'ok',
@@ -3005,7 +2831,7 @@ final class BotService
             // Brain-compatible keys
             'config_valid'     => true,
             'effective_config' => [
-                'mode'    => $config['mode']    ?? 'passive',
+                'mode'    => $config['mode']    ?? 'demo',
                 'enabled' => $config['enabled'] ?? false,
             ],
         ];
@@ -3083,7 +2909,7 @@ final class BotService
                     'symbol'              => $sym,
                     'side'                => $side,
                     'account'             => $account,
-                    'execution_mode'      => (string)($pos['execution_mode'] ?? 'paper'),
+                    'execution_mode'      => (string)($pos['execution_mode'] ?? 'demo'),
                     'runtime_age_minutes' => 1,
                     'first_seen_at'       => $tickAt,
                     'last_seen_at'        => $tickAt,

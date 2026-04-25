@@ -218,10 +218,8 @@ HTML;
         // ── config form values ────────────────────────────────────────────────
         $cfgEnYes  = $config['enabled'] ? ' selected' : '';
         $cfgEnNo   = !$config['enabled'] ? ' selected' : '';
-        $cfgModeD  = ($config['mode'] ?? '') === 'disabled' ? ' selected' : '';
-        $cfgModeP  = ($config['mode'] ?? '') === 'paper'    ? ' selected' : '';
-        $cfgModeDe = ($config['mode'] ?? '') === 'demo'     ? ' selected' : '';
-        $cfgModeLi = ($config['mode'] ?? '') === 'live'     ? ' selected' : '';
+        $cfgModeDe = ($config['mode'] ?? '') !== 'live' ? ' selected' : '';
+        $cfgModeLi = ($config['mode'] ?? '') === 'live' ? ' selected' : '';
         $cfgBeEnYes = ($config['breakeven_enabled'] ?? false) ? ' selected' : '';
         $cfgBeEnNo  = !($config['breakeven_enabled'] ?? false) ? ' selected' : '';
 
@@ -239,7 +237,7 @@ HTML;
 {$flashHtml}
 <div style="margin-bottom:16px;">
   <h4 style="margin:0 0 2px;"><i class="bi bi-shield-exclamation" style="margin-right:8px;"></i>Stop Manager</h4>
-  <div style="font-size:12px;color:var(--ui-text-muted);">Paper / local · Единственный владелец стоп-лосс расчётов</div>
+  <div style="font-size:12px;color:var(--ui-text-muted);">Demo / Live · Единственный владелец стоп-лосс расчётов</div>
 </div>
 
 <nav class="sm-tab-nav" role="tablist">
@@ -383,8 +381,6 @@ HTML;
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="disabled"{$cfgModeD}>disabled</option>
-              <option value="paper"{$cfgModeP}>paper</option>
               <option value="demo"{$cfgModeDe}>demo</option>
               <option value="live"{$cfgModeLi}>live</option>
             </select>
@@ -521,9 +517,9 @@ HTML;
         try {
             $active = [
                 'enabled'                   => (bool)(int)($_POST['enabled']                   ?? 0),
-                'mode'                      => in_array($_POST['mode'] ?? '', ['disabled', 'paper', 'demo', 'live'], true)
+                'mode'                      => in_array($_POST['mode'] ?? '', ['demo', 'live'], true)
                     ? (string)$_POST['mode']
-                    : 'disabled',
+                    : 'demo',
                 'stop_mode'                 => 'liq_distance_percent',
                 'liq_distance_percent'      => max(1, min(99, (int)($_POST['liq_distance_percent'] ?? 90))),
                 'breakeven_enabled'         => (bool)(int)($_POST['breakeven_enabled']         ?? 0),

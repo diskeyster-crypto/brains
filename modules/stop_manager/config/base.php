@@ -26,21 +26,19 @@ declare(strict_types=1);
  *     liq_distance_percent = 10  → stop is 10% of the way from liq to entry (close to liq)
  *
  * Execution modes:
- *   disabled — initialize storage only, no stop computation
- *   demo     — stop computation for Bybit Demo positions + call setTradingStop on Bybit Demo
- *              (set demo_execute_stops=false to suppress the exchange call)
- *   paper    — local stop computation for paper positions (legacy)
+ *   demo  — stop computation for Bybit Demo positions + call setTradingStop on Bybit Demo
+ *           (set demo_execute_stops=false to suppress the exchange call)
+ *   live  — stop computation for live positions + call setTradingStop on live account
  */
 
 return [
     // Core identity
     'module_id' => 'stop_manager',
     'enabled'   => false,
-    'mode'      => 'disabled',  // disabled | paper | demo
-                                // demo     = stop computation for Bybit Demo positions
-                                //            + setTradingStop on Bybit Demo (if demo_execute_stops=true)
-                                // paper    = local stop computation for paper positions (legacy)
-                                // disabled = initialize storage only, no stop computation
+    'mode'      => 'demo',  // demo | live
+                            // demo = stop computation for Bybit Demo positions
+                            //        + setTradingStop on Bybit Demo (if demo_execute_stops=true)
+                            // live = stop computation for live positions
 
     // Stop computation
     'stop_mode'            => 'liq_distance_percent',
@@ -56,7 +54,7 @@ return [
 
     // Demo execution: when mode=demo, actually call Bybit Demo setTradingStop API.
     // Credentials are read from the bot module config (demo_api_key / demo_api_secret).
-    // Set to false to keep demo mode as local-only computation (same behaviour as paper).
+    // Set to false to keep demo mode as local-only computation.
     'demo_execute_stops' => true,
 
     // Path to the bot module directory (relative to repo root).

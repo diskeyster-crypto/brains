@@ -12,7 +12,7 @@ declare(strict_types=1);
  *   profit manager   → separate, handles profit locks
  *
  * This module must NOT place or move stops on any exchange.
- * All computation is local only (same math for demo and paper modes).
+ * All computation is local only (same math for demo and live modes).
  *
  * Stop modes:
  *   liq_distance_percent — stop placed between liquidation price and entry price.
@@ -51,10 +51,9 @@ declare(strict_types=1);
  *   missing   — no valid liq data; stop_state will be no_liq
  *
  * Execution modes:
- *   disabled — initialize storage only; no stop computation
- *   demo     — stop computation for Bybit Demo positions + call setTradingStop on Bybit Demo
- *              (requires demo_execute_stops=true and bot demo credentials configured)
- *   paper    — local stop computation for paper/local positions (legacy)
+ *   demo — stop computation for Bybit Demo positions + call setTradingStop on Bybit Demo
+ *          (requires demo_execute_stops=true and bot demo credentials configured)
+ *   live — stop computation for live positions + call setTradingStop on live account
  */
 
 namespace Modules\StopManager;
@@ -160,7 +159,7 @@ final class StopManagerService
                     'status'         => 'disabled',
                     'tick_at'        => date('c'),
                     'module_enabled' => false,
-                    'module_mode'    => $config['mode'] ?? 'disabled',
+                    'module_mode'    => $config['mode'] ?? 'demo',
                 ]
             ));
             return;
@@ -168,7 +167,7 @@ final class StopManagerService
 
         $tickAt = date('c');
         $tStart = microtime(true);
-        $mode   = (string)($config['mode'] ?? 'disabled');
+        $mode   = (string)($config['mode'] ?? 'demo');
 
         // ── 1. Load state ──────────────────────────────────────────────────────
         $positions = $this->loadBotPositions($config);
@@ -292,11 +291,10 @@ final class StopManagerService
         $demoLastStopErrMsg     = null;
         $demoLastStopSymbol     = null;
 
-        $isPaperMode = in_array($mode, ['paper', 'demo', 'live'], true);
-        $isDemoMode  = in_array($mode, ['demo', 'live'], true);
+        $isActiveMode = in_array($mode, ['demo', 'live'], true);
 
-        // Prepare gateway: when in demo mode, check bot mode to decide demo vs live
-        $demoExecuteStops = $isDemoMode && (bool)($config['demo_execute_stops'] ?? true);
+        // Prepare gateway: when in demo/live mode, check bot mode to decide demo vs live
+        $demoExecuteStops = $isActiveMode && (bool)($config['demo_execute_stops'] ?? true);
 
         // Bot mode determines which exchange API to use (no mixed mode)
         $botConfig = $demoExecuteStops ? $this->loadBotConfig($config) : [];
@@ -326,7 +324,7 @@ final class StopManagerService
             }
         }
 
-        if ($isPaperMode) {
+        if ($isActiveMode) {
             // ── Process active positions ─────────────────────────────────────
             foreach ($posMap as $key => $pos) {
                 $positionsSeen++;
@@ -359,7 +357,7 @@ final class StopManagerService
                             'side'           => $pos['side']           ?? '',
                             'entry_price'    => (float)($pos['entry_price'] ?? 0.0),
                             'liq_source'     => 'missing',
-                            'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
+                            'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo')),
                             'reason'         => 'stop_skipped_missing_liq',
                         ]);
                     }
@@ -392,7 +390,7 @@ final class StopManagerService
                         'liq_price'      => $liqPrice,
                         'liq_source'     => $liqSource,
                         'stop_price'     => $stopPrice,
-                        'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
+                        'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo')),
                         'reason'         => $initEventType,
                     ]);
 
@@ -482,7 +480,7 @@ final class StopManagerService
                                 'current_price'  => $currentPrice,
                                 'roi'            => $roi,
                                 'stop_price'     => $stopPrice,
-                                'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
+                                'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo')),
                                 'reason'         => 'breakeven_applied',
                             ]);
                         }
@@ -502,7 +500,7 @@ final class StopManagerService
                             'liq_price'      => $liqPrice,
                             'liq_source'     => $liqSource,
                             'stop_price'     => $stopPrice,
-                            'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
+                            'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo')),
                             'reason'         => $recalcEventType,
                         ]);
                     }
@@ -517,7 +515,7 @@ final class StopManagerService
                     $stopMap[$key]['liq_distance_percent']  = $liqDistPct;
                     // Always take execution_mode from the live position record, not the cached stop
                     $stopMap[$key]['execution_mode'] = $this->normalizeExecMode(
-                        (string)($pos['execution_mode'] ?? 'paper')
+                        (string)($pos['execution_mode'] ?? 'demo')
                     );
                     $stopMap[$key]['mode']    = (string)($pos['mode']    ?? $mode);
                     $stopMap[$key]['account'] = (string)($pos['account'] ?? '');
@@ -601,7 +599,7 @@ final class StopManagerService
                     'entry_price'    => $stop['entry_price']    ?? 0.0,
                     'liq_source'     => $stop['liq_source']     ?? 'missing',
                     'stop_price'     => $stop['stop_price']     ?? 0.0,
-                    'execution_mode' => $this->normalizeExecMode((string)($stop['execution_mode'] ?? 'paper')),
+                    'execution_mode' => $this->normalizeExecMode((string)($stop['execution_mode'] ?? 'demo')),
                     'reason'         => 'position_no_longer_active',
                 ]);
             }
@@ -792,8 +790,8 @@ final class StopManagerService
             'entry_price'           => $entryPrice,
             'liq_price'             => $liqPrice,
             'liq_source'            => $liqSource,
-            'execution_mode'        => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
-            'mode'                  => (string)($pos['mode']    ?? $pos['execution_mode'] ?? 'paper'),
+            'execution_mode'        => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo')),
+            'mode'                  => (string)($pos['mode']    ?? $pos['execution_mode'] ?? 'demo'),
             'account'               => (string)($pos['account'] ?? ''),
             'stop_mode'             => 'liq_distance_percent',
             'liq_distance_percent'  => $liqDistPct,
@@ -819,8 +817,8 @@ final class StopManagerService
             'entry_price'       => (float)($pos['entry_price']     ?? 0.0),
             'liq_price'         => null,
             'liq_source'        => 'missing',
-            'execution_mode'    => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
-            'mode'              => (string)($pos['mode']    ?? $pos['execution_mode'] ?? 'paper'),
+            'execution_mode'    => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo')),
+            'mode'              => (string)($pos['mode']    ?? $pos['execution_mode'] ?? 'demo'),
             'account'           => (string)($pos['account'] ?? ''),
             'stop_mode'         => 'liq_distance_percent',
             'stop_price'        => null,
@@ -871,7 +869,7 @@ final class StopManagerService
                 'tick_at'                      => null,
                 'elapsed_sec'                  => 0,
                 'module_enabled'               => false,
-                'module_mode'                  => 'disabled',
+                'module_mode'                  => 'demo',
                 'positions_seen'               => 0,
                 'positions_with_real_liq'      => 0,
                 'positions_with_estimated_liq' => 0,
@@ -1046,18 +1044,43 @@ final class StopManagerService
     }
 
     /**
-     * Normalize legacy execution_mode values into the canonical set.
-     *   smoke  → paper  (legacy alias)
-     *   active → paper  (legacy alias)
-     * Any other value is returned unchanged; unknown values fall back to 'paper'.
+     * Normalize legacy execution_mode values into the canonical set (demo | live).
+     * Legacy aliases: paper, smoke, active, passive, disabled → demo.
      */
     private function normalizeExecMode(string $raw): string
     {
         return match ($raw) {
-            'smoke', 'active' => 'paper',
-            'paper', 'demo', 'live', 'disabled', 'passive' => $raw,
-            default => 'paper',
+            'live'  => 'live',
+            'demo'  => 'demo',
+            // Legacy modes: map all to demo
+            default => 'demo',
         };
+    }
+
+    /**
+     * Normalize a mode string to the canonical set (demo | live).
+     * Legacy modes (paper, passive, active, disabled) → demo.
+     */
+    public static function normalizeMode(string $mode): string
+    {
+        return match ($mode) {
+            'live'  => 'live',
+            'demo'  => 'demo',
+            default => 'demo',
+        };
+    }
+
+    /**
+     * Normalize enabled flag taking legacy mode into account.
+     * If mode was 'disabled' or 'passive', force enabled=false.
+     * Otherwise preserve the explicit enabled value.
+     */
+    public static function normalizeEnabled(bool $enabled, string $rawMode): bool
+    {
+        if ($rawMode === 'disabled' || $rawMode === 'passive') {
+            return false;
+        }
+        return $enabled;
     }
 
     private function positionKey(array $item): string

@@ -153,9 +153,8 @@ function renderDashboardHub(): string
 
     $pmCfgEnYes = ($pmCfg['enabled'] ?? false) ? ' selected' : '';
     $pmCfgEnNo  = !($pmCfg['enabled'] ?? false) ? ' selected' : '';
-    $pmCfgModeDemoSel  = ((string)($pmCfg['mode'] ?? 'demo') === 'demo')  ? ' selected' : '';
-    $pmCfgModeLiveSel  = ((string)($pmCfg['mode'] ?? 'demo') === 'live')  ? ' selected' : '';
-    $pmCfgModePaperSel = ((string)($pmCfg['mode'] ?? 'demo') === 'paper') ? ' selected' : '';
+    $pmCfgModeDemoSel = ((string)($pmCfg['mode'] ?? 'demo') !== 'live') ? ' selected' : '';
+    $pmCfgModeLiveSel = ((string)($pmCfg['mode'] ?? 'demo') === 'live') ? ' selected' : '';
 
     $pmCfgInitRoi      = (string) ($pmCfgProfileCfg['init_roi']               ?? 2.0);
     $pmCfgActivRoi     = (string) ($pmCfgProfileCfg['activation_roi']         ?? 10.0);
@@ -300,7 +299,7 @@ function renderDashboardHub(): string
     $tickAt     = (string)($lastRun['tick_at']    ?? '—');
     $tickStatus = (string)($lastRun['status']     ?? 'never_run');
     $botEnabled = ($lastRun['bot_enabled'] ?? false) ? 'Включён' : 'Выключен';
-    $botMode    = (string)($lastRun['bot_mode']   ?? 'passive');
+    $botMode    = (string)($lastRun['bot_mode']   ?? 'demo');
 
     // ── Demo connection diagnostics from last_run.json ────────────────────
     $lrDemoCredsConfigured = (bool)($lastRun['demo_credentials_configured'] ?? false);
@@ -396,8 +395,8 @@ function renderDashboardHub(): string
             $opEnabled   = array_key_exists('enabled', $op)
                 ? (bool)$op['enabled']
                 : (bool)($rec['enabled_by_default'] ?? true);
-            // Mode: use stored override if present; fall back to manifest default_mode; then 'passive'
-            $defaultMode = (string)($rec['default_mode'] ?? 'passive');
+            // Mode: use stored override if present; fall back to manifest default_mode; then 'demo'
+            $defaultMode = (string)($rec['default_mode'] ?? 'demo');
             $opMode      = array_key_exists('mode', $op)
                 ? (string)$op['mode']
                 : $defaultMode;
@@ -427,9 +426,8 @@ function renderDashboardHub(): string
             $signalStr    = ($signalCount !== null) ? $e((string)$signalCount) : '—';
 
             // Options: mode select
-            $modePassive  = $opMode === 'passive'  ? ' selected' : '';
-            $modeActive   = $opMode === 'active'   ? ' selected' : '';
-            $modeDisabled = $opMode === 'disabled' ? ' selected' : '';
+            $modeDemo = $opMode !== 'live' ? ' selected' : '';
+            $modeLive = $opMode === 'live' ? ' selected' : '';
 
             // Options: enabled select
             $enYes = $opEnabled ? ' selected' : '';
@@ -616,9 +614,8 @@ BTN;
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
             <select name="mode" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
-              <option value="passive"{$modePassive}>passive</option>
-              <option value="active"{$modeActive}>active</option>
-              <option value="disabled"{$modeDisabled}>disabled</option>
+              <option value="demo"{$modeDemo}>demo</option>
+              <option value="live"{$modeLive}>live</option>
             </select>
           </div>
         </div>
@@ -637,7 +634,7 @@ HTML;
 
     // ── Control tab: global bot config ───────────────────────────────────
     $cfgEnabled     = ($botConfig['enabled'] ?? false) ? '1' : '0';
-    $cfgMode        = $e($botConfig['mode']              ?? 'passive');
+    $cfgMode        = $e($botConfig['mode']              ?? 'demo');
     $cfgMaxBudget   = (float)($botConfig['max_bot_budget']   ?? 0.0);
     $cfgMaxLeverage = (int)($botConfig['max_bot_leverage']   ?? 0);
     $cfgDefEntry    = $e($botConfig['default_entry_mode']    ?? '');
@@ -670,11 +667,8 @@ HTML;
 
     $gcfgEnYes  = $cfgEnabled === '1' ? ' selected' : '';
     $gcfgEnNo   = $cfgEnabled === '0' ? ' selected' : '';
-    $gcfgModeP  = $cfgMode === 'passive'  ? ' selected' : '';
-    $gcfgModeA  = $cfgMode === 'active'   ? ' selected' : '';
-    $gcfgModeD  = $cfgMode === 'disabled' ? ' selected' : '';
-    $gcfgModeDe = $cfgMode === 'demo'     ? ' selected' : '';
-    $gcfgModeLv = $cfgMode === 'live'     ? ' selected' : '';
+    $gcfgModeDe = $cfgMode !== 'live' ? ' selected' : '';
+    $gcfgModeLv = $cfgMode === 'live' ? ' selected' : '';
     $gcfgEntN   = $cfgDefEntry === ''       ? ' selected' : '';
     $gcfgEntL   = $cfgDefEntry === 'limit'  ? ' selected' : '';
     $gcfgEntM   = $cfgDefEntry === 'market' ? ' selected' : '';
@@ -692,7 +686,7 @@ HTML;
         $mEnabled = array_key_exists('enabled', $op)
             ? (bool)$op['enabled']
             : (bool)($rec['enabled_by_default'] ?? true);
-        $mDefaultMode = (string)($rec['default_mode'] ?? 'passive');
+        $mDefaultMode = (string)($rec['default_mode'] ?? 'demo');
         $mMode = array_key_exists('mode', $op)
             ? (string)$op['mode']
             : $mDefaultMode;
@@ -778,7 +772,7 @@ ROWS;
 
     // ── stop_manager display values ───────────────────────────────────────
     $smEnabled     = ($smConfig['enabled']          ?? false) ? 'Да' : 'Нет';
-    $smMode        = (string)($smConfig['mode']      ?? 'disabled');
+    $smMode        = (string)($smConfig['mode']      ?? 'demo');
     $smStopMode    = (string)($smConfig['stop_mode'] ?? 'liq_distance_percent');
     $smLiqDist     = (string)($smConfig['liq_distance_percent'] ?? 90);
     $smBeEn        = ($smConfig['breakeven_enabled'] ?? false) ? 'Да' : 'Нет';
@@ -812,8 +806,8 @@ ROWS;
     $smDemoLastErrMsg       = (string)($smLastRun['demo_last_stop_error_msg'] ?? '');
     $smDemoLastSymbol       = (string)($smLastRun['demo_last_stop_symbol']    ?? '');
 
-    // Build demo stop diagnostics card (shown only in demo mode)
-    if ($smMode === 'demo') {
+    // Build demo stop diagnostics card (shown in demo/live mode)
+    if ($smMode === 'demo' || $smMode === 'live') {
         $smDemoErrRow = $smDemoLastErrCode !== null
             ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td>'
               . '<td><code style="color:#f85149;">[' . $e($smDemoLastErrCode) . '] ' . $e($smDemoLastErrMsg) . '</code></td></tr>'
@@ -845,12 +839,10 @@ ROWS;
     }
 
     // ── stop_manager config for Control tab (mirrored) ───────────────────
-    $smCfgEnYes = ($smConfig['enabled'] ?? false) ? ' selected' : '';
-    $smCfgEnNo  = !($smConfig['enabled'] ?? false) ? ' selected' : '';
-    $smCfgModeD  = $smMode === 'disabled' ? ' selected' : '';
-    $smCfgModeP  = $smMode === 'paper'    ? ' selected' : '';
-    $smCfgModeDe = $smMode === 'demo'     ? ' selected' : '';
-    $smCfgModeLi = $smMode === 'live'     ? ' selected' : '';
+    $smCfgEnYes  = ($smConfig['enabled'] ?? false) ? ' selected' : '';
+    $smCfgEnNo   = !($smConfig['enabled'] ?? false) ? ' selected' : '';
+    $smCfgModeDe = $smMode !== 'live' ? ' selected' : '';
+    $smCfgModeLi = $smMode === 'live' ? ' selected' : '';
     $smCfgBeEnYes = ($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
     $smCfgBeEnNo  = !($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
     $smCfgBuf   = $e($smLiqDist);
@@ -1104,11 +1096,11 @@ ROWS;
     if (in_array($botModeForMismatch, ['live', 'demo'], true)) {
         $mismatchParts = [];
         // SM active and mode differs from bot
-        if ($smCurrentlyEnabled && $smMode !== $botModeForMismatch && $smMode !== 'disabled') {
+        if ($smCurrentlyEnabled && $smMode !== $botModeForMismatch) {
             $mismatchParts[] = 'Stop: ' . strtoupper($smMode);
         }
         // PM active and mode differs from bot
-        if ($pmEnabledBool && $pmMode !== $botModeForMismatch && $pmMode !== 'disabled') {
+        if ($pmEnabledBool && $pmMode !== $botModeForMismatch) {
             $mismatchParts[] = 'Profit: ' . strtoupper($pmMode);
         }
         if ($mismatchParts !== []) {
@@ -2325,9 +2317,6 @@ HTML;
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
               <option value="demo"{$gcfgModeDe}>demo</option>
               <option value="live"{$gcfgModeLv}>live</option>
-              <option value="passive"{$gcfgModeP}>passive</option>
-              <option value="active"{$gcfgModeA}>active</option>
-              <option value="disabled"{$gcfgModeD}>disabled</option>
             </select>
           </div>
           <div>
@@ -2464,10 +2453,8 @@ HTML;
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="disabled"{$smCfgModeD}>disabled</option>
               <option value="demo"{$smCfgModeDe}>demo</option>
               <option value="live"{$smCfgModeLi}>live</option>
-              <option value="paper"{$smCfgModeP}>paper</option>
             </select>
           </div>
           <div>
@@ -2529,7 +2516,6 @@ HTML;
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
               <option value="demo"{$pmCfgModeDemoSel}>demo</option>
               <option value="live"{$pmCfgModeLiveSel}>live</option>
-              <option value="paper"{$pmCfgModePaperSel}>paper</option>
             </select>
           </div>
           <div>
@@ -2671,10 +2657,10 @@ function handleDashboardOverridesSave(): void
     }
 
     $enabled   = (int)($_POST['enabled']               ?? 1);
-    $mode      = trim((string)($_POST['mode']           ?? 'passive'));
+    $mode      = trim((string)($_POST['mode']           ?? 'demo'));
 
-    if (!in_array($mode, ['passive', 'active', 'disabled'], true)) {
-        $mode = 'passive';
+    if (!in_array($mode, ['demo', 'live'], true)) {
+        $mode = 'demo';
     }
 
     // Preserve all bot-owned execution fields from existing override; do not clobber
@@ -2736,7 +2722,7 @@ function handleDashboardGlobalSave(): void
     $demoApiSecret = trim((string)($_POST['demo_api_secret']   ?? ''));
     $demoBaseUrl   = trim((string)($_POST['demo_api_base_url'] ?? ''));
 
-    if (!in_array($mode, ['demo', 'live', 'passive', 'active', 'disabled'], true)) {
+    if (!in_array($mode, ['demo', 'live'], true)) {
         $mode = 'demo';
     }
     if (!in_array($defEntry, ['limit', 'market'], true)) {
@@ -3391,7 +3377,7 @@ function handleDashboardPmConfigSave(): void
     // ── Top-level fields ─────────────────────────────────────────────────
     $existing['enabled']        = (bool)(int)($_POST['enabled'] ?? 0);
     $postMode = trim((string)($_POST['mode'] ?? 'demo'));
-    $existing['mode']           = in_array($postMode, ['demo', 'live', 'paper'], true) ? $postMode : 'demo';
+    $existing['mode']           = in_array($postMode, ['demo', 'live'], true) ? $postMode : 'demo';
     $existing['active_profile'] = trim((string)($_POST['active_profile'] ?? 'legacy_safe'));
     if ($existing['active_profile'] === '') {
         $existing['active_profile'] = 'legacy_safe';
@@ -3476,7 +3462,7 @@ function handleDashboardResetRuntime(): void
             'tick_at'                      => null,
             'elapsed_sec'                  => 0,
             'module_enabled'               => false,
-            'module_mode'                  => 'disabled',
+            'module_mode'                  => 'demo',
             'positions_seen'               => 0,
             'positions_with_real_liq'      => 0,
             'positions_with_estimated_liq' => 0,
@@ -3547,7 +3533,7 @@ function handleDashboardSwitchMode(): void
     }
 
     $mode       = trim((string)($_POST['mode'] ?? ''));
-    $validModes = ['demo', 'live', 'passive', 'active', 'disabled'];
+    $validModes = ['demo', 'live'];
     $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
     $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-bot'));
     $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-bot';

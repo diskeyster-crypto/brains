@@ -1242,6 +1242,15 @@ ROWS;
             if (str_contains($action, 'would_close')) {
                 return '#f0883e';
             }
+            if ($action === 'hybrid_guard_activated' || $action === 'waiting_confirmation') {
+                return '#f0883e';
+            }
+            if ($action === 'hybrid_close_confirmed') {
+                return '#3fb950';
+            }
+            if (str_contains($action, 'hybrid')) {
+                return '#a78bfa';
+            }
             return '#58a6ff';
         };
 
@@ -1268,11 +1277,15 @@ ROWS;
                 ? ($pmReasonLabels[$rawReason] ?? $rawReason)
                 : '—';
             $actionShort = match (true) {
-                $action === 'skip'                      => 'skip',
-                $action === 'would_set_profit_lock'     => 'planned demo lock',
-                $action === 'would_move_profit_lock'    => 'planned move',
-                $action === 'would_close_on_lock_touch' => 'close',
-                default                                 => $e($action),
+                $action === 'skip'                          => 'skip',
+                $action === 'would_set_profit_lock'         => 'planned demo lock',
+                $action === 'would_move_profit_lock'        => 'planned move',
+                $action === 'would_close_on_lock_touch'     => 'close',
+                $action === 'hybrid_guard_activated'        => 'guard ⬆',
+                $action === 'waiting_confirmation'          => 'confirming…',
+                $action === 'hybrid_close_confirmed'        => 'hybrid close',
+                $action === 'hybrid_rejected'               => 'rejected↩',
+                default                                     => $e($action),
             };
             $aClr = $actionColor($action);
             // Distance: show only for lock_price_too_close_to_current
@@ -1293,6 +1306,33 @@ ROWS;
             $lockDisplay = $lockActive
                 ? '<span style="color:#3fb950;">✓ ' . $lockPrice . '</span>'
                 : '<span style="color:#8b949e;">' . $lockPrice . '</span>';
+
+            // ── Hybrid fields ─────────────────────────────────────────────────
+            $hybridState       = (string) ($pr['hybrid_state']              ?? 'idle');
+            $hybridPatDetected = !empty($pr['hybrid_pattern_detected']);
+            $hybridTicks       = (int)   ($pr['hybrid_confirmation_ticks']  ?? 0);
+            $hybridGuardStop   = $pr['hybrid_guard_stop']    ?? null;
+            $hybridGuardActive = !empty($pr['hybrid_guard_active']);
+            $hybridBreathStop  = $pr['hybrid_breathing_stop'] ?? null;
+            $hybridBreathActive= !empty($pr['hybrid_breathing_active']);
+
+            $hybridStateDisplay = $hybridState !== 'idle'
+                ? '<span style="color:#f0883e;font-weight:600;">' . $e($hybridState) . '</span>'
+                : '<span style="color:#8b949e;">idle</span>';
+
+            if ($hybridGuardActive && $hybridGuardStop !== null) {
+                $hybridGuardDisplay = '<span style="color:#f0883e;">⬆ ' . number_format((float)$hybridGuardStop, 4) . '</span>';
+            } elseif ($hybridTicks > 0) {
+                $hybridGuardDisplay = '<span style="color:#8b949e;">ticks: ' . $hybridTicks . '</span>';
+            } else {
+                $hybridGuardDisplay = '<span style="color:#8b949e;">—</span>';
+            }
+
+            if ($hybridBreathActive && $hybridBreathStop !== null) {
+                $hybridBreathDisplay = '<span style="color:#a78bfa;">↩ ' . number_format((float)$hybridBreathStop, 4) . '</span>';
+            } else {
+                $hybridBreathDisplay = '<span style="color:#8b949e;">—</span>';
+            }
             $tableRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
                 . '<td style="padding:4px 8px;font-weight:600;">' . $symbol . '</td>'
                 . '<td style="padding:4px 8px;color:#8b949e;">' . $side . '</td>'
@@ -1306,6 +1346,9 @@ ROWS;
                 . '<td style="padding:4px 8px;font-size:11px;">' . $lockDisplay . '</td>'
                 . '<td style="padding:4px 8px;font-size:11px;color:#f0883e;">' . $reasonDisplay . '</td>'
                 . '<td style="padding:4px 8px;font-size:10px;color:#8b949e;">' . $e($distStr) . '</td>'
+                . '<td style="padding:4px 8px;font-size:10px;">' . $hybridStateDisplay . '</td>'
+                . '<td style="padding:4px 8px;font-size:10px;">' . $hybridGuardDisplay . '</td>'
+                . '<td style="padding:4px 8px;font-size:10px;">' . $hybridBreathDisplay . '</td>'
                 . '<td style="padding:4px 8px;font-size:10px;color:#8b949e;">' . $priceSource . '</td>'
                 . '</tr>';
         }
@@ -1330,6 +1373,9 @@ ROWS;
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Lock</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Reason</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Distance</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Hybrid</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Guard Stop</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Breathing</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Price Source</th>
           </tr>
         </thead>

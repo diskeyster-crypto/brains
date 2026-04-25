@@ -23,4 +23,14 @@ return [
     'min_roi_step'            => 1.0,
     'max_updates_per_run'     => 20,
     'default_tick_size'       => 0.0001,
+
+    // ── Hybrid Long overlay ───────────────────────────────────────────────────
+    // When hybrid_enabled = true, LongProfile runs a pattern-confirmation layer
+    // on top of the baseline step-trailing lock logic.
+    'hybrid_enabled'                    => true,
+    'pattern_confirmation_window_sec'   => 300,
+    'pattern_confirmation_min_ticks'    => 2,
+    'guard_roi_distance'                => 3.0,
+    'breathing_roi_distance_min'        => 5.0,
+    'breathing_roi_distance_max'        => 10.0,
 ];

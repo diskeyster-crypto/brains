@@ -244,6 +244,32 @@ class RiskMath
         return false;
     }
 
+    /**
+     * Convert ROI % to price offset relative to current price.
+     *
+     * Used to compute guard stop and breathing stop distances from current price:
+     *   long  guard_stop   = current_price - roiDistanceToPriceOffset(current, roi, lev)
+     *   long  breathing_stop = current_price - roiDistanceToPriceOffset(current, roi, lev)
+     *
+     * price_offset = current_price * (roi_pct / leverage) / 100
+     *
+     * @param float $currentPrice Current mark/market price
+     * @param float $roiPct       ROI distance in percent
+     * @param float $leverage     Position leverage
+     * @return float|null         Price offset (always positive), or null on bad input
+     */
+    public function roiDistanceToPriceOffset(float $currentPrice, float $roiPct, float $leverage): ?float
+    {
+        if ($currentPrice <= 0.0 || $leverage <= 0.0 || $roiPct <= 0.0) {
+            return null;
+        }
+        $priceMovePercent = $this->roiToPriceMovePercent($roiPct, $leverage);
+        if ($priceMovePercent === null) {
+            return null;
+        }
+        return $currentPrice * ($priceMovePercent / 100.0);
+    }
+
     // =========================================================================
     // Price normalization
     // =========================================================================

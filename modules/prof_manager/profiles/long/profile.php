@@ -17,6 +17,12 @@ use Modules\ProfManager\Lib\ProfitLockPlanner;
  *   init_roi <= ROI < activation_roi       → track peak, observe only (below_activation_roi)
  *   ROI >= activation_roi (via peak_roi)   → run step-trailing lock planner
  *
+ * Hybrid Long overlay (when hybrid_enabled = true):
+ *   After legacy lock logic, applies pattern-based exit confirmation layer:
+ *     idle               → on pattern detected: waiting_confirmation + guard stop
+ *     waiting_confirmation → confirm or reject; on reject: breathing trailing recovery
+ *   Pattern detection is a stub (always returns detected=false at this stage).
+ *
  * Reads and writes own state to profiles/long/storage/.
  * Demo only — no exchange actions.
  */
@@ -41,7 +47,9 @@ class LongProfile
      *
      * @param array $position Normalized position (side = 'long')
      * @param int   $nowTs    Current unix timestamp
-     * @return array {action, skip_reason, roi, peak_roi, lock_price, lock_active, profile_used, notes, ...}
+     * @return array {action, skip_reason, roi, peak_roi, lock_price, lock_active, profile_used, notes,
+     *               hybrid_state, hybrid_pattern_detected, hybrid_confirmation_ticks,
+     *               hybrid_guard_stop, hybrid_guard_active, hybrid_breathing_stop, hybrid_breathing_active}
      */
     public function process(array $position, int $nowTs): array
     {
@@ -54,13 +62,14 @@ class LongProfile
         $positionState = $positionsState[$key] ?? [];
         $lockState     = $locks[$key]          ?? [];
 
+        // ── STEP 1: run legacy_safe_long lifecycle ────────────────────────────
         $runResult = $this->runLifecycle($position, $lockState, $positionState, $this->config, $nowTs);
 
-        // Update position state
-        $positionsState[$key] = $runResult['position_state'];
+        $positionState = $runResult['position_state'];
+        $lockState     = $runResult['lock_state'];
+        $plan          = $runResult['plan'];
 
-        // Update lock state when a real lock action was planned
-        $plan = $runResult['plan'];
+        // Update lock entry for legacy lock actions
         if (in_array($plan['action'], ['would_set_profit_lock', 'would_move_profit_lock'], true)) {
             $locks[$key] = [
                 'symbol'        => $symbol,
@@ -71,11 +80,33 @@ class LongProfile
                 'updated_at'    => date('c', $nowTs),
                 'updated_at_ts' => $nowTs,
             ];
-        } elseif (!empty($runResult['lock_state'])) {
-            $locks[$key] = $runResult['lock_state'];
+        } elseif (!empty($lockState)) {
+            $locks[$key] = $lockState;
         }
 
-        // Persist to own storage
+        // ── STEP 2–4: hybrid overlay ──────────────────────────────────────────
+        $hybridMeta = [
+            'hybrid_state'              => 'idle',
+            'hybrid_pattern_detected'   => false,
+            'hybrid_confirmation_ticks' => 0,
+            'hybrid_guard_stop'         => null,
+            'hybrid_guard_active'       => false,
+            'hybrid_breathing_stop'     => null,
+            'hybrid_breathing_active'   => false,
+        ];
+
+        if (!empty($this->config['hybrid_enabled'])) {
+            [$plan, $positionState, $hybridMeta] = $this->applyHybridOverlay(
+                $position,
+                $positionState,
+                $locks[$key] ?? [],
+                $plan,
+                $nowTs
+            );
+        }
+
+        // Persist updated state (includes hybrid fields)
+        $positionsState[$key] = $positionState;
         $this->writeState($positionsState);
         $this->writeLocks($locks);
 
@@ -95,6 +126,13 @@ class LongProfile
             'activation_roi'            => (float) ($this->config['activation_roi'] ?? 10.0),
             'distance_pct'              => $plan['distance_pct']               ?? null,
             'min_required_distance_pct' => $plan['min_required_distance_pct']  ?? null,
+            'hybrid_state'              => $hybridMeta['hybrid_state'],
+            'hybrid_pattern_detected'   => $hybridMeta['hybrid_pattern_detected'],
+            'hybrid_confirmation_ticks' => $hybridMeta['hybrid_confirmation_ticks'],
+            'hybrid_guard_stop'         => $hybridMeta['hybrid_guard_stop'],
+            'hybrid_guard_active'       => $hybridMeta['hybrid_guard_active'],
+            'hybrid_breathing_stop'     => $hybridMeta['hybrid_breathing_stop'],
+            'hybrid_breathing_active'   => $hybridMeta['hybrid_breathing_active'],
         ];
     }
 
@@ -249,6 +287,162 @@ class LongProfile
             'position_state' => $positionState,
             'lock_state'     => $lockState,
         ];
+    }
+
+    // =========================================================================
+    // Hybrid Long overlay
+    // =========================================================================
+
+    /**
+     * Pattern detection placeholder.
+     *
+     * Returns a stub result — always detected=false at this stage.
+     * Structure is fixed so real detection can be plugged in later.
+     *
+     * @param array $position     Normalized position data
+     * @param array $positionState Current per-symbol state
+     * @return array{detected: bool, pattern_type: string|null, confidence: float}
+     */
+    private function detectExitPattern(array $position, array $positionState): array
+    {
+        return [
+            'detected'     => false,
+            'pattern_type' => null,
+            'confidence'   => 0.0,
+        ];
+    }
+
+    /**
+     * Apply hybrid overlay on top of the legacy plan.
+     *
+     * STEP 2: On fresh pattern detection (hybrid_state=idle) → activate guard stop.
+     * STEP 3: In waiting_confirmation → increment tick counter; confirm or reject.
+     * STEP 4: On rejection → restore breathing trailing (respecting legacy lock floor).
+     *
+     * @param array $position      Normalized position
+     * @param array $positionState Per-symbol mutable state (will be updated with hybrid fields)
+     * @param array $lockState     Current lock record for this symbol
+     * @param array $plan          Legacy plan (may have action overridden)
+     * @param int   $nowTs         Current unix timestamp
+     * @return array{0: array, 1: array, 2: array} [$plan, $positionState, $hybridMeta]
+     */
+    private function applyHybridOverlay(
+        array $position,
+        array $positionState,
+        array $lockState,
+        array $plan,
+        int   $nowTs
+    ): array {
+        $currentPrice = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
+        $leverage     = (float) ($position['leverage'] ?? 0.0);
+
+        $hybridState        = (string)  ($positionState['hybrid_state']         ?? 'idle');
+        $patternDetectedAt  = isset($positionState['pattern_detected_at'])
+            ? (int) $positionState['pattern_detected_at']
+            : null;
+        $confirmationTicks  = (int)    ($positionState['confirmation_ticks']    ?? 0);
+        $guardStopPrice     = isset($positionState['guard_stop_price'])
+            ? (float) $positionState['guard_stop_price']
+            : null;
+        $lastBreathingStop  = isset($positionState['last_breathing_stop'])
+            ? (float) $positionState['last_breathing_stop']
+            : null;
+
+        $patternResult = $this->detectExitPattern($position, $positionState);
+        $patternDetected = (bool) ($patternResult['detected'] ?? false);
+
+        $hybridAction      = null;
+        $guardActive       = false;
+        $breathingActive   = false;
+        $newBreathingStop  = null;
+
+        // ── STEP 2: fresh pattern detection while idle ────────────────────────
+        if ($patternDetected && $hybridState === 'idle') {
+            $hybridState       = 'waiting_confirmation';
+            $patternDetectedAt = $nowTs;
+            $confirmationTicks = 0;
+
+            $guardOffset = ($currentPrice > 0.0 && $leverage > 0.0)
+                ? $this->riskMath->roiDistanceToPriceOffset(
+                    $currentPrice,
+                    (float) ($this->config['guard_roi_distance'] ?? 3.0),
+                    $leverage
+                )
+                : null;
+
+            $guardStopPrice = ($guardOffset !== null) ? $currentPrice - $guardOffset : null;
+            $hybridAction   = 'hybrid_guard_activated';
+        }
+
+        // ── STEP 3: confirmation loop ─────────────────────────────────────────
+        if ($hybridState === 'waiting_confirmation') {
+            $confirmationTicks++;
+            $guardActive = ($guardStopPrice !== null && $guardStopPrice > 0.0);
+
+            $minTicks      = (int)   ($this->config['pattern_confirmation_min_ticks']  ?? 2);
+            $windowSec     = (int)   ($this->config['pattern_confirmation_window_sec'] ?? 300);
+            $windowExpired = ($patternDetectedAt !== null)
+                && (($nowTs - $patternDetectedAt) > $windowSec);
+            $confirmed     = ($confirmationTicks >= $minTicks) && !$windowExpired;
+
+            if ($confirmationTicks < $minTicks && !$windowExpired) {
+                // Still gathering ticks — hold
+                $hybridAction = 'waiting_confirmation';
+            } elseif ($confirmed) {
+                // Pattern confirmed — plan close (no execution yet)
+                $hybridAction      = 'hybrid_close_confirmed';
+                $hybridState       = 'idle';
+                $confirmationTicks = 0;
+                $guardStopPrice    = null;
+            } else {
+                // ── STEP 4: rejection recovery ────────────────────────────────
+                $hybridAction = 'hybrid_rejected';
+                $hybridState  = 'idle';
+                $guardStopPrice = null;
+
+                // Breathing trailing: stop = current - (breathing_distance / leverage)
+                $breathingRoiDist = (float) ($this->config['breathing_roi_distance_min'] ?? 5.0);
+                $breathingOffset  = ($currentPrice > 0.0 && $leverage > 0.0)
+                    ? $this->riskMath->roiDistanceToPriceOffset($currentPrice, $breathingRoiDist, $leverage)
+                    : null;
+                $rawBreathingStop = ($breathingOffset !== null) ? $currentPrice - $breathingOffset : null;
+
+                // Respect legacy lock — final stop = max(legacy_lock, breathing_stop)
+                $legacyLockPrice = isset($lockState['lock_price']) ? (float) $lockState['lock_price'] : 0.0;
+                if ($rawBreathingStop !== null) {
+                    $newBreathingStop = ($legacyLockPrice > 0.0)
+                        ? max($legacyLockPrice, $rawBreathingStop)
+                        : $rawBreathingStop;
+                    $breathingActive  = ($newBreathingStop > 0.0);
+                    $lastBreathingStop = $newBreathingStop;
+                }
+            }
+        }
+
+        // ── Persist hybrid fields back into positionState ─────────────────────
+        $positionState['hybrid_state']        = $hybridState;
+        $positionState['pattern_detected_at'] = $patternDetectedAt;
+        $positionState['confirmation_ticks']  = $confirmationTicks;
+        $positionState['guard_stop_price']    = $guardStopPrice;
+        $positionState['last_breathing_stop'] = $lastBreathingStop;
+
+        // ── Override plan action if hybrid produced one ───────────────────────
+        if ($hybridAction !== null) {
+            $plan['action']      = $hybridAction;
+            $plan['skip_reason'] = null;
+        }
+
+        $hybridMeta = [
+            'hybrid_state'              => $hybridState,
+            'hybrid_pattern_detected'   => $patternDetected,
+            'hybrid_confirmation_ticks' => $confirmationTicks,
+            'hybrid_guard_stop'         => ($guardStopPrice !== null && $guardStopPrice > 0.0) ? $guardStopPrice : null,
+            'hybrid_guard_active'       => $guardActive,
+            'hybrid_breathing_stop'     => ($newBreathingStop !== null && $newBreathingStop > 0.0) ? $newBreathingStop : null,
+            'hybrid_breathing_active'   => $breathingActive,
+        ];
+
+        return [$plan, $positionState, $hybridMeta];
     }
 
     // =========================================================================

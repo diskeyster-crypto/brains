@@ -88,8 +88,8 @@ HTML;
         // ── runtime summary ───────────────────────────────────────────────────
         $smEnabled   = $e($config['enabled'] ? 'Да' : 'Нет');
         $smMode      = $e($config['mode']      ?? 'disabled');
-        $smStopMode  = $e($config['stop_mode'] ?? 'entry_liq_percent');
-        $smBuf       = $e($config['stop_from_liq_buffer_pct'] ?? 0.05);
+        $smStopMode  = $e($config['stop_mode'] ?? 'liq_distance_percent');
+        $smLiqDist   = $e($config['liq_distance_percent'] ?? 90);
         $smBeEn      = $e(($config['breakeven_enabled'] ?? false) ? 'Да' : 'Нет');
         $smBeTrig    = $e($config['breakeven_trigger_roi']     ?? 10.0);
         $smBeLock    = $e($config['breakeven_profit_lock_roi'] ?? 3.0);
@@ -234,7 +234,7 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Включён</td><td>{$smEnabled}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$smMode}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Stop mode</td><td><code>{$smStopMode}</code></td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Буфер от liq (%)</td><td><code>{$smBuf}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Стоп от liq к входу (%)</td><td><code>{$smLiqDist}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Breakeven</td><td>{$smBeEn}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">BE trigger ROI%</td><td><code>{$smBeTrig}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">BE lock ROI%</td><td><code>{$smBeLock}</code></td></tr>
@@ -280,7 +280,7 @@ HTML;
         </form>
       </div>
       <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
-        «Тик стоп-менеджера» читает active_positions.json бота, пересчитывает стоп-прайсы, применяет breakeven и записывает stops.json. Биржевого взаимодействия нет.
+        «Тик стоп-менеджера» читает active_positions.json бота, пересчитывает стоп-прайсы (liq_distance_percent), применяет breakeven и записывает stops.json. В demo режиме стопы устанавливаются на Bybit Demo.
       </div>
     </div>
   </div>
@@ -345,14 +345,18 @@ HTML;
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Stop mode</label>
             <select name="stop_mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="entry_liq_percent" selected>entry_liq_percent</option>
+              <option value="liq_distance_percent" selected>liq_distance_percent</option>
             </select>
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Буфер от liq (доля 0–1)</label>
-            <input type="number" step="0.001" min="0" max="1" name="stop_from_liq_buffer_pct"
-              value="{$e($config['stop_from_liq_buffer_pct'] ?? 0.05)}"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Стоп от ликвидации к входу (%)</label>
+            <input type="number" step="1" min="1" max="99" name="liq_distance_percent"
+              value="{$e($config['liq_distance_percent'] ?? 90)}"
               class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            <div style="font-size:11px;color:var(--ui-text-muted);margin-top:3px;">
+              90 = стоп близко к входу, 10% до ликвидации остаётся.<br>
+              10 = стоп близко к ликвидации, 90% до ликвидации остаётся.
+            </div>
           </div>
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Breakeven включён</label>
@@ -472,8 +476,8 @@ HTML;
                 'mode'                      => in_array($_POST['mode'] ?? '', ['disabled', 'paper', 'demo'], true)
                     ? (string)$_POST['mode']
                     : 'disabled',
-                'stop_mode'                 => 'entry_liq_percent',
-                'stop_from_liq_buffer_pct'  => max(0.0, min(1.0, (float)($_POST['stop_from_liq_buffer_pct'] ?? 0.05))),
+                'stop_mode'                 => 'liq_distance_percent',
+                'liq_distance_percent'      => max(1, min(99, (int)($_POST['liq_distance_percent'] ?? 90))),
                 'breakeven_enabled'         => (bool)(int)($_POST['breakeven_enabled']         ?? 0),
                 'breakeven_trigger_roi'     => max(0.0, (float)($_POST['breakeven_trigger_roi']     ?? 10.0)),
                 'breakeven_profit_lock_roi' => (float)($_POST['breakeven_profit_lock_roi'] ?? 3.0),

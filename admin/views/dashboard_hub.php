@@ -737,8 +737,8 @@ ROWS;
     // ── stop_manager display values ───────────────────────────────────────
     $smEnabled     = ($smConfig['enabled']          ?? false) ? 'Да' : 'Нет';
     $smMode        = (string)($smConfig['mode']      ?? 'disabled');
-    $smStopMode    = (string)($smConfig['stop_mode'] ?? 'entry_liq_percent');
-    $smBuf         = (string)($smConfig['stop_from_liq_buffer_pct'] ?? 0.05);
+    $smStopMode    = (string)($smConfig['stop_mode'] ?? 'liq_distance_percent');
+    $smLiqDist     = (string)($smConfig['liq_distance_percent'] ?? 90);
     $smBeEn        = ($smConfig['breakeven_enabled'] ?? false) ? 'Да' : 'Нет';
     $smBeTrig      = (string)($smConfig['breakeven_trigger_roi']     ?? 10.0);
     $smBeLock      = (string)($smConfig['breakeven_profit_lock_roi'] ?? 3.0);
@@ -800,7 +800,7 @@ ROWS;
     $smCfgModeDe = $smMode === 'demo'     ? ' selected' : '';
     $smCfgBeEnYes = ($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
     $smCfgBeEnNo  = !($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
-    $smCfgBuf   = $e($smBuf);
+    $smCfgBuf   = $e($smLiqDist);
     $smCfgTrig  = $e($smBeTrig);
     $smCfgLock  = $e($smBeLock);
     $smConfigSaveUrl = System::web('admin/dashboard');
@@ -1396,17 +1396,29 @@ HTML;
             $pLev      = $e((string)($pos['bot_leverage'] ?? $pos['leverage'] ?? '—'));
             $pSize     = $e((string)($pos['size'] ?? $pos['amount'] ?? '—'));
 
-            // opened_at
-            $openedAtRaw = (string)($pos['opened_at'] ?? $pos['created_at'] ?? $pos['entered_at'] ?? '');
-            $pOpenedAt   = $e($openedAtRaw !== '' ? $openedAtRaw : '—');
+            // opened_at with diagnostics
+            $openedAtRaw   = (string)($pos['opened_at'] ?? $pos['created_at'] ?? $pos['entered_at'] ?? '');
+            $openedAtSrc   = (string)($pos['opened_at_source'] ?? '—');
+            $pOpenedAt     = $e($openedAtRaw !== '' ? $openedAtRaw : '—');
 
-            // time_in_position: compute from opened_at
-            $pTimeInPos = '—';
-            if ($openedAtRaw !== '') {
+            // time_in_position: prefer stored duration_sec, else compute from opened_at
+            $pTimeInPos    = '—';
+            $pTimeInPosWarn = '';
+            if (isset($pos['duration_sec']) && (int)$pos['duration_sec'] >= 0) {
+                $elapsed    = max(0, (int)$pos['duration_sec']);
+                $pTimeInPos = $fmtDuration($elapsed);
+            } elseif ($openedAtRaw !== '') {
                 $openedTs = @strtotime($openedAtRaw);
                 if ($openedTs !== false && $openedTs > 0) {
-                    $elapsed = max(0, time() - $openedTs);
+                    $elapsed    = max(0, time() - $openedTs);
                     $pTimeInPos = $fmtDuration($elapsed);
+                }
+            }
+            // Warning if age > 24h
+            if ($openedAtRaw !== '') {
+                $openedTs = @strtotime($openedAtRaw);
+                if ($openedTs !== false && $openedTs > 0 && (time() - $openedTs) > 86400) {
+                    $pTimeInPosWarn = ' <span title="Позиция старая или пришла с Bybit Demo. Проверь opened_at_source." style="color:#f0883e;cursor:help;">⚠</span>';
                 }
             }
 
@@ -1432,8 +1444,8 @@ HTML;
                 . '<td style="padding:4px 8px;text-align:right;">' . $pBudget . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;">' . $pLev . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;">' . $pSize . '</td>'
-                . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $pOpenedAt . '</td>'
-                . '<td style="padding:4px 8px;font-size:11px;color:#58a6ff;">' . $pTimeInPos . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;" title="source: ' . $e($openedAtSrc) . '">' . $pOpenedAt . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:#58a6ff;">' . $pTimeInPos . $pTimeInPosWarn . '</td>'
                 . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $pStatus . '</td>'
                 . '<td style="padding:4px 8px;font-size:11px;color:#f0883e;">' . $e($pmSkipLabel) . '</td>'
                 . '</tr>';
@@ -1736,7 +1748,7 @@ HTML;
   {$modStripHtml}
   <div style="margin-top:16px;text-align:right;">
     <form method="post" action="{$chainRunUrl}" style="margin:0;display:inline;"
-      onsubmit="return confirm('Сбросить локальный runtime/cache?\n\nСброс очищает только локальный runtime/cache, не закрывает позиции на Bybit Demo.\n\nПродолжить?');">
+      onsubmit="return confirm('Сбросить локальный runtime/cache?\n\nReset очищает локальный cache. Открытые позиции на Bybit Demo не закрываются.\n\nПродолжить?');">
       <input type="hidden" name="dashboard_action" value="reset_runtime">
       <input type="hidden" name="active_tab" value="dh-overview">
       <button type="submit"
@@ -1869,7 +1881,7 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Включён</td><td>{$smEnabled}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$smMode}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Stop mode</td><td><code>{$smStopMode}</code></td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Буфер от liq (%)</td><td><code>{$smBuf}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Стоп от liq к входу (%)</td><td><code>{$smLiqDist}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Breakeven</td><td>{$smBeEn}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">BE trigger ROI%</td><td><code>{$smBeTrig}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">BE lock ROI%</td><td><code>{$smBeLock}</code></td></tr>
@@ -2144,13 +2156,16 @@ HTML;
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Stop mode</label>
             <select name="stop_mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="entry_liq_percent" selected>entry_liq_percent</option>
+              <option value="liq_distance_percent" selected>liq_distance_percent</option>
             </select>
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Буфер от liq (доля 0–1)</label>
-            <input type="number" step="0.001" min="0" max="1" name="stop_from_liq_buffer_pct"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Стоп от ликвидации к входу (%)</label>
+            <input type="number" step="1" min="1" max="99" name="liq_distance_percent"
               value="{$smCfgBuf}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            <div style="font-size:11px;color:var(--ui-text-muted);margin-top:3px;">
+              90 = стоп близко к входу, 10% до ликвидации. 10 = стоп близко к ликвидации.
+            </div>
           </div>
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Breakeven</label>

@@ -13,6 +13,6 @@ return [
     'tick' => [
         'interval'    => 60,
         'enabled'     => true,
-        'description' => 'Read active bot positions, compute stop prices using entry_liq_percent mode, apply breakeven rules, persist local stop state.',
+        'description' => 'Read active bot positions, compute stop prices using liq_distance_percent mode, apply breakeven rules, persist local stop state.',
     ],
 ];

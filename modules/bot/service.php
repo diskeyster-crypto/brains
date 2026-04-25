@@ -1175,9 +1175,34 @@ final class BotService
         $size       = (float)($bybitPos['size']           ?? 0.0);
         $unrealisedPnl = (float)($bybitPos['unrealisedPnl'] ?? 0.0);
         $liqPrice   = (float)($bybitPos['liqPrice']       ?? 0.0);
-        $openedAt   = isset($bybitPos['createdTime'])
-            ? date('c', (int)($bybitPos['createdTime'] / 1000))
-            : $tickAt;
+
+        // Opened-at with diagnostics
+        $rawCreatedTime     = $bybitPos['createdTime'] ?? null;
+        $rawCreatedTimeUnit = 'unknown';
+        $openedAtSource     = 'local_cache';
+        $openedAt           = $tickAt;
+
+        if ($rawCreatedTime !== null && is_numeric($rawCreatedTime) && (int)$rawCreatedTime > 0) {
+            $ct = (int)$rawCreatedTime;
+            if ($ct > 1_000_000_000_000) {
+                // milliseconds
+                $rawCreatedTimeUnit = 'ms';
+                $openedAt           = date('c', (int)($ct / 1000));
+                $openedAtSource     = 'bybit_createdTime_ms';
+            } elseif ($ct > 1_000_000_000) {
+                // seconds
+                $rawCreatedTimeUnit = 'sec';
+                $openedAt           = date('c', $ct);
+                $openedAtSource     = 'bybit_createdTime_sec';
+            }
+            // else: value too small to be a valid Unix timestamp, fall back to local
+        }
+
+        $synced_at   = $tickAt;
+        $durationSec = (int)(time() - @strtotime($openedAt));
+        if ($durationSec < 0) {
+            $durationSec = 0;
+        }
 
         return [
             // Ownership — from queue item when available
@@ -1213,9 +1238,14 @@ final class BotService
             'execution_mode'    => 'demo',
             'account'           => 'bybit_demo',
             'transition_reason' => 'synced_from_bybit_demo',
-            'opened_at'         => $openedAt,
-            'entered_at'        => $openedAt,
-            'last_updated_at'   => $tickAt,
+            'opened_at'             => $openedAt,
+            'opened_at_source'      => $openedAtSource,
+            'raw_created_time'      => $rawCreatedTime,
+            'raw_created_time_unit' => $rawCreatedTimeUnit,
+            'synced_at'             => $synced_at,
+            'duration_sec'          => $durationSec,
+            'entered_at'            => $openedAt,
+            'last_updated_at'       => $tickAt,
         ];
     }
 

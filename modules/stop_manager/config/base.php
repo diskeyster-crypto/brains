@@ -13,11 +13,17 @@ declare(strict_types=1);
  * Override individual values in active.php without touching this file.
  *
  * Stop modes:
- *   entry_liq_percent — stop placed above/below liquidation price by a
- *                       configured fraction of the entry↔liq distance.
+ *   liq_distance_percent — stop placed between liquidation price and entry price.
  *
- *   For long:  stop = liq_price + buffer_pct * (entry_price - liq_price)
- *   For short: stop = liq_price - buffer_pct * (liq_price - entry_price)
+ *   liq_distance_percent is the % of the way from liquidation toward entry where
+ *   the stop is placed.  Value is clamped 1..99.
+ *
+ *   For long:  stop = liq_price + (liq_distance_percent / 100) * (entry_price - liq_price)
+ *   For short: stop = liq_price - (liq_distance_percent / 100) * (liq_price - entry_price)
+ *
+ *   Examples:
+ *     liq_distance_percent = 90  → stop is 90% of the way from liq to entry (close to entry)
+ *     liq_distance_percent = 10  → stop is 10% of the way from liq to entry (close to liq)
  *
  * Execution modes:
  *   disabled — initialize storage only, no stop computation
@@ -37,8 +43,8 @@ return [
                                 // disabled = initialize storage only, no stop computation
 
     // Stop computation
-    'stop_mode'                => 'entry_liq_percent',
-    'stop_from_liq_buffer_pct' => 0.05,  // fraction of entry↔liq distance above/below liq
+    'stop_mode'            => 'liq_distance_percent',
+    'liq_distance_percent' => 90,  // % of way from liq to entry where stop is placed (1..99)
 
     // Breakeven / profit-lock rule
     'breakeven_enabled'          => false,

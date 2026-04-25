@@ -15,8 +15,8 @@ return [
     'mode'      => 'string',
 
     // Stop computation
-    'stop_mode'                => 'string',
-    'stop_from_liq_buffer_pct' => 'float',
+    'stop_mode'            => 'string',
+    'liq_distance_percent' => 'int',
 
     // Breakeven
     'breakeven_enabled'         => 'bool',

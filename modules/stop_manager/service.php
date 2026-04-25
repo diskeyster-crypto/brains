@@ -15,11 +15,17 @@ declare(strict_types=1);
  * All computation is local only (same math for demo and paper modes).
  *
  * Stop modes:
- *   entry_liq_percent — stop is placed above liq (long) or below liq (short)
- *                       by a fraction of the entry↔liq distance.
+ *   liq_distance_percent — stop placed between liquidation price and entry price.
  *
- *   For long:  stop = liq_price + buffer_pct × (entry_price − liq_price)
- *   For short: stop = liq_price − buffer_pct × (liq_price − entry_price)
+ *   liq_distance_percent is the % of the way from liquidation toward entry where
+ *   the stop is placed.  Value is clamped 1..99.
+ *
+ *   For long:  stop = liq_price + (liq_distance_percent / 100) * (entry_price - liq_price)
+ *   For short: stop = liq_price - (liq_distance_percent / 100) * (liq_price - entry_price)
+ *
+ *   Examples:
+ *     liq_distance_percent = 90  → stop is 90% of the way from liq to entry (close to entry)
+ *     liq_distance_percent = 10  → stop is 10% of the way from liq to entry (close to liq)
  *
  *   If liq_price is not available in the position record, an estimate is
  *   derived from entry_price and bot_leverage (isolated-margin approximation):
@@ -314,7 +320,8 @@ final class StopManagerService
             // ── Process active positions ─────────────────────────────────────
             foreach ($posMap as $key => $pos) {
                 $positionsSeen++;
-                $bufferPct = (float)($config['stop_from_liq_buffer_pct'] ?? 0.05);
+                $liqDistPct = max(1.0, min(99.0, (float)($config['liq_distance_percent'] ?? 90.0)));
+                $bufferPct  = $liqDistPct / 100.0;
 
                 // Classify liquidation data quality
                 $liq       = $this->classifyLiqSource($pos);
@@ -493,9 +500,23 @@ final class StopManagerService
                     $stopMap[$key]['liq_source']        = $liqSource;
                     $stopMap[$key]['stop_state']        = $newStopState;
                     $stopMap[$key]['last_updated_at']   = $tickAt;
+                    $stopMap[$key]['stop_mode']         = 'liq_distance_percent';
                     $stopMap[$key]['execution_mode']    = $this->normalizeExecMode(
                         (string)($stopMap[$key]['execution_mode'] ?? 'paper')
                     );
+                    // Update diagnostic distances on recalc
+                    if ($liqPrice > 0.0 && $entryPrice > 0.0) {
+                        $totalDist = $side === 'long'
+                            ? $entryPrice - $liqPrice
+                            : $liqPrice - $entryPrice;
+                        if ($totalDist > 0.0) {
+                            $stopFromLiq = $side === 'long'
+                                ? $stopPrice - $liqPrice
+                                : $liqPrice - $stopPrice;
+                            $stopMap[$key]['distance_from_liq_pct']   = round($stopFromLiq / $totalDist * 100.0, 2);
+                            $stopMap[$key]['distance_from_entry_pct'] = round(100.0 - $stopMap[$key]['distance_from_liq_pct'], 2);
+                        }
+                    }
                     if ($recalcReason !== null) {
                         $stopMap[$key]['transition_reason'] = $recalcReason;
                     }
@@ -594,10 +615,12 @@ final class StopManagerService
     // =========================================================================
 
     /**
-     * Calculate stop price for entry_liq_percent mode.
+     * Calculate stop price using liq_distance_percent mode.
      *
      * Long:  stop = liq_price + buffer_pct × (entry_price − liq_price)
      * Short: stop = liq_price − buffer_pct × (liq_price − entry_price)
+     *
+     * bufferPct = liq_distance_percent / 100  (clamped 0.01..0.99)
      */
     private function calcStopPrice(string $side, float $entryPrice, float $liqPrice, float $bufferPct): float
     {
@@ -722,24 +745,45 @@ final class StopManagerService
         string $tickAt,
         string $reason
     ): array {
-        $stopState = $liqSource === 'real' ? 'active' : 'estimated_liq';
+        $stopState   = $liqSource === 'real' ? 'active' : 'estimated_liq';
+        $entryPrice  = (float)($pos['entry_price'] ?? 0.0);
+        $side        = (string)($pos['side'] ?? 'long');
+
+        // Diagnostic distances
+        $distFromLiqPct   = null;
+        $distFromEntryPct = null;
+        if ($liqPrice > 0.0 && $entryPrice > 0.0) {
+            $totalDist = $side === 'long'
+                ? $entryPrice - $liqPrice
+                : $liqPrice - $entryPrice;
+            if ($totalDist > 0.0) {
+                $stopFromLiq = $side === 'long'
+                    ? $stopPrice - $liqPrice
+                    : $liqPrice - $stopPrice;
+                $distFromLiqPct   = round($stopFromLiq / $totalDist * 100.0, 2);
+                $distFromEntryPct = round(100.0 - $distFromLiqPct, 2);
+            }
+        }
+
         return [
-            'owner_strategy'    => (string)($pos['owner_strategy'] ?? ''),
-            'strategy_id'       => (string)($pos['strategy_id']    ?? ''),
-            'signal_id'         => (string)($pos['signal_id']      ?? ''),
-            'symbol'            => (string)($pos['symbol']         ?? ''),
-            'side'              => (string)($pos['side']           ?? 'long'),
-            'entry_price'       => (float)($pos['entry_price']     ?? 0.0),
-            'liq_price'         => $liqPrice,
-            'liq_source'        => $liqSource,
-            'execution_mode'    => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
-            'stop_mode'         => 'entry_liq_percent',
-            'stop_price'        => $stopPrice,
-            'stop_state'        => $stopState,
-            'breakeven_applied' => false,
-            'last_updated_at'   => $tickAt,
-            'created_at'        => $tickAt,
-            'transition_reason' => $reason,
+            'owner_strategy'        => (string)($pos['owner_strategy'] ?? ''),
+            'strategy_id'           => (string)($pos['strategy_id']    ?? ''),
+            'signal_id'             => (string)($pos['signal_id']      ?? ''),
+            'symbol'                => (string)($pos['symbol']         ?? ''),
+            'side'                  => $side,
+            'entry_price'           => $entryPrice,
+            'liq_price'             => $liqPrice,
+            'liq_source'            => $liqSource,
+            'execution_mode'        => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
+            'stop_mode'             => 'liq_distance_percent',
+            'stop_price'            => $stopPrice,
+            'stop_state'            => $stopState,
+            'distance_from_liq_pct'   => $distFromLiqPct,
+            'distance_from_entry_pct' => $distFromEntryPct,
+            'breakeven_applied'     => false,
+            'last_updated_at'       => $tickAt,
+            'created_at'            => $tickAt,
+            'transition_reason'     => $reason,
         ];
     }
 
@@ -755,10 +799,9 @@ final class StopManagerService
             'liq_price'         => null,
             'liq_source'        => 'missing',
             'execution_mode'    => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
-            'stop_mode'         => 'entry_liq_percent',
+            'stop_mode'         => 'liq_distance_percent',
             'stop_price'        => null,
             'stop_state'        => 'no_liq',
-            'breakeven_applied' => false,
             'last_updated_at'   => $tickAt,
             'created_at'        => $tickAt,
             'transition_reason' => 'no_liq_price_available',

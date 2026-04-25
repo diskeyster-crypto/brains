@@ -1,9 +1,9 @@
 {
     "id": "prof_manager",
     "name": "Profit Manager",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "type": "module",
     "mode": "paper",
-    "active_profile": "legacy_safe",
-    "description": "Paper-only positive ROI profit-lock manager based on legacy PM step trailing logic."
+    "active_profile": "auto",
+    "description": "Router-based profit-lock manager. Long: legacy_safe_long (step-trailing). Short: stub (unsupported). Demo only."
 }

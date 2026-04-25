@@ -124,10 +124,16 @@ if (!is_file($serviceFile)) {
 }
 
 try {
-    // Load all lib files first
-    $libFiles = glob($moduleDir . '/lib/*.php') ?: [];
-    foreach ($libFiles as $libFile) {
-        require_once $libFile;
+    // Load all dependencies via bootstrap (includes lib/ and profiles/)
+    $bootstrapPm = $moduleDir . '/bootstrap.php';
+    if (is_file($bootstrapPm)) {
+        require_once $bootstrapPm;
+    } else {
+        // Fallback: glob lib files for backward compatibility
+        $libFiles = glob($moduleDir . '/lib/*.php') ?: [];
+        foreach ($libFiles as $libFile) {
+            require_once $libFile;
+        }
     }
     require_once $serviceFile;
 

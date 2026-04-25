@@ -5,19 +5,14 @@ declare(strict_types=1);
 namespace Modules\ProfManager;
 
 /**
- * ProfManagerService
+ * ProfManagerService — Router / Orchestrator
  *
- * Profit Manager — monitors positions and plans profit locks.
- * Primary mode: demo (reads positions from bot/storage/active_positions.json
- * which is synced from Bybit Demo by the bot module).
+ * Routes each active position to the appropriate profile based on side:
+ *   long  → LongProfile  (legacy_safe_long baseline logic)
+ *   short → ShortProfile (stub — unsupported)
  *
- * Architecture:
- *   position_reader  → reads active positions from bot storage cache
- *   validator        → validates each position
- *   profile_legacy_safe → runs per-position lifecycle logic
- *   profit_lock_planner → decides lock price via step-trailing algorithm
- *   paper_executor   → records planned actions (no exchange calls)
- *   store            → persists runtime state
+ * This class contains ZERO profit-lock business logic.
+ * All logic lives in the respective profile classes.
  *
  * Public API:
  *   tick()            — run one processing cycle
@@ -26,7 +21,7 @@ namespace Modules\ProfManager;
  *   saveConfig(array) — persist arbitrary config keys to active.php
  *
  * No exchange calls are ever made from this module.
- * All actions are planned locally; execution is reserved for future.
+ * Mode: demo only (this stage).
  */
 final class ProfManagerService
 {
@@ -48,17 +43,11 @@ final class ProfManagerService
     /** @var Lib\Validator */
     private Lib\Validator $validator;
 
-    /** @var Lib\RiskMath */
-    private Lib\RiskMath $riskMath;
+    /** @var Profiles\Long\LongProfile */
+    private Profiles\Long\LongProfile $longProfile;
 
-    /** @var Lib\ProfitLockPlanner */
-    private Lib\ProfitLockPlanner $planner;
-
-    /** @var Lib\ProfileLegacySafe */
-    private Lib\ProfileLegacySafe $profile;
-
-    /** @var Lib\PaperExecutor */
-    private Lib\PaperExecutor $executor;
+    /** @var Profiles\Short\ShortProfile */
+    private Profiles\Short\ShortProfile $shortProfile;
 
     public function __construct(?string $moduleDir = null)
     {
@@ -75,13 +64,18 @@ final class ProfManagerService
 
         $this->store          = new Lib\Store($storageDir);
         $this->store->ensureStorageInit();
+
         $ttlHours             = (int) ($this->config['paper_position_ttl_hours'] ?? 6);
         $this->positionReader = new Lib\PositionReader($this->repoRoot, $ttlHours);
         $this->validator      = new Lib\Validator();
-        $this->riskMath       = new Lib\RiskMath();
-        $this->planner        = new Lib\ProfitLockPlanner($this->riskMath);
-        $this->profile        = new Lib\ProfileLegacySafe($this->planner, $this->riskMath);
-        $this->executor       = new Lib\PaperExecutor();
+
+        $longConfigOverrides = $this->config['profiles']['long'] ?? [];
+        $this->longProfile   = new Profiles\Long\LongProfile(
+            $this->moduleDir . '/profiles/long',
+            $longConfigOverrides
+        );
+
+        $this->shortProfile  = new Profiles\Short\ShortProfile();
     }
 
     public static function instance(?string $moduleDir = null): self
@@ -99,6 +93,8 @@ final class ProfManagerService
     /**
      * Run one processing tick.
      *
+     * Reads positions, routes each to the correct profile, and writes last_run.json.
+     *
      * @return array Structured result
      */
     public function tick(): array
@@ -108,77 +104,69 @@ final class ProfManagerService
 
         try {
             // ── Module enabled? ───────────────────────────────────────────────
-            $configMode = (string)($this->config['mode'] ?? 'demo');
             if (!$this->runtimeEnabled) {
                 $result = [
-                    'ok'         => true,
-                    'ts'         => $ts,
-                    'enabled'    => false,
-                    'mode'       => $configMode,
-                    'account'    => ($configMode === 'demo') ? 'bybit_demo' : 'local',
-                    'source'     => ($configMode === 'demo') ? 'bybit_demo_positions_cache' : 'local_cache',
-                    'skipped'    => 'module_disabled',
-                    'skip_reason'=> 'module_disabled',
-                    'positions'  => 0,
+                    'ok'             => true,
+                    'ts'             => $ts,
+                    'enabled'        => false,
+                    'mode'           => 'demo',
+                    'active_profile' => 'auto',
+                    'long_profile'   => 'legacy_safe_long',
+                    'short_profile'  => 'unavailable',
+                    'skipped'        => 'module_disabled',
+                    'skip_reason'    => 'module_disabled',
+                    'positions_total'=> 0,
+                    'positions_long' => 0,
+                    'positions_short'=> 0,
+                    'positions'      => 0,
                 ];
                 $this->store->writeLastRun($result);
                 return $result;
             }
 
-            // ── Profile config ────────────────────────────────────────────────
-            $activeProfile = $this->config['active_profile'] ?? 'legacy_safe';
-            $profileConfig = $this->config['profiles'][$activeProfile] ?? [];
-            $maxUpdates    = (int) ($profileConfig['max_updates_per_run'] ?? 20);
-
             // ── Read positions ────────────────────────────────────────────────
-            $readResult  = $this->positionReader->read();
+            $readResult   = $this->positionReader->read();
             $rawPositions = $readResult['positions'];
 
             if (empty($rawPositions)) {
                 $skipReason = ($readResult['source'] === 'none')
                     ? 'no_positions_source_found'
                     : 'no_positions';
-                $earlyDiag = $readResult['diagnostics'] ?? [];
                 $result = [
-                    'ok'                                     => true,
-                    'ts'                                     => $ts,
-                    'enabled'                                => true,
-                    'mode'                                   => $configMode,
-                    'account'                                => ($configMode === 'demo') ? 'bybit_demo' : 'local',
-                    'source'                                 => ($configMode === 'demo')
-                        ? 'bybit_demo_positions_cache'
-                        : $readResult['source'],
-                    'positions_runtime'                      => [],
-                    'profile'                                => $activeProfile,
-                    'positions'                              => 0,
-                    'diagnostics'                            => $earlyDiag,
-                    'executed_count'                         => 0,
-                    'skipped_count'                          => 0,
-                    'executed'                               => [],
-                    'skipped'                                => [],
-                    'skip_reason'                            => $skipReason,
-                    'validation_errors'                      => [],
-                    'ignored_disabled_strategy_positions'    => (int) ($earlyDiag['ignored_disabled_strategy_positions'] ?? 0),
-                    'ignored_stale_positions'                => (int) ($earlyDiag['ignored_stale_positions'] ?? 0),
-                    'stale_ttl_hours'                        => (int) ($earlyDiag['stale_ttl_hours'] ?? 6),
+                    'ok'             => true,
+                    'ts'             => $ts,
+                    'enabled'        => true,
+                    'mode'           => 'demo',
+                    'active_profile' => 'auto',
+                    'long_profile'   => 'legacy_safe_long',
+                    'short_profile'  => 'unavailable',
+                    'positions_total'=> 0,
+                    'positions_long' => 0,
+                    'positions_short'=> 0,
+                    'positions'      => 0,
+                    'valid_positions'=> 0,
+                    'positions_runtime' => [],
+                    'actions_summary'   => [],
+                    'skip_summary'      => [],
+                    'skip_reasons_summary' => [],
+                    'skip_reason'       => $skipReason,
+                    'validation_errors' => [],
+                    'source'            => 'bybit_demo_positions_cache',
+                    'executed_count'    => 0,
+                    'skipped_count'     => 0,
+                    'locks_active'      => $this->longProfile->getLockCount(),
                 ];
                 $this->store->writeLastRun($result);
                 return $result;
             }
 
-            // ── Load persisted state ──────────────────────────────────────────
-            $positionsState = $this->store->readPositionsState();
-            $locks          = $this->store->readLocks();
-
-            // ── Validate + run profile ────────────────────────────────────────
-            $plans            = [];
-            $validationErrors = [];
-            $allWarningCodes  = [];
+            // ── Route each position to its profile ───────────────────────────
             $positionsRuntime = [];
-
-            // Config values used for per-position diagnostics
-            $initRoiCfg       = (float) ($profileConfig['init_roi']       ?? 2.0);
-            $activationRoiCfg = (float) ($profileConfig['activation_roi'] ?? 10.0);
+            $validationErrors = [];
+            $positionsLong    = 0;
+            $positionsShort   = 0;
+            $actionsSummary   = [];
+            $skipSummary      = [];
 
             foreach ($rawPositions as $pos) {
                 if (!is_array($pos)) {
@@ -188,13 +176,8 @@ final class ProfManagerService
                 // Normalize side
                 $pos['side'] = $this->validator->normalizeSide($pos['side'] ?? '');
 
+                // Validate
                 $validation = $this->validator->validatePosition($pos);
-
-                // Collect warnings regardless of validity
-                foreach ($validation['warnings'] as $wCode) {
-                    $allWarningCodes[] = (string) $wCode;
-                }
-
                 if (!$validation['ok']) {
                     $validationErrors[] = [
                         'symbol' => $pos['symbol'] ?? '?',
@@ -203,146 +186,96 @@ final class ProfManagerService
                     continue;
                 }
 
-                $key           = $this->positionKey($pos['symbol'] ?? '', $pos['side'] ?? '');
-                $lockState     = $locks[$key] ?? [];
-                $positionState = $positionsState[$key] ?? [];
+                // ── Detect side and route ─────────────────────────────────────
+                $side = $pos['side'];
 
-                // Capture existing lock price before running profile
-                $oldLockPrice = (float) ($lockState['lock_price'] ?? 0.0);
+                if ($side === 'long') {
+                    $positionsLong++;
+                    $profileResult = $this->longProfile->process($pos, $nowTs);
+                } elseif ($side === 'short') {
+                    $positionsShort++;
+                    $profileResult = $this->shortProfile->process($pos, $nowTs);
+                } else {
+                    $profileResult = [
+                        'action'       => 'skip',
+                        'skip_reason'  => 'unsupported_side',
+                        'roi'          => null,
+                        'peak_roi'     => null,
+                        'lock_price'   => null,
+                        'lock_active'  => false,
+                        'profile_used' => 'none',
+                        'notes'        => [],
+                    ];
+                }
 
-                $runResult = $this->profile->run($pos, $lockState, $positionState, $profileConfig, $nowTs);
+                // Track actions summary
+                $action = $profileResult['action'] ?? 'skip';
+                $actionsSummary[$action] = ($actionsSummary[$action] ?? 0) + 1;
 
-                // Update tracking state immediately (in-memory)
-                $positionsState[$key] = $runResult['position_state'];
-                $locks[$key]          = $runResult['lock_state'];
+                // Track skip summary
+                if ($action === 'skip' && !empty($profileResult['skip_reason'])) {
+                    $r = (string) $profileResult['skip_reason'];
+                    $skipSummary[$r] = ($skipSummary[$r] ?? 0) + 1;
+                }
 
-                $plans[] = $runResult['plan'];
-
-                // ── Collect per-position runtime diagnostics ──────────────────
+                // ── Build per-position runtime record ─────────────────────────
+                $currentRoi       = $profileResult['roi'] ?? null;
+                $activationRoi    = $profileResult['activation_roi'] ?? null;
                 $positionsRuntime[] = [
-                    'symbol'                    => $pos['symbol']      ?? '',
-                    'side'                      => $pos['side']        ?? '',
-                    'entry_price'               => (float) ($pos['entry_price']    ?? $pos['avg_price'] ?? 0.0),
-                    'current_price'             => (float) ($pos['current_price']  ?? 0.0),
-                    'roi'                       => $runResult['plan']['current_roi'] ?? null,
-                    'peak_roi'                  => $runResult['plan']['peak_roi']    ?? null,
-                    'init_roi'                  => $initRoiCfg,
-                    'activation_roi'            => $activationRoiCfg,
-                    'roi_gap_to_activation'     => ($runResult['plan']['current_roi'] !== null)
-                        ? round($activationRoiCfg - (float) $runResult['plan']['current_roi'], 4)
+                    'symbol'                    => $pos['symbol']     ?? '',
+                    'side'                      => $pos['side']       ?? '',
+                    'entry_price'               => (float) ($pos['entry_price']   ?? $pos['avg_price'] ?? 0.0),
+                    'current_price'             => (float) ($pos['current_price'] ?? 0.0),
+                    'profile_used'              => $profileResult['profile_used']  ?? 'none',
+                    'action'                    => $profileResult['action']        ?? 'skip',
+                    'skip_reason'               => $profileResult['skip_reason']   ?? null,
+                    'roi'                       => $currentRoi,
+                    'peak_roi'                  => $profileResult['peak_roi']      ?? null,
+                    'lock_price'                => $profileResult['lock_price']    ?? null,
+                    'lock_active'               => $profileResult['lock_active']   ?? false,
+                    'init_roi'                  => $profileResult['init_roi']      ?? null,
+                    'activation_roi'            => $activationRoi,
+                    'roi_gap_to_activation'     => ($currentRoi !== null && $activationRoi !== null)
+                        ? round((float) $activationRoi - (float) $currentRoi, 4)
                         : null,
-                    'action'                    => $runResult['plan']['action']      ?? 'skip',
-                    'skip_reason'               => !empty($runResult['plan']['skip_reason'])
-                        ? $runResult['plan']['skip_reason']
-                        : (($runResult['plan']['action'] ?? 'skip') === 'skip' ? 'unknown' : null),
-                    'lock_price'                => $runResult['lock_state']['lock_price'] ?? null,
-                    'old_lock_price'            => $oldLockPrice > 0.0 ? $oldLockPrice : null,
-                    'distance_pct'              => $runResult['plan']['distance_pct']              ?? null,
-                    'min_required_distance_pct' => $runResult['plan']['min_required_distance_pct'] ?? null,
+                    'distance_pct'              => $profileResult['distance_pct']              ?? null,
+                    'min_required_distance_pct' => $profileResult['min_required_distance_pct'] ?? null,
                     'price_source'              => $pos['_price_source'] ?? 'unknown',
                 ];
             }
 
-            // ── Build skip-reason summary ─────────────────────────────────────
-            // Count each position's final skip_reason independently.
-            // below_activation_roi and below_init_roi may both appear if different
-            // positions have different states — do NOT remove either globally.
-            $skipReasonsSummary = [];
-            foreach ($plans as $plan) {
-                if (($plan['action'] ?? '') === 'skip' && !empty($plan['skip_reason'])) {
-                    $r = (string) $plan['skip_reason'];
-                    $skipReasonsSummary[$r] = ($skipReasonsSummary[$r] ?? 0) + 1;
-                }
-            }
-
-            // ── Paper execution ───────────────────────────────────────────────
-            $execResult = $this->executor->execute($plans, $locks, $maxUpdates);
-
-            // ── Persist updated state ─────────────────────────────────────────
-            $this->store->writePositionsState($positionsState);
-            $this->store->writeLocks($execResult['locks']);
-
-            // ── Enrichment summary from position reader ───────────────────────
-            $enrichmentSummary    = $readResult['enrichment_summary'] ?? [];
-            $priceProviderError   = $readResult['price_provider_error'] ?? null;
-            $priceProviderSource  = $readResult['price_provider_source'] ?? 'none';
-
-            // ── Count positions missing price data ────────────────────────────
-            $priceMissingCount = 0;
-            foreach ($rawPositions as $pos) {
-                if (is_array($pos) && !empty($pos['_no_price_data'])) {
-                    $priceMissingCount++;
-                }
-            }
-
-            // ── Build warnings summary ────────────────────────────────────────
-            if ($priceMissingCount > 0) {
-                $allWarningCodes[] = 'no_price_data';
-            }
-            if (!empty($enrichmentSummary['sizes_calculated'])) {
-                $allWarningCodes[] = 'size_calculated';
-            }
-            if (!empty($enrichmentSummary['leverage_defaulted'])) {
-                $allWarningCodes[] = 'leverage_defaulted';
-            }
-            if (!empty($enrichmentSummary['budget_defaulted'])) {
-                $allWarningCodes[] = 'budget_defaulted';
-            }
-            $warningsSummary = array_values(array_unique($allWarningCodes));
-
-            // ── Compute validation error summaries ────────────────────────────
+            // ── Computed summary counts ───────────────────────────────────────
             $positionsTotal = count($rawPositions);
             $invalidCount   = count($validationErrors);
             $validCount     = $positionsTotal - $invalidCount;
 
-            $allErrorCodes  = [];
-            $errorsBySymbol = [];
-            foreach ($validationErrors as $ve) {
-                $sym  = (string) ($ve['symbol'] ?? '?');
-                $errs = is_array($ve['errors']) ? $ve['errors'] : [$ve['errors']];
-                foreach ($errs as $code) {
-                    $allErrorCodes[] = (string) $code;
-                }
-                $errorsBySymbol[$sym] = $errs;
-            }
-            $errorsSummary = array_values(array_unique($allErrorCodes));
-
-            $readDiag   = $readResult['diagnostics'] ?? [];
-            $skipReason = ($positionsTotal > 0 && $validCount === 0)
-                ? 'all_positions_invalid'
-                : '';
+            $executedCount = ($actionsSummary['would_set_profit_lock']  ?? 0)
+                           + ($actionsSummary['would_move_profit_lock'] ?? 0);
+            $skippedCount  = array_sum($skipSummary);
 
             $result = [
-                'ok'                                     => true,
-                'ts'                                     => $ts,
-                'enabled'                                => true,
-                'mode'                                   => $configMode,
-                'account'                                => ($configMode === 'demo') ? 'bybit_demo' : 'local',
-                'source'                                 => ($configMode === 'demo')
-                    ? 'bybit_demo_positions_cache'
-                    : $readResult['source'],
-                'profile'                                => $activeProfile,
-                'positions'                              => $positionsTotal,
-                'valid_positions'                        => $validCount,
-                'invalid_positions'                      => $invalidCount,
-                'price_missing_positions'                => $priceMissingCount,
-                'executed_count'                         => $execResult['summary']['executed'],
-                'skipped_count'                          => $execResult['summary']['skipped'],
-                'executed'                               => $execResult['executed'],
-                'skipped'                                => $execResult['skipped'],
-                'skip_reason'                            => $skipReason,
-                'skip_reasons_summary'                   => $skipReasonsSummary,
-                'positions_runtime'                      => $positionsRuntime,
-                'validation_errors'                      => $validationErrors,
-                'validation_errors_summary'              => $errorsSummary,
-                'validation_errors_by_symbol'            => $errorsBySymbol,
-                'warnings_summary'                       => $warningsSummary,
-                'enrichment_summary'                     => $enrichmentSummary,
-                'price_provider_error'                   => $priceProviderError,
-                'price_provider_source'                  => $priceProviderSource,
-                'ignored_disabled_strategy_positions'    => (int) ($readDiag['ignored_disabled_strategy_positions'] ?? 0),
-                'ignored_stale_positions'                => (int) ($readDiag['ignored_stale_positions'] ?? 0),
-                'stale_ttl_hours'                        => (int) ($readDiag['stale_ttl_hours'] ?? 6),
+                'ok'                   => true,
+                'ts'                   => $ts,
+                'enabled'              => true,
+                'mode'                 => 'demo',
+                'active_profile'       => 'auto',
+                'long_profile'         => 'legacy_safe_long',
+                'short_profile'        => 'unavailable',
+                'positions_total'      => $positionsTotal,
+                'positions_long'       => $positionsLong,
+                'positions_short'      => $positionsShort,
+                'positions'            => $positionsTotal,
+                'valid_positions'      => $validCount,
+                'invalid_positions'    => $invalidCount,
+                'actions_summary'      => $actionsSummary,
+                'skip_summary'         => $skipSummary,
+                'skip_reasons_summary' => $skipSummary,
+                'positions_runtime'    => $positionsRuntime,
+                'validation_errors'    => $validationErrors,
+                'source'               => 'bybit_demo_positions_cache',
+                'executed_count'       => $executedCount,
+                'skipped_count'        => $skippedCount,
+                'locks_active'         => $this->longProfile->getLockCount(),
             ];
 
             $this->store->writeLastRun($result);
@@ -376,11 +309,8 @@ final class ProfManagerService
     public function getStatus(): array
     {
         $lastRun = $this->store->readLastRun();
-        $locks   = $this->store->readLocks();
 
         $lastError = null;
-        // Only surface an active error when the most recent tick actually failed.
-        // Do NOT show historical error.log entries when last_run ok=true.
         if (($lastRun['ok'] ?? null) !== true) {
             if (!empty($lastRun['error'])) {
                 $lastError = (string) $lastRun['error'];
@@ -397,21 +327,23 @@ final class ProfManagerService
             }
         }
 
-        $cronToken = (string)($this->config['cron_token'] ?? '');
+        $cronToken = (string) ($this->config['cron_token'] ?? '');
 
         return [
-            'enabled'          => $this->runtimeEnabled,
-            'mode'             => (string)($this->config['mode'] ?? 'demo'),
-            'account'          => ((string)($this->config['mode'] ?? 'demo') === 'demo') ? 'bybit_demo' : 'local',
-            'active_profile'   => $this->config['active_profile'] ?? 'legacy_safe',
-            'last_tick'        => $lastRun['ts'] ?? null,
-            'positions_tracked'=> (int) ($lastRun['valid_positions'] ?? $lastRun['positions'] ?? 0),
-            'locks_active'     => count($locks),
-            'planned_updates'  => (int) ($lastRun['executed_count'] ?? 0),
-            'skipped'          => (int) ($lastRun['skipped_count'] ?? 0),
-            'last_error'       => $lastError,
-            'cron_interval_sec'=> 60,
-            'cron_configured'  => ($cronToken !== ''),
+            'enabled'           => $this->runtimeEnabled,
+            'mode'              => 'demo',
+            'account'           => 'bybit_demo',
+            'active_profile'    => 'auto',
+            'long_profile'      => 'legacy_safe_long',
+            'short_profile'     => 'unavailable',
+            'last_tick'         => $lastRun['ts'] ?? null,
+            'positions_tracked' => (int) ($lastRun['valid_positions'] ?? $lastRun['positions'] ?? 0),
+            'locks_active'      => (int) ($lastRun['locks_active'] ?? $this->longProfile->getLockCount()),
+            'planned_updates'   => (int) ($lastRun['executed_count'] ?? 0),
+            'skipped'           => (int) ($lastRun['skipped_count']  ?? 0),
+            'last_error'        => $lastError,
+            'cron_interval_sec' => 60,
+            'cron_configured'   => ($cronToken !== ''),
         ];
     }
 
@@ -423,7 +355,7 @@ final class ProfManagerService
      */
     public function setEnabled(bool $enabled): array
     {
-        $this->runtimeEnabled = $enabled;
+        $this->runtimeEnabled    = $enabled;
         $this->config['enabled'] = $enabled;
         $this->saveConfig($this->config);
         return ['ok' => true, 'enabled' => $enabled];
@@ -495,10 +427,5 @@ final class ProfManagerService
             // return whatever we have
         }
         return $cfg;
-    }
-
-    private function positionKey(string $symbol, string $side): string
-    {
-        return strtolower($symbol) . '_' . strtolower($side);
     }
 }

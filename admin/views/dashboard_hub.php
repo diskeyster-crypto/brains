@@ -103,8 +103,10 @@ function renderDashboardHub(): string
     $pmEnabled       = ($pmStatus['enabled']          ?? false) ? 'Вкл' : 'Выкл';
     $pmEnabledBool   = ($pmStatus['enabled']          ?? false);
     $pmMode          = (string) ($pmStatus['mode']          ?? 'demo');
-    $pmAccount       = (string) ($pmStatus['account']       ?? ($pmMode === 'demo' ? 'bybit_demo' : 'local'));
-    $pmProfile       = (string) ($pmStatus['active_profile'] ?? 'legacy_safe');
+    $pmAccount       = (string) ($pmStatus['account']       ?? 'bybit_demo');
+    $pmProfile       = 'AUTO';
+    $pmLongProfile   = (string) ($pmStatus['long_profile']  ?? 'legacy_safe_long');
+    $pmShortProfile  = (string) ($pmStatus['short_profile'] ?? 'unavailable');
     $pmLastTick      = (string) ($pmStatus['last_tick']      ?? '—');
     $pmPosTracked    = (int)    ($pmStatus['positions_tracked'] ?? 0);
     $pmLocksActive   = (int)    ($pmStatus['locks_active']   ?? 0);
@@ -148,8 +150,8 @@ function renderDashboardHub(): string
         );
     } catch (\Throwable) {}
 
-    $pmCfgProfile   = (string) ($pmCfg['active_profile'] ?? 'legacy_safe');
-    $pmCfgProfileCfg = $pmCfg['profiles'][$pmCfgProfile] ?? [];
+    $pmCfgProfile   = 'auto';
+    $pmCfgProfileCfg = $pmCfg['profiles']['long'] ?? [];
 
     $pmCfgEnYes = ($pmCfg['enabled'] ?? false) ? ' selected' : '';
     $pmCfgEnNo  = !($pmCfg['enabled'] ?? false) ? ' selected' : '';
@@ -911,6 +913,8 @@ ROWS;
         'all_positions_invalid'           => 'Все позиции невалидны',
         'no_positions'                    => 'Нет позиций',
         'module_disabled'                 => 'Модуль отключён',
+        'unsupported_side_short'          => 'Short не поддерживается',
+        'unsupported_side'               => 'Сторона не поддерживается',
     ];
 
     // Normal paper-runtime skip conditions (WARN, not ERR)
@@ -919,6 +923,7 @@ ROWS;
         'lock_not_improving', 'lock_price_too_close_to_current',
         'lock_not_on_profit_side', 'roi_step_too_small',
         'update_interval_not_elapsed', 'planned',
+        'unsupported_side_short', 'unsupported_side',
     ];
 
     // ── PM cron task check ────────────────────────────────────────────────
@@ -1244,6 +1249,7 @@ ROWS;
         foreach ($pmPositionsRuntime as $pr) {
             $symbol      = $e((string)($pr['symbol']          ?? ''));
             $side        = $e((string)($pr['side']            ?? ''));
+            $profileUsed = $e((string)($pr['profile_used']    ?? ''));
             $roi         = $fmtFloat($pr['roi']               ?? null);
             $peakRoi     = $fmtFloat($pr['peak_roi']          ?? null);
             $gapVal      = $pr['roi_gap_to_activation']       ?? null;
@@ -1254,6 +1260,10 @@ ROWS;
             $action      = (string)($pr['action']             ?? 'skip');
             $rawReason   = (string)($pr['skip_reason']        ?? '');
             $priceSource = $e((string)($pr['price_source']    ?? ''));
+            $lockPrice   = isset($pr['lock_price']) && $pr['lock_price'] !== null
+                ? number_format((float)$pr['lock_price'], 4)
+                : '—';
+            $lockActive  = !empty($pr['lock_active']);
             $reasonLabel = $rawReason !== ''
                 ? ($pmReasonLabels[$rawReason] ?? $rawReason)
                 : '—';
@@ -1275,16 +1285,26 @@ ROWS;
             } else {
                 $distStr = '—';
             }
+            // Short positions get a special indicator
+            $isShort = ($pr['side'] ?? '') === 'short';
+            $reasonDisplay = $isShort
+                ? '<span style="color:#8b949e;font-style:italic;">Short not supported yet</span>'
+                : $e($reasonLabel);
+            $lockDisplay = $lockActive
+                ? '<span style="color:#3fb950;">✓ ' . $lockPrice . '</span>'
+                : '<span style="color:#8b949e;">' . $lockPrice . '</span>';
             $tableRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
                 . '<td style="padding:4px 8px;font-weight:600;">' . $symbol . '</td>'
                 . '<td style="padding:4px 8px;color:#8b949e;">' . $side . '</td>'
+                . '<td style="padding:4px 8px;font-size:10px;color:#58a6ff;">' . $profileUsed . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;">' . $roi . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;color:#a78bfa;">' . $peakRoi . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;color:' . $gapColor . ';">' . $gap . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;color:#8b949e;">' . $initRoi . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;color:#8b949e;">' . $activRoi . '</td>'
                 . '<td style="padding:4px 8px;font-size:11px;color:' . $aClr . ';font-weight:600;">' . $actionShort . '</td>'
-                . '<td style="padding:4px 8px;font-size:11px;color:#f0883e;">' . $e($reasonLabel) . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;">' . $lockDisplay . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:#f0883e;">' . $reasonDisplay . '</td>'
                 . '<td style="padding:4px 8px;font-size:10px;color:#8b949e;">' . $e($distStr) . '</td>'
                 . '<td style="padding:4px 8px;font-size:10px;color:#8b949e;">' . $priceSource . '</td>'
                 . '</tr>';
@@ -1300,12 +1320,14 @@ ROWS;
           <tr style="border-bottom:2px solid var(--ui-border);">
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Symbol</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Side</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Profile</th>
             <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">ROI %</th>
             <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Peak ROI %</th>
             <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Gap</th>
             <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Init</th>
             <th style="padding:6px 8px;text-align:right;color:var(--ui-text-muted);font-weight:600;">Activation</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Action</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Lock</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Reason</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Distance</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Price Source</th>
@@ -2234,9 +2256,11 @@ HTML;
       <div class="card-body">
         <table style="width:100%;font-size:13px;border-collapse:collapse;">
           <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Включён</td><td>{$pmEnabled}</td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$pmMode}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>demo</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Аккаунт</td><td><code>{$e($pmAccount)}</code></td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Профиль</td><td><code>{$pmProfile}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Профиль</td><td><code>AUTO</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Long профиль</td><td><code style="color:#3fb950;">{$e($pmLongProfile)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Short профиль</td><td><code style="color:#8b949e;">{$e($pmShortProfile)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний тик</td><td><code>{$pmLastTick}</code></td></tr>
         </table>
       </div>
@@ -2520,9 +2544,7 @@ HTML;
           </div>
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Профиль</label>
-            <select name="active_profile" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="legacy_safe" selected>legacy_safe</option>
-            </select>
+            <div style="height:32px;font-size:13px;padding:4px 8px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;color:#58a6ff;">AUTO (long: legacy_safe_long · short: unavailable)</div>
           </div>
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Init ROI%</label>
@@ -3378,13 +3400,12 @@ function handleDashboardPmConfigSave(): void
     $existing['enabled']        = (bool)(int)($_POST['enabled'] ?? 0);
     $postMode = trim((string)($_POST['mode'] ?? 'demo'));
     $existing['mode']           = in_array($postMode, ['demo', 'live'], true) ? $postMode : 'demo';
-    $existing['active_profile'] = trim((string)($_POST['active_profile'] ?? 'legacy_safe'));
-    if ($existing['active_profile'] === '') {
-        $existing['active_profile'] = 'legacy_safe';
-    }
+    // Profile selection is always AUTO — no manual override
+    $existing['active_profile'] = 'auto';
 
-    // ── Profile numeric fields ───────────────────────────────────────────
-    $profile = $existing['active_profile'];
+    // ── Long profile numeric fields ───────────────────────────────────────
+    // Always writes to profiles['long'] (config key for legacy_safe_long).
+    $profile = 'long';
 
     $numericFields = [
         'init_roi'                => ['step' => 0.1,    'min' => 0.0],
@@ -3399,8 +3420,18 @@ function handleDashboardPmConfigSave(): void
         'default_tick_size'       => ['step' => 0.00001,'min' => 0.00001],
     ];
 
-    $baseProfileCfg = $base['profiles'][$profile] ?? [];
-    $profileData    = $existing['profiles'][$profile] ?? $baseProfileCfg;
+    // Load long profile defaults as baseline
+    $longProfileConfigFile = $moduleDir . '/profiles/long/config.php';
+    $baseProfileCfg = [];
+    if (is_file($longProfileConfigFile)) {
+        try {
+            $lpc = @include $longProfileConfigFile;
+            if (is_array($lpc)) {
+                $baseProfileCfg = $lpc;
+            }
+        } catch (\Throwable) {}
+    }
+    $profileData = $existing['profiles'][$profile] ?? $baseProfileCfg;
 
     foreach ($numericFields as $field => $rules) {
         if (isset($_POST[$field])) {

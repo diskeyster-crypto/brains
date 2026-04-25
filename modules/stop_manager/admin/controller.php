@@ -168,7 +168,9 @@ HTML;
         if ($stopsRows === '') {
             $stopsRows = '<tr><td colspan="12" style="color:var(--ui-text-muted);padding:12px 0;text-align:center;">Нет активных стопов</td></tr>';
         }
-        $stopsCount = count($stops);
+        $stopsCount       = count($stops);
+        $stopsActiveCount = count(array_filter($stops, static fn(array $s) => in_array($s['stop_state'] ?? '', ['active', 'estimated_liq'], true)));
+        $stopsStaleCount  = count(array_filter($stops, static fn(array $s) => ($s['stop_state'] ?? '') === 'stale'));
 
         // ── action log ────────────────────────────────────────────────────────
         $logRows = '';
@@ -219,6 +221,7 @@ HTML;
         $cfgModeD  = ($config['mode'] ?? '') === 'disabled' ? ' selected' : '';
         $cfgModeP  = ($config['mode'] ?? '') === 'paper'    ? ' selected' : '';
         $cfgModeDe = ($config['mode'] ?? '') === 'demo'     ? ' selected' : '';
+        $cfgModeLi = ($config['mode'] ?? '') === 'live'     ? ' selected' : '';
         $cfgBeEnYes = ($config['breakeven_enabled'] ?? false) ? ' selected' : '';
         $cfgBeEnNo  = !($config['breakeven_enabled'] ?? false) ? ' selected' : '';
 
@@ -244,7 +247,7 @@ HTML;
     <i class="bi bi-activity" style="margin-right:5px;"></i>Runtime
   </button>
   <button class="sm-tab-btn" onclick="smTab(this,'sm-stops')" type="button">
-    <i class="bi bi-list-ul" style="margin-right:5px;"></i>Стопы ({$e($stopsCount)})
+    <i class="bi bi-list-ul" style="margin-right:5px;"></i>Стопы ({$e($stopsActiveCount)} активных / {$e($stopsStaleCount)} stale)
   </button>
   <button class="sm-tab-btn" onclick="smTab(this,'sm-log')" type="button">
     <i class="bi bi-journal-text" style="margin-right:5px;"></i>Лог действий
@@ -323,6 +326,11 @@ HTML;
 
 <!-- Stops pane -->
 <div id="sm-stops" class="sm-pane">
+  <div style="display:flex;gap:12px;margin-bottom:10px;font-size:13px;">
+    <span style="color:#3fb950;font-weight:600;">{$e($stopsActiveCount)} активных</span>
+    <span style="color:#8b949e;">{$e($stopsStaleCount)} stale (закрытые позиции)</span>
+    <span style="color:var(--ui-text-muted);">{$e($stopsCount)} всего</span>
+  </div>
   <div class="card">
     <div class="card-header">Текущие стопы (stops.json)</div>
     <div class="card-body" style="padding:0;overflow-x:auto;">
@@ -378,6 +386,7 @@ HTML;
               <option value="disabled"{$cfgModeD}>disabled</option>
               <option value="paper"{$cfgModeP}>paper</option>
               <option value="demo"{$cfgModeDe}>demo</option>
+              <option value="live"{$cfgModeLi}>live</option>
             </select>
           </div>
           <div>
@@ -512,7 +521,7 @@ HTML;
         try {
             $active = [
                 'enabled'                   => (bool)(int)($_POST['enabled']                   ?? 0),
-                'mode'                      => in_array($_POST['mode'] ?? '', ['disabled', 'paper', 'demo'], true)
+                'mode'                      => in_array($_POST['mode'] ?? '', ['disabled', 'paper', 'demo', 'live'], true)
                     ? (string)$_POST['mode']
                     : 'disabled',
                 'stop_mode'                 => 'liq_distance_percent',

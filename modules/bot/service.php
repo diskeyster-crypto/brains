@@ -488,6 +488,9 @@ final class BotService
         $this->writeJson('storage/closed_positions.json',  $closedPositions);
         $this->writeJson('storage/stats.json',             $stats);
 
+        // ── 7b. Update position runtime age tracker ───────────────────────────
+        $this->updatePositionRuntimeAge($activePositions, $tickAt, $config);
+
         $elapsed = round(microtime(true) - $tStart, 4);
 
         $lastRun = [
@@ -3042,6 +3045,60 @@ final class BotService
         }
         $decoded = json_decode($raw, true);
         return ($decoded !== null) ? $decoded : $default;
+    }
+
+    /**
+     * Maintain a local position runtime age counter.
+     *
+     * Key: symbol + '_' + side + '_' + account_or_execution_mode
+     *   - First time a position appears: runtime_age_minutes = 1, first_seen_at = now
+     *   - On every subsequent tick:      runtime_age_minutes += tick_interval_minutes
+     *   - If position disappears:        entry removed from map
+     *
+     * Stored in: storage/position_runtime_age.json
+     */
+    private function updatePositionRuntimeAge(array $activePositions, string $tickAt, array $config): void
+    {
+        $relPath         = 'storage/position_runtime_age.json';
+        $ageMap          = $this->readJson($relPath, []);
+        $tickIntervalSec = max(30, (int)($config['tick_interval_sec'] ?? 60));
+        $tickMinutes     = max(1, (int)round($tickIntervalSec / 60));
+
+        $currentKeys = [];
+        foreach ($activePositions as $pos) {
+            $sym  = (string)($pos['symbol'] ?? '');
+            $side = (string)($pos['side']   ?? '');
+            if ($sym === '' || $side === '') {
+                continue;
+            }
+            $account = (string)($pos['account'] ?? $pos['execution_mode'] ?? 'local');
+            $key     = $sym . '_' . $side . '_' . $account;
+            $currentKeys[$key] = true;
+
+            if (isset($ageMap[$key])) {
+                $ageMap[$key]['runtime_age_minutes'] += $tickMinutes;
+                $ageMap[$key]['last_seen_at']         = $tickAt;
+            } else {
+                $ageMap[$key] = [
+                    'symbol'              => $sym,
+                    'side'                => $side,
+                    'account'             => $account,
+                    'execution_mode'      => (string)($pos['execution_mode'] ?? 'paper'),
+                    'runtime_age_minutes' => 1,
+                    'first_seen_at'       => $tickAt,
+                    'last_seen_at'        => $tickAt,
+                ];
+            }
+        }
+
+        // Remove positions no longer active
+        foreach (array_keys($ageMap) as $k) {
+            if (!isset($currentKeys[$k])) {
+                unset($ageMap[$k]);
+            }
+        }
+
+        $this->writeJson($relPath, $ageMap);
     }
 
     private function writeJson(string $relPath, mixed $data): void

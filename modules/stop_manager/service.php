@@ -292,8 +292,8 @@ final class StopManagerService
         $demoLastStopErrMsg     = null;
         $demoLastStopSymbol     = null;
 
-        $isPaperMode = in_array($mode, ['paper', 'demo'], true);
-        $isDemoMode  = ($mode === 'demo');
+        $isPaperMode = in_array($mode, ['paper', 'demo', 'live'], true);
+        $isDemoMode  = in_array($mode, ['demo', 'live'], true);
 
         // Prepare gateway: when in demo mode, check bot mode to decide demo vs live
         $demoExecuteStops = $isDemoMode && (bool)($config['demo_execute_stops'] ?? true);
@@ -515,9 +515,12 @@ final class StopManagerService
                     $stopMap[$key]['last_updated_at']       = $tickAt;
                     $stopMap[$key]['stop_mode']             = 'liq_distance_percent';
                     $stopMap[$key]['liq_distance_percent']  = $liqDistPct;
-                    $stopMap[$key]['execution_mode']    = $this->normalizeExecMode(
-                        (string)($stopMap[$key]['execution_mode'] ?? 'paper')
+                    // Always take execution_mode from the live position record, not the cached stop
+                    $stopMap[$key]['execution_mode'] = $this->normalizeExecMode(
+                        (string)($pos['execution_mode'] ?? 'paper')
                     );
+                    $stopMap[$key]['mode']    = (string)($pos['mode']    ?? $mode);
+                    $stopMap[$key]['account'] = (string)($pos['account'] ?? '');
                     // Update diagnostic distances on recalc
                     if ($liqPrice > 0.0 && $entryPrice > 0.0) {
                         $totalDist = $side === 'long'
@@ -790,6 +793,8 @@ final class StopManagerService
             'liq_price'             => $liqPrice,
             'liq_source'            => $liqSource,
             'execution_mode'        => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
+            'mode'                  => (string)($pos['mode']    ?? $pos['execution_mode'] ?? 'paper'),
+            'account'               => (string)($pos['account'] ?? ''),
             'stop_mode'             => 'liq_distance_percent',
             'liq_distance_percent'  => $liqDistPct,
             'stop_price'            => $stopPrice,
@@ -815,6 +820,8 @@ final class StopManagerService
             'liq_price'         => null,
             'liq_source'        => 'missing',
             'execution_mode'    => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
+            'mode'              => (string)($pos['mode']    ?? $pos['execution_mode'] ?? 'paper'),
+            'account'           => (string)($pos['account'] ?? ''),
             'stop_mode'         => 'liq_distance_percent',
             'stop_price'        => null,
             'stop_state'        => 'no_liq',
@@ -1048,7 +1055,7 @@ final class StopManagerService
     {
         return match ($raw) {
             'smoke', 'active' => 'paper',
-            'paper', 'demo', 'disabled', 'passive' => $raw,
+            'paper', 'demo', 'live', 'disabled', 'passive' => $raw,
             default => 'paper',
         };
     }

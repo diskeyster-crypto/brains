@@ -154,6 +154,7 @@ function renderDashboardHub(): string
     $pmCfgEnYes = ($pmCfg['enabled'] ?? false) ? ' selected' : '';
     $pmCfgEnNo  = !($pmCfg['enabled'] ?? false) ? ' selected' : '';
     $pmCfgModeDemoSel  = ((string)($pmCfg['mode'] ?? 'demo') === 'demo')  ? ' selected' : '';
+    $pmCfgModeLiveSel  = ((string)($pmCfg['mode'] ?? 'demo') === 'live')  ? ' selected' : '';
     $pmCfgModePaperSel = ((string)($pmCfg['mode'] ?? 'demo') === 'paper') ? ' selected' : '';
 
     $pmCfgInitRoi      = (string) ($pmCfgProfileCfg['init_roi']               ?? 2.0);
@@ -788,7 +789,8 @@ ROWS;
     $smPosSeen     = (string)($smLastRun['positions_seen']                ?? 0);
     $smEstLiq      = (string)($smLastRun['positions_with_estimated_liq']  ?? 0);
     $smNoLiq       = (string)($smLastRun['positions_without_liq']         ?? 0);
-    $smActiveStops = (string)($smLastRun['stops_active_count']            ?? count($smStops));
+    $smActiveStops = (string)($smLastRun['stops_active_count']            ?? count(array_filter($smStops, static fn($s) => in_array($s['stop_state'] ?? '', ['active', 'estimated_liq'], true))));
+    $smStaleStops  = (string)(count(array_filter($smStops, static fn($s) => ($s['stop_state'] ?? '') === 'stale')));
     $smBeApplied   = (string)($smStats['breakeven_applied_total']         ?? 0);
     $smStatusColor = $smLastStatus === 'ok' ? '#3fb950' : '#8b949e';
 
@@ -848,6 +850,7 @@ ROWS;
     $smCfgModeD  = $smMode === 'disabled' ? ' selected' : '';
     $smCfgModeP  = $smMode === 'paper'    ? ' selected' : '';
     $smCfgModeDe = $smMode === 'demo'     ? ' selected' : '';
+    $smCfgModeLi = $smMode === 'live'     ? ' selected' : '';
     $smCfgBeEnYes = ($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
     $smCfgBeEnNo  = !($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
     $smCfgBuf   = $e($smLiqDist);
@@ -1094,6 +1097,29 @@ ROWS;
         . $scBadge('Cron', $scCronState, $scCronReason, 'dh-ctrl')
         . '</div>';
 
+    // ── Mode mismatch warning ─────────────────────────────────────────────
+    $modeMismatchHtml = '';
+    $botModeForMismatch = $botMode;
+    // Only warn when bot is in a meaningful execution mode (live/demo)
+    if (in_array($botModeForMismatch, ['live', 'demo'], true)) {
+        $mismatchParts = [];
+        // SM active and mode differs from bot
+        if ($smCurrentlyEnabled && $smMode !== $botModeForMismatch && $smMode !== 'disabled') {
+            $mismatchParts[] = 'Stop: ' . strtoupper($smMode);
+        }
+        // PM active and mode differs from bot
+        if ($pmEnabledBool && $pmMode !== $botModeForMismatch && $pmMode !== 'disabled') {
+            $mismatchParts[] = 'Profit: ' . strtoupper($pmMode);
+        }
+        if ($mismatchParts !== []) {
+            $mismatchMsg = 'Mode mismatch: Bot ' . strtoupper($botModeForMismatch) . ', ' . implode(', ', $mismatchParts);
+            $modeMismatchHtml = '<div style="background:rgba(248,81,73,.10);border:1px solid #f8514955;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#f85149;">'
+                . '<strong>⚠ ' . htmlspecialchars($mismatchMsg, ENT_QUOTES, 'UTF-8') . '</strong>'
+                . '<span style="font-size:11px;color:#f85149;margin-left:8px;opacity:.8;">Убедитесь что Stop/Profit Manager настроены на тот же режим что и бот.</span>'
+                . '</div>';
+        }
+    }
+
     $pmRuntimeNote = '';
     if (!$pmEnabledBool && $pmRawLastRun !== []) {
         $noteReason = $pmRawSkipped !== '' ? $pmRawSkipped : 'module_disabled';
@@ -1336,7 +1362,7 @@ HTML;
       <div><span style="color:var(--ui-text-muted);">Позиций активно</span><br><strong style="color:#a78bfa;">{$posCount}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Стратегий включено</span><br><strong style="color:#3fb950;">{$enabledStrat}</strong> / {$totalStrat}</div>
       <div><span style="color:var(--ui-text-muted);">PM отслеживает</span><br><strong style="color:#f0883e;">{$pmPosTracked}</strong> поз.</div>
-      <div><span style="color:var(--ui-text-muted);">SM стопов активно</span><br><strong style="color:#a78bfa;">{$smActiveStops}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">SM стопов активно</span><br><strong style="color:#a78bfa;">{$smActiveStops}</strong> <span style="color:#8b949e;font-size:11px;">(stale: {$smStaleStops})</span></div>
       <div><span style="color:var(--ui-text-muted);">Ср. ROI (PM поз.)</span><br><strong style="color:#58a6ff;">{$sysAvgRoi}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Последняя ошибка</span><br>{$sysLastErrorHtml}</div>
     </div>
@@ -1487,6 +1513,19 @@ QUAL;
         return $m > 0 ? $h . 'ч ' . $m . 'м' : $h . 'ч';
     };
 
+    // ── Position runtime age (local tick-counter, avoids stale Bybit createdTime) ──
+    $posRuntimeAgeMap = [];
+    $posAgeFile = System::path('root') . '/modules/bot/storage/position_runtime_age.json';
+    if (is_file($posAgeFile)) {
+        $rawAge = @file_get_contents($posAgeFile);
+        if ($rawAge !== false && $rawAge !== '') {
+            $decAge = @json_decode($rawAge, true);
+            if (is_array($decAge)) {
+                $posRuntimeAgeMap = $decAge;
+            }
+        }
+    }
+
     // ── Open positions table for Overview pane ────────────────────────────
     $overviewPositionsHtml = '';
     if (!empty($positions)) {
@@ -1531,10 +1570,19 @@ QUAL;
             $openedAtSrc   = (string)($pos['opened_at_source'] ?? '—');
             $pOpenedAt     = $e($openedAtRaw !== '' ? $openedAtRaw : '—');
 
-            // time_in_position: prefer stored duration_sec, else compute from opened_at
+            // time_in_position: prefer local runtime_age counter; fallback to duration_sec / opened_at
             $pTimeInPos    = '—';
             $pTimeInPosWarn = '';
-            if (isset($pos['duration_sec']) && (int)$pos['duration_sec'] >= 0) {
+
+            // Build age-map key: same scheme as bot/service.php updatePositionRuntimeAge
+            $posAccount = (string)($pos['account'] ?? $pos['execution_mode'] ?? 'local');
+            $ageKey     = $posSymbol . '_' . $posSide . '_' . $posAccount;
+            $ageRecord  = $posRuntimeAgeMap[$ageKey] ?? null;
+
+            if ($ageRecord !== null && isset($ageRecord['runtime_age_minutes'])) {
+                $ageMin     = max(0, (int)$ageRecord['runtime_age_minutes']);
+                $pTimeInPos = $fmtDuration($ageMin * 60);
+            } elseif (isset($pos['duration_sec']) && (int)$pos['duration_sec'] >= 0) {
                 $elapsed    = max(0, (int)$pos['duration_sec']);
                 $pTimeInPos = $fmtDuration($elapsed);
             } elseif ($openedAtRaw !== '') {
@@ -1544,12 +1592,12 @@ QUAL;
                     $pTimeInPos = $fmtDuration($elapsed);
                 }
             }
-            // Warning if age > 24h
-            if ($openedAtRaw !== '') {
+            // Show a note if falling back to Bybit createdTime which may be very stale
+            if ($ageRecord === null && $openedAtRaw !== '') {
                 $openedTs = @strtotime($openedAtRaw);
                 if ($openedTs !== false && $openedTs > 0 && (time() - $openedTs) > 86400) {
-                    $warnTitle = ($openedAtSrc === 'bybit_createdTime_ms')
-                        ? 'Старая позиция пришла с Bybit Demo. Reset cache её не закрывает.'
+                    $warnTitle = ($openedAtSrc === 'bybit_createdTime_ms' || $openedAtSrc === 'bybit_createdTime_sec')
+                        ? 'Bybit createdTime (может быть устаревшим). Время в позиции считается с момента первого обнаружения ботом на следующем тике.'
                         : 'Позиция старая или пришла с Bybit Demo. Проверь opened_at_source.';
                     $pTimeInPosWarn = ' <span title="' . $e($warnTitle) . '" style="color:#f0883e;cursor:help;">⚠</span>';
                 }
@@ -1640,7 +1688,7 @@ HTML;
         . '<td style="padding:5px 10px;color:' . $modSmClr . ';font-weight:600;">' . $scSmState . '</td>'
         . '<td style="padding:5px 10px;"><code style="font-size:11px;">' . $e($smMode) . '</code></td>'
         . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . $e($smLastTick) . '</td>'
-        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">стопов: ' . $smActiveStops . ' · позиций: ' . $smPosSeen . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">стопов: ' . $smActiveStops . ' (stale: ' . $smStaleStops . ') · позиций: ' . $smPosSeen . '</td>'
         . '<td style="padding:5px 10px;font-size:11px;color:#f85149;">' . $e($scSmReason) . '</td>'
         . '</tr>';
     // Profit Manager
@@ -1900,6 +1948,7 @@ HTML;
 
 <!-- Status chain (always visible) -->
 {$scHtml}
+{$modeMismatchHtml}
 
 <!-- System Overview (always visible) -->
 {$sysOverviewHtml}
@@ -2141,6 +2190,7 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">С расчётным liq</td><td><code>{$smEstLiq}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Без liq</td><td><code>{$smNoLiq}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных стопов</td><td><code>{$smActiveStops}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Stale стопов</td><td><code style="color:#8b949e;">{$smStaleStops}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Breakeven применено</td><td><code>{$smBeApplied}</code></td></tr>
         </table>
       </div>
@@ -2416,6 +2466,7 @@ HTML;
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
               <option value="disabled"{$smCfgModeD}>disabled</option>
               <option value="demo"{$smCfgModeDe}>demo</option>
+              <option value="live"{$smCfgModeLi}>live</option>
               <option value="paper"{$smCfgModeP}>paper</option>
             </select>
           </div>
@@ -2477,6 +2528,7 @@ HTML;
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
               <option value="demo"{$pmCfgModeDemoSel}>demo</option>
+              <option value="live"{$pmCfgModeLiveSel}>live</option>
               <option value="paper"{$pmCfgModePaperSel}>paper</option>
             </select>
           </div>
@@ -3339,7 +3391,7 @@ function handleDashboardPmConfigSave(): void
     // ── Top-level fields ─────────────────────────────────────────────────
     $existing['enabled']        = (bool)(int)($_POST['enabled'] ?? 0);
     $postMode = trim((string)($_POST['mode'] ?? 'demo'));
-    $existing['mode']           = in_array($postMode, ['demo', 'paper'], true) ? $postMode : 'demo';
+    $existing['mode']           = in_array($postMode, ['demo', 'live', 'paper'], true) ? $postMode : 'demo';
     $existing['active_profile'] = trim((string)($_POST['active_profile'] ?? 'legacy_safe'));
     if ($existing['active_profile'] === '') {
         $existing['active_profile'] = 'legacy_safe';
@@ -3417,6 +3469,25 @@ function handleDashboardResetRuntime(): void
         $root . '/modules/bot/storage/order_queue.json'      => '[]',
         $root . '/modules/bot/storage/active_orders.json'    => '[]',
         $root . '/modules/bot/storage/active_positions.json' => '[]',
+        $root . '/modules/bot/storage/position_runtime_age.json' => '{}',
+        $root . '/modules/stop_manager/storage/stops.json'   => '[]',
+        $root . '/modules/stop_manager/storage/last_run.json' => json_encode([
+            'status'                       => 'reset',
+            'tick_at'                      => null,
+            'elapsed_sec'                  => 0,
+            'module_enabled'               => false,
+            'module_mode'                  => 'disabled',
+            'positions_seen'               => 0,
+            'positions_with_real_liq'      => 0,
+            'positions_with_estimated_liq' => 0,
+            'positions_without_liq'        => 0,
+            'stops_initialized'            => 0,
+            'stops_recalculated'           => 0,
+            'breakeven_applied'            => 0,
+            'stops_closed_reference'       => 0,
+            'stops_active_count'           => 0,
+            'ticks_total'                  => 0,
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
         $root . '/modules/prof_manager/storage/runtime/last_run.json' => json_encode([
             'ok'                 => true,
             'positions'          => 0,

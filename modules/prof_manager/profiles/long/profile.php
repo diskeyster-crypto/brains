@@ -107,6 +107,49 @@ class LongProfile
         return count($locks);
     }
 
+    /**
+     * Remove state and lock entries for symbols no longer in the active position list.
+     *
+     * Called by the service router after routing all positions in a tick.
+     * Only cleans profiles/long/storage/{state,locks}.json — historical logs are untouched.
+     *
+     * @param list<string> $activeKeys  Position keys (symbol_long) currently active this tick
+     * @return array{long_state_cleaned: int, long_locks_cleaned: int}
+     */
+    public function cleanStale(array $activeKeys): array
+    {
+        $statesCleaned = 0;
+        $locksCleaned  = 0;
+
+        $state = $this->readState();
+        foreach (array_keys($state) as $key) {
+            if (!in_array($key, $activeKeys, true)) {
+                unset($state[$key]);
+                $statesCleaned++;
+            }
+        }
+
+        $locks = $this->readLocks();
+        foreach (array_keys($locks) as $key) {
+            if (!in_array($key, $activeKeys, true)) {
+                unset($locks[$key]);
+                $locksCleaned++;
+            }
+        }
+
+        if ($statesCleaned > 0) {
+            $this->writeState($state);
+        }
+        if ($locksCleaned > 0) {
+            $this->writeLocks($locks);
+        }
+
+        return [
+            'long_state_cleaned' => $statesCleaned,
+            'long_locks_cleaned' => $locksCleaned,
+        ];
+    }
+
     // =========================================================================
     // Lifecycle logic (migrated from ProfileLegacySafe)
     // =========================================================================

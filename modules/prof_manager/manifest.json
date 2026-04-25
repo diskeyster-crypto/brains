@@ -3,7 +3,7 @@
     "name": "Profit Manager",
     "version": "0.2.0",
     "type": "module",
-    "mode": "paper",
+    "mode": "demo",
     "active_profile": "auto",
-    "description": "Router-based profit-lock manager. Long: legacy_safe_long (step-trailing). Short: stub (unsupported). Demo only."
+    "description": "Router-based demo PM, long baseline active (legacy_safe_long step-trailing), short unavailable."
 }

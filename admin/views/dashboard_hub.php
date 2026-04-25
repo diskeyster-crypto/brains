@@ -917,7 +917,7 @@ ROWS;
         'unsupported_side'               => 'Сторона не поддерживается',
     ];
 
-    // Normal paper-runtime skip conditions (WARN, not ERR)
+    // Normal demo-runtime skip conditions (WARN, not ERR)
     $pmNormalSkipReasons = [
         'below_init_roi', 'below_activation_roi',
         'lock_not_improving', 'lock_price_too_close_to_current',
@@ -1269,8 +1269,8 @@ ROWS;
                 : '—';
             $actionShort = match (true) {
                 $action === 'skip'                      => 'skip',
-                $action === 'would_set_profit_lock'     => 'set lock',
-                $action === 'would_move_profit_lock'    => 'move lock',
+                $action === 'would_set_profit_lock'     => 'planned demo lock',
+                $action === 'would_move_profit_lock'    => 'planned move',
                 $action === 'would_close_on_lock_touch' => 'close',
                 default                                 => $e($action),
             };

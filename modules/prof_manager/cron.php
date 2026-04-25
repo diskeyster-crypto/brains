@@ -13,6 +13,6 @@ return [
     'tick' => [
         'interval'    => 60,
         'enabled'     => true,
-        'description' => 'Read active bot positions, apply step-trailing profit-lock logic, persist planned lock state (paper only).',
+        'description' => 'Calls ProfManagerService router. Routes long positions to legacy_safe_long profile (step-trailing lock planner). Short positions unsupported (stub).',
     ],
 ];

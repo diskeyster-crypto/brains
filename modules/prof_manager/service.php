@@ -253,6 +253,16 @@ final class ProfManagerService
                            + ($actionsSummary['would_move_profit_lock'] ?? 0);
             $skippedCount  = array_sum($skipSummary);
 
+            // ── Clean stale long profile state/locks ──────────────────────────
+            // Build the set of active long position keys seen this tick.
+            $activeLongKeys = [];
+            foreach ($positionsRuntime as $pr) {
+                if (($pr['side'] ?? '') === 'long') {
+                    $activeLongKeys[] = strtolower($pr['symbol']) . '_long';
+                }
+            }
+            $cleanResult = $this->longProfile->cleanStale($activeLongKeys);
+
             $result = [
                 'ok'                   => true,
                 'ts'                   => $ts,
@@ -276,6 +286,8 @@ final class ProfManagerService
                 'executed_count'       => $executedCount,
                 'skipped_count'        => $skippedCount,
                 'locks_active'         => $this->longProfile->getLockCount(),
+                'long_state_cleaned'   => $cleanResult['long_state_cleaned'],
+                'long_locks_cleaned'   => $cleanResult['long_locks_cleaned'],
             ];
 
             $this->store->writeLastRun($result);

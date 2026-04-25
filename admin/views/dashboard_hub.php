@@ -3425,7 +3425,7 @@ function handleDashboardPmConfigSave(): void
     $baseProfileCfg = [];
     if (is_file($longProfileConfigFile)) {
         try {
-            $lpc = @include $longProfileConfigFile;
+            $lpc = include $longProfileConfigFile;
             if (is_array($lpc)) {
                 $baseProfileCfg = $lpc;
             }

@@ -222,7 +222,9 @@ class LongProfile
                 if (is_array($loaded)) {
                     $base = $loaded;
                 }
-            } catch (\Throwable) {}
+            } catch (\Throwable) {
+                // Config file parse errors are non-fatal; profile falls back to defaults
+            }
         }
         return array_merge($base, $overrides);
     }

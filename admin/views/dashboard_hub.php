@@ -278,6 +278,17 @@ function renderDashboardHub(): string
     $lrDemoConnError       = (string)($lastRun['demo_connection_error']     ?? '');
     $lrAccount             = (string)($lastRun['account']                   ?? ($botMode === 'demo' ? 'bybit_demo' : 'local'));
 
+    // ── Live connection diagnostics from last_run.json ────────────────────
+    $lrLiveAccountId       = (string)($lastRun['live_account_id']        ?? '');
+    $lrLiveEnabled         = (bool)($lastRun['live_enabled']             ?? false);
+    $lrLiveConnected       = (bool)($lastRun['live_connected']           ?? false);
+    $lrLiveConnError       = (string)($lastRun['live_connection_error']  ?? '');
+    $lrLiveCredsMissing    = (bool)($lastRun['live_credentials_missing'] ?? false);
+
+    // Also read live config directly for control form
+    $cfgLiveAccountId   = (string)($botConfig['account_id']  ?? $lrLiveAccountId);
+    $cfgLiveEnabled     = (bool)($botConfig['live_enabled']  ?? false);
+
     // ── Demo execution diagnostics from last_run.json ─────────────────────
     $lrDemoOrdersPrepared      = (int)($lastRun['demo_orders_prepared']           ?? 0);
     $lrDemoOrdersRejected      = (int)($lastRun['demo_orders_rejected']           ?? 0);
@@ -633,6 +644,7 @@ HTML;
     $gcfgModeA  = $cfgMode === 'active'   ? ' selected' : '';
     $gcfgModeD  = $cfgMode === 'disabled' ? ' selected' : '';
     $gcfgModeDe = $cfgMode === 'demo'     ? ' selected' : '';
+    $gcfgModeLv = $cfgMode === 'live'     ? ' selected' : '';
     $gcfgEntN   = $cfgDefEntry === ''       ? ' selected' : '';
     $gcfgEntL   = $cfgDefEntry === 'limit'  ? ' selected' : '';
     $gcfgEntM   = $cfgDefEntry === 'market' ? ' selected' : '';
@@ -1670,9 +1682,25 @@ HTML;
         ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибка</td><td style="color:#f85149;font-size:12px;">' . $e($lrDemoConnError) . '</td></tr>'
         : '';
 
+    // ── Live connection status HTML ───────────────────────────────────────
+    $liveConnHtml = $lrLiveConnected
+        ? '<span style="color:#3fb950;font-weight:600;">&#10003; подключено</span>'
+        : ($lrLiveCredsMissing
+            ? '<span style="color:#f85149;font-weight:600;">&#10007; KeyCenter: нет credentials</span>'
+            : '<span style="color:#f0883e;font-weight:600;">&#10007; нет соединения</span>');
+    $liveAccountIdHtml = $lrLiveAccountId !== ''
+        ? '<span style="font-family:monospace;">' . $e($lrLiveAccountId) . '</span>'
+        : '<span style="color:#f85149;">не настроен</span>';
+    $liveEnabledHtml = $lrLiveEnabled
+        ? '<span style="color:#f85149;font-weight:600;">ДА — торговля активна</span>'
+        : '<span style="color:#8b949e;">нет</span>';
+    $liveConnErrRow = $lrLiveConnError !== ''
+        ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибка</td><td style="color:#f85149;font-size:12px;">' . $e($lrLiveConnError) . '</td></tr>'
+        : '';
+
     // ── Demo execution diagnostics HTML ──────────────────────────────────
     $demoExecDiagHtml = '';
-    if ($botMode === 'demo') {
+    if ($botMode === 'demo' || $botMode === 'live') {
         $lastErrMsgHtml = '';
         if ($lrDemoLastErrMsg !== '') {
             $userMsg = $lrDemoLastErrMsg;
@@ -1718,7 +1746,7 @@ HTML;
               . '<td><code style="color:#f85149;">leverage_not_applied_on_exchange (' . $e($lrDemoLevMismatchCount) . ')</code></td></tr>'
             : '';
         $demoExecDiagHtml = '<div class="card" style="margin-bottom:16px;">'
-            . '<div class="card-header">Demo — диагностика исполнения</div>'
+            . '<div class="card-header">' . ($botMode === 'live' ? 'Live' : 'Demo') . ' — диагностика исполнения</div>'
             . '<div class="card-body">'
             . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:200px;">Ордеров подготовлено</td><td><code>' . $e($lrDemoOrdersPrepared) . '</code></td></tr>'
@@ -1740,6 +1768,36 @@ HTML;
     }
 
     // ── render ────────────────────────────────────────────────────────────
+    // Mode switch button state
+    $modeIsDemoBtnActive = $botMode === 'demo' ? 'font-weight:700;' : '';
+    $modeIsLiveBtnActive = $botMode === 'live' ? 'font-weight:700;' : '';
+    $modeDemoBtnBg = $botMode === 'demo'
+        ? 'background:#f0883e22;color:#f0883e;border:2px solid #f0883e;'
+        : 'background:rgba(139,148,158,.08);color:#8b949e;border:1px solid #8b949e55;';
+    $modeLiveBtnBg = $botMode === 'live'
+        ? 'background:#f8514922;color:#f85149;border:2px solid #f85149;'
+        : 'background:rgba(139,148,158,.08);color:#8b949e;border:1px solid #8b949e55;';
+    $switchModeUrl = System::web('admin/dashboard');
+
+    // Live warning banner (shown when mode=live)
+    $liveWarningBanner = '';
+    if ($botMode === 'live') {
+        $liveWarningBanner = '<div style="background:rgba(248,81,73,.12);border:2px solid #f85149;border-radius:8px;padding:14px 18px;margin-bottom:16px;">'
+            . '<div style="font-size:15px;font-weight:700;color:#f85149;margin-bottom:6px;">&#9888; ВНИМАНИЕ: LIVE режим. Реальные ордера.</div>'
+            . '<div style="font-size:13px;color:#f85149;">Все ордера исполняются на реальном счёте Bybit. Потеря средств возможна.</div>'
+            . '</div>';
+    }
+
+    // Mode status label
+    $modeLabel = $botMode === 'live'
+        ? 'LIVE (bybit_live)'
+        : ($botMode === 'demo' ? 'DEMO (bybit_demo)' : $botMode);
+    $modeColor = $botMode === 'live' ? '#f85149' : ($botMode === 'demo' ? '#f0883e' : '#8b949e');
+
+    // Live form field pre-computed values (can't use ternary inside heredoc)
+    $cfgLiveEnabledYes = $cfgLiveEnabled ? ' selected' : '';
+    $cfgLiveEnabledNo  = $cfgLiveEnabled ? '' : ' selected';
+
     return <<<HTML
 <style>
 .dh-tab-nav{display:flex;gap:0;border-bottom:1px solid var(--ui-border);margin-bottom:20px;}
@@ -1763,14 +1821,29 @@ HTML;
     <h4 style="margin:0 0 2px;"><i class="bi bi-layout-text-sidebar-reverse" style="margin-right:8px;"></i>Оперативный центр</h4>
     <div style="font-size:12px;color:var(--ui-text-muted);">Управление стратегиями · Бот · Контроль</div>
   </div>
-  <!-- One-button chain run -->
-  <form method="post" action="{$chainRunUrl}" style="margin:0;">
-    <input type="hidden" name="dashboard_action" value="chain_run">
-    <input type="hidden" name="active_tab" value="dh-overview">
-    <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid #58a6ff66;padding:7px 20px;font-weight:600;font-size:13px;">
-      <i class="bi bi-lightning-fill" style="margin-right:5px;"></i>Запустить цепочку
-    </button>
-  </form>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <!-- Mode switch buttons -->
+    <form method="post" action="{$switchModeUrl}" style="margin:0;display:flex;gap:4px;">
+      <input type="hidden" name="dashboard_action" value="switch_mode">
+      <input type="hidden" name="active_tab" value="dh-bot">
+      <button type="submit" name="mode" value="demo"
+        style="padding:6px 16px;border-radius:5px;cursor:pointer;font-size:13px;{$modeDemoBtnBg}{$modeIsDemoBtnActive}">
+        DEMO
+      </button>
+      <button type="submit" name="mode" value="live"
+        style="padding:6px 16px;border-radius:5px;cursor:pointer;font-size:13px;{$modeLiveBtnBg}{$modeIsLiveBtnActive}">
+        LIVE
+      </button>
+    </form>
+    <!-- One-button chain run -->
+    <form method="post" action="{$chainRunUrl}" style="margin:0;">
+      <input type="hidden" name="dashboard_action" value="chain_run">
+      <input type="hidden" name="active_tab" value="dh-overview">
+      <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid #58a6ff66;padding:7px 20px;font-weight:600;font-size:13px;">
+        <i class="bi bi-lightning-fill" style="margin-right:5px;"></i>Запустить цепочку
+      </button>
+    </form>
+  </div>
 </div>
 
 <!-- Summary strip -->
@@ -1869,13 +1942,14 @@ HTML;
 
 <!-- ── Bot pane ─────────────────────────────────────────────────────── -->
 <div id="dh-bot" class="dh-pane">
+  {$liveWarningBanner}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
     <div class="card">
       <div class="card-header">Бот</div>
       <div class="card-body">
         <table style="width:100%;font-size:13px;border-collapse:collapse;">
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:140px;">Включён</td><td>{$botEnabled}</td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$e($botMode)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code style="color:{$modeColor};font-weight:700;">{$e($modeLabel)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Аккаунт</td><td><code>{$e($lrAccount)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус тика</td><td><code>{$e($tickStatus)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Время тика</td><td><code>{$e($tickAt)}</code></td></tr>
@@ -1913,6 +1987,29 @@ HTML;
       </table>
       <div style="margin-top:8px;font-size:11px;color:var(--ui-text-muted);">
         Статус обновляется при каждом тике бота в режиме demo. Настройте учётные данные во вкладке «Управление».
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header">Live подключение (KeyCenter)</div>
+    <div class="card-body">
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tr>
+          <td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:200px;">Account ID</td>
+          <td>{$liveAccountIdHtml}</td>
+        </tr>
+        <tr>
+          <td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Live торговля</td>
+          <td>{$liveEnabledHtml}</td>
+        </tr>
+        <tr>
+          <td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус KeyCenter</td>
+          <td>{$liveConnHtml}</td>
+        </tr>
+        {$liveConnErrRow}
+      </table>
+      <div style="margin-top:8px;font-size:11px;color:var(--ui-text-muted);">
+        Статус обновляется при каждом тике бота в режиме live. Ключи управляются через KeyCenter по account_id.
       </div>
     </div>
   </div>
@@ -2138,6 +2235,7 @@ HTML;
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим бота</label>
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
               <option value="demo"{$gcfgModeDe}>demo</option>
+              <option value="live"{$gcfgModeLv}>live</option>
               <option value="passive"{$gcfgModeP}>passive</option>
               <option value="active"{$gcfgModeA}>active</option>
               <option value="disabled"{$gcfgModeD}>disabled</option>
@@ -2191,6 +2289,33 @@ HTML;
           </div>
           <div style="margin-top:6px;font-size:11px;color:var(--ui-text-muted);">
             Ключ и секрет сохраняются только при заполнении. Оставьте поле пустым — текущее значение не изменится.
+          </div>
+        </div>
+
+        <div style="margin-top:14px;border-top:1px solid var(--ui-border);padding-top:12px;">
+          <div style="font-size:12px;color:var(--ui-text-muted);margin-bottom:8px;font-weight:600;">Live режим (KeyCenter)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Account ID</label>
+              <input type="text" name="account_id" value="{$e($cfgLiveAccountId)}"
+                placeholder="account_id для KeyCenter"
+                class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <div style="font-size:11px;color:var(--ui-text-muted);margin-top:3px;">
+                Используется для live. Ключи управляются KeyCenter.
+              </div>
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">
+                Live торговля разрешена
+              </label>
+              <select name="live_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+                <option value="0"{$cfgLiveEnabledNo}>Нет (ордера заблокированы)</option>
+                <option value="1"{$cfgLiveEnabledYes}>Да — ПОДТВЕРЖДАЮ live торговлю</option>
+              </select>
+              <div style="font-size:11px;color:#f85149;margin-top:3px;">
+                Обязательно для исполнения live ордеров.
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2520,7 +2645,7 @@ function handleDashboardGlobalSave(): void
     $demoApiSecret = trim((string)($_POST['demo_api_secret']   ?? ''));
     $demoBaseUrl   = trim((string)($_POST['demo_api_base_url'] ?? ''));
 
-    if (!in_array($mode, ['demo', 'passive', 'active', 'disabled'], true)) {
+    if (!in_array($mode, ['demo', 'live', 'passive', 'active', 'disabled'], true)) {
         $mode = 'demo';
     }
     if (!in_array($defEntry, ['limit', 'market'], true)) {
@@ -2533,6 +2658,14 @@ function handleDashboardGlobalSave(): void
     $current['max_bot_leverage']              = $leverage;
     $current['default_entry_mode']            = $defEntry !== '' ? $defEntry : null;
     $current['default_max_active_positions']  = $defMaxPos;
+
+    // Live credentials: account_id and live_enabled flag
+    $accountId   = trim((string)($_POST['account_id']   ?? ''));
+    $liveEnabled = (bool)(int)($_POST['live_enabled']  ?? 0);
+    if ($accountId !== '') {
+        $current['account_id'] = $accountId;
+    }
+    $current['live_enabled'] = $liveEnabled;
 
     // Only overwrite credentials when the user actually submitted a value
     if ($demoApiKey !== '') {
@@ -3277,7 +3410,7 @@ function handleDashboardResetRuntime(): void
         file_put_contents($path, $content);
     }
 
-    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Runtime/cache сброшен'];
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Runtime/cache сброшен. Reset не закрывает позиции на Bybit.'];
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-overview'));
     $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
     if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-overview'; }
@@ -3285,6 +3418,65 @@ function handleDashboardResetRuntime(): void
     exit;
 }
 } // end if (!function_exists('handleDashboardResetRuntime'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: switch bot mode (demo / live)
+// Registered as: POST /admin/dashboard (dashboard_action = switch_mode)
+// Writes only the `mode` key to modules/bot/config/active.php.
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardSwitchMode')) {
+function handleDashboardSwitchMode(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+
+    $mode       = trim((string)($_POST['mode'] ?? ''));
+    $validModes = ['demo', 'live', 'passive', 'active', 'disabled'];
+    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-bot'));
+    $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-bot';
+    $dashUrl    = System::web('admin/dashboard') . '?tab=' . $activeTab;
+
+    if (!in_array($mode, $validModes, true)) {
+        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Неверный режим: ' . htmlspecialchars($mode, ENT_QUOTES, 'UTF-8')];
+        header('Location: ' . $dashUrl);
+        exit;
+    }
+
+    $activeFile = System::path('root') . '/modules/bot/config/active.php';
+
+    $current = [];
+    if (file_exists($activeFile)) {
+        $loaded = @include $activeFile;
+        if (is_array($loaded)) {
+            $current = $loaded;
+        }
+    }
+
+    $current['mode'] = $mode;
+
+    $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Bot Module — Active Config Overrides\n * Written by the admin UI. Edit via the config page.\n */\n\nreturn ";
+    $php .= var_export($current, true);
+    $php .= ";\n";
+
+    $dir = dirname($activeFile);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0755, true);
+    }
+    file_put_contents($activeFile, $php);
+
+    $modeLabel = strtoupper($mode);
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Режим переключён: {$modeLabel}"];
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardSwitchMode'))
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST dispatcher: single POST /admin/dashboard endpoint for all dashboard actions
@@ -3309,6 +3501,9 @@ function dispatchDashboardPost(): void
     }
 
     switch ($action) {
+        case 'switch_mode':
+            handleDashboardSwitchMode();
+            break;
         case 'chain_run':
             handleDashboardChainRun();
             break;

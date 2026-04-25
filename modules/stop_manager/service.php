@@ -295,9 +295,18 @@ final class StopManagerService
         $isPaperMode = in_array($mode, ['paper', 'demo'], true);
         $isDemoMode  = ($mode === 'demo');
 
-        // Prepare demo gateway once if in demo mode and demo_execute_stops is enabled
+        // Prepare gateway: when in demo mode, check bot mode to decide demo vs live
         $demoExecuteStops = $isDemoMode && (bool)($config['demo_execute_stops'] ?? true);
-        $demoGw           = $demoExecuteStops ? $this->getDemoGateway($config) : null;
+
+        // Bot mode determines which exchange API to use (no mixed mode)
+        $botConfig = $demoExecuteStops ? $this->loadBotConfig($config) : [];
+        $botMode   = (string)($botConfig['mode'] ?? 'demo');
+        $useLiveGw = ($demoExecuteStops && $botMode === 'live');
+        $useDemoGw = ($demoExecuteStops && $botMode !== 'live');
+
+        $demoGw   = $useDemoGw ? $this->getDemoGateway($config) : null;
+        $liveGw   = $useLiveGw ? $this->getLiveGateway($config) : null;
+        $activeGw = $liveGw ?? $demoGw;
 
         // Index positions by execution key
         $posMap = [];
@@ -387,14 +396,14 @@ final class StopManagerService
                         'reason'         => $initEventType,
                     ]);
 
-                    // ── Demo: set stop on Bybit Demo exchange ─────────────────
+                    // ── Exchange: set stop on exchange (demo or live) ─────────────
                     if ($demoExecuteStops && $stopPrice > 0.0) {
-                        if ($demoGw === null) {
+                        if ($activeGw === null) {
                             $demoStopsSkippedNoGw++;
                             $stopMap[$key]['demo_stop_set']  = false;
                             $stopMap[$key]['demo_stop_note'] = 'no_gateway';
                         } else {
-                            $setResult = $this->setDemoTradingStop($demoGw, (string)($pos['symbol'] ?? ''), $stopPrice);
+                            $setResult = $this->setDemoTradingStop($activeGw, (string)($pos['symbol'] ?? ''), $stopPrice);
                             $stopMap[$key]['demo_stop_set']      = $setResult['ok'];
                             $stopMap[$key]['demo_stop_note']     = $setResult['note'];
                             $stopMap[$key]['demo_stop_ret_code'] = $setResult['ret_code'];
@@ -526,14 +535,14 @@ final class StopManagerService
                         $stopMap[$key]['transition_reason'] = $recalcReason;
                     }
 
-                    // ── Demo: update stop on Bybit Demo exchange when stop changed ─
+                    // ── Exchange: update stop on exchange (demo or live) when stop changed ─
                     if ($demoExecuteStops && $recalcReason !== null && $stopPrice > 0.0) {
-                        if ($demoGw === null) {
+                        if ($activeGw === null) {
                             $demoStopsSkippedNoGw++;
                             $stopMap[$key]['demo_stop_set']  = false;
                             $stopMap[$key]['demo_stop_note'] = 'no_gateway';
                         } else {
-                            $setResult = $this->setDemoTradingStop($demoGw, (string)($pos['symbol'] ?? ''), $stopPrice);
+                            $setResult = $this->setDemoTradingStop($activeGw, (string)($pos['symbol'] ?? ''), $stopPrice);
                             $stopMap[$key]['demo_stop_set']      = $setResult['ok'];
                             $stopMap[$key]['demo_stop_note']     = $setResult['note'];
                             $stopMap[$key]['demo_stop_ret_code'] = $setResult['ret_code'];
@@ -932,6 +941,27 @@ final class StopManagerService
             $gw->setCredentials($apiKey, $apiSecret);
             $gw->setBaseUrl($baseUrl);
             return $gw;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Get a Bybit gateway client for live trading via KeyCenter.
+     *
+     * Uses account_id from the bot config (single source of truth).
+     * Never uses demo credentials, never falls back.
+     */
+    private function getLiveGateway(array $smConfig): ?\Core\Gateway\Bybit
+    {
+        $botConfig = $this->loadBotConfig($smConfig);
+        $accountId = trim((string)($botConfig['account_id'] ?? ''));
+        if ($accountId === '') {
+            return null;
+        }
+
+        try {
+            return \Core\Gateway\Bybit::client($accountId);
         } catch (\Throwable) {
             return null;
         }

@@ -175,6 +175,70 @@ final class BotService
         }
     }
 
+    /**
+     * Test live connection via KeyCenter.
+     *
+     * Uses account_id from config (single source of truth).
+     * Makes a lightweight signed API call to verify credentials.
+     * Never uses demo credentials.
+     */
+    public function checkLiveConnection(): array
+    {
+        $config    = $this->getConfig();
+        $accountId = trim((string)($config['account_id'] ?? ''));
+
+        if ($accountId === '') {
+            return [
+                'connected'   => false,
+                'mode'        => 'live',
+                'account'     => '',
+                'error'       => 'account_id_missing',
+                'skip_reason' => 'live_not_ready',
+            ];
+        }
+
+        try {
+            $gw   = \Core\Gateway\Bybit::client($accountId);
+            $resp = $gw->request('/v5/account/wallet-balance', [
+                'accountType' => 'UNIFIED',
+            ], true);
+
+            $retCode = $resp['ret_code'] ?? -1;
+            $success = ($resp['success'] ?? false) && $retCode === 0;
+
+            if ($success) {
+                return [
+                    'connected'   => true,
+                    'mode'        => 'live',
+                    'account'     => $accountId,
+                    'error'       => null,
+                    'skip_reason' => null,
+                ];
+            }
+
+            $errMsg     = (string)($resp['ret_msg'] ?? ($resp['error_type'] ?? 'api_error'));
+            $skipReason = in_array($retCode, [10003, 10004, -1], true)
+                ? 'live_keycenter_credentials_missing'
+                : 'live_not_ready';
+
+            return [
+                'connected'   => false,
+                'mode'        => 'live',
+                'account'     => $accountId,
+                'error'       => $errMsg,
+                'skip_reason' => $skipReason,
+            ];
+        } catch (\Throwable $ex) {
+            return [
+                'connected'   => false,
+                'mode'        => 'live',
+                'account'     => $accountId,
+                'error'       => $ex->getMessage(),
+                'skip_reason' => 'live_not_ready',
+            ];
+        }
+    }
+
     public function getStats(): array
     {
         return $this->readJson('storage/stats.json', []);
@@ -283,7 +347,25 @@ final class BotService
             $demoConnError = 'missing_credentials';
         }
 
-        $account = $botMode === 'demo' ? 'bybit_demo' : 'local';
+        // ── Live credentials diagnostics ─────────────────────────────────────
+        $liveAccountId       = trim((string)($config['account_id'] ?? ''));
+        $liveEnabled         = (bool)($config['live_enabled'] ?? false);
+        $liveConnected       = false;
+        $liveConnError       = null;
+        $liveCredsMissing    = false;
+
+        if ($botMode === 'live') {
+            $liveConnResult  = $this->checkLiveConnection();
+            $liveConnected   = (bool)($liveConnResult['connected'] ?? false);
+            $liveConnError   = $liveConnResult['error'] ?? null;
+            $liveCredsMissing = ($liveConnResult['skip_reason'] ?? '') === 'live_keycenter_credentials_missing';
+        }
+
+        $account = match ($botMode) {
+            'demo'  => 'bybit_demo',
+            'live'  => $liveAccountId !== '' ? $liveAccountId : 'live',
+            default => 'local',
+        };
 
         if (!(bool)($config['enabled'] ?? false)) {
             // Bot disabled: still write truthful last_run including fresh strategy
@@ -307,6 +389,11 @@ final class BotService
                     'demo_credentials_configured'  => $demoCredsConfigured,
                     'demo_connected'               => $demoConnected,
                     'demo_connection_error'        => $demoConnError,
+                    'live_account_id'              => $liveAccountId,
+                    'live_enabled'                 => $liveEnabled,
+                    'live_connected'               => $liveConnected,
+                    'live_connection_error'        => $liveConnError,
+                    'live_credentials_missing'     => $liveCredsMissing,
                     'strategies_discovered_total'  => count($registry),
                     'strategies_enabled_total'     => count($enabledStrategies),
                     'strategies_disabled_total'    => count($disabledStrategies),
@@ -414,6 +501,11 @@ final class BotService
             'demo_credentials_configured' => $demoCredsConfigured,
             'demo_connected'              => $demoConnected,
             'demo_connection_error'       => $demoConnError,
+            'live_account_id'             => $liveAccountId,
+            'live_enabled'                => $liveEnabled,
+            'live_connected'              => $liveConnected,
+            'live_connection_error'       => $liveConnError,
+            'live_credentials_missing'    => $liveCredsMissing,
 
             // Discovery
             'strategies_discovered_total' => count($registry),
@@ -856,6 +948,8 @@ final class BotService
 
         // demo mode: real execution on Bybit Demo account
         $isDemoMode     = ($mode === 'demo');
+        // live mode: real execution on Bybit Live account via KeyCenter
+        $isLiveMode     = ($mode === 'live');
         // paper, smoke, and active all mean local paper execution
         $isPaperMode    = in_array($mode, ['paper', 'smoke', 'active'], true);
         $isPassiveMode  = ($mode === 'passive');
@@ -871,6 +965,22 @@ final class BotService
                 'orders_filled_paper'              => 0,
                 'positions_closed_expired'         => $demoResult['positions_closed_expired'] ?? 0,
                 'positions_closed_withdrawn'       => $demoResult['positions_closed_withdrawn'] ?? 0,
+                'positions_closed_reverse_pattern' => 0,
+                'queue_items_skipped_mode_disabled'=> 0,
+                'queue_items_skipped_mode_passive' => 0,
+            ]);
+        }
+
+        // ── Live mode execution path ──────────────────────────────────────────
+        if ($isLiveMode) {
+            $liveResult = $this->processLiveExecution(
+                $orderQueue, $activeOrders, $activePositions, $closedPositions, $config, $tickAt
+            );
+            return array_merge($liveResult, [
+                'orders_submitted_paper'           => 0,
+                'orders_filled_paper'              => 0,
+                'positions_closed_expired'         => $liveResult['positions_closed_expired'] ?? 0,
+                'positions_closed_withdrawn'       => $liveResult['positions_closed_withdrawn'] ?? 0,
                 'positions_closed_reverse_pattern' => 0,
                 'queue_items_skipped_mode_disabled'=> 0,
                 'queue_items_skipped_mode_passive' => 0,
@@ -1236,6 +1346,7 @@ final class BotService
             // Position lifecycle
             'position_status'   => 'open',
             'execution_mode'    => 'demo',
+            'mode'              => 'demo',
             'account'           => 'bybit_demo',
             'transition_reason' => 'synced_from_bybit_demo',
             'opened_at'             => $openedAt,
@@ -1533,6 +1644,27 @@ final class BotService
             $gw->setCredentials($apiKey, $apiSecret);
             $gw->setBaseUrl($baseUrl);
             return $gw;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Get a Bybit gateway client for live trading via KeyCenter.
+     *
+     * Uses account_id from bot config. KeyCenter handles credential injection.
+     * Never uses demo credentials, never falls back to demo.
+     * Returns null when account_id is not configured or client creation fails.
+     */
+    private function getLiveGateway(array $config): ?\Core\Gateway\Bybit
+    {
+        $accountId = trim((string)($config['account_id'] ?? ''));
+        if ($accountId === '') {
+            return null;
+        }
+
+        try {
+            return \Core\Gateway\Bybit::client($accountId);
         } catch (\Throwable) {
             return null;
         }
@@ -1956,11 +2088,12 @@ final class BotService
             $sym = (string)($pos['symbol'] ?? '');
             if ($sym !== '' && !isset($freshSymbols[$sym]) && ($pos['execution_mode'] ?? '') === 'demo') {
                 // Position gone from Bybit Demo — move to closed
-                $pos['position_status']   = 'closed';
-                $pos['closed_at']         = $tickAt;
-                $pos['close_reason']      = 'position_gone_from_bybit_demo';
-                $pos['last_updated_at']   = $tickAt;
-                $closedPositions[]        = $pos;
+                $pos['position_status'] = 'closed';
+                $pos['closed_at']       = $tickAt;
+                $pos['close_reason']    = 'position_gone_from_bybit_demo';
+                $pos['last_updated_at'] = $tickAt;
+                $pos['mode']            = 'demo';
+                $closedPositions[]      = $pos;
                 $positionsClosed++;
             }
         }
@@ -1996,6 +2129,461 @@ final class BotService
             'demo_last_set_lev_code'           => $demoLastSetLevCode,
             'demo_last_set_lev_msg'            => $demoLastSetLevMsg,
             'demo_leverage_mismatch_count'     => $demoLeverageMismatchCount,
+        ];
+    }
+
+    /**
+     * Live mode execution: real orders on Bybit Live via KeyCenter.
+     *
+     * Safety guards (executed before ANY order submission):
+     *   1. live_enabled flag must be true in config
+     *   2. account_id must exist in config
+     *   3. KeyCenter must return a valid live gateway
+     *   4. Lightweight API test call must succeed
+     *
+     * No fallback to demo. No fallback from live to demo.
+     * Mirrors processDemoExecution() in structure; no logic change to stop/math.
+     */
+    private function processLiveExecution(
+        array $orderQueue,
+        array $activeOrders,
+        array $activePositions,
+        array $closedPositions,
+        array $config,
+        string $tickAt
+    ): array {
+        $ordersCreated       = 0;
+        $ordersSubmittedLive = 0;
+        $ordersConfirmedLive = 0;
+        $positionsOpened     = 0;
+        $positionsClosed     = 0;
+        $positionsClosedExp  = 0;
+        $positionsClosedWith = 0;
+        $logEvents           = 0;
+
+        // Live execution diagnostics
+        $liveOrdersPrepared       = 0;
+        $liveOrdersRejected       = 0;
+        $liveLeverageClampedCount = 0;
+        $liveSetLevFailedCount    = 0;
+        $liveQtyInvalidCount      = 0;
+        $liveLastErrorCode        = null;
+        $liveLastErrorMsg         = null;
+        $liveLastRejectedSymbol   = null;
+        $liveLastReqLeverage      = null;
+        $liveLastEffLeverage      = null;
+        $liveLastLeverageSrc      = null;
+        $liveLastBudgetSrc        = null;
+        $liveLastSetLevNote       = null;
+        $liveLastSetLevCode       = null;
+        $liveLastSetLevMsg        = null;
+        $liveLeverageMismatchCount= 0;
+
+        $skipAllReason = null;
+
+        // ── Safety guard 1: live_enabled flag ─────────────────────────────────
+        if (!(bool)($config['live_enabled'] ?? false)) {
+            $skipAllReason = 'live_not_enabled';
+        }
+
+        // ── Safety guard 2: account_id ────────────────────────────────────────
+        $accountId = trim((string)($config['account_id'] ?? ''));
+        if ($skipAllReason === null && $accountId === '') {
+            $skipAllReason = 'live_not_ready';
+        }
+
+        // ── Safety guard 3 + 4: KeyCenter gateway + API test ──────────────────
+        $gw = null;
+        if ($skipAllReason === null) {
+            $gw = $this->getLiveGateway($config);
+            if ($gw === null) {
+                $skipAllReason = 'live_not_ready';
+            } else {
+                // Lightweight API test
+                try {
+                    $testResp = $gw->request('/v5/account/wallet-balance', [
+                        'accountType' => 'UNIFIED',
+                    ], true);
+                    $testOk = ($testResp['success'] ?? false) && ($testResp['ret_code'] ?? -1) === 0;
+                    if (!$testOk) {
+                        $testCode    = $testResp['ret_code'] ?? -1;
+                        $skipAllReason = in_array($testCode, [10003, 10004], true)
+                            ? 'live_keycenter_credentials_missing'
+                            : 'live_not_ready';
+                        $gw = null;
+                    }
+                } catch (\Throwable) {
+                    $skipAllReason = 'live_not_ready';
+                    $gw = null;
+                }
+            }
+        }
+
+        // ── If any guard failed: skip all ready queue items ────────────────────
+        if ($gw === null) {
+            foreach ($orderQueue as &$qItem) {
+                if (($qItem['queue_status'] ?? '') === 'ready') {
+                    $qItem['skip_reason'] = $skipAllReason ?? 'live_not_ready';
+                }
+            }
+            unset($qItem);
+
+            return [
+                'order_queue'            => array_values($orderQueue),
+                'active_orders'          => $activeOrders,
+                'active_positions'       => $activePositions,
+                'closed_positions'       => $closedPositions,
+                'orders_created'         => 0,
+                'orders_submitted_demo'  => 0,
+                'orders_confirmed_demo'  => 0,
+                'positions_opened'       => 0,
+                'positions_closed'       => 0,
+                'positions_closed_expired'   => 0,
+                'positions_closed_withdrawn' => 0,
+                'execution_log_events'   => 0,
+                'live_orders_prepared'   => 0,
+                'live_orders_rejected'   => 0,
+                'live_skip_reason'       => $skipAllReason,
+            ];
+        }
+
+        // Fetch current positions from Bybit Live
+        $livePositions = $this->fetchDemoPositions($gw); // same API endpoint, different gateway
+
+        // Build symbol → Bybit position map for dedup
+        $symbolMap = [];
+        foreach ($livePositions as $pos) {
+            $sym = (string)($pos['symbol'] ?? '');
+            if ($sym !== '') {
+                $symbolMap[$sym] = $pos;
+            }
+        }
+
+        // Build queue key → queue item map
+        $queueMap = [];
+        foreach ($orderQueue as $q) {
+            $k = $this->queueKey($q);
+            if ($k !== '') {
+                $queueMap[$k] = $q;
+            }
+        }
+
+        $maxPos = $this->resolveMaxActivePositions($config);
+        $submittedEffective = [];
+
+        // Process ready queue items
+        foreach ($orderQueue as &$qItem) {
+            if (($qItem['queue_status'] ?? '') !== 'ready') {
+                continue;
+            }
+
+            $key    = $this->queueKey($qItem);
+            $symbol = (string)($qItem['symbol'] ?? '');
+            $side   = (string)($qItem['side']   ?? 'long');
+
+            if ($symbol === '') {
+                continue;
+            }
+
+            if (isset($symbolMap[$symbol])) {
+                $qItem['skip_reason'] = 'symbol_already_active_on_live';
+                continue;
+            }
+
+            if ($maxPos > 0 && count($symbolMap) >= $maxPos) {
+                $qItem['skip_reason'] = 'max_active_positions_reached';
+                continue;
+            }
+
+            $entryPrice = (float)($qItem['entry_price'] ?? 0.0);
+            if ($entryPrice <= 0.0) {
+                $qItem['skip_reason'] = 'invalid_entry_price_or_budget';
+                $liveOrdersRejected++;
+                continue;
+            }
+
+            $budgetResolved   = $this->resolveExecutionBudget($qItem, $config);
+            $leverageResolved = $this->resolveExecutionLeverage($qItem, $config);
+
+            $budget            = $budgetResolved['budget'];
+            $budgetSource      = $budgetResolved['source'];
+            $requestedLeverage = $leverageResolved['leverage'];
+            $leverageSource    = $leverageResolved['source'];
+
+            $qItem['bot_budget']      = $budget;
+            $qItem['bot_leverage']    = $requestedLeverage;
+            $qItem['budget_source']   = $budgetSource;
+            $qItem['leverage_source'] = $leverageSource;
+
+            $liveOrdersPrepared++;
+
+            $symbolInfo  = $this->fetchSymbolInstrumentInfo($gw, $symbol);
+            $bybitMaxLev = $symbolInfo['bybit_max_leverage'] ?? null;
+            $minOrderQty = $symbolInfo['min_order_qty']      ?? null;
+            $qtyStep     = $symbolInfo['qty_step']           ?? null;
+            $maxOrderQty = $symbolInfo['max_order_qty']      ?? null;
+            $minNotional = $symbolInfo['min_notional_value'] ?? null;
+
+            $qItem['requested_leverage'] = $requestedLeverage;
+            $qItem['bybit_max_leverage'] = $bybitMaxLev;
+            $qItem['qty_step']           = $qtyStep;
+            $qItem['min_order_qty']      = $minOrderQty;
+            $qItem['min_notional_value'] = $minNotional;
+
+            $levResult = $this->setDemoLeverage($gw, $symbol, $requestedLeverage, $bybitMaxLev);
+
+            $effectiveLeverage  = $levResult['effective'];
+            $leverageWasClamped = ($levResult['effective'] !== $levResult['requested']);
+            if ($leverageWasClamped) {
+                $liveLeverageClampedCount++;
+            }
+
+            $qItem['set_leverage_attempted'] = true;
+            $qItem['set_leverage_ok']        = $levResult['ok'];
+            $qItem['set_leverage_ret_code']  = $levResult['ret_code'];
+            $qItem['set_leverage_ret_msg']   = $levResult['ret_msg'];
+            $qItem['set_leverage_note']      = $levResult['note'];
+            $qItem['effective_leverage']     = $effectiveLeverage;
+            $qItem['leverage_was_clamped']   = $leverageWasClamped;
+
+            $liveLastReqLeverage = $requestedLeverage;
+            $liveLastEffLeverage = $effectiveLeverage;
+            $liveLastLeverageSrc = $leverageSource;
+            $liveLastBudgetSrc   = $budgetSource;
+            $liveLastSetLevNote  = $levResult['note'];
+            $liveLastSetLevCode  = $levResult['ret_code'];
+            $liveLastSetLevMsg   = $levResult['ret_msg'];
+
+            if (!$levResult['ok']) {
+                $qItem['skip_reason']     = 'set_leverage_failed';
+                $qItem['live_error_code'] = $levResult['ret_code'];
+                $qItem['live_error_msg']  = $levResult['ret_msg'];
+                $liveSetLevFailedCount++;
+                $liveOrdersRejected++;
+                $liveLastErrorCode      = $levResult['ret_code'];
+                $liveLastErrorMsg       = $levResult['ret_msg'];
+                $liveLastRejectedSymbol = $symbol;
+                continue;
+            }
+
+            $rawQty        = ($budget * $effectiveLeverage) / $entryPrice;
+            $qItem['raw_qty'] = $rawQty;
+
+            $normalizedQty = $rawQty;
+            if ($qtyStep !== null && $qtyStep > 0.0) {
+                $decPlaces     = max(0, (int)ceil(-log10($qtyStep)));
+                $normalizedQty = floor($rawQty / $qtyStep) * $qtyStep;
+                $normalizedQty = round($normalizedQty, $decPlaces);
+            }
+            $qItem['normalized_qty'] = $normalizedQty;
+
+            if ($normalizedQty <= 0.0) {
+                $qItem['skip_reason'] = 'qty_invalid_after_normalization';
+                $liveQtyInvalidCount++;
+                $liveOrdersRejected++;
+                $liveLastRejectedSymbol = $symbol;
+                continue;
+            }
+            if ($minOrderQty !== null && $normalizedQty < $minOrderQty) {
+                $qItem['skip_reason'] = 'qty_below_min_order_qty';
+                $liveQtyInvalidCount++;
+                $liveOrdersRejected++;
+                $liveLastRejectedSymbol = $symbol;
+                continue;
+            }
+            if ($maxOrderQty !== null && $maxOrderQty > 0.0 && $normalizedQty > $maxOrderQty) {
+                $qItem['skip_reason'] = 'qty_above_max_order_qty';
+                $liveQtyInvalidCount++;
+                $liveOrdersRejected++;
+                $liveLastRejectedSymbol = $symbol;
+                continue;
+            }
+            if ($minNotional !== null && $minNotional > 0.0
+                && ($normalizedQty * $entryPrice) < $minNotional
+            ) {
+                $qItem['skip_reason'] = 'qty_below_min_notional';
+                $liveQtyInvalidCount++;
+                $liveOrdersRejected++;
+                $liveLastRejectedSymbol = $symbol;
+                continue;
+            }
+
+            $qtyStr    = rtrim(rtrim(number_format($normalizedQty, 8, '.', ''), '0'), '.');
+            $bybitSide = ($side === 'short') ? 'Sell' : 'Buy';
+
+            try {
+                $orderResp = $gw->request('/v5/order/create', [
+                    'category'    => 'linear',
+                    'symbol'      => $symbol,
+                    'side'        => $bybitSide,
+                    'orderType'   => 'Market',
+                    'qty'         => $qtyStr,
+                    'timeInForce' => 'IOC',
+                    'positionIdx' => 0,
+                ], true);
+            } catch (\Throwable) {
+                $qItem['skip_reason']   = 'live_submit_exception';
+                $liveOrdersRejected++;
+                $liveLastRejectedSymbol = $symbol;
+                continue;
+            }
+
+            $ordersCreated++;
+
+            if (($orderResp['success'] ?? false) && ($orderResp['ret_code'] ?? -1) === 0) {
+                $ordersSubmittedLive++;
+                $qItem['queue_status']       = 'submitted';
+                $qItem['submitted_at']       = $tickAt;
+                $qItem['last_change_reason'] = 'submitted_to_live';
+                $qItem['live_order_id']      = $orderResp['result']['orderId'] ?? null;
+
+                $symbolMap[$symbol] = ['symbol' => $symbol, 'size' => $normalizedQty, '_pending' => true];
+                $positionsOpened++;
+
+                $submittedEffective[$symbol] = $effectiveLeverage;
+
+                $this->appendExecutionLog([
+                    'timestamp'             => $tickAt,
+                    'event_type'            => 'live_order_submitted',
+                    'strategy_id'           => $qItem['strategy_id'] ?? '',
+                    'owner_strategy'        => $qItem['owner_strategy'] ?? '',
+                    'signal_id'             => $qItem['signal_id'] ?? '',
+                    'symbol'                => $symbol,
+                    'side'                  => $side,
+                    'entry_price'           => $entryPrice,
+                    'budget'                => $budget,
+                    'budget_source'         => $budgetSource,
+                    'requested_leverage'    => $requestedLeverage,
+                    'leverage_source'       => $leverageSource,
+                    'meta_max_leverage'     => $bybitMaxLev,
+                    'effective_leverage'    => $effectiveLeverage,
+                    'set_leverage_note'     => $levResult['note'],
+                    'set_leverage_ret_code' => $levResult['ret_code'],
+                    'set_leverage_ret_msg'  => $levResult['ret_msg'],
+                    'leverage_was_clamped'  => $leverageWasClamped,
+                    'raw_qty'               => $rawQty,
+                    'normalized_qty'        => $normalizedQty,
+                    'qty_step'              => $qtyStep,
+                    'min_order_qty'         => $minOrderQty,
+                    'min_notional_value'    => $minNotional,
+                    'order_type'            => 'Market',
+                    'execution_mode'        => 'live',
+                    'bybit_side'            => $bybitSide,
+                    'live_order_id'         => $qItem['live_order_id'],
+                    'reason'                => 'submitted_market_order_to_bybit_live',
+                ]);
+                $logEvents++;
+            } else {
+                $retCode = $orderResp['ret_code'] ?? null;
+                $retMsg  = $orderResp['ret_msg']  ?? null;
+                $qItem['skip_reason']     = 'live_order_rejected';
+                $qItem['live_error_code'] = $retCode;
+                $qItem['live_error_msg']  = $retMsg;
+                $liveOrdersRejected++;
+                $liveLastErrorCode      = $retCode;
+                $liveLastErrorMsg       = $retMsg;
+                $liveLastRejectedSymbol = $symbol;
+            }
+        }
+        unset($qItem);
+
+        // Re-sync positions from Bybit Live after submitting orders
+        $freshLivePositions = $this->fetchDemoPositions($gw);
+
+        $symbolQueueContext = [];
+        foreach ($orderQueue as $q) {
+            $sym = (string)($q['symbol'] ?? '');
+            if ($sym !== '' && !isset($symbolQueueContext[$sym])) {
+                $symbolQueueContext[$sym] = $q;
+            }
+        }
+
+        $newActivePositions = [];
+        foreach ($freshLivePositions as $pos) {
+            $sym    = (string)($pos['symbol'] ?? '');
+            $qCtx   = $symbolQueueContext[$sym] ?? [];
+            $record = $this->buildPositionFromDemoData($pos, $qCtx, $tickAt);
+
+            // Override demo fields with live fields
+            $record['execution_mode']    = 'live';
+            $record['mode']              = 'live';
+            $record['account']           = $accountId;
+            $record['transition_reason'] = 'synced_from_bybit_live';
+
+            // Verify leverage
+            $bybitPosLev = (int)($pos['leverage'] ?? 0);
+            $expectedLev = $submittedEffective[$sym] ?? null;
+            if ($expectedLev !== null && $bybitPosLev > 0 && $bybitPosLev !== $expectedLev) {
+                $record['leverage_warning']                     = 'leverage_not_applied_on_exchange';
+                $record['requested_leverage']                   = $expectedLev;
+                $record['bybit_position_leverage_after_submit'] = $bybitPosLev;
+                $liveLeverageMismatchCount++;
+                $this->appendExecutionLog([
+                    'timestamp'                            => $tickAt,
+                    'event_type'                           => 'live_leverage_mismatch',
+                    'symbol'                               => $sym,
+                    'expected_leverage'                    => $expectedLev,
+                    'bybit_position_leverage_after_submit' => $bybitPosLev,
+                    'reason'                               => 'leverage_not_applied_on_exchange',
+                ]);
+                $logEvents++;
+            }
+
+            $newActivePositions[] = $record;
+            $ordersConfirmedLive++;
+        }
+
+        // Detect positions gone from live exchange
+        $freshSymbols = array_flip(array_map(
+            fn($p) => (string)($p['symbol'] ?? ''),
+            $freshLivePositions
+        ));
+        foreach ($activePositions as $pos) {
+            $sym = (string)($pos['symbol'] ?? '');
+            if ($sym !== '' && !isset($freshSymbols[$sym]) && ($pos['execution_mode'] ?? '') === 'live') {
+                $pos['position_status'] = 'closed';
+                $pos['closed_at']       = $tickAt;
+                $pos['close_reason']    = 'position_gone_from_bybit_live';
+                $pos['last_updated_at'] = $tickAt;
+                $pos['mode']            = 'live';
+                $closedPositions[]      = $pos;
+                $positionsClosed++;
+            }
+        }
+
+        return [
+            'order_queue'              => array_values($orderQueue),
+            'active_orders'            => $activeOrders,
+            'active_positions'         => array_values($newActivePositions),
+            'closed_positions'         => $closedPositions,
+            'orders_created'           => $ordersCreated,
+            'orders_submitted_demo'    => 0,
+            'orders_confirmed_demo'    => 0,
+            'positions_opened'         => $positionsOpened,
+            'positions_closed'         => $positionsClosed,
+            'positions_closed_expired'   => $positionsClosedExp,
+            'positions_closed_withdrawn' => $positionsClosedWith,
+            'execution_log_events'     => $logEvents,
+            // Live execution diagnostics (reuse demo_* keys for last_run.json compatibility)
+            'demo_orders_prepared'           => $liveOrdersPrepared,
+            'demo_orders_rejected'           => $liveOrdersRejected,
+            'demo_leverage_clamped_count'    => $liveLeverageClampedCount,
+            'demo_set_leverage_failed_count' => $liveSetLevFailedCount,
+            'demo_qty_invalid_count'         => $liveQtyInvalidCount,
+            'demo_last_error_code'           => $liveLastErrorCode,
+            'demo_last_error_msg'            => $liveLastErrorMsg,
+            'demo_last_rejected_symbol'      => $liveLastRejectedSymbol,
+            'demo_last_req_leverage'         => $liveLastReqLeverage,
+            'demo_last_eff_leverage'         => $liveLastEffLeverage,
+            'demo_last_leverage_source'      => $liveLastLeverageSrc,
+            'demo_last_budget_source'        => $liveLastBudgetSrc,
+            'demo_last_set_lev_note'         => $liveLastSetLevNote,
+            'demo_last_set_lev_code'         => $liveLastSetLevCode,
+            'demo_last_set_lev_msg'          => $liveLastSetLevMsg,
+            'demo_leverage_mismatch_count'   => $liveLeverageMismatchCount,
+            'live_orders_prepared'           => $liveOrdersPrepared,
+            'live_orders_rejected'           => $liveOrdersRejected,
+            'live_skip_reason'               => null,
         ];
     }
 

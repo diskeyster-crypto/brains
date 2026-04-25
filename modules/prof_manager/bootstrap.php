@@ -19,5 +19,6 @@ require_once $libDir . '/position_reader.php';
 require_once $libDir . '/validator.php';
 require_once $libDir . '/risk_math.php';
 require_once $libDir . '/profit_lock_planner.php';
+require_once $libDir . '/candle_reader.php';
 require_once $profilesDir . '/long/profile.php';
 require_once $profilesDir . '/short/profile.php';

@@ -25,5 +25,14 @@
         "action": "would_set_profit_lock",
         "updated_at": "2026-04-25T15:28:14+00:00",
         "updated_at_ts": 1777130894
+    },
+    "testusdt_long": {
+        "symbol": "TESTUSDT",
+        "side": "long",
+        "lock_price": 109.80000000000001,
+        "lock_roi": 98,
+        "action": "would_set_profit_lock",
+        "updated_at": "2026-04-25T16:14:24+00:00",
+        "updated_at_ts": 1777133664
     }
 }

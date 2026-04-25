@@ -254,6 +254,7 @@ final class ProfManagerService
                     'hybrid_detection_score'     => $profileResult['hybrid_detection_score']     ?? null,
                     'hybrid_support_level'       => $profileResult['hybrid_support_level']       ?? null,
                     'hybrid_detection_evidence'  => $profileResult['hybrid_detection_evidence']  ?? null,
+                    'hybrid_detection_reason'    => $profileResult['hybrid_detection_reason']    ?? null,
                 ];
             }
 

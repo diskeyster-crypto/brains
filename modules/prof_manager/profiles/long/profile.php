@@ -110,6 +110,7 @@ class LongProfile
             'hybrid_detection_score'     => null,
             'hybrid_support_level'       => null,
             'hybrid_detection_evidence'  => null,
+            'hybrid_detection_reason'    => null,
         ];
 
         if (!empty($this->config['hybrid_enabled'])) {
@@ -156,6 +157,7 @@ class LongProfile
             'hybrid_detection_score'     => $hybridMeta['hybrid_detection_score'],
             'hybrid_support_level'       => $hybridMeta['hybrid_support_level'],
             'hybrid_detection_evidence'  => $hybridMeta['hybrid_detection_evidence'],
+            'hybrid_detection_reason'    => $hybridMeta['hybrid_detection_reason'],
         ];
     }
 
@@ -639,10 +641,13 @@ class LongProfile
         $detectionScore    = isset($positionState['detection_score'])    ? (int)    $positionState['detection_score']    : null;
         $supportLevelState = isset($positionState['support_level'])      ? (float)  $positionState['support_level']      : null;
         $detectionEvidence = isset($positionState['detection_evidence']) ? (string) $positionState['detection_evidence'] : null;
+        $detectionReason   = isset($positionState['detection_reason'])   ? (string) $positionState['detection_reason']   : null;
 
         $patternResult   = $this->detectExitPattern($position, $positionState);
         $patternDetected = (bool) ($patternResult['detected']     ?? false);
         $patternType     = $patternResult['pattern_type'] ?? null;
+        // Always track the most recent detection reason (e.g. no_candle_data, insufficient_window_data, score_X_of_5)
+        $detectionReason = $patternResult['reason'] ?? $detectionReason;
 
         $hybridAction       = null;
         $guardActive        = false;
@@ -770,6 +775,7 @@ class LongProfile
             'hybrid_detection_score'     => $detectionScore,
             'hybrid_support_level'       => ($supportLevelState !== null && $supportLevelState > 0.0) ? $supportLevelState : null,
             'hybrid_detection_evidence'  => $detectionEvidence,
+            'hybrid_detection_reason'    => $detectionReason,
         ];
 
         return [$plan, $positionState, $hybridMeta];

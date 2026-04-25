@@ -58,5 +58,23 @@
         "confirmation_ticks": 0,
         "guard_stop_price": null,
         "last_breathing_stop": null
+    },
+    "testusdt_long": {
+        "symbol": "TESTUSDT",
+        "side": "long",
+        "entry_price": 100,
+        "leverage": 10,
+        "current_roi": 100,
+        "peak_roi": 100,
+        "updated_at": "2026-04-25T16:14:24+00:00",
+        "updated_at_ts": 1777133664,
+        "tracked_since": "2026-04-25T16:14:24+00:00",
+        "tracked_since_ts": 1777133664,
+        "hybrid_state": "idle",
+        "pattern_detected_at": null,
+        "pattern_type": null,
+        "confirmation_ticks": 0,
+        "guard_stop_price": null,
+        "last_breathing_stop": null
     }
 }

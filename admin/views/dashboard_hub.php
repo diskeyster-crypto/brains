@@ -1321,6 +1321,7 @@ ROWS;
             $hybridScore        = isset($pr['hybrid_detection_score'])    ? (int)    $pr['hybrid_detection_score']    : null;
             $hybridSupport      = isset($pr['hybrid_support_level'])      ? (float)  $pr['hybrid_support_level']      : null;
             $hybridEvidence     = isset($pr['hybrid_detection_evidence']) ? (string) $pr['hybrid_detection_evidence'] : null;
+            $hybridReason       = isset($pr['hybrid_detection_reason'])   ? (string) $pr['hybrid_detection_reason']   : null;
 
             $simBadge = $hybridSimEnabled
                 ? ' <span style="font-size:9px;color:#f0883e;background:rgba(240,136,62,.15);border-radius:3px;padding:1px 4px;">SIM</span>'
@@ -1330,7 +1331,7 @@ ROWS;
                 ? '<span style="color:#f0883e;font-weight:600;">' . $e($hybridState) . '</span>' . $simBadge
                 : '<span style="color:#8b949e;">idle</span>' . $simBadge;
 
-            // Guard/Pattern column: guard price + pattern type + score + support + ticks
+            // Guard/Pattern column: guard price + pattern type + score + support + ticks + detector reason
             if ($hybridGuardActive && $hybridGuardStop !== null) {
                 $hybridGuardDisplay = '<span style="color:#f0883e;">⬆ ' . number_format((float)$hybridGuardStop, 4) . '</span>';
                 if ($hybridPatternType !== null) {
@@ -1360,6 +1361,9 @@ ROWS;
                 if ($hybridGuardDisplay === '') {
                     $hybridGuardDisplay = '<span style="color:#8b949e;">—</span>';
                 }
+            } elseif ($hybridReason !== null) {
+                // Show detector reason (e.g. no_candle_data, insufficient_window_data) when idle with no pattern
+                $hybridGuardDisplay = '<span style="font-size:9px;color:#6e7681;">' . $e($hybridReason) . '</span>';
             } else {
                 $hybridGuardDisplay = '<span style="color:#8b949e;">—</span>';
             }

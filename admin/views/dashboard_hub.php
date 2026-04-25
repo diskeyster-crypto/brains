@@ -745,6 +745,47 @@ ROWS;
     $smBeApplied   = (string)($smStats['breakeven_applied_total']         ?? 0);
     $smStatusColor = $smLastStatus === 'ok' ? '#3fb950' : '#8b949e';
 
+    // Demo stop execution diagnostics
+    $smDemoStopsSet         = (int)($smLastRun['demo_stops_set']           ?? 0);
+    $smDemoStopsAlreadySet  = (int)($smLastRun['demo_stops_already_set']   ?? 0);
+    $smDemoStopsFailed      = (int)($smLastRun['demo_stops_failed']        ?? 0);
+    $smDemoStopsSkippedNoGw = (int)($smLastRun['demo_stops_skipped_no_gw'] ?? 0);
+    $smDemoLastErrCode      = $smLastRun['demo_last_stop_error_code']      ?? null;
+    $smDemoLastErrMsg       = (string)($smLastRun['demo_last_stop_error_msg'] ?? '');
+    $smDemoLastSymbol       = (string)($smLastRun['demo_last_stop_symbol']    ?? '');
+
+    // Build demo stop diagnostics card (shown only in demo mode)
+    if ($smMode === 'demo') {
+        $smDemoErrRow = $smDemoLastErrCode !== null
+            ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td>'
+              . '<td><code style="color:#f85149;">[' . $e($smDemoLastErrCode) . '] ' . $e($smDemoLastErrMsg) . '</code></td></tr>'
+            : '';
+        $smDemoSymRow = $smDemoLastSymbol !== ''
+            ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний символ</td>'
+              . '<td><code>' . $e($smDemoLastSymbol) . '</code></td></tr>'
+            : '';
+        $smDemoNoGwRow = $smDemoStopsSkippedNoGw > 0
+            ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">&#9888; Нет gateway</td>'
+              . '<td><code style="color:#f0883e;">demo_credentials_missing (' . $e($smDemoStopsSkippedNoGw) . ')</code></td></tr>'
+            : '';
+        $smDemoExecHtml = '<div class="card" style="margin-bottom:16px;">'
+            . '<div class="card-header">Demo — стопы на бирже (setTradingStop)</div>'
+            . '<div class="card-body">'
+            . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:200px;">Стопов установлено</td>'
+            . '<td><code style="color:#3fb950;">' . $e($smDemoStopsSet) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Уже установлено</td>'
+            . '<td><code>' . $e($smDemoStopsAlreadySet) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибок установки</td>'
+            . '<td><code style="color:' . ($smDemoStopsFailed > 0 ? '#f85149' : 'inherit') . ';">' . $e($smDemoStopsFailed) . '</code></td></tr>'
+            . $smDemoNoGwRow
+            . $smDemoErrRow
+            . $smDemoSymRow
+            . '</table></div></div>';
+    } else {
+        $smDemoExecHtml = '';
+    }
+
     // ── stop_manager config for Control tab (mirrored) ───────────────────
     $smCfgEnYes = ($smConfig['enabled'] ?? false) ? ' selected' : '';
     $smCfgEnNo  = !($smConfig['enabled'] ?? false) ? ' selected' : '';
@@ -1879,13 +1920,11 @@ HTML;
         </form>
       </div>
       <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
-        Вычисление стопов — локально. Биржевые стопы не размещаются.
-      </div>
-      <div style="margin-top:8px;font-size:12px;color:#f0883e;padding:6px 10px;background:rgba(240,136,62,.08);border-radius:6px;border-left:3px solid #f0883e77;">
-        Demo mode: local stop calculation only, no Bybit stop placement in this pass.
+        Вычисление стопов — локально. В demo режиме стопы устанавливаются на Bybit Demo.
       </div>
     </div>
   </div>
+  {$smDemoExecHtml}
 </div>
 
 <!-- ── Profit Manager pane ──────────────────────────────────────────── -->

@@ -46,7 +46,8 @@ declare(strict_types=1);
  *
  * Execution modes:
  *   disabled — initialize storage only; no stop computation
- *   demo     — local stop computation for Bybit Demo positions (same math as paper)
+ *   demo     — stop computation for Bybit Demo positions + call setTradingStop on Bybit Demo
+ *              (requires demo_execute_stops=true and bot demo credentials configured)
  *   paper    — local stop computation for paper/local positions (legacy)
  */
 
@@ -186,6 +187,11 @@ final class StopManagerService
             $stops,
             static fn(array $s) => in_array($s['stop_state'] ?? '', ['active', 'estimated_liq'], true)
         ));
+        // Demo stop execution counters
+        $stats['demo_stops_set_total']           += $result['demo_stops_set']           ?? 0;
+        $stats['demo_stops_already_set_total']   += $result['demo_stops_already_set']   ?? 0;
+        $stats['demo_stops_failed_total']        += $result['demo_stops_failed']        ?? 0;
+        $stats['demo_stops_skipped_no_gw_total'] += $result['demo_stops_skipped_no_gw'] ?? 0;
 
         // ── 4. Persist ─────────────────────────────────────────────────────────
         $this->writeJson('storage/stops.json', array_values($stops));
@@ -209,6 +215,14 @@ final class StopManagerService
             'stops_closed_reference'       => $result['stops_closed_reference'],
             'stops_active_count'           => (int)($stats['stops_active_total'] ?? 0),
             'ticks_total'                  => (int)($stats['ticks_total'] ?? 0),
+            // Demo stop execution diagnostics (this tick)
+            'demo_stops_set'               => $result['demo_stops_set']           ?? 0,
+            'demo_stops_already_set'       => $result['demo_stops_already_set']   ?? 0,
+            'demo_stops_failed'            => $result['demo_stops_failed']        ?? 0,
+            'demo_stops_skipped_no_gw'     => $result['demo_stops_skipped_no_gw'] ?? 0,
+            'demo_last_stop_error_code'    => $result['demo_last_stop_error_code'] ?? null,
+            'demo_last_stop_error_msg'     => $result['demo_last_stop_error_msg']  ?? null,
+            'demo_last_stop_symbol'        => $result['demo_last_stop_symbol']     ?? null,
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -222,6 +236,11 @@ final class StopManagerService
     /**
      * Process all active positions against existing stops.
      *
+     * In demo mode (when demo_execute_stops=true), after computing a valid stop price,
+     * calls Bybit Demo /v5/position/trading-stop to set the stop on the exchange.
+     * Credentials are sourced from the bot module config. If credentials are absent,
+     * execution falls back to local-only computation (same as paper mode).
+     *
      * @return array{
      *   stops: array,
      *   positions_seen: int,
@@ -232,6 +251,13 @@ final class StopManagerService
      *   stops_recalculated: int,
      *   breakeven_applied: int,
      *   stops_closed_reference: int,
+     *   demo_stops_set: int,
+     *   demo_stops_already_set: int,
+     *   demo_stops_failed: int,
+     *   demo_stops_skipped_no_gw: int,
+     *   demo_last_stop_error_code: int|null,
+     *   demo_last_stop_error_msg: string|null,
+     *   demo_last_stop_symbol: string|null,
      * }
      */
     private function processStops(
@@ -250,7 +276,21 @@ final class StopManagerService
         $breakevenApplied           = 0;
         $stopsClosedReference       = 0;
 
+        // Demo stop execution counters
+        $demoStopsSet           = 0;
+        $demoStopsAlreadySet    = 0;
+        $demoStopsFailed        = 0;
+        $demoStopsSkippedNoGw   = 0;
+        $demoLastStopErrCode    = null;
+        $demoLastStopErrMsg     = null;
+        $demoLastStopSymbol     = null;
+
         $isPaperMode = in_array($mode, ['paper', 'demo'], true);
+        $isDemoMode  = ($mode === 'demo');
+
+        // Prepare demo gateway once if in demo mode and demo_execute_stops is enabled
+        $demoExecuteStops = $isDemoMode && (bool)($config['demo_execute_stops'] ?? true);
+        $demoGw           = $demoExecuteStops ? $this->getDemoGateway($config) : null;
 
         // Index positions by execution key
         $posMap = [];
@@ -338,6 +378,42 @@ final class StopManagerService
                         'execution_mode' => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
                         'reason'         => $initEventType,
                     ]);
+
+                    // ── Demo: set stop on Bybit Demo exchange ─────────────────
+                    if ($demoExecuteStops && $stopPrice > 0.0) {
+                        if ($demoGw === null) {
+                            $demoStopsSkippedNoGw++;
+                            $stopMap[$key]['demo_stop_set']  = false;
+                            $stopMap[$key]['demo_stop_note'] = 'no_gateway';
+                        } else {
+                            $setResult = $this->setDemoTradingStop($demoGw, (string)($pos['symbol'] ?? ''), $stopPrice);
+                            $stopMap[$key]['demo_stop_set']      = $setResult['ok'];
+                            $stopMap[$key]['demo_stop_note']     = $setResult['note'];
+                            $stopMap[$key]['demo_stop_ret_code'] = $setResult['ret_code'];
+                            if ($setResult['ok']) {
+                                if ($setResult['note'] === 'already_set') {
+                                    $demoStopsAlreadySet++;
+                                } else {
+                                    $demoStopsSet++;
+                                }
+                            } else {
+                                $demoStopsFailed++;
+                                $demoLastStopErrCode   = $setResult['ret_code'];
+                                $demoLastStopErrMsg    = $setResult['ret_msg'];
+                                $demoLastStopSymbol    = $setResult['symbol'];
+                            }
+                            $this->appendActionLog([
+                                'timestamp'      => $tickAt,
+                                'event_type'     => $setResult['ok'] ? 'demo_stop_set' : 'demo_stop_set_failed',
+                                'symbol'         => $setResult['symbol'],
+                                'stop_price'     => $setResult['stop_price'],
+                                'ret_code'       => $setResult['ret_code'],
+                                'ret_msg'        => $setResult['ret_msg'],
+                                'note'           => $setResult['note'],
+                                'reason'         => 'set_trading_stop_on_bybit_demo',
+                            ]);
+                        }
+                    }
                 } else {
                     // Recalculate existing stop
                     $prevStop      = $stopMap[$key];
@@ -423,6 +499,43 @@ final class StopManagerService
                     if ($recalcReason !== null) {
                         $stopMap[$key]['transition_reason'] = $recalcReason;
                     }
+
+                    // ── Demo: update stop on Bybit Demo exchange when stop changed ─
+                    if ($demoExecuteStops && $recalcReason !== null && $stopPrice > 0.0) {
+                        if ($demoGw === null) {
+                            $demoStopsSkippedNoGw++;
+                            $stopMap[$key]['demo_stop_set']  = false;
+                            $stopMap[$key]['demo_stop_note'] = 'no_gateway';
+                        } else {
+                            $setResult = $this->setDemoTradingStop($demoGw, (string)($pos['symbol'] ?? ''), $stopPrice);
+                            $stopMap[$key]['demo_stop_set']      = $setResult['ok'];
+                            $stopMap[$key]['demo_stop_note']     = $setResult['note'];
+                            $stopMap[$key]['demo_stop_ret_code'] = $setResult['ret_code'];
+                            if ($setResult['ok']) {
+                                if ($setResult['note'] === 'already_set') {
+                                    $demoStopsAlreadySet++;
+                                } else {
+                                    $demoStopsSet++;
+                                }
+                            } else {
+                                $demoStopsFailed++;
+                                $demoLastStopErrCode   = $setResult['ret_code'];
+                                $demoLastStopErrMsg    = $setResult['ret_msg'];
+                                $demoLastStopSymbol    = $setResult['symbol'];
+                            }
+                            $this->appendActionLog([
+                                'timestamp'      => $tickAt,
+                                'event_type'     => $setResult['ok'] ? 'demo_stop_updated' : 'demo_stop_update_failed',
+                                'symbol'         => $setResult['symbol'],
+                                'stop_price'     => $setResult['stop_price'],
+                                'ret_code'       => $setResult['ret_code'],
+                                'ret_msg'        => $setResult['ret_msg'],
+                                'note'           => $setResult['note'],
+                                'recalc_reason'  => $recalcReason,
+                                'reason'         => 'update_trading_stop_on_bybit_demo',
+                            ]);
+                        }
+                    }
                 }
             }
 
@@ -466,6 +579,13 @@ final class StopManagerService
             'stops_recalculated'          => $stopsRecalculated,
             'breakeven_applied'           => $breakevenApplied,
             'stops_closed_reference'      => $stopsClosedReference,
+            'demo_stops_set'              => $demoStopsSet,
+            'demo_stops_already_set'      => $demoStopsAlreadySet,
+            'demo_stops_failed'           => $demoStopsFailed,
+            'demo_stops_skipped_no_gw'    => $demoStopsSkippedNoGw,
+            'demo_last_stop_error_code'   => $demoLastStopErrCode,
+            'demo_last_stop_error_msg'    => $demoLastStopErrMsg,
+            'demo_last_stop_symbol'       => $demoLastStopSymbol,
         ];
     }
 
@@ -719,6 +839,126 @@ final class StopManagerService
     // =========================================================================
 
     /**
+     * Load the bot module config (base.php merged with active.php).
+     *
+     * Used to obtain demo API credentials for Bybit Demo gateway calls.
+     * Returns an empty array if the bot config cannot be loaded.
+     */
+    private function loadBotConfig(array $smConfig): array
+    {
+        $botRelDir = (string)($smConfig['bot_module_dir'] ?? 'modules/bot');
+        $botDir    = str_starts_with($botRelDir, '/')
+            ? rtrim($botRelDir, '/')
+            : $this->repoRoot . '/' . rtrim($botRelDir, '/');
+
+        try {
+            $base   = is_file($botDir . '/config/base.php')   ? (require $botDir . '/config/base.php')   : [];
+            $active = is_file($botDir . '/config/active.php') ? (require $botDir . '/config/active.php') : [];
+            return array_merge(is_array($base) ? $base : [], is_array($active) ? $active : []);
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * Get a Bybit Demo gateway client using credentials from the bot config.
+     *
+     * Returns null when credentials are not configured or on error.
+     * Never logs or exposes API keys.
+     */
+    private function getDemoGateway(array $smConfig): ?\Core\Gateway\Bybit
+    {
+        $botConfig = $this->loadBotConfig($smConfig);
+        $apiKey    = (string)($botConfig['demo_api_key']      ?? '');
+        $apiSecret = (string)($botConfig['demo_api_secret']   ?? '');
+        $baseUrl   = (string)($botConfig['demo_api_base_url'] ?? 'https://api-demo.bybit.com');
+
+        if ($apiKey === '' || $apiSecret === '') {
+            return null;
+        }
+
+        try {
+            $gw = \Core\Gateway\Bybit::client('bybit_demo_sm');
+            $gw->setCredentials($apiKey, $apiSecret);
+            $gw->setBaseUrl($baseUrl);
+            return $gw;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Call Bybit Demo /v5/position/trading-stop to set a stop-loss.
+     *
+     * Treats the following as success:
+     *   - retCode = 0
+     *   - retCode = 110043 (already set / not modified)
+     *   - retMsg contains "not modified" or "not been modified"
+     *
+     * Never logs API keys.
+     *
+     * @return array{
+     *   ok: bool,
+     *   symbol: string,
+     *   stop_price: float,
+     *   ret_code: int,
+     *   ret_msg: string,
+     *   note: string
+     * }
+     */
+    private function setDemoTradingStop(
+        \Core\Gateway\Bybit $gw,
+        string $symbol,
+        float $stopPrice
+    ): array {
+        $stopStr = rtrim(rtrim(number_format($stopPrice, 8, '.', ''), '0'), '.');
+
+        try {
+            $resp = $gw->request('/v5/position/trading-stop', [
+                'category'    => 'linear',
+                'symbol'      => $symbol,
+                'stopLoss'    => $stopStr,
+                'positionIdx' => 0,
+            ], true);
+        } catch (\Throwable $ex) {
+            return [
+                'ok'         => false,
+                'symbol'     => $symbol,
+                'stop_price' => $stopPrice,
+                'ret_code'   => -1,
+                'ret_msg'    => $ex->getMessage(),
+                'note'       => 'exception',
+            ];
+        }
+
+        $retCode = (int)($resp['ret_code'] ?? -1);
+        $retMsg  = (string)($resp['ret_msg'] ?? '');
+
+        $ok = $retCode === 0
+            || $retCode === 110043
+            || stripos($retMsg, 'not modified') !== false
+            || stripos($retMsg, 'not been modified') !== false;
+
+        $note = 'rejected';
+        if ($ok) {
+            $note = ($retCode === 110043
+                     || stripos($retMsg, 'not modified') !== false
+                     || stripos($retMsg, 'not been modified') !== false)
+                ? 'already_set'
+                : 'set_ok';
+        }
+
+        return [
+            'ok'         => $ok,
+            'symbol'     => $symbol,
+            'stop_price' => $stopPrice,
+            'ret_code'   => $retCode,
+            'ret_msg'    => $retMsg,
+            'note'       => $note,
+        ];
+    }
+
+    /**
      * Normalize legacy execution_mode values into the canonical set.
      *   smoke  → paper  (legacy alias)
      *   active → paper  (legacy alias)
@@ -728,7 +968,7 @@ final class StopManagerService
     {
         return match ($raw) {
             'smoke', 'active' => 'paper',
-            'paper', 'disabled', 'passive' => $raw,
+            'paper', 'demo', 'disabled', 'passive' => $raw,
             default => 'paper',
         };
     }
@@ -756,6 +996,11 @@ final class StopManagerService
             'breakeven_applied_total'             => 0,
             'stops_closed_reference_total'        => 0,
             'stops_active_total'                  => 0,
+            // Demo stop-loss execution counters (demo mode only)
+            'demo_stops_set_total'                => 0,
+            'demo_stops_already_set_total'        => 0,
+            'demo_stops_failed_total'             => 0,
+            'demo_stops_skipped_no_gw_total'      => 0,
         ];
     }
 

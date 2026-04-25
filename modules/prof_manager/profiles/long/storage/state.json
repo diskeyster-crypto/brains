@@ -75,6 +75,28 @@
         "pattern_type": null,
         "confirmation_ticks": 0,
         "guard_stop_price": null,
-        "last_breathing_stop": null
+        "last_breathing_stop": null,
+        "detection_reason": "below_init_roi_hybrid_disabled"
+    },
+    "testusdt2_long": {
+        "hybrid_state": "idle",
+        "pattern_detected_at": null,
+        "confirmation_ticks": 0,
+        "guard_stop_price": null,
+        "detection_reason": "below_init_roi_hybrid_disabled"
+    },
+    "long:STALEUSDT": {
+        "hybrid_state": "waiting_confirmation",
+        "confirmation_ticks": 5,
+        "guard_stop_price": 95,
+        "pattern_detected_at": 1777137127,
+        "detection_reason": "score_4_of_5"
+    },
+    "staleusdt_long": {
+        "hybrid_state": "idle",
+        "pattern_detected_at": null,
+        "confirmation_ticks": 0,
+        "guard_stop_price": null,
+        "detection_reason": "below_init_roi_hybrid_disabled"
     }
 }

@@ -331,7 +331,7 @@ class LongProfile
      * @param array $positionState Current per-symbol state
      * @return array{detected:bool, pattern_type:string|null, confidence:float, reason:string|null, evidence:array}
      */
-    private function detectExitPattern(array $position, array $positionState): array
+    private function detectExitPattern(array $position, array $positionState, float $currentRoi): array
     {
         $noDetect = static fn(string $reason, array $ev = []): array => [
             'detected'     => false,
@@ -358,8 +358,7 @@ class LongProfile
             }
         }
 
-        // ── ROI gate: position must be in profit ──────────────────────────────
-        $currentRoi = (float) ($positionState['current_roi'] ?? 0.0);
+        // ── ROI gate: use current tick ROI, never stale state ─────────────────
         if ($currentRoi <= 0.0) {
             return $noDetect('not_in_profit');
         }
@@ -622,6 +621,40 @@ class LongProfile
         $leverage     = (float) ($position['leverage'] ?? 0.0);
         $simEnabled   = !empty($this->config['hybrid_simulation_enabled']);
 
+        // ── Hard ROI gate: use CURRENT TICK ROI from plan, never stale state ──
+        $currentRoi = isset($plan['current_roi']) ? (float) $plan['current_roi'] : null;
+        $initRoi    = (float) ($this->config['init_roi'] ?? 2.0);
+
+        if ($currentRoi === null || $currentRoi < $initRoi) {
+            // Reset any stale hybrid state immediately — no guard, no waiting, no close
+            $positionState['hybrid_state']        = 'idle';
+            $positionState['pattern_detected_at'] = null;
+            $positionState['confirmation_ticks']  = 0;
+            $positionState['guard_stop_price']    = null;
+            $positionState['detection_reason']    = 'below_init_roi_hybrid_disabled';
+
+            return [
+                $plan,
+                $positionState,
+                [
+                    'hybrid_state'               => 'idle',
+                    'hybrid_pattern_detected'    => false,
+                    'hybrid_pattern_type'        => null,
+                    'hybrid_confirmation_ticks'  => 0,
+                    'hybrid_confirmation_result' => null,
+                    'hybrid_guard_stop'          => null,
+                    'hybrid_guard_active'        => false,
+                    'hybrid_breathing_stop'      => null,
+                    'hybrid_breathing_active'    => false,
+                    'hybrid_simulation_enabled'  => $simEnabled,
+                    'hybrid_detection_score'     => null,
+                    'hybrid_support_level'       => null,
+                    'hybrid_detection_evidence'  => null,
+                    'hybrid_detection_reason'    => 'below_init_roi_hybrid_disabled',
+                ],
+            ];
+        }
+
         $hybridState        = (string) ($positionState['hybrid_state']         ?? 'idle');
         $patternDetectedAt  = isset($positionState['pattern_detected_at'])
             ? (int) $positionState['pattern_detected_at']
@@ -643,7 +676,7 @@ class LongProfile
         $detectionEvidence = isset($positionState['detection_evidence']) ? (string) $positionState['detection_evidence'] : null;
         $detectionReason   = isset($positionState['detection_reason'])   ? (string) $positionState['detection_reason']   : null;
 
-        $patternResult   = $this->detectExitPattern($position, $positionState);
+        $patternResult   = $this->detectExitPattern($position, $positionState, $currentRoi);
         $patternDetected = (bool) ($patternResult['detected']     ?? false);
         $patternType     = $patternResult['pattern_type'] ?? null;
         // Always track the most recent detection reason (e.g. no_candle_data, insufficient_window_data, score_X_of_5)

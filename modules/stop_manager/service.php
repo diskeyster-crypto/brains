@@ -211,6 +211,7 @@ final class StopManagerService
             'elapsed_sec'                  => $elapsed,
             'module_enabled'               => true,
             'module_mode'                  => $mode,
+            'liq_distance_percent'         => max(1.0, min(99.0, (float)($config['liq_distance_percent'] ?? 90.0))),
             'positions_seen'               => $result['positions_seen'],
             'positions_with_real_liq'      => $result['positions_with_real_liq'],
             'positions_with_estimated_liq' => $result['positions_with_estimated_liq'],
@@ -368,7 +369,7 @@ final class StopManagerService
 
                 if (!isset($stopMap[$key])) {
                     // New stop
-                    $stopMap[$key] = $this->buildStop($pos, $stopPrice, $liqPrice, $liqSource, $tickAt, $initEventType);
+                    $stopMap[$key] = $this->buildStop($pos, $stopPrice, $liqPrice, $liqSource, $tickAt, $initEventType, $liqDistPct);
                     $stopsInitialized++;
                     $this->appendActionLog([
                         'timestamp'      => $tickAt,
@@ -429,9 +430,12 @@ final class StopManagerService
                     $recalcReason  = null;
 
                     // Recalc if price changed meaningfully OR if transitioning out of no_liq
+                    // OR if the stored liq_distance_percent differs from current config
+                    $storedLiqDist = (float)($prevStop['liq_distance_percent'] ?? -1.0);
                     if (
                         abs($stopPrice - $prevStopPrice) > ($entryPrice * 0.00001)
                         || $prevState === 'no_liq'
+                        || ($storedLiqDist >= 0.0 && abs($storedLiqDist - $liqDistPct) > 0.01)
                     ) {
                         $recalcReason = $recalcEventType;
                     }
@@ -495,12 +499,13 @@ final class StopManagerService
                     }
 
                     $newStopState = $liqSource === 'real' ? 'active' : 'estimated_liq';
-                    $stopMap[$key]['stop_price']        = $stopPrice;
-                    $stopMap[$key]['liq_price']         = $liqPrice;
-                    $stopMap[$key]['liq_source']        = $liqSource;
-                    $stopMap[$key]['stop_state']        = $newStopState;
-                    $stopMap[$key]['last_updated_at']   = $tickAt;
-                    $stopMap[$key]['stop_mode']         = 'liq_distance_percent';
+                    $stopMap[$key]['stop_price']            = $stopPrice;
+                    $stopMap[$key]['liq_price']             = $liqPrice;
+                    $stopMap[$key]['liq_source']            = $liqSource;
+                    $stopMap[$key]['stop_state']            = $newStopState;
+                    $stopMap[$key]['last_updated_at']       = $tickAt;
+                    $stopMap[$key]['stop_mode']             = 'liq_distance_percent';
+                    $stopMap[$key]['liq_distance_percent']  = $liqDistPct;
                     $stopMap[$key]['execution_mode']    = $this->normalizeExecMode(
                         (string)($stopMap[$key]['execution_mode'] ?? 'paper')
                     );
@@ -743,7 +748,8 @@ final class StopManagerService
         float $liqPrice,
         string $liqSource,
         string $tickAt,
-        string $reason
+        string $reason,
+        float $liqDistPct = 90.0
     ): array {
         $stopState   = $liqSource === 'real' ? 'active' : 'estimated_liq';
         $entryPrice  = (float)($pos['entry_price'] ?? 0.0);
@@ -776,6 +782,7 @@ final class StopManagerService
             'liq_source'            => $liqSource,
             'execution_mode'        => $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'paper')),
             'stop_mode'             => 'liq_distance_percent',
+            'liq_distance_percent'  => $liqDistPct,
             'stop_price'            => $stopPrice,
             'stop_state'            => $stopState,
             'distance_from_liq_pct'   => $distFromLiqPct,

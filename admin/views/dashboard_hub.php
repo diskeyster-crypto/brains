@@ -751,6 +751,15 @@ ROWS;
     $smBeApplied   = (string)($smStats['breakeven_applied_total']         ?? 0);
     $smStatusColor = $smLastStatus === 'ok' ? '#3fb950' : '#8b949e';
 
+    // SM mismatch detection
+    $smCfgLiqDistFloat  = (float)($smConfig['liq_distance_percent'] ?? 90.0);
+    $smRtLiqDistFloat   = isset($smLastRun['liq_distance_percent']) ? (float)$smLastRun['liq_distance_percent'] : null;
+    $smMismatchRow = '';
+    if ($smRtLiqDistFloat !== null && abs($smRtLiqDistFloat - $smCfgLiqDistFloat) > 0.01) {
+        $smMismatchRow = '<tr><td style="color:#f85149;padding:3px 12px 3px 0;font-weight:600;">⚠ Stop config mismatch</td>'
+            . '<td style="color:#f85149;font-size:12px;">config=' . $e($smCfgLiqDistFloat) . '%, runtime=' . $e($smRtLiqDistFloat) . '% — запустите тик SM</td></tr>';
+    }
+
     // Demo stop execution diagnostics
     $smDemoStopsSet         = (int)($smLastRun['demo_stops_set']           ?? 0);
     $smDemoStopsAlreadySet  = (int)($smLastRun['demo_stops_already_set']   ?? 0);
@@ -1320,7 +1329,87 @@ HTML;
         $compactStratRows = '<tr><td colspan="5" style="padding:12px 10px;color:var(--ui-text-muted);">Стратегии не обнаружены.</td></tr>';
     }
 
-    // ── PM "Последняя ошибка" table row HTML ─────────────────────────────
+    // ── Strategy quality diagnostics from double_bottom_long/pattern storage ──
+    $stratQualHtml = '';
+    foreach ($registry as $rec) {
+        $dblSid  = (string)($rec['strategy_id'] ?? '');
+        $dblPath = (string)($rec['module_path'] ?? '');
+        if ($dblPath === '') {
+            continue;
+        }
+        $dblLastRunPath = System::path('root') . '/' . $dblPath . '/storage/last_run.json';
+        $dblStatsPath   = System::path('root') . '/' . $dblPath . '/storage/stats.json';
+        $dblLastRun     = [];
+        $dblStats       = [];
+        if (file_exists($dblLastRunPath)) {
+            $raw = file_get_contents($dblLastRunPath);
+            if ($raw !== false) { $dec = json_decode($raw, true); if (is_array($dec)) { $dblLastRun = $dec; } }
+        }
+        if (file_exists($dblStatsPath)) {
+            $raw = file_get_contents($dblStatsPath);
+            if ($raw !== false) { $dec = json_decode($raw, true); if (is_array($dec)) { $dblStats = $dec; } }
+        }
+        if ($dblLastRun === [] && $dblStats === []) {
+            continue;
+        }
+
+        $dblScanned  = $e($dblLastRun['symbols_scanned']                      ?? $dblStats['symbols_scanned_total']               ?? '—');
+        $dblFound    = $e($dblLastRun['double_bottom_found']                   ?? $dblStats['double_bottom_found_total']            ?? '—');
+        $dblFoundCur = $e($dblLastRun['double_bottom_found_current']           ?? '—');
+        $dblEmitted  = $e($dblLastRun['current_cycle_signals_emitted_total']   ?? $dblLastRun['signals_emitted']                   ?? '—');
+        $dblPool     = $e($dblLastRun['active_pool_signals_total']             ?? '—');
+        $dblHandoff  = $e($dblLastRun['bot_handoff_ready_total']               ?? '—');
+
+        // Top reject reasons
+        $rejectReasonsHtml = '';
+        $rejectSrc = $dblLastRun['reject_reasons'] ?? $dblLastRun['top_reject_reasons'] ?? [];
+        if (is_array($rejectSrc) && count($rejectSrc) > 0) {
+            $parts = [];
+            foreach (array_slice($rejectSrc, 0, 5, true) as $reason => $cnt) {
+                $parts[] = $e(is_int($reason) ? (string)$reason : $reason) . ': <strong>' . $e($cnt) . '</strong>';
+            }
+            $rejectReasonsHtml = implode(' · ', $parts);
+        } else {
+            $rejectReasonsHtml = '<span style="color:var(--ui-text-muted);">—</span>';
+        }
+
+        // Final reject reasons
+        $finalRejectHtml = '';
+        $finalRejectSrc = $dblLastRun['final_reject_reasons'] ?? [];
+        if (is_array($finalRejectSrc) && count($finalRejectSrc) > 0) {
+            $parts = [];
+            foreach (array_slice($finalRejectSrc, 0, 5, true) as $reason => $cnt) {
+                $parts[] = $e(is_int($reason) ? (string)$reason : $reason) . ': <strong>' . $e($cnt) . '</strong>';
+            }
+            $finalRejectHtml = implode(' · ', $parts);
+        } else {
+            $finalRejectHtml = '<span style="color:var(--ui-text-muted);">—</span>';
+        }
+
+        $dblTitle = $e($rec['title'] ?? $dblSid);
+        $stratQualHtml .= <<<QUAL
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span><i class="bi bi-activity" style="margin-right:6px;"></i>Диагностика стратегии: {$dblTitle}</span>
+    <small style="color:var(--ui-text-muted);font-size:11px;">read-only · last_run.json / stats.json</small>
+  </div>
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 16px;font-size:12px;margin-bottom:12px;">
+      <div><span style="color:var(--ui-text-muted);">Символов проскан.</span><br><strong>{$dblScanned}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Double-bottom найдено</span><br><strong style="color:#f0883e;">{$dblFound}</strong> / тек. {$dblFoundCur}</div>
+      <div><span style="color:var(--ui-text-muted);">Сигналов эмитировано</span><br><strong style="color:#3fb950;">{$dblEmitted}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Активных в пуле</span><br><strong style="color:#58a6ff;">{$dblPool}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Handoff-ready</span><br><strong style="color:#a78bfa;">{$dblHandoff}</strong></div>
+    </div>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;width:180px;">Причины отсева (top)</td><td>{$rejectReasonsHtml}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Финальные отсевы</td><td>{$finalRejectHtml}</td></tr>
+    </table>
+  </div>
+</div>
+QUAL;
+    }
+
     if ($pmLastError !== '') {
         $pmLastErrorRow = '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td>'
             . '<td style="color:#f85149;font-size:12px;">' . $e($pmLastError) . '</td></tr>';
@@ -1418,7 +1507,10 @@ HTML;
             if ($openedAtRaw !== '') {
                 $openedTs = @strtotime($openedAtRaw);
                 if ($openedTs !== false && $openedTs > 0 && (time() - $openedTs) > 86400) {
-                    $pTimeInPosWarn = ' <span title="Позиция старая или пришла с Bybit Demo. Проверь opened_at_source." style="color:#f0883e;cursor:help;">⚠</span>';
+                    $warnTitle = ($openedAtSrc === 'bybit_createdTime_ms')
+                        ? 'Старая позиция пришла с Bybit Demo. Reset cache её не закрывает.'
+                        : 'Позиция старая или пришла с Bybit Demo. Проверь opened_at_source.';
+                    $pTimeInPosWarn = ' <span title="' . $e($warnTitle) . '" style="color:#f0883e;cursor:help;">⚠</span>';
                 }
             }
 
@@ -1444,7 +1536,10 @@ HTML;
                 . '<td style="padding:4px 8px;text-align:right;">' . $pBudget . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;">' . $pLev . '</td>'
                 . '<td style="padding:4px 8px;text-align:right;">' . $pSize . '</td>'
-                . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;" title="source: ' . $e($openedAtSrc) . '">' . $pOpenedAt . '</td>'
+                . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">'
+                . $pOpenedAt
+                . ($openedAtSrc !== '—' ? '<br><span style="font-size:10px;color:var(--ui-text-muted);">' . $e($openedAtSrc) . '</span>' : '')
+                . '</td>'
                 . '<td style="padding:4px 8px;font-size:11px;color:#58a6ff;">' . $pTimeInPos . $pTimeInPosWarn . '</td>'
                 . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $pStatus . '</td>'
                 . '<td style="padding:4px 8px;font-size:11px;color:#f0883e;">' . $e($pmSkipLabel) . '</td>'
@@ -1744,8 +1839,14 @@ HTML;
       </table>
     </div>
   </div>
+  {$stratQualHtml}
   {$overviewPositionsHtml}
   {$modStripHtml}
+  <div style="padding:10px 14px;margin-bottom:16px;background:rgba(240,136,62,.07);border:1px solid #f0883e44;border-radius:8px;font-size:12px;color:#f0883e;">
+    <i class="bi bi-info-circle" style="margin-right:5px;"></i>
+    Чтобы убрать старые позиции — закройте их на Bybit Demo вручную или используйте отдельную demo-only кнопку.
+    Reset cache не закрывает позиции на бирже.
+  </div>
   <div style="margin-top:16px;text-align:right;">
     <form method="post" action="{$chainRunUrl}" style="margin:0;display:inline;"
       onsubmit="return confirm('Сбросить локальный runtime/cache?\n\nReset очищает локальный cache. Открытые позиции на Bybit Demo не закрываются.\n\nПродолжить?');">
@@ -1882,6 +1983,7 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$smMode}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Stop mode</td><td><code>{$smStopMode}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Стоп от liq к входу (%)</td><td><code>{$smLiqDist}</code></td></tr>
+          {$smMismatchRow}
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Breakeven</td><td>{$smBeEn}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">BE trigger ROI%</td><td><code>{$smBeTrig}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">BE lock ROI%</td><td><code>{$smBeLock}</code></td></tr>

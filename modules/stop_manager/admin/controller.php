@@ -97,6 +97,7 @@ HTML;
         $lrStatus    = $e($lastRun['status']     ?? 'never_run');
         $lrTickAt    = $e($lastRun['tick_at']    ?? '—');
         $lrElapsed   = $e($lastRun['elapsed_sec'] ?? 0);
+        $lrLiqDist   = $e($lastRun['liq_distance_percent'] ?? '—');
         $lrPosSeen   = $e($lastRun['positions_seen']              ?? 0);
         $lrRealLiq   = $e($lastRun['positions_with_real_liq']     ?? 0);
         $lrEstLiq    = $e($lastRun['positions_with_estimated_liq'] ?? 0);
@@ -110,6 +111,28 @@ HTML;
 
         $statusColor = ($lastRun['status'] ?? '') === 'ok' ? '#3fb950' : '#8b949e';
 
+        // ── mismatch detection ────────────────────────────────────────────────
+        $cfgLiqDist    = (float)($config['liq_distance_percent'] ?? 90.0);
+        $runtimeLiqDist = isset($lastRun['liq_distance_percent'])
+            ? (float)$lastRun['liq_distance_percent']
+            : null;
+        $mismatchHtml = '';
+        if ($runtimeLiqDist !== null && abs($runtimeLiqDist - $cfgLiqDist) > 0.01) {
+            $mismatchHtml = '<div style="background:rgba(248,81,73,.10);border:1px solid #f8514955;border-radius:7px;padding:9px 14px;margin-bottom:14px;font-size:13px;color:#f85149;">'
+                . '<strong>Stop config mismatch:</strong> config = ' . $e($cfgLiqDist) . '%, runtime last_run = ' . $e($runtimeLiqDist) . '%. '
+                . 'Запустите тик, чтобы пересчитать стопы с новым значением.</div>';
+        }
+        // Also check stops.json records for mismatches
+        foreach ($stops as $stop) {
+            $storedLd = isset($stop['liq_distance_percent']) ? (float)$stop['liq_distance_percent'] : null;
+            if ($storedLd !== null && abs($storedLd - $cfgLiqDist) > 0.01) {
+                $mismatchHtml = '<div style="background:rgba(248,81,73,.10);border:1px solid #f8514955;border-radius:7px;padding:9px 14px;margin-bottom:14px;font-size:13px;color:#f85149;">'
+                    . '<strong>Stop config mismatch:</strong> config = ' . $e($cfgLiqDist) . '%, стоп ' . $e($stop['symbol'] ?? '') . ' хранит ' . $e($storedLd) . '%. '
+                    . 'Запустите тик, чтобы пересчитать стопы.</div>';
+                break;
+            }
+        }
+
         // ── stops table ───────────────────────────────────────────────────────
         $stopsRows = '';
         foreach (array_slice(array_reverse($stops), 0, 100) as $stop) {
@@ -121,12 +144,21 @@ HTML;
                 default  => '#c9d1d9',
             };
             $beApplied   = ($stop['breakeven_applied'] ?? false) ? '<span style="color:#58a6ff;">✓ BE</span>' : '';
+            $dFromLiq    = isset($stop['distance_from_liq_pct'])   ? $e($stop['distance_from_liq_pct']) . '%'   : '—';
+            $dFromEntry  = isset($stop['distance_from_entry_pct']) ? $e($stop['distance_from_entry_pct']) . '%' : '—';
+            $ldPct       = isset($stop['liq_distance_percent'])    ? $e($stop['liq_distance_percent'])           : '—';
+            // Highlight mismatch per row
+            $ldColor     = (isset($stop['liq_distance_percent']) && abs((float)$stop['liq_distance_percent'] - $cfgLiqDist) > 0.01)
+                ? 'color:#f85149;' : '';
             $stopsRows .= '<tr>'
                 . '<td>' . $e($stop['symbol'] ?? '') . '</td>'
                 . '<td>' . $e($stop['side'] ?? '') . '</td>'
                 . '<td>' . $e($stop['entry_price'] ?? '') . '</td>'
                 . '<td>' . $e($stop['liq_price'] ?? '—') . '</td>'
                 . '<td>' . $e($stop['stop_price'] ?? '—') . '</td>'
+                . '<td style="' . $ldColor . '">' . $ldPct . '</td>'
+                . '<td>' . $dFromLiq . '</td>'
+                . '<td>' . $dFromEntry . '</td>'
                 . '<td style="color:' . $stColor . ';">' . $e($stState) . '</td>'
                 . '<td>' . $beApplied . '</td>'
                 . '<td style="font-size:11px;">' . $e($stop['last_updated_at'] ?? '') . '</td>'
@@ -134,7 +166,7 @@ HTML;
                 . '</tr>';
         }
         if ($stopsRows === '') {
-            $stopsRows = '<tr><td colspan="9" style="color:var(--ui-text-muted);padding:12px 0;text-align:center;">Нет активных стопов</td></tr>';
+            $stopsRows = '<tr><td colspan="12" style="color:var(--ui-text-muted);padding:12px 0;text-align:center;">Нет активных стопов</td></tr>';
         }
         $stopsCount = count($stops);
 
@@ -186,6 +218,7 @@ HTML;
         $cfgEnNo   = !$config['enabled'] ? ' selected' : '';
         $cfgModeD  = ($config['mode'] ?? '') === 'disabled' ? ' selected' : '';
         $cfgModeP  = ($config['mode'] ?? '') === 'paper'    ? ' selected' : '';
+        $cfgModeDe = ($config['mode'] ?? '') === 'demo'     ? ' selected' : '';
         $cfgBeEnYes = ($config['breakeven_enabled'] ?? false) ? ' selected' : '';
         $cfgBeEnNo  = !($config['breakeven_enabled'] ?? false) ? ' selected' : '';
 
@@ -226,6 +259,7 @@ HTML;
 
 <!-- Runtime pane -->
 <div id="sm-runtime" class="sm-pane sm-visible">
+  {$mismatchHtml}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
     <div class="card">
       <div class="card-header">Состояние модуля</div>
@@ -248,6 +282,7 @@ HTML;
           <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Статус</td><td style="color:{$statusColor};"><strong>{$lrStatus}</strong></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Время тика</td><td><code>{$lrTickAt}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Длительность</td><td><code>{$lrElapsed}s</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">liq_distance_percent (тик)</td><td><code>{$lrLiqDist}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Позиций увидено</td><td><code>{$lrPosSeen}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">С реальным liq</td><td><code>{$lrRealLiq}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">С расчётным liq</td><td><code>{$lrEstLiq}</code></td></tr>
@@ -295,7 +330,9 @@ HTML;
         <thead>
           <tr>
             <th>Symbol</th><th>Side</th><th>Entry</th><th>Liq</th>
-            <th>Stop</th><th>State</th><th>BE</th><th>Updated</th><th>Reason</th>
+            <th>Stop</th><th title="liq_distance_percent в записи стопа">liq_dist%</th>
+            <th title="distance_from_liq_pct">Dist liq%</th><th title="distance_from_entry_pct">Dist entry%</th>
+            <th>State</th><th>BE</th><th>Updated</th><th>Reason</th>
           </tr>
         </thead>
         <tbody>{$stopsRows}</tbody>
@@ -340,6 +377,7 @@ HTML;
             <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
               <option value="disabled"{$cfgModeD}>disabled</option>
               <option value="paper"{$cfgModeP}>paper</option>
+              <option value="demo"{$cfgModeDe}>demo</option>
             </select>
           </div>
           <div>
@@ -354,8 +392,8 @@ HTML;
               value="{$e($config['liq_distance_percent'] ?? 90)}"
               class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
             <div style="font-size:11px;color:var(--ui-text-muted);margin-top:3px;">
-              90 = стоп близко к входу, 10% до ликвидации остаётся.<br>
-              10 = стоп близко к ликвидации, 90% до ликвидации остаётся.
+              90 = стоп близко к входу, остаётся 10% расстояния до ликвидации.<br>
+              10 = стоп близко к ликвидации, остаётся 90% расстояния до ликвидации.
             </div>
           </div>
           <div>
@@ -381,6 +419,7 @@ HTML;
         <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
         <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
           Изменения записываются в <code>config/active.php</code>. Источник истины для dashboard — тот же файл.
+          Ключ конфига: <code>liq_distance_percent</code> (1..99). Диапазон: 1 = стоп у ликвидации, 99 = стоп у входа.
         </div>
       </form>
     </div>

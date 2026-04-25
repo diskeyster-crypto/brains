@@ -256,7 +256,13 @@ function renderDashboardHub(): string
             $disabledStrat++;
         }
     }
-    $queueSize   = count($queue);
+    $activeStatuses       = ['queued', 'ready'];
+    $queueActiveItems     = array_filter($queue, fn($i) => in_array($i['queue_status'] ?? '', $activeStatuses, true));
+    $queueSize            = count($queueActiveItems);
+    $queueSubmittedCount  = count(array_filter($queue, fn($i) => ($i['queue_status'] ?? '') === 'submitted'));
+    $queueExpiredCount    = count(array_filter($queue, fn($i) => ($i['queue_status'] ?? '') === 'expired'));
+    $queueWithdrawnCount  = count(array_filter($queue, fn($i) => ($i['queue_status'] ?? '') === 'withdrawn'));
+    $queueRejectedCount   = count(array_filter($queue, fn($i) => ($i['queue_status'] ?? '') === 'rejected'));
     $ordersCount = count($orders);
     $posCount    = count($positions);
 
@@ -1767,7 +1773,8 @@ HTML;
       <div class="card-header">Текущий прогон</div>
       <div class="card-body">
         <table style="width:100%;font-size:13px;border-collapse:collapse;">
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:160px;">Очередь ордеров</td><td><code>{$e($lastRun['order_queue_total'] ?? 0)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:160px;">Очередь (queued+ready)</td><td><code>{$e($lastRun['order_queue_total'] ?? 0)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Submitted (история)</td><td><code style="color:#8b949e;">{$queueSubmittedCount}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных ордеров</td><td><code>{$e($lastRun['active_orders_count'] ?? 0)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных позиций</td><td><code>{$e($lastRun['active_positions_count'] ?? 0)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Сигналов обработано</td><td><code>{$e($sigProc)}</code></td></tr>

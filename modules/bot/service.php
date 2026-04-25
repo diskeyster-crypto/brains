@@ -312,7 +312,7 @@ final class BotService
                     'strategies_disabled_total'    => count($disabledStrategies),
                     'handoff_sources_active_total' => 0,
                     'handoff_signals_processed'    => 0,
-                    'order_queue_total'            => count($this->readJson('storage/order_queue.json', [])),
+                    'order_queue_total'            => $this->countByStatus($this->readJson('storage/order_queue.json', []), ['queued', 'ready']),
                     'active_orders_count'          => count($this->readJson('storage/active_orders.json', [])),
                     'active_positions_count'       => count($this->readJson('storage/active_positions.json', [])),
                     'ticks_total'                  => (int)($stats['ticks_total'] ?? 0),

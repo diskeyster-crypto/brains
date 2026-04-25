@@ -266,6 +266,35 @@ function renderDashboardHub(): string
     $ordersCount = count($orders);
     $posCount    = count($positions);
 
+    // ── Queue mode-diagnostics (Part 6) ──────────────────────────────────
+    // Use current config mode (most up-to-date) for stale detection
+    $cfgCurrentMode     = (string)($botConfig['mode'] ?? $botMode);
+    $queueReadyLiveCount      = 0;
+    $queueSubmittedDemoCount  = 0;
+    $queueStaleOtherModeCount = 0;
+    foreach ($queue as $qi) {
+        $qs   = (string)($qi['queue_status']   ?? '');
+        $qm   = (string)($qi['execution_mode'] ?? '');
+        if ($qs === 'ready' && $qm === 'live') {
+            $queueReadyLiveCount++;
+        }
+        if ($qs === 'submitted' && $qm === 'demo') {
+            $queueSubmittedDemoCount++;
+        }
+        // Stale: active (queued/ready) items stamped for a different mode
+        if (in_array($qs, ['queued', 'ready'], true) && $qm !== '' && $qm !== $cfgCurrentMode) {
+            $queueStaleOtherModeCount++;
+        }
+    }
+    // Warning when mode=live but queue contains only old demo-submitted items (no live-ready)
+    $staleQueueWarningHtml = '';
+    if ($cfgCurrentMode === 'live' && $queueSubmittedDemoCount > 0 && $queueReadyLiveCount === 0) {
+        $staleQueueWarningHtml = '<div style="background:rgba(248,81,73,.10);border:1px solid #f8514966;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px;color:#f85149;">'
+            . '<strong>&#9888; Очередь содержит ' . $queueSubmittedDemoCount . ' старых demo submitted элементов. Для live они не исполняются.</strong>'
+            . ' Следующий тик бота создаст новые live-элементы из активных сигналов.'
+            . '</div>';
+    }
+
     // ── last-run headline fields ──────────────────────────────────────────
     $tickAt     = (string)($lastRun['tick_at']    ?? '—');
     $tickStatus = (string)($lastRun['status']     ?? 'never_run');
@@ -1787,6 +1816,8 @@ HTML;
             . '<div style="font-size:13px;color:#f85149;">Все ордера исполняются на реальном счёте Bybit. Потеря средств возможна.</div>'
             . '</div>';
     }
+    // Stale queue warning (appended to live banner area)
+    $liveWarningBanner .= $staleQueueWarningHtml;
 
     // Mode status label
     $modeLabel = $botMode === 'live'
@@ -1797,6 +1828,11 @@ HTML;
     // Live form field pre-computed values (can't use ternary inside heredoc)
     $cfgLiveEnabledYes = $cfgLiveEnabled ? ' selected' : '';
     $cfgLiveEnabledNo  = $cfgLiveEnabled ? '' : ' selected';
+
+    // Queue diagnostics pre-computed colors for heredoc
+    $qReadyLiveColor      = $queueReadyLiveCount > 0 ? '#3fb950' : '#8b949e';
+    $qSubmittedDemoColor  = ($queueSubmittedDemoCount > 0 && $cfgCurrentMode === 'live') ? '#f85149' : '#8b949e';
+    $qStaleOtherModeColor = $queueStaleOtherModeCount > 0 ? '#f0883e' : '#8b949e';
 
     return <<<HTML
 <style>
@@ -1962,6 +1998,9 @@ HTML;
         <table style="width:100%;font-size:13px;border-collapse:collapse;">
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:160px;">Очередь (queued+ready)</td><td><code>{$e($lastRun['order_queue_total'] ?? 0)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Submitted (история)</td><td><code style="color:#8b949e;">{$queueSubmittedCount}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ready (live)</td><td><code style="color:{$qReadyLiveColor};">{$queueReadyLiveCount}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Submitted (demo, история)</td><td><code style="color:{$qSubmittedDemoColor};">{$queueSubmittedDemoCount}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Stale (чужой режим)</td><td><code style="color:{$qStaleOtherModeColor};">{$queueStaleOtherModeCount}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных ордеров</td><td><code>{$e($lastRun['active_orders_count'] ?? 0)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных позиций</td><td><code>{$e($lastRun['active_positions_count'] ?? 0)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Сигналов обработано</td><td><code>{$e($sigProc)}</code></td></tr>
@@ -3410,7 +3449,7 @@ function handleDashboardResetRuntime(): void
         file_put_contents($path, $content);
     }
 
-    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Runtime/cache сброшен. Reset не закрывает позиции на Bybit.'];
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Сброс очищает локальную очередь/cache, не закрывает позиции на Bybit.'];
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-overview'));
     $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
     if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-overview'; }
@@ -3459,6 +3498,7 @@ function handleDashboardSwitchMode(): void
         }
     }
 
+    $oldMode = (string)($current['mode'] ?? '');
     $current['mode'] = $mode;
 
     $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Bot Module — Active Config Overrides\n * Written by the admin UI. Edit via the config page.\n */\n\nreturn ";
@@ -3471,8 +3511,27 @@ function handleDashboardSwitchMode(): void
     }
     file_put_contents($activeFile, $php);
 
+    // When mode actually changes, clear runtime queue/cache so old-mode items don't leak
+    $flashSuffix = '';
+    if ($oldMode !== $mode) {
+        $root       = defined('ROOT') ? rtrim(ROOT, '/') : dirname(__DIR__, 2);
+        $runtimeFiles = [
+            $root . '/modules/bot/storage/order_queue.json'      => '[]',
+            $root . '/modules/bot/storage/active_orders.json'    => '[]',
+            $root . '/modules/bot/storage/active_positions.json' => '[]',
+        ];
+        foreach ($runtimeFiles as $path => $emptyVal) {
+            $fdir = dirname($path);
+            if (!is_dir($fdir)) {
+                mkdir($fdir, 0755, true);
+            }
+            file_put_contents($path, $emptyVal);
+        }
+        $flashSuffix = ' Режим изменён. Runtime queue/cache очищены.';
+    }
+
     $modeLabel = strtoupper($mode);
-    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Режим переключён: {$modeLabel}"];
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Режим переключён: {$modeLabel}.{$flashSuffix}"];
     header('Location: ' . $dashUrl);
     exit;
 }

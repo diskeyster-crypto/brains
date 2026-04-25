@@ -438,7 +438,7 @@ final class BotService
         $stats            = array_merge($this->zeroStats(), $this->getStats());
 
         // ── 4. Process handoff → order queue ──────────────────────────────────
-        $result     = $this->processHandoff($allSignals, $orderQueue, $config, $overrides, $tickAt);
+        $result     = $this->processHandoff($allSignals, $orderQueue, $config, $overrides, $tickAt, $botMode);
         $orderQueue = $result['order_queue'];
 
         // ── 5. Execution state machine ────────────────────────────────────────
@@ -746,7 +746,8 @@ final class BotService
         array $orderQueue,
         array $config,
         array $overrides,
-        string $tickAt
+        string $tickAt,
+        string $botMode = 'passive'
     ): array {
         $allowedModes = (array)($config['allowed_entry_modes'] ?? ['limit', 'market']);
         $maxAgeSec    = (int)($config['max_signal_age_sec'] ?? 0);
@@ -805,23 +806,42 @@ final class BotService
             if (isset($queueMap[$key])) {
                 $prev       = $queueMap[$key];
                 $prevStatus = (string)($prev['queue_status'] ?? 'queued');
+                // backward-compat: items created before execution_mode field assume current mode
+                $prevMode   = (string)($prev['execution_mode'] ?? $botMode);
 
-                if (in_array($prevStatus, ['queued', 'ready'], true)) {
-                    $item = $this->buildQueueItem($signal, $opOverrides, $config, $tickAt);
-                    $item['entry_mode']            = $entryMode;
-                    $item['queue_status']          = 'ready';
-                    $item['first_queued_at']       = $prev['first_queued_at'] ?? $tickAt;
-                    $item['seen_count']            = (int)($prev['seen_count'] ?? 1) + 1;
-                    $item['last_refreshed_at']     = $tickAt;
-                    $item['last_change_reason']    = 'refreshed_from_handoff';
-                    $item['source_handoff_status'] = (string)($signal['handoff_status'] ?? 'refreshed');
-                    $result[$key]                  = $item;
-                    $refreshedTotal++;
+                // If an existing submitted item belongs to a different mode, do not treat it
+                // as a blocking duplicate — create a fresh queue item for the current mode.
+                $isModeSwitchedTerminal = ($prevStatus === 'submitted' && $prevMode !== $botMode);
+
+                if (in_array($prevStatus, ['queued', 'ready'], true) || $isModeSwitchedTerminal) {
+                    $item = $this->buildQueueItem($signal, $opOverrides, $config, $tickAt, $botMode);
+                    $item['entry_mode'] = $entryMode;
+
+                    if ($isModeSwitchedTerminal) {
+                        // Fresh item for the new mode; start back at queued
+                        $item['queue_status']          = 'queued';
+                        $item['first_queued_at']       = $tickAt;
+                        $item['seen_count']            = 1;
+                        $item['last_refreshed_at']     = $tickAt;
+                        $item['last_change_reason']    = 'new_from_handoff_after_mode_switch';
+                        $item['source_handoff_status'] = (string)($signal['handoff_status'] ?? 'new');
+                        $result[$key]                  = $item;
+                        $newTotal++;
+                    } else {
+                        $item['queue_status']          = 'ready';
+                        $item['first_queued_at']       = $prev['first_queued_at'] ?? $tickAt;
+                        $item['seen_count']            = (int)($prev['seen_count'] ?? 1) + 1;
+                        $item['last_refreshed_at']     = $tickAt;
+                        $item['last_change_reason']    = 'refreshed_from_handoff';
+                        $item['source_handoff_status'] = (string)($signal['handoff_status'] ?? 'refreshed');
+                        $result[$key]                  = $item;
+                        $refreshedTotal++;
+                    }
                 } else {
                     $result[$key] = $prev;
                 }
             } else {
-                $item = $this->buildQueueItem($signal, $opOverrides, $config, $tickAt);
+                $item = $this->buildQueueItem($signal, $opOverrides, $config, $tickAt, $botMode);
                 $item['entry_mode']            = $entryMode;
                 $item['queue_status']          = 'queued';
                 $item['first_queued_at']       = $tickAt;
@@ -1809,6 +1829,13 @@ final class BotService
                 continue;
             }
 
+            // Only process items stamped for demo mode (or legacy items without execution_mode)
+            $itemMode = $qItem['execution_mode'] ?? null;
+            if ($itemMode !== null && $itemMode !== 'demo') {
+                $qItem['skip_reason'] = 'wrong_execution_mode';
+                continue;
+            }
+
             $key    = $this->queueKey($qItem);
             $symbol = (string)($qItem['symbol'] ?? '');
             $side   = (string)($qItem['side']   ?? 'long');
@@ -2277,6 +2304,13 @@ final class BotService
                 continue;
             }
 
+            // Only process items stamped for live mode (or legacy items without execution_mode)
+            $itemMode = $qItem['execution_mode'] ?? null;
+            if ($itemMode !== null && $itemMode !== 'live') {
+                $qItem['skip_reason'] = 'wrong_execution_mode';
+                continue;
+            }
+
             $key    = $this->queueKey($qItem);
             $symbol = (string)($qItem['symbol'] ?? '');
             $side   = (string)($qItem['side']   ?? 'long');
@@ -2706,7 +2740,7 @@ final class BotService
      * Deep strategy internals (pattern thresholds, TTL, corridor config, etc.)
      * are NOT exposed here — they stay inside each strategy module.
      */
-    private function buildQueueItem(array $signal, array $opOverrides, array $config, string $tickAt): array
+    private function buildQueueItem(array $signal, array $opOverrides, array $config, string $tickAt, string $executionMode = 'passive'): array
     {
         // Resolve budget: signal → operator override → config → hard fallback
         $botBudget      = (float)($signal['bot_budget']  ?? 0.0);
@@ -2786,7 +2820,9 @@ final class BotService
             'reverse_pattern_close_enabled' => (bool)($signal['reverse_pattern_close_enabled'] ?? false),
 
             // Bot lifecycle state (overwritten by caller)
-            'queue_status' => 'queued',
+            'queue_status'   => 'queued',
+            // Mode this item was created for — prevents cross-mode execution
+            'execution_mode' => $executionMode,
         ];
     }
 

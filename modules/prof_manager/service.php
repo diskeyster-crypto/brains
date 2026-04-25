@@ -251,6 +251,9 @@ final class ProfManagerService
                     'hybrid_breathing_stop'      => $profileResult['hybrid_breathing_stop']      ?? null,
                     'hybrid_breathing_active'    => $profileResult['hybrid_breathing_active']    ?? false,
                     'hybrid_simulation_enabled'  => $profileResult['hybrid_simulation_enabled']  ?? false,
+                    'hybrid_detection_score'     => $profileResult['hybrid_detection_score']     ?? null,
+                    'hybrid_support_level'       => $profileResult['hybrid_support_level']       ?? null,
+                    'hybrid_detection_evidence'  => $profileResult['hybrid_detection_evidence']  ?? null,
                 ];
             }
 

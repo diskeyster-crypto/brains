@@ -1,1 +1,29 @@
-{}
+{
+    "ethusdt_long": {
+        "symbol": "ETHUSDT",
+        "side": "long",
+        "lock_price": 2196,
+        "lock_roi": 98,
+        "action": "would_set_profit_lock",
+        "updated_at": "2026-04-25T15:28:14+00:00",
+        "updated_at_ts": 1777130894
+    },
+    "btcusdt_long": {
+        "symbol": "BTCUSDT",
+        "side": "long",
+        "lock_price": 49950,
+        "lock_roi": 110,
+        "action": "would_set_profit_lock",
+        "updated_at": "2026-04-25T15:28:14+00:00",
+        "updated_at_ts": 1777130894
+    },
+    "xusdt_long": {
+        "symbol": "XUSDT",
+        "side": "long",
+        "lock_price": 1.094,
+        "lock_roi": 47,
+        "action": "would_set_profit_lock",
+        "updated_at": "2026-04-25T15:28:14+00:00",
+        "updated_at_ts": 1777130894
+    }
+}

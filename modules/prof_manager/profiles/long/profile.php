@@ -6,6 +6,7 @@ namespace Modules\ProfManager\Profiles\Long;
 
 use Modules\ProfManager\Lib\RiskMath;
 use Modules\ProfManager\Lib\ProfitLockPlanner;
+use Modules\ProfManager\Lib\CandleReader;
 
 /**
  * LongProfile
@@ -21,7 +22,8 @@ use Modules\ProfManager\Lib\ProfitLockPlanner;
  *   After legacy lock logic, applies pattern-based exit confirmation layer:
  *     idle               → on pattern detected: waiting_confirmation + guard stop
  *     waiting_confirmation → confirm or reject; on reject: breathing trailing recovery
- *   Pattern detection is a stub (always returns detected=false at this stage).
+ *   Pattern: long_structure_weak_high — detected from parser2 price series (score >= 3).
+ *   Falls back to legacy-only when no candle data is available.
  *
  * Reads and writes own state to profiles/long/storage/.
  * Demo only — no exchange actions.
@@ -32,6 +34,8 @@ class LongProfile
     private array  $config;
     private RiskMath $riskMath;
     private ProfitLockPlanner $planner;
+    private CandleReader $candleReader;
+    private string $parser2StorageDir;
 
     public function __construct(string $profileDir, array $configOverrides = [])
     {
@@ -39,6 +43,8 @@ class LongProfile
         $this->config     = $this->loadConfig($profileDir, $configOverrides);
         $this->riskMath   = new RiskMath();
         $this->planner    = new ProfitLockPlanner($this->riskMath);
+        $this->candleReader = new CandleReader();
+        $this->parser2StorageDir = $this->resolveParser2StorageDir($profileDir);
         $this->ensureStorage();
     }
 
@@ -52,7 +58,8 @@ class LongProfile
      *               hybrid_confirmation_ticks, hybrid_confirmation_result,
      *               hybrid_guard_stop, hybrid_guard_active,
      *               hybrid_breathing_stop, hybrid_breathing_active,
-     *               hybrid_simulation_enabled}
+     *               hybrid_simulation_enabled,
+     *               hybrid_detection_score, hybrid_support_level, hybrid_detection_evidence}
      */
     public function process(array $position, int $nowTs): array
     {
@@ -90,16 +97,19 @@ class LongProfile
         // ── STEP 2–4: hybrid overlay ──────────────────────────────────────────
         $simEnabled = !empty($this->config['hybrid_simulation_enabled']);
         $hybridMeta = [
-            'hybrid_state'              => 'idle',
-            'hybrid_pattern_detected'   => false,
-            'hybrid_pattern_type'       => null,
-            'hybrid_confirmation_ticks' => 0,
-            'hybrid_confirmation_result'=> null,
-            'hybrid_guard_stop'         => null,
-            'hybrid_guard_active'       => false,
-            'hybrid_breathing_stop'     => null,
-            'hybrid_breathing_active'   => false,
-            'hybrid_simulation_enabled' => $simEnabled,
+            'hybrid_state'               => 'idle',
+            'hybrid_pattern_detected'    => false,
+            'hybrid_pattern_type'        => null,
+            'hybrid_confirmation_ticks'  => 0,
+            'hybrid_confirmation_result' => null,
+            'hybrid_guard_stop'          => null,
+            'hybrid_guard_active'        => false,
+            'hybrid_breathing_stop'      => null,
+            'hybrid_breathing_active'    => false,
+            'hybrid_simulation_enabled'  => $simEnabled,
+            'hybrid_detection_score'     => null,
+            'hybrid_support_level'       => null,
+            'hybrid_detection_evidence'  => null,
         ];
 
         if (!empty($this->config['hybrid_enabled'])) {
@@ -133,16 +143,19 @@ class LongProfile
             'activation_roi'            => (float) ($this->config['activation_roi'] ?? 10.0),
             'distance_pct'              => $plan['distance_pct']               ?? null,
             'min_required_distance_pct' => $plan['min_required_distance_pct']  ?? null,
-            'hybrid_state'              => $hybridMeta['hybrid_state'],
-            'hybrid_pattern_detected'   => $hybridMeta['hybrid_pattern_detected'],
-            'hybrid_pattern_type'       => $hybridMeta['hybrid_pattern_type'],
-            'hybrid_confirmation_ticks' => $hybridMeta['hybrid_confirmation_ticks'],
-            'hybrid_confirmation_result'=> $hybridMeta['hybrid_confirmation_result'],
-            'hybrid_guard_stop'         => $hybridMeta['hybrid_guard_stop'],
-            'hybrid_guard_active'       => $hybridMeta['hybrid_guard_active'],
-            'hybrid_breathing_stop'     => $hybridMeta['hybrid_breathing_stop'],
-            'hybrid_breathing_active'   => $hybridMeta['hybrid_breathing_active'],
-            'hybrid_simulation_enabled' => $hybridMeta['hybrid_simulation_enabled'],
+            'hybrid_state'               => $hybridMeta['hybrid_state'],
+            'hybrid_pattern_detected'    => $hybridMeta['hybrid_pattern_detected'],
+            'hybrid_pattern_type'        => $hybridMeta['hybrid_pattern_type'],
+            'hybrid_confirmation_ticks'  => $hybridMeta['hybrid_confirmation_ticks'],
+            'hybrid_confirmation_result' => $hybridMeta['hybrid_confirmation_result'],
+            'hybrid_guard_stop'          => $hybridMeta['hybrid_guard_stop'],
+            'hybrid_guard_active'        => $hybridMeta['hybrid_guard_active'],
+            'hybrid_breathing_stop'      => $hybridMeta['hybrid_breathing_stop'],
+            'hybrid_breathing_active'    => $hybridMeta['hybrid_breathing_active'],
+            'hybrid_simulation_enabled'  => $hybridMeta['hybrid_simulation_enabled'],
+            'hybrid_detection_score'     => $hybridMeta['hybrid_detection_score'],
+            'hybrid_support_level'       => $hybridMeta['hybrid_support_level'],
+            'hybrid_detection_evidence'  => $hybridMeta['hybrid_detection_evidence'],
         ];
     }
 
@@ -304,64 +317,201 @@ class LongProfile
     // =========================================================================
 
     /**
-     * Pattern detection hook.
+     * Pattern detection — long_structure_weak_high.
      *
-     * Normally returns detected=false (stub — real engine not implemented yet).
-     * When hybrid simulation mode is active and the symbol matches, can be forced
-     * to return detected=true via hybrid_simulation_force_detect config.
+     * Reads recent price series from parser2 NDJSON storage and scores a set of
+     * structural weakness conditions. Returns detected=true when score >= min_score.
+     *
+     * Simulation override takes priority:
+     *   hybrid_simulation_force_detect=true → detected=true, pattern_type='simulated_exit_pattern'
      *
      * @param array $position      Normalized position data
      * @param array $positionState Current per-symbol state
-     * @return array{detected: bool, pattern_type: string|null, confidence: float}
+     * @return array{detected:bool, pattern_type:string|null, confidence:float, reason:string|null, evidence:array}
      */
     private function detectExitPattern(array $position, array $positionState): array
     {
-        $simEnabled = !empty($this->config['hybrid_simulation_enabled']);
+        $noDetect = static fn(string $reason, array $ev = []): array => [
+            'detected'     => false,
+            'pattern_type' => null,
+            'confidence'   => 0.0,
+            'reason'       => $reason,
+            'evidence'     => $ev,
+        ];
 
+        // ── Simulation override (priority) ────────────────────────────────────
+        $simEnabled = !empty($this->config['hybrid_simulation_enabled']);
         if ($simEnabled && !empty($this->config['hybrid_simulation_force_detect'])) {
             $simSymbol = strtoupper(trim((string) ($this->config['hybrid_simulation_pattern_symbol'] ?? '')));
             $posSymbol = strtoupper(trim((string) ($position['symbol'] ?? '')));
-
             if ($simSymbol === '' || $simSymbol === $posSymbol) {
                 // [SIMULATION] forced detection — demo/dev only
                 return [
                     'detected'     => true,
                     'pattern_type' => 'simulated_exit_pattern',
                     'confidence'   => 1.0,
+                    'reason'       => 'simulation_forced',
+                    'evidence'     => [],
                 ];
             }
         }
 
-        // Real detection stub — always false until pattern engine is implemented
+        // ── ROI gate: position must be in profit ──────────────────────────────
+        $currentRoi = (float) ($positionState['current_roi'] ?? 0.0);
+        if ($currentRoi <= 0.0) {
+            return $noDetect('not_in_profit');
+        }
+
+        // ── Read price series from parser2 NDJSON storage ────────────────────
+        $symbol      = strtoupper(trim((string) ($position['symbol'] ?? '')));
+        $minPoints   = (int)   ($this->config['detection_min_price_points'] ?? 15);
+        $maxPoints   = (int)   ($this->config['detection_max_price_points'] ?? 60);
+        $lookbackSec = (int)   ($this->config['detection_lookback_sec']     ?? 3600);
+
+        $pricePoints = $this->candleReader->readRecentPrices(
+            $symbol,
+            $this->parser2StorageDir,
+            $maxPoints,
+            $lookbackSec
+        );
+
+        $n = count($pricePoints);
+        if ($n < $minPoints) {
+            return $noDetect('no_candle_data', ['points_available' => $n, 'min_required' => $minPoints]);
+        }
+
+        $prices = array_column($pricePoints, 'price');
+
+        // ── Window split: early 40% | middle 20% | recent 40% ────────────────
+        $earlyEnd  = max(1, (int) round($n * 0.40));
+        $middleEnd = max($earlyEnd + 1, (int) round($n * 0.60));
+
+        $earlyPrices  = array_slice($prices, 0, $earlyEnd);
+        $middlePrices = array_slice($prices, $earlyEnd, $middleEnd - $earlyEnd);
+        $recentPrices = array_slice($prices, $middleEnd);
+
+        if (empty($earlyPrices) || empty($middlePrices) || empty($recentPrices)) {
+            return $noDetect('insufficient_window_data', ['n' => $n]);
+        }
+
+        $previousHigh  = max($earlyPrices);
+        $earlyLow      = min($earlyPrices);
+        $currentHigh   = max($recentPrices);
+        $recentLow     = min($recentPrices);
+        $lastHigherLow = min($middlePrices);
+        $supportLevel  = $lastHigherLow;
+
+        $currentPrice = (float) ($position['current_price'] ?? $position['mark_price']
+            ?? ($prices !== [] ? end($prices) : 0.0));
+
+        $marginFactor = (float) ($this->config['detection_weak_high_margin_pct'] ?? 0.10) / 100.0;
+        $minScore     = (int)   ($this->config['detection_min_score'] ?? 3);
+        $initRoi      = (float) ($this->config['init_roi'] ?? 2.0);
+
+        $score         = 0;
+        $evidenceFlags = [];
+
+        // Score 1: Failed higher high — current high did not exceed previous high
+        $failedHigherHigh = ($currentHigh <= $previousHigh * (1.0 + $marginFactor));
+        if ($failedHigherHigh) {
+            $score++;
+            $evidenceFlags[] = 'failed_higher_high';
+        }
+
+        // Score 2: Lower high — current high is actually below previous high
+        $lowerHigh = ($currentHigh < $previousHigh * (1.0 - $marginFactor));
+        if ($lowerHigh) {
+            $score++;
+            $evidenceFlags[] = 'lower_high';
+        }
+
+        // Score 3: Current price at or below local support
+        $supportBreakCandidate = ($currentPrice < $supportLevel * (1.0 + $marginFactor));
+        if ($supportBreakCandidate) {
+            $score++;
+            $evidenceFlags[] = 'support_break_candidate';
+        }
+
+        // Score 4: Shrinking impulse — recent range < early range * threshold
+        $earlyRange       = max(1e-9, $previousHigh - $earlyLow);
+        $recentRange      = max(0.0, $currentHigh - $recentLow);
+        $shrinkingImpulse = ($recentRange < $earlyRange * 0.85);
+        if ($shrinkingImpulse) {
+            $score++;
+            $evidenceFlags[] = 'shrinking_impulse';
+        }
+
+        // Score 5: In solid profit zone (roi >= init_roi)
+        $inProfitZone = ($currentRoi >= $initRoi);
+        if ($inProfitZone) {
+            $score++;
+            $evidenceFlags[] = 'in_profit_zone';
+        }
+
+        $detected   = ($score >= $minScore);
+        $confidence = min(1.0, $score / 5.0);
+
+        $evidence = [
+            'previous_high'            => round($previousHigh,  6),
+            'current_high'             => round($currentHigh,   6),
+            'last_higher_low'          => round($lastHigherLow, 6),
+            'support_level'            => round($supportLevel,  6),
+            'current_price'            => round($currentPrice,  6),
+            'failed_higher_high'       => $failedHigherHigh,
+            'lower_high'               => $lowerHigh,
+            'support_break_candidate'  => $supportBreakCandidate,
+            'shrinking_impulse'        => $shrinkingImpulse,
+            'in_profit_zone'           => $inProfitZone,
+            'score'                    => $score,
+            'points_used'              => $n,
+        ];
+
         return [
-            'detected'     => false,
-            'pattern_type' => null,
-            'confidence'   => 0.0,
+            'detected'     => $detected,
+            'pattern_type' => $detected ? 'long_structure_weak_high' : null,
+            'confidence'   => $confidence,
+            'reason'       => 'score_' . $score . '_of_5',
+            'evidence'     => $evidence,
         ];
     }
 
     /**
-     * Exit pattern confirmation hook.
+     * Exit pattern confirmation.
      *
      * Returns whether the currently-detected pattern has been confirmed or rejected.
      * Minimum tick count is NOT sufficient on its own — this method must return
      * confirmed=true for the position to be closed.
      *
-     * Simulation overrides (demo/dev only):
-     *   hybrid_simulation_force_confirm=true → confirmed=true
-     *   hybrid_simulation_force_reject=true  → rejected=true
+     * Real confirmation conditions (any one triggers):
+     *   - current price breaks below stored support_level (support_break)
+     *   - two or more recent closes below support_level (two_closes_below_support)
+     *   - strong drop from the detected high (strong_drop)
+     *
+     * Real rejection conditions:
+     *   - price makes new higher high above previous_high (new_higher_high)
+     *
+     * Simulation overrides (demo/dev only, checked first):
+     *   force_confirm → confirmed=true
+     *   force_reject  → rejected=true
      *   (force_confirm takes precedence if both are set)
      *
-     * Normal default: confirmed=false, rejected=false (keep waiting).
+     * Default: confirmed=false, rejected=false (keep waiting).
      *
      * @param array $position      Normalized position data
-     * @param array $positionState Current per-symbol state
-     * @return array{confirmed: bool, rejected: bool, reason: string|null}
+     * @param array $positionState Current per-symbol state (has stored detection evidence)
+     * @return array{confirmed:bool, rejected:bool, reason:string|null, evidence:array}
      */
     private function confirmExitPattern(array $position, array $positionState): array
     {
-        $simEnabled = !empty($this->config['hybrid_simulation_enabled']);
+        $pending = static fn(?string $reason = null, array $ev = []): array => [
+            'confirmed' => false,
+            'rejected'  => false,
+            'reason'    => $reason,
+            'evidence'  => $ev,
+        ];
 
+        // ── Simulation overrides (priority) ───────────────────────────────────
+        $simEnabled = !empty($this->config['hybrid_simulation_enabled']);
         if ($simEnabled) {
             $simSymbol = strtoupper(trim((string) ($this->config['hybrid_simulation_pattern_symbol'] ?? '')));
             $posSymbol = strtoupper(trim((string) ($position['symbol'] ?? '')));
@@ -369,35 +519,84 @@ class LongProfile
 
             if ($symbolMatch && !empty($this->config['hybrid_simulation_force_confirm'])) {
                 // [SIMULATION] forced confirmation — demo/dev only
-                return [
-                    'confirmed' => true,
-                    'rejected'  => false,
-                    'reason'    => 'simulated_confirm',
-                ];
+                return ['confirmed' => true,  'rejected' => false, 'reason' => 'simulated_confirm', 'evidence' => []];
             }
-
             if ($symbolMatch && !empty($this->config['hybrid_simulation_force_reject'])) {
                 // [SIMULATION] forced rejection — demo/dev only
-                return [
-                    'confirmed' => false,
-                    'rejected'  => true,
-                    'reason'    => 'simulated_reject',
-                ];
+                return ['confirmed' => false, 'rejected' => true,  'reason' => 'simulated_reject',  'evidence' => []];
             }
         }
 
-        // Real confirmation stub — always pending until confirmation engine implemented
-        return [
-            'confirmed' => false,
-            'rejected'  => false,
-            'reason'    => null,
+        // ── Load stored detection evidence ────────────────────────────────────
+        $supportLevel  = isset($positionState['support_level'])  ? (float) $positionState['support_level']  : 0.0;
+        $previousHigh  = isset($positionState['previous_high'])  ? (float) $positionState['previous_high']  : 0.0;
+        $detectedHigh  = isset($positionState['detected_high'])  ? (float) $positionState['detected_high']  : 0.0;
+        $currentPrice  = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
+        $symbol        = strtoupper(trim((string) ($position['symbol'] ?? '')));
+
+        // Cannot decide without stored evidence
+        if ($supportLevel <= 0.0 || $previousHigh <= 0.0) {
+            return $pending();
+        }
+
+        $confirmBreakPct  = (float) ($this->config['confirm_support_break_pct']   ?? 0.15) / 100.0;
+        $newHighMarginPct = (float) ($this->config['confirm_new_high_margin_pct'] ?? 0.20) / 100.0;
+        $strongDropPct    = (float) ($this->config['confirm_strong_drop_pct']     ?? 2.0)  / 100.0;
+
+        $ev = [
+            'support_level' => round($supportLevel, 6),
+            'previous_high' => round($previousHigh, 6),
+            'detected_high' => round($detectedHigh, 6),
+            'current_price' => round($currentPrice, 6),
         ];
+
+        // ── Rejection: price made a new higher high ───────────────────────────
+        if ($currentPrice > $previousHigh * (1.0 + $newHighMarginPct)) {
+            $ev['rejection_type'] = 'new_higher_high';
+            return ['confirmed' => false, 'rejected' => true, 'reason' => 'new_higher_high', 'evidence' => $ev];
+        }
+
+        // ── Confirmation: clean break below support level ─────────────────────
+        if ($currentPrice < $supportLevel * (1.0 - $confirmBreakPct)) {
+            $ev['confirmation_type'] = 'support_break';
+            return ['confirmed' => true, 'rejected' => false, 'reason' => 'support_break', 'evidence' => $ev];
+        }
+
+        // ── Confirmation: strong drop from detected high ──────────────────────
+        if ($detectedHigh > 0.0 && $currentPrice < $detectedHigh * (1.0 - $strongDropPct)) {
+            $ev['confirmation_type'] = 'strong_drop';
+            return ['confirmed' => true, 'rejected' => false, 'reason' => 'strong_drop', 'evidence' => $ev];
+        }
+
+        // ── Confirmation: two consecutive closes below support ────────────────
+        $maxPoints   = (int) ($this->config['detection_max_price_points'] ?? 60);
+        $lookbackSec = (int) ($this->config['detection_lookback_sec']     ?? 3600);
+        $pricePoints = $this->candleReader->readRecentPrices($symbol, $this->parser2StorageDir, $maxPoints, $lookbackSec);
+
+        if (count($pricePoints) >= 2) {
+            $recentSlice = array_slice(array_column($pricePoints, 'price'), -3);
+            $closesBelow = 0;
+            foreach ($recentSlice as $p) {
+                if ($p < $supportLevel) {
+                    $closesBelow++;
+                }
+            }
+            if ($closesBelow >= 2) {
+                $ev['confirmation_type'] = 'two_closes_below_support';
+                $ev['closes_below']      = $closesBelow;
+                return ['confirmed' => true, 'rejected' => false, 'reason' => 'two_closes_below_support', 'evidence' => $ev];
+            }
+        }
+
+        return $pending(null, $ev);
     }
 
     /**
      * Apply hybrid overlay on top of the legacy plan.
      *
      * STEP 2: On fresh pattern detection (hybrid_state=idle) → activate guard stop.
+     *         Stores detection evidence (support_level, previous_high, detected_high,
+     *         detection_score) into positionState for use by confirmExitPattern().
      * STEP 3: In waiting_confirmation → increment tick counter; resolve via confirmExitPattern().
      *         NOTE: confirmation_ticks is a minimum observation gate only.
      *         Actual confirmation requires confirmExitPattern().confirmed = true.
@@ -436,6 +635,11 @@ class LongProfile
             ? (string) $positionState['pattern_type']
             : null;
 
+        // Read persisted detection evidence for hybridMeta display
+        $detectionScore    = isset($positionState['detection_score'])    ? (int)    $positionState['detection_score']    : null;
+        $supportLevelState = isset($positionState['support_level'])      ? (float)  $positionState['support_level']      : null;
+        $detectionEvidence = isset($positionState['detection_evidence']) ? (string) $positionState['detection_evidence'] : null;
+
         $patternResult   = $this->detectExitPattern($position, $positionState);
         $patternDetected = (bool) ($patternResult['detected']     ?? false);
         $patternType     = $patternResult['pattern_type'] ?? null;
@@ -463,6 +667,19 @@ class LongProfile
 
             $guardStopPrice = ($guardOffset !== null) ? $currentPrice - $guardOffset : null;
             $hybridAction   = 'hybrid_guard_activated';
+
+            // Store detection evidence into positionState for confirmation use
+            $ev = $patternResult['evidence'] ?? [];
+            $positionState['support_level']       = $ev['support_level']   ?? null;
+            $positionState['previous_high']       = $ev['previous_high']   ?? null;
+            $positionState['detected_high']       = $ev['current_high']    ?? null;
+            $positionState['last_higher_low']     = $ev['last_higher_low'] ?? null;
+            $positionState['detection_score']     = $ev['score']           ?? null;
+            $positionState['detection_evidence']  = $this->summarizeEvidence($ev);
+
+            $detectionScore    = $positionState['detection_score'];
+            $supportLevelState = $positionState['support_level'];
+            $detectionEvidence = $positionState['detection_evidence'];
         }
 
         // ── STEP 3: confirmation loop ─────────────────────────────────────────
@@ -550,9 +767,56 @@ class LongProfile
             'hybrid_breathing_stop'      => ($newBreathingStop !== null && $newBreathingStop > 0.0) ? $newBreathingStop : null,
             'hybrid_breathing_active'    => $breathingActive,
             'hybrid_simulation_enabled'  => $simEnabled,
+            'hybrid_detection_score'     => $detectionScore,
+            'hybrid_support_level'       => ($supportLevelState !== null && $supportLevelState > 0.0) ? $supportLevelState : null,
+            'hybrid_detection_evidence'  => $detectionEvidence,
         ];
 
         return [$plan, $positionState, $hybridMeta];
+    }
+
+    /**
+     * Build a compact human-readable evidence summary string.
+     *
+     * Example: "score:4|fhh,lh,si,ipz"
+     *
+     * @param array<string,mixed> $evidence
+     */
+    private function summarizeEvidence(array $evidence): string
+    {
+        $flags = [];
+        if (!empty($evidence['failed_higher_high']))      $flags[] = 'fhh';
+        if (!empty($evidence['lower_high']))              $flags[] = 'lh';
+        if (!empty($evidence['support_break_candidate'])) $flags[] = 'sbc';
+        if (!empty($evidence['shrinking_impulse']))       $flags[] = 'si';
+        if (!empty($evidence['in_profit_zone']))          $flags[] = 'ipz';
+
+        $score = isset($evidence['score']) ? (int) $evidence['score'] : 0;
+        return 'score:' . $score . ($flags !== [] ? '|' . implode(',', $flags) : '');
+    }
+
+    /**
+     * Resolve the absolute path to parser2_history_accumulator/storage.
+     *
+     * Auto-detects by navigating up from profileDir:
+     *   .../modules/prof_manager/profiles/long → .../modules/prof_manager/profiles → .../modules
+     *   then appends /parser/parser2_history_accumulator/storage
+     *
+     * Config key 'parser2_storage_path' (non-empty) overrides auto-detection.
+     *
+     * @param string $profileDir Absolute path to this profile directory
+     */
+    private function resolveParser2StorageDir(string $profileDir): string
+    {
+        $override = trim((string) ($this->config['parser2_storage_path'] ?? ''));
+        if ($override !== '') {
+            return rtrim($override, '/');
+        }
+
+        // profileDir = .../modules/prof_manager/profiles/long
+        // dirname x3 = .../modules
+        $modulesDir = dirname(dirname(dirname($profileDir)));
+        return $modulesDir . '/parser/parser2_history_accumulator/storage';
     }
 
     // =========================================================================

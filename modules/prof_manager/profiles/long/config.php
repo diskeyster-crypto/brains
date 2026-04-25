@@ -34,6 +34,20 @@ return [
     'breathing_roi_distance_min'        => 5.0,
     'breathing_roi_distance_max'        => 10.0,
 
+    // ── Real exit pattern detector ───────────────────────────────────────────
+    // Parameters for the long_structure_weak_high detector.
+    // All detection uses parser2_history_accumulator NDJSON price series.
+    // '' parser2_storage_path = auto-detect from module directory structure.
+    'detection_min_price_points'       => 15,    // min data points to attempt detection
+    'detection_max_price_points'       => 60,    // max points to read from NDJSON
+    'detection_lookback_sec'           => 3600,  // look back at most 1 hour
+    'detection_weak_high_margin_pct'   => 0.10,  // % tolerance for "failed higher high"
+    'detection_min_score'              => 3,     // score threshold (max 5)
+    'confirm_support_break_pct'        => 0.15,  // % below support = confirmed (support_break)
+    'confirm_new_high_margin_pct'      => 0.20,  // % above prev high = rejected (new_higher_high)
+    'confirm_strong_drop_pct'          => 2.0,   // % drop from detected high = confirmed
+    'parser2_storage_path'             => '',    // '' = auto-detect
+
     // ── Hybrid simulation/test mode ───────────────────────────────────────────
     // FOR DEMO/DEV ONLY — never enable in production.
     // Allows manual testing of the full hybrid confirmation chain without

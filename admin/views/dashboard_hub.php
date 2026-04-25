@@ -1318,6 +1318,9 @@ ROWS;
             $hybridBreathStop   = $pr['hybrid_breathing_stop'] ?? null;
             $hybridBreathActive = !empty($pr['hybrid_breathing_active']);
             $hybridSimEnabled   = !empty($pr['hybrid_simulation_enabled']);
+            $hybridScore        = isset($pr['hybrid_detection_score'])    ? (int)    $pr['hybrid_detection_score']    : null;
+            $hybridSupport      = isset($pr['hybrid_support_level'])      ? (float)  $pr['hybrid_support_level']      : null;
+            $hybridEvidence     = isset($pr['hybrid_detection_evidence']) ? (string) $pr['hybrid_detection_evidence'] : null;
 
             $simBadge = $hybridSimEnabled
                 ? ' <span style="font-size:9px;color:#f0883e;background:rgba(240,136,62,.15);border-radius:3px;padding:1px 4px;">SIM</span>'
@@ -1327,23 +1330,41 @@ ROWS;
                 ? '<span style="color:#f0883e;font-weight:600;">' . $e($hybridState) . '</span>' . $simBadge
                 : '<span style="color:#8b949e;">idle</span>' . $simBadge;
 
-            // Pattern type + ticks combined in Guard Stop column
+            // Guard/Pattern column: guard price + pattern type + score + support + ticks
             if ($hybridGuardActive && $hybridGuardStop !== null) {
                 $hybridGuardDisplay = '<span style="color:#f0883e;">⬆ ' . number_format((float)$hybridGuardStop, 4) . '</span>';
                 if ($hybridPatternType !== null) {
                     $hybridGuardDisplay .= '<br><span style="font-size:9px;color:#8b949e;">' . $e($hybridPatternType) . '</span>';
                 }
-                $hybridGuardDisplay .= '<br><span style="font-size:9px;color:#8b949e;">ticks: ' . $hybridTicks . '</span>';
-            } elseif ($hybridTicks > 0) {
-                $hybridGuardDisplay = '<span style="color:#8b949e;">ticks: ' . $hybridTicks . '</span>';
+                if ($hybridScore !== null) {
+                    $hybridGuardDisplay .= '<br><span style="font-size:9px;color:#8b949e;">score:' . $hybridScore . '/5</span>';
+                }
+                if ($hybridSupport !== null) {
+                    $hybridGuardDisplay .= '<br><span style="font-size:9px;color:#8b949e;">sup:' . number_format($hybridSupport, 4) . '</span>';
+                }
+                $hybridGuardDisplay .= '<br><span style="font-size:9px;color:#8b949e;">ticks:' . $hybridTicks . '</span>';
+            } elseif ($hybridTicks > 0 || $hybridScore !== null || $hybridPatternType !== null) {
+                $hybridGuardDisplay = '';
+                if ($hybridTicks > 0) {
+                    $hybridGuardDisplay .= '<span style="color:#8b949e;">ticks:' . $hybridTicks . '</span>';
+                }
                 if ($hybridPatternType !== null) {
-                    $hybridGuardDisplay .= '<br><span style="font-size:9px;color:#8b949e;">' . $e($hybridPatternType) . '</span>';
+                    $hybridGuardDisplay .= ($hybridGuardDisplay !== '' ? '<br>' : '') . '<span style="font-size:9px;color:#8b949e;">' . $e($hybridPatternType) . '</span>';
+                }
+                if ($hybridScore !== null) {
+                    $hybridGuardDisplay .= ($hybridGuardDisplay !== '' ? '<br>' : '') . '<span style="font-size:9px;color:#8b949e;">score:' . $hybridScore . '/5</span>';
+                }
+                if ($hybridSupport !== null) {
+                    $hybridGuardDisplay .= ($hybridGuardDisplay !== '' ? '<br>' : '') . '<span style="font-size:9px;color:#8b949e;">sup:' . number_format($hybridSupport, 4) . '</span>';
+                }
+                if ($hybridGuardDisplay === '') {
+                    $hybridGuardDisplay = '<span style="color:#8b949e;">—</span>';
                 }
             } else {
                 $hybridGuardDisplay = '<span style="color:#8b949e;">—</span>';
             }
 
-            // Breathing stop + confirmation result combined
+            // Breathing/Result column: breathing stop + confirmation result + evidence
             if ($hybridBreathActive && $hybridBreathStop !== null) {
                 $hybridBreathDisplay = '<span style="color:#a78bfa;">↩ ' . number_format((float)$hybridBreathStop, 4) . '</span>';
                 if ($hybridConfResult !== null) {
@@ -1351,6 +1372,11 @@ ROWS;
                 }
             } elseif ($hybridConfResult !== null) {
                 $hybridBreathDisplay = '<span style="font-size:9px;color:#8b949e;">' . $e($hybridConfResult) . '</span>';
+                if ($hybridEvidence !== null) {
+                    $hybridBreathDisplay .= '<br><span style="font-size:9px;color:#6e7681;">' . $e($hybridEvidence) . '</span>';
+                }
+            } elseif ($hybridEvidence !== null) {
+                $hybridBreathDisplay = '<span style="font-size:9px;color:#6e7681;">' . $e($hybridEvidence) . '</span>';
             } else {
                 $hybridBreathDisplay = '<span style="color:#8b949e;">—</span>';
             }

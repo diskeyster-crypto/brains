@@ -33,4 +33,21 @@ return [
     'guard_roi_distance'                => 3.0,
     'breathing_roi_distance_min'        => 5.0,
     'breathing_roi_distance_max'        => 10.0,
+
+    // ── Hybrid simulation/test mode ───────────────────────────────────────────
+    // FOR DEMO/DEV ONLY — never enable in production.
+    // Allows manual testing of the full hybrid confirmation chain without
+    // waiting for a real market pattern to appear.
+    //
+    // hybrid_simulation_enabled        — master switch; must be false in prod
+    // hybrid_simulation_pattern_symbol — symbol to simulate (e.g. 'BTCUSDT'); ''=all
+    // hybrid_simulation_force_detect   — inject detected=true into detectExitPattern()
+    // hybrid_simulation_force_confirm  — make confirmExitPattern() return confirmed=true
+    // hybrid_simulation_force_reject   — make confirmExitPattern() return rejected=true
+    //   (force_confirm takes precedence over force_reject if both are true)
+    'hybrid_simulation_enabled'        => false,
+    'hybrid_simulation_pattern_symbol' => '',
+    'hybrid_simulation_force_detect'   => false,
+    'hybrid_simulation_force_confirm'  => false,
+    'hybrid_simulation_force_reject'   => false,
 ];

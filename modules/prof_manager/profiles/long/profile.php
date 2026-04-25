@@ -48,8 +48,11 @@ class LongProfile
      * @param array $position Normalized position (side = 'long')
      * @param int   $nowTs    Current unix timestamp
      * @return array {action, skip_reason, roi, peak_roi, lock_price, lock_active, profile_used, notes,
-     *               hybrid_state, hybrid_pattern_detected, hybrid_confirmation_ticks,
-     *               hybrid_guard_stop, hybrid_guard_active, hybrid_breathing_stop, hybrid_breathing_active}
+     *               hybrid_state, hybrid_pattern_detected, hybrid_pattern_type,
+     *               hybrid_confirmation_ticks, hybrid_confirmation_result,
+     *               hybrid_guard_stop, hybrid_guard_active,
+     *               hybrid_breathing_stop, hybrid_breathing_active,
+     *               hybrid_simulation_enabled}
      */
     public function process(array $position, int $nowTs): array
     {
@@ -85,14 +88,18 @@ class LongProfile
         }
 
         // ── STEP 2–4: hybrid overlay ──────────────────────────────────────────
+        $simEnabled = !empty($this->config['hybrid_simulation_enabled']);
         $hybridMeta = [
             'hybrid_state'              => 'idle',
             'hybrid_pattern_detected'   => false,
+            'hybrid_pattern_type'       => null,
             'hybrid_confirmation_ticks' => 0,
+            'hybrid_confirmation_result'=> null,
             'hybrid_guard_stop'         => null,
             'hybrid_guard_active'       => false,
             'hybrid_breathing_stop'     => null,
             'hybrid_breathing_active'   => false,
+            'hybrid_simulation_enabled' => $simEnabled,
         ];
 
         if (!empty($this->config['hybrid_enabled'])) {
@@ -128,11 +135,14 @@ class LongProfile
             'min_required_distance_pct' => $plan['min_required_distance_pct']  ?? null,
             'hybrid_state'              => $hybridMeta['hybrid_state'],
             'hybrid_pattern_detected'   => $hybridMeta['hybrid_pattern_detected'],
+            'hybrid_pattern_type'       => $hybridMeta['hybrid_pattern_type'],
             'hybrid_confirmation_ticks' => $hybridMeta['hybrid_confirmation_ticks'],
+            'hybrid_confirmation_result'=> $hybridMeta['hybrid_confirmation_result'],
             'hybrid_guard_stop'         => $hybridMeta['hybrid_guard_stop'],
             'hybrid_guard_active'       => $hybridMeta['hybrid_guard_active'],
             'hybrid_breathing_stop'     => $hybridMeta['hybrid_breathing_stop'],
             'hybrid_breathing_active'   => $hybridMeta['hybrid_breathing_active'],
+            'hybrid_simulation_enabled' => $hybridMeta['hybrid_simulation_enabled'],
         ];
     }
 
@@ -294,17 +304,35 @@ class LongProfile
     // =========================================================================
 
     /**
-     * Pattern detection placeholder.
+     * Pattern detection hook.
      *
-     * Returns a stub result — always detected=false at this stage.
-     * Structure is fixed so real detection can be plugged in later.
+     * Normally returns detected=false (stub — real engine not implemented yet).
+     * When hybrid simulation mode is active and the symbol matches, can be forced
+     * to return detected=true via hybrid_simulation_force_detect config.
      *
-     * @param array $position     Normalized position data
+     * @param array $position      Normalized position data
      * @param array $positionState Current per-symbol state
      * @return array{detected: bool, pattern_type: string|null, confidence: float}
      */
     private function detectExitPattern(array $position, array $positionState): array
     {
+        $simEnabled = !empty($this->config['hybrid_simulation_enabled']);
+
+        if ($simEnabled && !empty($this->config['hybrid_simulation_force_detect'])) {
+            $simSymbol = strtoupper(trim((string) ($this->config['hybrid_simulation_pattern_symbol'] ?? '')));
+            $posSymbol = strtoupper(trim((string) ($position['symbol'] ?? '')));
+
+            if ($simSymbol === '' || $simSymbol === $posSymbol) {
+                // [SIMULATION] forced detection — demo/dev only
+                return [
+                    'detected'     => true,
+                    'pattern_type' => 'simulated_exit_pattern',
+                    'confidence'   => 1.0,
+                ];
+            }
+        }
+
+        // Real detection stub — always false until pattern engine is implemented
         return [
             'detected'     => false,
             'pattern_type' => null,
@@ -313,11 +341,67 @@ class LongProfile
     }
 
     /**
+     * Exit pattern confirmation hook.
+     *
+     * Returns whether the currently-detected pattern has been confirmed or rejected.
+     * Minimum tick count is NOT sufficient on its own — this method must return
+     * confirmed=true for the position to be closed.
+     *
+     * Simulation overrides (demo/dev only):
+     *   hybrid_simulation_force_confirm=true → confirmed=true
+     *   hybrid_simulation_force_reject=true  → rejected=true
+     *   (force_confirm takes precedence if both are set)
+     *
+     * Normal default: confirmed=false, rejected=false (keep waiting).
+     *
+     * @param array $position      Normalized position data
+     * @param array $positionState Current per-symbol state
+     * @return array{confirmed: bool, rejected: bool, reason: string|null}
+     */
+    private function confirmExitPattern(array $position, array $positionState): array
+    {
+        $simEnabled = !empty($this->config['hybrid_simulation_enabled']);
+
+        if ($simEnabled) {
+            $simSymbol = strtoupper(trim((string) ($this->config['hybrid_simulation_pattern_symbol'] ?? '')));
+            $posSymbol = strtoupper(trim((string) ($position['symbol'] ?? '')));
+            $symbolMatch = ($simSymbol === '' || $simSymbol === $posSymbol);
+
+            if ($symbolMatch && !empty($this->config['hybrid_simulation_force_confirm'])) {
+                // [SIMULATION] forced confirmation — demo/dev only
+                return [
+                    'confirmed' => true,
+                    'rejected'  => false,
+                    'reason'    => 'simulated_confirm',
+                ];
+            }
+
+            if ($symbolMatch && !empty($this->config['hybrid_simulation_force_reject'])) {
+                // [SIMULATION] forced rejection — demo/dev only
+                return [
+                    'confirmed' => false,
+                    'rejected'  => true,
+                    'reason'    => 'simulated_reject',
+                ];
+            }
+        }
+
+        // Real confirmation stub — always pending until confirmation engine implemented
+        return [
+            'confirmed' => false,
+            'rejected'  => false,
+            'reason'    => null,
+        ];
+    }
+
+    /**
      * Apply hybrid overlay on top of the legacy plan.
      *
      * STEP 2: On fresh pattern detection (hybrid_state=idle) → activate guard stop.
-     * STEP 3: In waiting_confirmation → increment tick counter; confirm or reject.
-     * STEP 4: On rejection → restore breathing trailing (respecting legacy lock floor).
+     * STEP 3: In waiting_confirmation → increment tick counter; resolve via confirmExitPattern().
+     *         NOTE: confirmation_ticks is a minimum observation gate only.
+     *         Actual confirmation requires confirmExitPattern().confirmed = true.
+     * STEP 4: On rejection or window expiry → restore breathing trailing (legacy lock is floor).
      *
      * @param array $position      Normalized position
      * @param array $positionState Per-symbol mutable state (will be updated with hybrid fields)
@@ -335,32 +419,39 @@ class LongProfile
     ): array {
         $currentPrice = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
         $leverage     = (float) ($position['leverage'] ?? 0.0);
+        $simEnabled   = !empty($this->config['hybrid_simulation_enabled']);
 
-        $hybridState        = (string)  ($positionState['hybrid_state']         ?? 'idle');
+        $hybridState        = (string) ($positionState['hybrid_state']         ?? 'idle');
         $patternDetectedAt  = isset($positionState['pattern_detected_at'])
             ? (int) $positionState['pattern_detected_at']
             : null;
-        $confirmationTicks  = (int)    ($positionState['confirmation_ticks']    ?? 0);
+        $confirmationTicks  = (int)   ($positionState['confirmation_ticks']    ?? 0);
         $guardStopPrice     = isset($positionState['guard_stop_price'])
             ? (float) $positionState['guard_stop_price']
             : null;
         $lastBreathingStop  = isset($positionState['last_breathing_stop'])
             ? (float) $positionState['last_breathing_stop']
             : null;
+        $lastPatternType    = isset($positionState['pattern_type'])
+            ? (string) $positionState['pattern_type']
+            : null;
 
-        $patternResult = $this->detectExitPattern($position, $positionState);
-        $patternDetected = (bool) ($patternResult['detected'] ?? false);
+        $patternResult   = $this->detectExitPattern($position, $positionState);
+        $patternDetected = (bool) ($patternResult['detected']     ?? false);
+        $patternType     = $patternResult['pattern_type'] ?? null;
 
-        $hybridAction      = null;
-        $guardActive       = false;
-        $breathingActive   = false;
-        $newBreathingStop  = null;
+        $hybridAction       = null;
+        $guardActive        = false;
+        $breathingActive    = false;
+        $newBreathingStop   = null;
+        $confirmationResult = null;
 
         // ── STEP 2: fresh pattern detection while idle ────────────────────────
         if ($patternDetected && $hybridState === 'idle') {
             $hybridState       = 'waiting_confirmation';
             $patternDetectedAt = $nowTs;
             $confirmationTicks = 0;
+            $lastPatternType   = $patternType;
 
             $guardOffset = ($currentPrice > 0.0 && $leverage > 0.0)
                 ? $this->riskMath->roiDistanceToPriceOffset(
@@ -379,28 +470,43 @@ class LongProfile
             $confirmationTicks++;
             $guardActive = ($guardStopPrice !== null && $guardStopPrice > 0.0);
 
-            $minTicks      = (int)   ($this->config['pattern_confirmation_min_ticks']  ?? 2);
-            $windowSec     = (int)   ($this->config['pattern_confirmation_window_sec'] ?? 300);
+            $minTicks      = (int)  ($this->config['pattern_confirmation_min_ticks']  ?? 2);
+            $windowSec     = (int)  ($this->config['pattern_confirmation_window_sec'] ?? 300);
             $windowExpired = ($patternDetectedAt !== null)
                 && (($nowTs - $patternDetectedAt) > $windowSec);
-            $confirmed     = ($confirmationTicks >= $minTicks) && !$windowExpired;
 
             if ($confirmationTicks < $minTicks && !$windowExpired) {
-                // Still gathering ticks — hold
+                // Still in minimum observation window — do nothing yet
                 $hybridAction = 'waiting_confirmation';
-            } elseif ($confirmed) {
-                // Pattern confirmed — plan close (no execution yet)
-                $hybridAction      = 'hybrid_close_confirmed';
-                $hybridState       = 'idle';
-                $confirmationTicks = 0;
-                $guardStopPrice    = null;
+            } elseif ($windowExpired) {
+                // Window expired without confirmation
+                $confirmationResult = 'window_expired';
+                $hybridAction       = 'hybrid_rejected';
+                $hybridState        = 'idle';
+                $guardStopPrice     = null;
             } else {
-                // ── STEP 4: rejection recovery ────────────────────────────────
-                $hybridAction = 'hybrid_rejected';
-                $hybridState  = 'idle';
-                $guardStopPrice = null;
+                // Min ticks met — ask confirmExitPattern() for actual decision
+                $confirmResult = $this->confirmExitPattern($position, $positionState);
 
-                // Breathing trailing: stop = current - (breathing_distance / leverage)
+                if ($confirmResult['confirmed']) {
+                    $confirmationResult = $confirmResult['reason'] ?? 'confirmed';
+                    $hybridAction       = 'hybrid_close_confirmed';
+                    $hybridState        = 'idle';
+                    $confirmationTicks  = 0;
+                    $guardStopPrice     = null;
+                } elseif ($confirmResult['rejected']) {
+                    $confirmationResult = $confirmResult['reason'] ?? 'rejected';
+                    $hybridAction       = 'hybrid_rejected';
+                    $hybridState        = 'idle';
+                    $guardStopPrice     = null;
+                } else {
+                    // Still pending — keep waiting
+                    $hybridAction = 'waiting_confirmation';
+                }
+            }
+
+            // ── STEP 4: rejection recovery ────────────────────────────────────
+            if ($hybridAction === 'hybrid_rejected') {
                 $breathingRoiDist = (float) ($this->config['breathing_roi_distance_min'] ?? 5.0);
                 $breathingOffset  = ($currentPrice > 0.0 && $leverage > 0.0)
                     ? $this->riskMath->roiDistanceToPriceOffset($currentPrice, $breathingRoiDist, $leverage)
@@ -413,7 +519,7 @@ class LongProfile
                     $newBreathingStop = ($legacyLockPrice > 0.0)
                         ? max($legacyLockPrice, $rawBreathingStop)
                         : $rawBreathingStop;
-                    $breathingActive  = ($newBreathingStop > 0.0);
+                    $breathingActive   = ($newBreathingStop > 0.0);
                     $lastBreathingStop = $newBreathingStop;
                 }
             }
@@ -422,6 +528,7 @@ class LongProfile
         // ── Persist hybrid fields back into positionState ─────────────────────
         $positionState['hybrid_state']        = $hybridState;
         $positionState['pattern_detected_at'] = $patternDetectedAt;
+        $positionState['pattern_type']        = $lastPatternType;
         $positionState['confirmation_ticks']  = $confirmationTicks;
         $positionState['guard_stop_price']    = $guardStopPrice;
         $positionState['last_breathing_stop'] = $lastBreathingStop;
@@ -433,13 +540,16 @@ class LongProfile
         }
 
         $hybridMeta = [
-            'hybrid_state'              => $hybridState,
-            'hybrid_pattern_detected'   => $patternDetected,
-            'hybrid_confirmation_ticks' => $confirmationTicks,
-            'hybrid_guard_stop'         => ($guardStopPrice !== null && $guardStopPrice > 0.0) ? $guardStopPrice : null,
-            'hybrid_guard_active'       => $guardActive,
-            'hybrid_breathing_stop'     => ($newBreathingStop !== null && $newBreathingStop > 0.0) ? $newBreathingStop : null,
-            'hybrid_breathing_active'   => $breathingActive,
+            'hybrid_state'               => $hybridState,
+            'hybrid_pattern_detected'    => $patternDetected,
+            'hybrid_pattern_type'        => $lastPatternType ?? $patternType,
+            'hybrid_confirmation_ticks'  => $confirmationTicks,
+            'hybrid_confirmation_result' => $confirmationResult,
+            'hybrid_guard_stop'          => ($guardStopPrice !== null && $guardStopPrice > 0.0) ? $guardStopPrice : null,
+            'hybrid_guard_active'        => $guardActive,
+            'hybrid_breathing_stop'      => ($newBreathingStop !== null && $newBreathingStop > 0.0) ? $newBreathingStop : null,
+            'hybrid_breathing_active'    => $breathingActive,
+            'hybrid_simulation_enabled'  => $simEnabled,
         ];
 
         return [$plan, $positionState, $hybridMeta];

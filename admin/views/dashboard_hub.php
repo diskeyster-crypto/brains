@@ -1308,28 +1308,49 @@ ROWS;
                 : '<span style="color:#8b949e;">' . $lockPrice . '</span>';
 
             // ── Hybrid fields ─────────────────────────────────────────────────
-            $hybridState       = (string) ($pr['hybrid_state']              ?? 'idle');
-            $hybridPatDetected = !empty($pr['hybrid_pattern_detected']);
-            $hybridTicks       = (int)   ($pr['hybrid_confirmation_ticks']  ?? 0);
-            $hybridGuardStop   = $pr['hybrid_guard_stop']    ?? null;
-            $hybridGuardActive = !empty($pr['hybrid_guard_active']);
-            $hybridBreathStop  = $pr['hybrid_breathing_stop'] ?? null;
-            $hybridBreathActive= !empty($pr['hybrid_breathing_active']);
+            $hybridState        = (string) ($pr['hybrid_state']               ?? 'idle');
+            $hybridPatDetected  = !empty($pr['hybrid_pattern_detected']);
+            $hybridPatternType  = isset($pr['hybrid_pattern_type']) ? (string) $pr['hybrid_pattern_type'] : null;
+            $hybridTicks        = (int)   ($pr['hybrid_confirmation_ticks']   ?? 0);
+            $hybridConfResult   = isset($pr['hybrid_confirmation_result']) ? (string) $pr['hybrid_confirmation_result'] : null;
+            $hybridGuardStop    = $pr['hybrid_guard_stop']    ?? null;
+            $hybridGuardActive  = !empty($pr['hybrid_guard_active']);
+            $hybridBreathStop   = $pr['hybrid_breathing_stop'] ?? null;
+            $hybridBreathActive = !empty($pr['hybrid_breathing_active']);
+            $hybridSimEnabled   = !empty($pr['hybrid_simulation_enabled']);
+
+            $simBadge = $hybridSimEnabled
+                ? ' <span style="font-size:9px;color:#f0883e;background:rgba(240,136,62,.15);border-radius:3px;padding:1px 4px;">SIM</span>'
+                : '';
 
             $hybridStateDisplay = $hybridState !== 'idle'
-                ? '<span style="color:#f0883e;font-weight:600;">' . $e($hybridState) . '</span>'
-                : '<span style="color:#8b949e;">idle</span>';
+                ? '<span style="color:#f0883e;font-weight:600;">' . $e($hybridState) . '</span>' . $simBadge
+                : '<span style="color:#8b949e;">idle</span>' . $simBadge;
 
+            // Pattern type + ticks combined in Guard Stop column
             if ($hybridGuardActive && $hybridGuardStop !== null) {
                 $hybridGuardDisplay = '<span style="color:#f0883e;">⬆ ' . number_format((float)$hybridGuardStop, 4) . '</span>';
+                if ($hybridPatternType !== null) {
+                    $hybridGuardDisplay .= '<br><span style="font-size:9px;color:#8b949e;">' . $e($hybridPatternType) . '</span>';
+                }
+                $hybridGuardDisplay .= '<br><span style="font-size:9px;color:#8b949e;">ticks: ' . $hybridTicks . '</span>';
             } elseif ($hybridTicks > 0) {
                 $hybridGuardDisplay = '<span style="color:#8b949e;">ticks: ' . $hybridTicks . '</span>';
+                if ($hybridPatternType !== null) {
+                    $hybridGuardDisplay .= '<br><span style="font-size:9px;color:#8b949e;">' . $e($hybridPatternType) . '</span>';
+                }
             } else {
                 $hybridGuardDisplay = '<span style="color:#8b949e;">—</span>';
             }
 
+            // Breathing stop + confirmation result combined
             if ($hybridBreathActive && $hybridBreathStop !== null) {
                 $hybridBreathDisplay = '<span style="color:#a78bfa;">↩ ' . number_format((float)$hybridBreathStop, 4) . '</span>';
+                if ($hybridConfResult !== null) {
+                    $hybridBreathDisplay .= '<br><span style="font-size:9px;color:#8b949e;">' . $e($hybridConfResult) . '</span>';
+                }
+            } elseif ($hybridConfResult !== null) {
+                $hybridBreathDisplay = '<span style="font-size:9px;color:#8b949e;">' . $e($hybridConfResult) . '</span>';
             } else {
                 $hybridBreathDisplay = '<span style="color:#8b949e;">—</span>';
             }
@@ -1374,8 +1395,8 @@ ROWS;
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Reason</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Distance</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Hybrid</th>
-            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Guard Stop</th>
-            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Breathing</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Guard / Pattern</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Breathing / Result</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Price Source</th>
           </tr>
         </thead>

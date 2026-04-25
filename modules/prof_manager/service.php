@@ -241,13 +241,16 @@ final class ProfManagerService
                     'distance_pct'              => $profileResult['distance_pct']              ?? null,
                     'min_required_distance_pct' => $profileResult['min_required_distance_pct'] ?? null,
                     'price_source'              => $pos['_price_source'] ?? 'unknown',
-                    'hybrid_state'              => $profileResult['hybrid_state']              ?? 'idle',
-                    'hybrid_pattern_detected'   => $profileResult['hybrid_pattern_detected']   ?? false,
-                    'hybrid_confirmation_ticks' => $profileResult['hybrid_confirmation_ticks'] ?? 0,
-                    'hybrid_guard_stop'         => $profileResult['hybrid_guard_stop']         ?? null,
-                    'hybrid_guard_active'       => $profileResult['hybrid_guard_active']       ?? false,
-                    'hybrid_breathing_stop'     => $profileResult['hybrid_breathing_stop']     ?? null,
-                    'hybrid_breathing_active'   => $profileResult['hybrid_breathing_active']   ?? false,
+                    'hybrid_state'               => $profileResult['hybrid_state']               ?? 'idle',
+                    'hybrid_pattern_detected'    => $profileResult['hybrid_pattern_detected']    ?? false,
+                    'hybrid_pattern_type'        => $profileResult['hybrid_pattern_type']        ?? null,
+                    'hybrid_confirmation_ticks'  => $profileResult['hybrid_confirmation_ticks']  ?? 0,
+                    'hybrid_confirmation_result' => $profileResult['hybrid_confirmation_result'] ?? null,
+                    'hybrid_guard_stop'          => $profileResult['hybrid_guard_stop']          ?? null,
+                    'hybrid_guard_active'        => $profileResult['hybrid_guard_active']        ?? false,
+                    'hybrid_breathing_stop'      => $profileResult['hybrid_breathing_stop']      ?? null,
+                    'hybrid_breathing_active'    => $profileResult['hybrid_breathing_active']    ?? false,
+                    'hybrid_simulation_enabled'  => $profileResult['hybrid_simulation_enabled']  ?? false,
                 ];
             }
 

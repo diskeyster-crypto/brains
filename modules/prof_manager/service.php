@@ -208,6 +208,42 @@ final class ProfManagerService
                     ];
                 }
 
+                // ── PM Close Execution ────────────────────────────────────────
+                $pmCloseActions = ['hybrid_close_confirmed', 'would_close_on_lock_touch'];
+                $pmAction       = $profileResult['action'] ?? 'skip';
+                $closeAttemptResult = null;
+
+                if (in_array($pmAction, $pmCloseActions, true)) {
+                    $posMode   = (string)($pos['mode'] ?? $pos['execution_mode'] ?? 'demo');
+                    $posSymbol = (string)($pos['symbol'] ?? '');
+                    $posSide   = (string)($pos['side']   ?? '');
+                    $posSize   = (float)($pos['size']    ?? 0.0);
+                    $closeReasonValue = ($pmAction === 'hybrid_close_confirmed')
+                        ? 'hybrid_confirmed'
+                        : 'lock_touch';
+
+                    if ($posMode === 'demo') {
+                        $closeAttemptResult = $this->closeDemoPosition($posSymbol, $posSide, $posSize);
+                        $closeAttemptResult['close_reason'] = $closeReasonValue;
+                        $profileResult['action'] = $closeAttemptResult['close_ok']
+                            ? 'demo_close_submitted'
+                            : 'demo_close_failed';
+                    } else {
+                        // live mode — do NOT close; safety guard
+                        $closeAttemptResult = [
+                            'close_attempted'    => false,
+                            'close_ok'           => false,
+                            'close_ret_code'     => null,
+                            'close_ret_msg'      => null,
+                            'close_reason'       => $closeReasonValue,
+                            'close_source'       => 'profit_manager',
+                            'close_order_id'     => null,
+                            'close_error_reason' => 'live_close_disabled_for_safety',
+                        ];
+                        $profileResult['action'] = 'live_close_pending';
+                    }
+                }
+
                 // Track actions summary
                 $action = $profileResult['action'] ?? 'skip';
                 $actionsSummary[$action] = ($actionsSummary[$action] ?? 0) + 1;
@@ -255,6 +291,15 @@ final class ProfManagerService
                     'hybrid_support_level'       => $profileResult['hybrid_support_level']       ?? null,
                     'hybrid_detection_evidence'  => $profileResult['hybrid_detection_evidence']  ?? null,
                     'hybrid_detection_reason'    => $profileResult['hybrid_detection_reason']    ?? null,
+                    // Close execution output (null when no close was attempted this tick)
+                    'close_attempted'            => $closeAttemptResult['close_attempted']    ?? null,
+                    'close_ok'                   => $closeAttemptResult['close_ok']           ?? null,
+                    'close_ret_code'             => $closeAttemptResult['close_ret_code']     ?? null,
+                    'close_ret_msg'              => $closeAttemptResult['close_ret_msg']      ?? null,
+                    'close_reason'               => $closeAttemptResult['close_reason']       ?? null,
+                    'close_source'               => $closeAttemptResult['close_source']       ?? null,
+                    'close_order_id'             => $closeAttemptResult['close_order_id']     ?? null,
+                    'close_error_reason'         => $closeAttemptResult['close_error_reason'] ?? null,
                 ];
             }
 
@@ -264,7 +309,8 @@ final class ProfManagerService
             $validCount     = $positionsTotal - $invalidCount;
 
             $executedCount = ($actionsSummary['would_set_profit_lock']  ?? 0)
-                           + ($actionsSummary['would_move_profit_lock'] ?? 0);
+                           + ($actionsSummary['would_move_profit_lock'] ?? 0)
+                           + ($actionsSummary['demo_close_submitted']   ?? 0);
             $skippedCount  = array_sum($skipSummary);
 
             // ── Clean stale long profile state/locks ──────────────────────────
@@ -453,5 +499,199 @@ final class ProfManagerService
             // return whatever we have
         }
         return $cfg;
+    }
+
+    // =========================================================================
+    // PM Close Execution Helpers
+    // =========================================================================
+
+    /**
+     * Load bot module config (base + active overrides).
+     * Used to obtain Bybit Demo credentials for PM-initiated close orders.
+     */
+    private function loadBotConfig(): array
+    {
+        $botBase   = $this->repoRoot . '/modules/bot/config/base.php';
+        $botActive = $this->repoRoot . '/modules/bot/config/active.php';
+        $cfg = [];
+        try {
+            if (is_file($botBase)) {
+                $base = @require $botBase;
+                if (is_array($base)) {
+                    $cfg = $base;
+                }
+            }
+            if (is_file($botActive)) {
+                $active = @require $botActive;
+                if (is_array($active)) {
+                    $cfg = array_merge($cfg, $active);
+                }
+            }
+        } catch (\Throwable) {
+            // return whatever we have
+        }
+        return $cfg;
+    }
+
+    /**
+     * Create a Bybit Demo gateway client using credentials from the bot config.
+     * Returns null when credentials are absent or client creation fails.
+     */
+    private function getDemoGateway(array $botConfig): ?\Core\Gateway\Bybit
+    {
+        $apiKey    = (string)($botConfig['demo_api_key']      ?? '');
+        $apiSecret = (string)($botConfig['demo_api_secret']   ?? '');
+        $baseUrl   = (string)($botConfig['demo_api_base_url'] ?? 'https://api-demo.bybit.com');
+
+        if ($apiKey === '' || $apiSecret === '') {
+            return null;
+        }
+
+        try {
+            $gw = \Core\Gateway\Bybit::client('bybit_demo_pm');
+            $gw->setCredentials($apiKey, $apiSecret);
+            $gw->setBaseUrl($baseUrl);
+            return $gw;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Check whether a specific symbol+side position still has non-zero size on Bybit Demo.
+     * Returns false on API error (fail-safe: prevents spurious closes).
+     */
+    private function fetchDemoPositionExists(\Core\Gateway\Bybit $gw, string $symbol, string $side): bool
+    {
+        try {
+            $resp = $gw->request('/v5/position/list', [
+                'category' => 'linear',
+                'symbol'   => $symbol,
+            ], true);
+
+            if (!($resp['success'] ?? false) || ($resp['ret_code'] ?? -1) !== 0) {
+                return false;
+            }
+
+            $bybitSideCheck = ($side === 'long') ? 'Buy' : 'Sell';
+            foreach ((array)($resp['result']['list'] ?? []) as $pos) {
+                if (
+                    (string)($pos['symbol'] ?? '') === $symbol &&
+                    (string)($pos['side']   ?? '') === $bybitSideCheck &&
+                    (float)($pos['size']    ?? 0)  > 0
+                ) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Submit a demo-only reduce-only Market close order on Bybit Demo.
+     *
+     * Safety checks (performed before order submission):
+     *   - symbol must be non-empty
+     *   - side must be 'long' or 'short'
+     *   - size must be > 0
+     *   - position must still exist on Bybit Demo (fetched live)
+     *
+     * For long positions: Bybit side = Sell
+     * For short positions: Bybit side = Buy
+     *
+     * @param string $symbol Position symbol (e.g. 'BTCUSDT')
+     * @param string $side   Canonical side: 'long' or 'short'
+     * @param float  $size   Position size in base currency (contracts)
+     * @return array{
+     *   close_attempted: bool,
+     *   close_ok: bool,
+     *   close_ret_code: int|null,
+     *   close_ret_msg: string|null,
+     *   close_source: string,
+     *   close_order_id: string|null,
+     *   close_error_reason: string|null
+     * }
+     */
+    private function closeDemoPosition(string $symbol, string $side, float $size): array
+    {
+        $result = [
+            'close_attempted'    => false,
+            'close_ok'           => false,
+            'close_ret_code'     => null,
+            'close_ret_msg'      => null,
+            'close_source'       => 'profit_manager',
+            'close_order_id'     => null,
+            'close_error_reason' => null,
+        ];
+
+        // Safety: symbol
+        if ($symbol === '') {
+            $result['close_error_reason'] = 'symbol_missing';
+            return $result;
+        }
+
+        // Safety: side
+        if (!in_array($side, ['long', 'short'], true)) {
+            $result['close_error_reason'] = 'side_invalid';
+            return $result;
+        }
+
+        // Safety: size
+        if ($size <= 0.0) {
+            $result['close_error_reason'] = 'size_zero_or_negative';
+            return $result;
+        }
+
+        // Obtain gateway
+        $botConfig = $this->loadBotConfig();
+        $gw        = $this->getDemoGateway($botConfig);
+        if ($gw === null) {
+            $result['close_error_reason'] = 'demo_credentials_missing';
+            return $result;
+        }
+
+        // Safety: verify position still exists before sending close order
+        if (!$this->fetchDemoPositionExists($gw, $symbol, $side)) {
+            $result['close_error_reason'] = 'position_already_gone';
+            return $result;
+        }
+
+        // Build close order
+        $bybitSide = ($side === 'long') ? 'Sell' : 'Buy';
+        $qtyStr    = rtrim(rtrim(number_format($size, 8, '.', ''), '0'), '.');
+
+        $result['close_attempted'] = true;
+
+        try {
+            $orderResp = $gw->request('/v5/order/create', [
+                'category'    => 'linear',
+                'symbol'      => $symbol,
+                'side'        => $bybitSide,
+                'orderType'   => 'Market',
+                'qty'         => $qtyStr,
+                'reduceOnly'  => true,
+                'positionIdx' => 0,
+            ], true);
+        } catch (\Throwable $ex) {
+            $result['close_error_reason'] = 'order_submit_exception';
+            $result['close_ret_msg']      = $ex->getMessage();
+            return $result;
+        }
+
+        $retCode = (int)($orderResp['ret_code'] ?? -1);
+        $retMsg  = (string)($orderResp['ret_msg'] ?? '');
+        $result['close_ret_code'] = $retCode;
+        $result['close_ret_msg']  = $retMsg;
+
+        if (($orderResp['success'] ?? false) && $retCode === 0) {
+            $result['close_ok']       = true;
+            $result['close_order_id'] = $orderResp['result']['orderId'] ?? null;
+        } else {
+            $result['close_error_reason'] = 'order_rejected';
+        }
+
+        return $result;
     }
 }

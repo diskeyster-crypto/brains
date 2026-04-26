@@ -1324,6 +1324,7 @@ ROWS;
             $hybridReason       = isset($pr['hybrid_detection_reason'])   ? (string) $pr['hybrid_detection_reason']   : null;
             $hybridPriceSrc     = (string) ($pr['hybrid_price_source'] ?? 'none');
             $hybridPricePts     = (int)    ($pr['hybrid_price_points'] ?? 0);
+            $hybridMinCloseRoi  = isset($pr['hybrid_min_close_roi'])    ? (float)  $pr['hybrid_min_close_roi']   : null;
 
             $simBadge = $hybridSimEnabled
                 ? ' <span style="font-size:9px;color:#f0883e;background:rgba(240,136,62,.15);border-radius:3px;padding:1px 4px;">SIM</span>'
@@ -1365,7 +1366,13 @@ ROWS;
                 }
             } elseif ($hybridReason !== null) {
                 // Show detector reason (e.g. no_candle_data, insufficient_window_data) when idle with no pattern
-                $hybridGuardDisplay = '<span style="font-size:9px;color:#6e7681;">' . $e($hybridReason) . '</span>';
+                $hybridReasonLabel = match ($hybridReason) {
+                    'below_hybrid_min_close_roi' => 'ROI ниже минимума Hybrid close'
+                        . ($hybridMinCloseRoi !== null ? ' (' . $hybridMinCloseRoi . '%)' : ''),
+                    'below_init_roi_hybrid_disabled' => 'ROI ниже init_roi',
+                    default => $hybridReason,
+                };
+                $hybridGuardDisplay = '<span style="font-size:9px;color:#6e7681;">' . $e($hybridReasonLabel) . '</span>';
             } else {
                 $hybridGuardDisplay = '<span style="color:#8b949e;">—</span>';
             }

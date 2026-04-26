@@ -33,6 +33,11 @@ return [
     'guard_roi_distance'                => 3.0,
     'breathing_roi_distance_min'        => 5.0,
     'breathing_roi_distance_max'        => 10.0,
+    // Minimum ROI required before hybrid pattern detection / confirmation / close
+    // is allowed.  Prevents premature exits at low profit (e.g. +2-3% ROI).
+    // Independent of init_roi: init_roi gates the full PM lifecycle; this gate
+    // is specific to the hybrid exit layer only.
+    'hybrid_min_close_roi'              => 5.0,
 
     // ── Real exit pattern detector ───────────────────────────────────────────
     // Parameters for the long_structure_weak_high detector.

@@ -173,6 +173,7 @@ class LongProfile
             'hybrid_detection_reason'    => $hybridMeta['hybrid_detection_reason'],
             'hybrid_price_source'        => $hybridMeta['hybrid_price_source']     ?? 'none',
             'hybrid_price_points'        => $hybridMeta['hybrid_price_points']     ?? 0,
+            'hybrid_min_close_roi'       => (float) ($this->config['hybrid_min_close_roi'] ?? 5.0),
         ];
     }
 
@@ -728,6 +729,48 @@ class LongProfile
                     'hybrid_support_level'       => null,
                     'hybrid_detection_evidence'  => null,
                     'hybrid_detection_reason'    => 'below_init_roi_hybrid_disabled',
+                    'hybrid_price_source'        => 'none',
+                    'hybrid_price_points'        => 0,
+                ],
+            ];
+        }
+
+        // ── Hybrid minimum close ROI gate ─────────────────────────────────────
+        // Hybrid pattern detection, guard activation, confirmation and close are
+        // blocked while ROI is below hybrid_min_close_roi.  If a position is
+        // already in waiting_confirmation it is reset to idle to prevent a stale
+        // close firing the next time this gate passes.
+        $hybridMinCloseRoi = (float) ($this->config['hybrid_min_close_roi'] ?? 5.0);
+
+        if ($currentRoi < $hybridMinCloseRoi) {
+            $existingHybridState = (string) ($positionState['hybrid_state'] ?? 'idle');
+
+            // Reset stale waiting_confirmation so it cannot fire when ROI later rises
+            $positionState['hybrid_state']        = 'idle';
+            $positionState['pattern_detected_at'] = null;
+            $positionState['confirmation_ticks']  = 0;
+            $positionState['guard_stop_price']    = null;
+            $positionState['pattern_type']        = null;
+            $positionState['detection_reason']    = 'below_hybrid_min_close_roi';
+
+            return [
+                $plan,
+                $positionState,
+                [
+                    'hybrid_state'               => 'idle',
+                    'hybrid_pattern_detected'    => false,
+                    'hybrid_pattern_type'        => null,
+                    'hybrid_confirmation_ticks'  => 0,
+                    'hybrid_confirmation_result' => null,
+                    'hybrid_guard_stop'          => null,
+                    'hybrid_guard_active'        => false,
+                    'hybrid_breathing_stop'      => null,
+                    'hybrid_breathing_active'    => false,
+                    'hybrid_simulation_enabled'  => $simEnabled,
+                    'hybrid_detection_score'     => null,
+                    'hybrid_support_level'       => null,
+                    'hybrid_detection_evidence'  => null,
+                    'hybrid_detection_reason'    => 'below_hybrid_min_close_roi',
                     'hybrid_price_source'        => 'none',
                     'hybrid_price_points'        => 0,
                 ],

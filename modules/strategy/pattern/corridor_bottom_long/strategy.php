@@ -381,41 +381,22 @@ final class CorridorBottomLongStrategy
         $stats['handoff_enabled'] = $handoffEnabled;
 
         // Flood-protection limits
-        $maxHandoffPerRun = max(1, (int)($config['max_handoff_per_run'] ?? 3));
-        $maxActiveSignals = max(1, (int)($config['max_active_signals']  ?? 10));
+        $maxHandoffPerRun = max(1, (int)($config['max_handoff_per_run'] ?? 1));
 
         // Handoff counters
-        $handoffCandidatesTotal   = 0;
-        $handoffReady             = 0;
-        $handoffRejectedInvalid   = 0;
-        $handoffRejectReasons     = [];
+        $handoffCandidatesTotal    = 0;
+        $handoffReady              = 0;
+        $handoffRejectedInvalid    = 0;
+        $handoffRejectReasons      = [];
         $handoffLimitedByMaxPerRun = 0;
-        $handoffLimitedByActiveCap = 0;
 
         if ($handoffEnabled) {
             $handoffQueue = [];
 
-            // Cap the eligible pool by max_active_signals (over whole signals.json)
-            $activeCapped = count($signals) > $maxActiveSignals;
-            if ($activeCapped) {
-                // Use only the most recent max_active_signals entries
-                $eligibleSignals = array_slice($signals, -$maxActiveSignals);
-                $handoffLimitedByActiveCap = count($signals) - $maxActiveSignals;
-            } else {
-                $eligibleSignals = $signals;
-            }
-            $eligibleById = [];
-            foreach ($eligibleSignals as $s) {
-                $sid = (string)($s['signal_id'] ?? '');
-                if ($sid !== '') {
-                    $eligibleById[$sid] = true;
-                }
-            }
-
             foreach ($currentRunSignals as $sig) {
                 $handoffCandidatesTotal++;
 
-                // Validate required bot-ready fields (Task 2)
+                // Validate required bot-ready fields
                 $validationError = $this->validateSignalForHandoff($sig);
                 if ($validationError !== null) {
                     $handoffRejectedInvalid++;
@@ -423,14 +404,7 @@ final class CorridorBottomLongStrategy
                     continue;
                 }
 
-                // Check active cap eligibility
-                $sid = (string)($sig['signal_id'] ?? '');
-                if (!isset($eligibleById[$sid])) {
-                    $handoffLimitedByActiveCap++;
-                    continue;
-                }
-
-                // Per-run limit (Task 3)
+                // Per-run limit
                 if ($handoffReady >= $maxHandoffPerRun) {
                     $handoffLimitedByMaxPerRun++;
                     continue;
@@ -451,12 +425,11 @@ final class CorridorBottomLongStrategy
             $this->writeJson('storage/bot_handoff_queue.json', []);
         }
 
-        $stats['handoff_candidates_total']    = $handoffCandidatesTotal;
-        $stats['handoff_ready']               = $handoffReady;
-        $stats['handoff_rejected_invalid']    = $handoffRejectedInvalid;
-        $stats['handoff_reject_reasons']      = $handoffRejectReasons;
+        $stats['handoff_candidates_total']       = $handoffCandidatesTotal;
+        $stats['handoff_ready']                  = $handoffReady;
+        $stats['handoff_rejected_invalid']       = $handoffRejectedInvalid;
+        $stats['handoff_reject_reasons']         = $handoffRejectReasons;
         $stats['handoff_limited_by_max_per_run'] = $handoffLimitedByMaxPerRun;
-        $stats['handoff_limited_by_active_cap']  = $handoffLimitedByActiveCap;
 
         // ── 8. Last-run diagnostics ───────────────────────────────────────────
         $stats['finished_at'] = date('c');
@@ -492,8 +465,7 @@ final class CorridorBottomLongStrategy
      */
     private function buildUniverse(array $config): array
     {
-        $excluded = (array)($config['excluded_symbols']  ?? []);
-        $maxCount = (int)($config['max_symbols_per_run'] ?? 50);
+        $excluded = (array)($config['excluded_symbols'] ?? []);
 
         if ((string)($config['universe_mode'] ?? 'all') === 'manual_list') {
             $symbols = (array)($config['allowed_symbols'] ?? []);
@@ -523,10 +495,6 @@ final class CorridorBottomLongStrategy
         $symbols = array_values(
             array_filter($symbols, fn($s) => !in_array($s, $excluded, true))
         );
-
-        if ($maxCount > 0 && count($symbols) > $maxCount) {
-            $symbols = array_slice($symbols, 0, $maxCount);
-        }
 
         return $symbols;
     }

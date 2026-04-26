@@ -2972,11 +2972,20 @@ final class BotService
             $tradeId = 'ct_' . substr(md5($idBase), 0, 12);
 
             // ── Exit price: last known mark/current price from position ───────
-            $entryPrice = (float)($pos['entry_price']    ?? 0.0);
-            $exitPrice  = (float)($pos['mark_price']     ?? $pos['current_price'] ?? 0.0);
-            // Fallback: use entry as exit (ROI = 0)
-            if ($exitPrice <= 0.0) {
-                $exitPrice = $entryPrice;
+            $entryPrice     = (float)($pos['entry_price']  ?? 0.0);
+            $rawMarkPrice   = (float)($pos['mark_price']   ?? 0.0);
+            $rawCurrentPrice= (float)($pos['current_price']?? 0.0);
+
+            if ($rawMarkPrice > 0.0) {
+                $exitPrice       = $rawMarkPrice;
+                $exitPriceSource = 'last_cached_mark_price';
+            } elseif ($rawCurrentPrice > 0.0) {
+                $exitPrice       = $rawCurrentPrice;
+                $exitPriceSource = 'last_cached_current_price';
+            } else {
+                // Fallback: use entry as exit (ROI = 0, estimate)
+                $exitPrice       = $entryPrice;
+                $exitPriceSource = 'fallback_entry_price';
             }
 
             // ── Leverage & budget ─────────────────────────────────────────────
@@ -3009,53 +3018,43 @@ final class BotService
                 }
             }
 
-            // ── Close source detection via SM stops.json ──────────────────────
+            // ── Close source detection ────────────────────────────────────────
+            // Only set stop_manager if the position record carries an explicit
+            // stop-trigger field.  Never infer it from stops.json presence alone.
             $closeSource = 'unknown';
-            try {
-                $smStopsPath = $this->repoRoot . '/modules/stop_manager/storage/stops.json';
-                if (is_file($smStopsPath)) {
-                    $raw = @file_get_contents($smStopsPath);
-                    if ($raw !== false && $raw !== '') {
-                        $smStops = @json_decode($raw, true);
-                        if (is_array($smStops)) {
-                            foreach ($smStops as $stop) {
-                                if (
-                                    (string)($stop['symbol'] ?? '') === $symbol &&
-                                    (string)($stop['side']   ?? '') === $side
-                                ) {
-                                    // Stop record existed for this position → stop_manager triggered
-                                    $closeSource = 'stop_manager';
-                                    $closeReason = 'stop_loss';
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (\Throwable) {
-                // non-fatal; keep close_source = unknown
+            $closeReason = 'position_gone_from_exchange';
+
+            $explicitCloseSource = (string)($pos['close_source'] ?? '');
+            $explicitCloseReason = (string)($pos['close_reason'] ?? '');
+
+            if ($explicitCloseSource !== '') {
+                $closeSource = $explicitCloseSource;
+            }
+            if ($explicitCloseReason !== '' && $explicitCloseReason !== 'position_gone_from_bybit_demo' && $explicitCloseReason !== 'position_gone_from_bybit_live') {
+                $closeReason = $explicitCloseReason;
             }
 
             // ── Build trade record ────────────────────────────────────────────
             $trade = [
-                'id'            => $tradeId,
-                'symbol'        => $symbol,
-                'side'          => $side,
-                'strategy_id'   => $stratId,
-                'entry_price'   => $entryPrice > 0.0 ? $entryPrice : null,
-                'exit_price'    => $exitPrice  > 0.0 ? $exitPrice  : null,
-                'roi'           => $roi,
-                'pnl'           => $pnl,
-                'leverage'      => $leverage,
-                'budget'        => $budget > 0.0 ? $budget : null,
-                'size'          => $size  > 0.0 ? $size   : null,
-                'opened_at'     => $openedAt  !== '' ? $openedAt  : null,
-                'closed_at'     => $closedAt  !== '' ? $closedAt  : null,
-                'duration_sec'  => $durationSec,
-                'mode'          => $mode,
-                'account'       => $account,
-                'close_source'  => $closeSource,
-                'close_reason'  => $closeReason,
+                'id'               => $tradeId,
+                'symbol'           => $symbol,
+                'side'             => $side,
+                'strategy_id'      => $stratId,
+                'entry_price'      => $entryPrice > 0.0 ? $entryPrice : null,
+                'exit_price'       => $exitPrice  > 0.0 ? $exitPrice  : null,
+                'exit_price_source'=> $exitPriceSource,
+                'roi'              => $roi,
+                'pnl'              => $pnl,
+                'leverage'         => $leverage,
+                'budget'           => $budget > 0.0 ? $budget : null,
+                'size'             => $size  > 0.0 ? $size   : null,
+                'opened_at'        => $openedAt  !== '' ? $openedAt  : null,
+                'closed_at'        => $closedAt  !== '' ? $closedAt  : null,
+                'duration_sec'     => $durationSec,
+                'mode'             => $mode,
+                'account'          => $account,
+                'close_source'     => $closeSource,
+                'close_reason'     => $closeReason,
             ];
 
             // ── Write individual per-trade file ───────────────────────────────

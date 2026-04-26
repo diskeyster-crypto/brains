@@ -228,6 +228,16 @@ final class ProfManagerService
                         $profileResult['action'] = $closeAttemptResult['close_ok']
                             ? 'demo_close_submitted'
                             : 'demo_close_failed';
+
+                        // Write PM close registry so bot journal can attribute the close
+                        if ($closeAttemptResult['close_ok']) {
+                            $this->writePmCloseRegistry(
+                                $posSymbol,
+                                $posSide,
+                                $closeReasonValue,
+                                $closeAttemptResult['close_order_id'] ?? null
+                            );
+                        }
                     } else {
                         // live mode — do NOT close; safety guard
                         $closeAttemptResult = [
@@ -693,5 +703,57 @@ final class ProfManagerService
         }
 
         return $result;
+    }
+
+    /**
+     * Write an entry to the PM close registry so the bot journal can attribute
+     * the close to Profit Manager when the position disappears from Bybit Demo.
+     *
+     * File: modules/bot/storage/runtime/pm_close_registry.json
+     * Key:  {symbol}_{side}
+     */
+    private function writePmCloseRegistry(
+        string  $symbol,
+        string  $side,
+        string  $closeReason,
+        ?string $closeOrderId
+    ): void {
+        $registryPath = $this->repoRoot . '/modules/bot/storage/runtime/pm_close_registry.json';
+        $dir          = dirname($registryPath);
+
+        try {
+            if (!is_dir($dir)) {
+                mkdir($dir, 0775, true);
+            }
+
+            $registry = [];
+            if (is_file($registryPath)) {
+                $raw = @file_get_contents($registryPath);
+                if ($raw !== false && $raw !== '') {
+                    $dec = @json_decode($raw, true);
+                    if (is_array($dec)) {
+                        $registry = $dec;
+                    }
+                }
+            }
+
+            $key = $symbol . '_' . $side;
+            $registry[$key] = [
+                'symbol'        => $symbol,
+                'side'          => $side,
+                'close_source'  => 'profit_manager',
+                'close_reason'  => $closeReason,
+                'close_order_id'=> $closeOrderId,
+                'ts'            => time(),
+            ];
+
+            file_put_contents(
+                $registryPath,
+                json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+                LOCK_EX
+            );
+        } catch (\Throwable) {
+            // Never crash a tick over registry write failure
+        }
     }
 }

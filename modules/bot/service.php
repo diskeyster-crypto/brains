@@ -3034,6 +3034,46 @@ final class BotService
                 $closeReason = $explicitCloseReason;
             }
 
+            // ── PM close registry lookup ──────────────────────────────────────
+            // If Profit Manager closed this position it will have left an entry
+            // in the registry file.  Consume it once, then remove it.
+            $closeOrderId   = null;
+            $executionType  = 'inferred_close';
+            $pmRegistryPath = $this->moduleDir . '/storage/runtime/pm_close_registry.json';
+            $pmRegistryKey  = $symbol . '_' . $side;
+            $pmRegistryTtl  = 300; // seconds
+
+            try {
+                if (is_file($pmRegistryPath)) {
+                    $regRaw = @file_get_contents($pmRegistryPath);
+                    if ($regRaw !== false && $regRaw !== '') {
+                        $registry = @json_decode($regRaw, true);
+                        if (is_array($registry) && isset($registry[$pmRegistryKey])) {
+                            $entry = $registry[$pmRegistryKey];
+                            $entryTs = (int)($entry['ts'] ?? 0);
+                            if ($entryTs > 0 && (time() - $entryTs) <= $pmRegistryTtl) {
+                                // Registry hit — override close attribution
+                                $closeSource   = (string)($entry['close_source']   ?? 'profit_manager');
+                                $closeReason   = (string)($entry['close_reason']   ?? $closeReason);
+                                $closeOrderId  = ($entry['close_order_id'] ?? null) !== null
+                                    ? (string)$entry['close_order_id']
+                                    : null;
+                                $executionType = 'pm_market_close';
+                            }
+                            // Remove entry (consumed or stale)
+                            unset($registry[$pmRegistryKey]);
+                            @file_put_contents(
+                                $pmRegistryPath,
+                                json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+                                LOCK_EX
+                            );
+                        }
+                    }
+                }
+            } catch (\Throwable) {
+                // Never crash over registry read/write failures
+            }
+
             // ── Build trade record ────────────────────────────────────────────
             $trade = [
                 'id'               => $tradeId,
@@ -3055,6 +3095,8 @@ final class BotService
                 'account'          => $account,
                 'close_source'     => $closeSource,
                 'close_reason'     => $closeReason,
+                'close_order_id'   => $closeOrderId,
+                'execution_type'   => $executionType,
             ];
 
             // ── Write individual per-trade file ───────────────────────────────

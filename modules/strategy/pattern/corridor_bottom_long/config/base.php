@@ -59,4 +59,8 @@ return [
     // ── Runtime controls ──────────────────────────────────────────────────────
     'batch_size'          => 50,
     'max_runtime_seconds' => 55,
+
+    // ── Handoff flood protection ──────────────────────────────────────────────
+    'max_handoff_per_run' => 3,  // max new signals written to bot_handoff_queue per run
+    'max_active_signals'  => 10, // max signals in signals.json eligible for handoff
 ];

@@ -109,6 +109,41 @@ final class CorridorBottomLongStrategy
 
         $symbols = $symbols ?? $this->buildUniverse($config);
 
+        // ── Universe batching (Task 4) ────────────────────────────────────────
+        $runtime          = $this->readJson('storage/runtime.json', []);
+        $cursor           = (int)($runtime['universe_cursor']   ?? 0);
+        $universeCycleId  = (int)($runtime['universe_cycle_id'] ?? 0);
+        $maxCount         = (int)($config['max_symbols_per_run'] ?? 50);
+        $universeTotal    = count($symbols);
+
+        // Clamp cursor if universe shrank
+        if ($cursor > $universeTotal) {
+            $cursor = 0;
+        }
+
+        $universeWrapped  = false;
+        $batchStartIndex  = $cursor;
+
+        if ($maxCount > 0 && $universeTotal > $maxCount) {
+            $batchSymbols = array_slice($symbols, $cursor, $maxCount);
+            $nextCursor   = $cursor + $maxCount;
+            if ($nextCursor >= $universeTotal) {
+                $nextCursor      = 0;
+                $universeCycleId++;
+                $universeWrapped = true;
+            }
+        } else {
+            $batchSymbols    = $symbols;
+            $nextCursor      = 0;
+            $universeWrapped = $universeTotal > 0;
+            if ($universeWrapped) {
+                $universeCycleId++;
+            }
+        }
+
+        $batchEndIndex = $batchStartIndex + count($batchSymbols) - 1;
+        $symbols       = $batchSymbols;
+
         // Initialise stats
         $stats = [
             'started_at'             => date('c', $now),
@@ -122,7 +157,19 @@ final class CorridorBottomLongStrategy
             'generated_signals_count'=> 0,
             'rejected'               => 0,
             'reject_reasons'         => [],
+            // Universe batching
+            'universe_total'         => $universeTotal,
+            'batch_size'             => count($symbols),
+            'batch_offset'           => $maxCount,
+            'batch_start_index'      => $batchStartIndex,
+            'batch_end_index'        => $batchEndIndex,
+            'next_cursor'            => $nextCursor,
+            'universe_cycle_id'      => $universeCycleId,
+            'universe_wrapped'       => $universeWrapped,
         ];
+
+        // Track signals generated in THIS run only (not accumulated historical pool)
+        $currentRunSignals = [];
 
         // Load persisted state
         $candidates = $this->readJson('storage/candidates.json', []);
@@ -288,6 +335,7 @@ final class CorridorBottomLongStrategy
             ];
 
             $signals    = $this->upsertSignal($signals, $symbol, $signal);
+            $currentRunSignals[] = $signal;
             $candidate['state'] = 'emitted';
             $candidates = $this->removeCandidate($candidates, $candidateKey);
         }
@@ -297,26 +345,93 @@ final class CorridorBottomLongStrategy
         $this->writeJson('storage/candidates.json', $candidates);
         $this->writeJson('storage/signals.json',    $signals);
 
-        // ── Handoff queue (conditional on handoff_enabled) ───────────────────
+        // ── Persist universe cursor for next run (Task 4) ─────────────────────
+        $runtime['universe_cursor']   = $nextCursor;
+        $runtime['universe_cycle_id'] = $universeCycleId;
+        $runtime['last_run_at']       = date('c', $now);
+        $this->writeJson('storage/runtime.json', $runtime);
+
+        // ── Handoff queue (Task 1+2+3) ────────────────────────────────────────
         $handoffEnabled = (bool)($config['handoff_enabled'] ?? false);
         $stats['handoff_enabled'] = $handoffEnabled;
+
+        // Flood-protection limits
+        $maxHandoffPerRun = max(1, (int)($config['max_handoff_per_run'] ?? 3));
+        $maxActiveSignals = max(1, (int)($config['max_active_signals']  ?? 10));
+
+        // Handoff counters
+        $handoffCandidatesTotal   = 0;
+        $handoffReady             = 0;
+        $handoffRejectedInvalid   = 0;
+        $handoffRejectReasons     = [];
+        $handoffLimitedByMaxPerRun = 0;
+        $handoffLimitedByActiveCap = 0;
+
         if ($handoffEnabled) {
             $handoffQueue = [];
-            foreach ($signals as $sig) {
+
+            // Cap the eligible pool by max_active_signals (over whole signals.json)
+            $activeCapped = count($signals) > $maxActiveSignals;
+            if ($activeCapped) {
+                // Use only the most recent max_active_signals entries
+                $eligibleSignals = array_slice($signals, -$maxActiveSignals);
+                $handoffLimitedByActiveCap = count($signals) - $maxActiveSignals;
+            } else {
+                $eligibleSignals = $signals;
+            }
+            $eligibleById = [];
+            foreach ($eligibleSignals as $s) {
+                $sid = (string)($s['signal_id'] ?? '');
+                if ($sid !== '') {
+                    $eligibleById[$sid] = true;
+                }
+            }
+
+            foreach ($currentRunSignals as $sig) {
+                $handoffCandidatesTotal++;
+
+                // Validate required bot-ready fields (Task 2)
+                $validationError = $this->validateSignalForHandoff($sig);
+                if ($validationError !== null) {
+                    $handoffRejectedInvalid++;
+                    $handoffRejectReasons[] = ($sig['symbol'] ?? '?') . ':' . $validationError;
+                    continue;
+                }
+
+                // Check active cap eligibility
+                $sid = (string)($sig['signal_id'] ?? '');
+                if (!isset($eligibleById[$sid])) {
+                    $handoffLimitedByActiveCap++;
+                    continue;
+                }
+
+                // Per-run limit (Task 3)
+                if ($handoffReady >= $maxHandoffPerRun) {
+                    $handoffLimitedByMaxPerRun++;
+                    continue;
+                }
+
                 $handoffQueue[] = array_merge($sig, [
                     'handoff_status'    => 'new',
                     'first_seen_at'     => date('c', $now),
                     'last_refreshed_at' => date('c', $now),
                     'seen_count'        => 1,
                 ]);
+                $handoffReady++;
             }
+
             $this->writeJson('storage/bot_handoff_queue.json', $handoffQueue);
-            $stats['handoff_ready'] = count($handoffQueue);
         } else {
             // Ensure no stale handoff records survive when handoff is disabled.
             $this->writeJson('storage/bot_handoff_queue.json', []);
-            $stats['handoff_ready'] = 0;
         }
+
+        $stats['handoff_candidates_total']    = $handoffCandidatesTotal;
+        $stats['handoff_ready']               = $handoffReady;
+        $stats['handoff_rejected_invalid']    = $handoffRejectedInvalid;
+        $stats['handoff_reject_reasons']      = $handoffRejectReasons;
+        $stats['handoff_limited_by_max_per_run'] = $handoffLimitedByMaxPerRun;
+        $stats['handoff_limited_by_active_cap']  = $handoffLimitedByActiveCap;
 
         // ── 8. Last-run diagnostics ───────────────────────────────────────────
         $stats['finished_at'] = date('c');
@@ -561,6 +676,28 @@ final class CorridorBottomLongStrategy
     private function makeSignalId(string $symbol, int $ts): string
     {
         return sprintf('%s_%s_%d', self::STRATEGY_ID, strtolower($symbol), $ts);
+    }
+
+    // ── Handoff validation (Task 2) ───────────────────────────────────────────
+
+    /**
+     * Validate that a signal has all required bot-ready fields.
+     * Returns null if valid, or an error string if invalid.
+     */
+    private function validateSignalForHandoff(array $sig): ?string
+    {
+        if (($sig['signal_id']   ?? '') === '') { return 'missing_signal_id'; }
+        if (($sig['strategy_id'] ?? '') !== self::STRATEGY_ID) { return 'wrong_strategy_id'; }
+        if (($sig['symbol']      ?? '') === '') { return 'missing_symbol'; }
+        if (($sig['side']        ?? '') !== 'long') { return 'wrong_side'; }
+        if (($sig['mode']        ?? '') !== 'demo') { return 'wrong_mode'; }
+        if ((float)($sig['entry_price'] ?? 0) <= 0) { return 'invalid_entry_price'; }
+        if (($sig['detected_at'] ?? '') === '') { return 'missing_detected_at'; }
+        $createdAt = $sig['created_at'] ?? '';
+        if ($createdAt === '') { return 'missing_created_at'; }
+        if (($sig['entry_mode']  ?? '') === '') { return 'missing_entry_mode'; }
+        if (($sig['entry_type']  ?? '') === '') { return 'missing_entry_type'; }
+        return null;
     }
 
     // ── Storage init ──────────────────────────────────────────────────────────

@@ -5,8 +5,12 @@ declare(strict_types=1);
 /**
  * Corridor Bottom Long — Active Config Overrides
  *
- * Written by the admin UI or manually.
- * Merged on top of base.php at runtime.
+ * Demo validation strategy.
+ * It is enabled for storage/demo observation, but bot handoff is disabled by default.
  */
 
-return [];
+return [
+    'enabled'         => true,
+    'mode'            => 'demo',
+    'handoff_enabled' => false,
+];

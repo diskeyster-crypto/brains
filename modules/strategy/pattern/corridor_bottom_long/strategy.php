@@ -300,6 +300,8 @@ final class CorridorBottomLongStrategy
             $this->writeJson('storage/bot_handoff_queue.json', $handoffQueue);
             $stats['handoff_ready'] = count($handoffQueue);
         } else {
+            // Ensure no stale handoff records survive when handoff is disabled.
+            $this->writeJson('storage/bot_handoff_queue.json', []);
             $stats['handoff_ready'] = 0;
         }
 

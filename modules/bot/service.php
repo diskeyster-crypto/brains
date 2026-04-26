@@ -422,6 +422,9 @@ final class BotService
         $ignoredSignalsCount = 0;
 
         foreach ($enabledStrategies as $rec) {
+            if (!$this->resolveHandoffEnabled((string)($rec['strategy_id'] ?? ''), $overrides, (string)($rec['module_path'] ?? ''))) {
+                continue;
+            }
             $signals    = $this->readHandoffQueueForStrategy($rec);
             $allSignals = array_merge($allSignals, $signals);
         }
@@ -683,6 +686,48 @@ final class BotService
     // =========================================================================
     // Handoff ingestion
     // =========================================================================
+
+    /**
+     * Resolve whether a strategy's handoff queue may be ingested.
+     *
+     * Priority:
+     *   1. operator_overrides[strategy_id].handoff_enabled — explicit operator decision
+     *   2. strategy config (active.php merged over base.php)
+     *   3. default false — never ingest unless explicitly enabled
+     */
+    private function resolveHandoffEnabled(string $stratId, array $overrides, string $modulePath): bool
+    {
+        // 1. Operator override takes precedence when explicitly set
+        if (isset($overrides[$stratId]['handoff_enabled'])) {
+            return (bool)$overrides[$stratId]['handoff_enabled'];
+        }
+
+        // 2. Strategy config files
+        if ($modulePath !== '') {
+            $absModulePath = str_starts_with($modulePath, '/') ? $modulePath : $this->repoRoot . '/' . $modulePath;
+            $base   = $absModulePath . '/config/base.php';
+            $active = $absModulePath . '/config/active.php';
+            $cfg    = [];
+            if (file_exists($base)) {
+                $data = @include $base;
+                if (is_array($data)) {
+                    $cfg = $data;
+                }
+            }
+            if (file_exists($active)) {
+                $data = @include $active;
+                if (is_array($data)) {
+                    $cfg = array_merge($cfg, $data);
+                }
+            }
+            if (isset($cfg['handoff_enabled'])) {
+                return (bool)$cfg['handoff_enabled'];
+            }
+        }
+
+        // 3. Default: do not ingest
+        return false;
+    }
 
     /**
      * Read handoff queue for a single registry record.

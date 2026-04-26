@@ -2419,17 +2419,17 @@ HTML;
   {$modStripHtml}
   <div style="padding:10px 14px;margin-bottom:16px;background:rgba(240,136,62,.07);border:1px solid #f0883e44;border-radius:8px;font-size:12px;color:#f0883e;">
     <i class="bi bi-info-circle" style="margin-right:5px;"></i>
-    Чтобы убрать старые позиции — закройте их на Bybit Demo вручную или используйте отдельную demo-only кнопку.
-    Reset cache не закрывает позиции на бирже.
+    Чтобы убрать старые позиции — закройте их на Bybit вручную.
+    Reset не закрывает позиции на бирже и не трогает конфиги или API-ключи.
   </div>
   <div style="margin-top:16px;text-align:right;">
     <form method="post" action="{$chainRunUrl}" style="margin:0;display:inline;"
-      onsubmit="return confirm('Сбросить локальный runtime/cache?\n\nReset очищает локальный cache. Открытые позиции на Bybit Demo не закрываются.\n\nПродолжить?');">
+      onsubmit="return confirm('Это удалит локальные runtime/cache данные бота, стратегий, Stop Manager и Profit Manager. Конфиги и ключи не будут тронуты. Позиции на Bybit НЕ закрываются.\n\nПродолжить?');">
       <input type="hidden" name="dashboard_action" value="reset_runtime">
       <input type="hidden" name="active_tab" value="dh-overview">
       <button type="submit"
         style="background:rgba(248,81,73,.12);border:1px solid #f85149;color:#f85149;padding:6px 16px;border-radius:5px;cursor:pointer;font-size:13px;"
-      ><i class="bi bi-trash3" style="margin-right:5px;"></i>Сбросить runtime (cache)</button>
+      ><i class="bi bi-trash3" style="margin-right:5px;"></i>Полный локальный reset</button>
     </form>
   </div>
 </div>
@@ -3872,8 +3872,8 @@ function handleDashboardPmConfigSave(): void
 } // end if (!function_exists('handleDashboardPmConfigSave'))
 
 // ──────────────────────────────────────────────────────────────────────────────
-// POST handler: reset paper runtime data (active_positions + PM runtime files)
-// Registered as: POST /admin/dashboard/reset-runtime
+// POST handler: HARD LOCAL RUNTIME RESET
+// Clears all local runtime/cache/history storage without touching configs, keys, or Bybit.
 // ──────────────────────────────────────────────────────────────────────────────
 if (!function_exists('handleDashboardResetRuntime')) {
 function handleDashboardResetRuntime(): void
@@ -3882,65 +3882,115 @@ function handleDashboardResetRuntime(): void
         session_start();
     }
 
-    // Fixed absolute paths — no user input, no path injection possible
+    // Fixed absolute root — no user input, no path injection possible
     $root = defined('ROOT') ? rtrim(ROOT, '/') : dirname(__DIR__, 2);
 
-    $files = [
-        $root . '/modules/bot/storage/order_queue.json'      => '[]',
-        $root . '/modules/bot/storage/active_orders.json'    => '[]',
-        $root . '/modules/bot/storage/active_positions.json' => '[]',
-        $root . '/modules/bot/storage/position_runtime_age.json' => '{}',
-        $root . '/modules/stop_manager/storage/stops.json'   => '[]',
-        $root . '/modules/stop_manager/storage/last_run.json' => json_encode([
-            'status'                       => 'reset',
-            'tick_at'                      => null,
-            'elapsed_sec'                  => 0,
-            'module_enabled'               => false,
-            'module_mode'                  => 'demo',
-            'positions_seen'               => 0,
-            'positions_with_real_liq'      => 0,
-            'positions_with_estimated_liq' => 0,
-            'positions_without_liq'        => 0,
-            'stops_initialized'            => 0,
-            'stops_recalculated'           => 0,
-            'breakeven_applied'            => 0,
-            'stops_closed_reference'       => 0,
-            'stops_active_count'           => 0,
-            'ticks_total'                  => 0,
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
-        $root . '/modules/prof_manager/storage/runtime/last_run.json' => json_encode([
-            'ok'                 => true,
-            'positions'          => 0,
-            'valid_positions'    => 0,
-            'invalid_positions'  => 0,
-            'skip_reason'        => '',
-            'positions_runtime'  => [],
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
-        $root . '/modules/prof_manager/storage/runtime/positions_state.json' => '{}',
-        $root . '/modules/prof_manager/storage/runtime/locks.json'           => '{}',
-    ];
+    $filesClearedCount  = 0;
+    $filesDeletedCount  = 0;
 
-    // Also clear strategy runtime position files (bot_active_positions.json and active_positions.json
-    // inside each strategy's storage/ dir); do NOT touch configs, manifests, logs, or rules.
-    $strategyStorageDirs = glob($root . '/modules/strategy/*/storage', GLOB_ONLYDIR) ?: [];
-    foreach ($strategyStorageDirs as $storageDir) {
-        foreach (['bot_active_positions.json', 'active_positions.json'] as $filename) {
-            $path = $storageDir . '/' . $filename;
-            if (is_file($path)) {
-                $files[$path] = '[]';
-            }
-        }
-    }
-
-    foreach ($files as $path => $content) {
+    // ── Helper: write JSON to fixed path, create dir if needed ────────────
+    $safeWriteJson = static function (string $path, string $content) use (&$filesClearedCount): void {
         $dir = dirname($path);
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
         file_put_contents($path, $content);
+        $filesClearedCount++;
+    };
+
+    // ── Helper: overwrite all *.json in a directory with a fixed value ────
+    $safeWriteJsonDir = static function (string $dir, string $content) use (&$filesClearedCount): void {
+        if (!is_dir($dir)) {
+            return;
+        }
+        foreach (glob($dir . '/*.json') ?: [] as $path) {
+            file_put_contents($path, $content);
+            $filesClearedCount++;
+        }
+    };
+
+    // ── Helper: delete all *.json files inside a single directory ─────────
+    $safeDeleteJsonFilesInDir = static function (string $dir) use (&$filesDeletedCount): void {
+        if (!is_dir($dir)) {
+            return;
+        }
+        foreach (glob($dir . '/*.json') ?: [] as $path) {
+            if (is_file($path)) {
+                unlink($path);
+                $filesDeletedCount++;
+            }
+        }
+    };
+
+    // ── PART 3 — Bot runtime ──────────────────────────────────────────────
+    $safeWriteJson($root . '/modules/bot/storage/order_queue.json',           '[]');
+    $safeWriteJson($root . '/modules/bot/storage/active_orders.json',         '[]');
+    $safeWriteJson($root . '/modules/bot/storage/active_positions.json',      '[]');
+    $safeWriteJson($root . '/modules/bot/storage/position_runtime_age.json',  '{}');
+
+    // bot/storage/runtime/*.json → {}
+    $safeWriteJsonDir($root . '/modules/bot/storage/runtime', '{}');
+
+    // bot/storage/trades/closed_trades.json → []
+    $safeWriteJson($root . '/modules/bot/storage/trades/closed_trades.json', '[]');
+
+    // bot/storage/trades/closed/*.json → delete files
+    $safeDeleteJsonFilesInDir($root . '/modules/bot/storage/trades/closed');
+
+    // ── PART 4 — Profit Manager runtime ──────────────────────────────────
+    $safeWriteJsonDir($root . '/modules/prof_manager/storage/runtime', '{}');
+
+    // Long profile
+    $safeWriteJson($root . '/modules/prof_manager/profiles/long/storage/state.json',         '{}');
+    $safeWriteJson($root . '/modules/prof_manager/profiles/long/storage/locks.json',         '{}');
+    $safeWriteJson($root . '/modules/prof_manager/profiles/long/storage/patterns.json',      '{}');
+    $safeWriteJson($root . '/modules/prof_manager/profiles/long/storage/price_history.json', '{}');
+
+    // Short profile
+    $safeWriteJson($root . '/modules/prof_manager/profiles/short/storage/state.json',    '{}');
+    $safeWriteJson($root . '/modules/prof_manager/profiles/short/storage/locks.json',    '{}');
+    $safeWriteJson($root . '/modules/prof_manager/profiles/short/storage/patterns.json', '{}');
+
+    // PM close registry (lives in bot storage)
+    $safeWriteJson($root . '/modules/bot/storage/runtime/pm_close_registry.json', '{}');
+
+    // ── PART 5 — Stop Manager runtime ────────────────────────────────────
+    $safeWriteJson($root . '/modules/stop_manager/storage/stops.json',    '{}');
+    $safeWriteJson($root . '/modules/stop_manager/storage/last_run.json', '{}');
+
+    // stop_manager/storage/runtime/*.json → {}
+    $safeWriteJsonDir($root . '/modules/stop_manager/storage/runtime', '{}');
+
+    // ── PART 6 — Strategy runtime ─────────────────────────────────────────
+    $strategyRuntimeFiles = [
+        'active_positions.json'     => '[]',
+        'bot_active_positions.json' => '[]',
+        'signals.json'              => '[]',
+        'active_signals.json'       => '[]',
+        'last_signal.json'          => '{}',
+        'last_run.json'             => '{}',
+        'runtime.json'              => '{}',
+        'candidates.json'           => '[]',
+        'handoff.json'              => '[]',
+        'queue.json'                => '[]',
+    ];
+    $strategyStorageDirs = glob($root . '/modules/strategy/*/storage', GLOB_ONLYDIR) ?: [];
+    foreach ($strategyStorageDirs as $storageDir) {
+        foreach ($strategyRuntimeFiles as $filename => $emptyValue) {
+            $path = $storageDir . '/' . $filename;
+            if (is_file($path)) {
+                file_put_contents($path, $emptyValue);
+                $filesClearedCount++;
+            }
+        }
     }
 
-    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Сброс очищает локальную очередь/cache, не закрывает позиции на Bybit.'];
+    // ── Flash & redirect ──────────────────────────────────────────────────
+    $msg = 'Полный локальный reset выполнен. Bybit позиции не закрывались.'
+         . ' Очищено файлов: ' . $filesClearedCount . ', удалено: ' . $filesDeletedCount . '.'
+         . ' Если Bybit позиции ещё открыты, они появятся снова после sync.';
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => $msg];
+
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-overview'));
     $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
     if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-overview'; }

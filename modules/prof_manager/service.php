@@ -301,6 +301,9 @@ final class ProfManagerService
                     'hybrid_support_level'       => $profileResult['hybrid_support_level']       ?? null,
                     'hybrid_detection_evidence'  => $profileResult['hybrid_detection_evidence']  ?? null,
                     'hybrid_detection_reason'    => $profileResult['hybrid_detection_reason']    ?? null,
+                    'hybrid_price_source'        => $profileResult['hybrid_price_source']        ?? 'none',
+                    'hybrid_price_points'        => $profileResult['hybrid_price_points']        ?? 0,
+                    'hybrid_min_close_roi'       => $profileResult['hybrid_min_close_roi']       ?? null,
                     // Close execution output (null when no close was attempted this tick)
                     'close_attempted'            => $closeAttemptResult['close_attempted']    ?? null,
                     'close_ok'                   => $closeAttemptResult['close_ok']           ?? null,

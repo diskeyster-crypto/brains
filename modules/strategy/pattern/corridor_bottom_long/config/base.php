@@ -70,5 +70,5 @@ return [
 
     // ── Handoff flood protection ──────────────────────────────────────────────
     'max_handoff_per_run' => 1,  // max new signals written to bot_handoff_queue per run
-    'max_active_signals'  => 10, // max signals in signals.json eligible for handoff
+    'max_active_signals'  => 10, // diagnostic only — not used for handoff gating
 ];

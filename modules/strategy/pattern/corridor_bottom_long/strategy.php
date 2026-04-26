@@ -166,7 +166,7 @@ final class CorridorBottomLongStrategy
             // Universe batching
             'universe_total'         => $universeTotal,
             'batch_size'             => count($symbols),
-            'batch_offset'           => $maxCount,
+            'batch_offset'           => $batchStartIndex,
             'batch_start_index'      => $batchStartIndex,
             'batch_end_index'        => $batchEndIndex,
             'next_cursor'            => $nextCursor,

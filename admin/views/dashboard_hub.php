@@ -3961,7 +3961,7 @@ function handleDashboardResetRuntime(): void
     // stop_manager/storage/runtime/*.json → {}
     $safeWriteJsonDir($root . '/modules/stop_manager/storage/runtime', '{}');
 
-    // ── PART 6 — Strategy runtime ─────────────────────────────────────────
+    // ── PART 6 — Strategy runtime (recursive) ────────────────────────────
     $strategyRuntimeFiles = [
         'active_positions.json'     => '[]',
         'bot_active_positions.json' => '[]',
@@ -3973,8 +3973,27 @@ function handleDashboardResetRuntime(): void
         'candidates.json'           => '[]',
         'handoff.json'              => '[]',
         'queue.json'                => '[]',
+        'candidates_found.json'     => '[]',
+        'candidates_emitted.json'   => '[]',
+        'bot_handoff_queue.json'    => '[]',
+        'run_state.json'            => '{}',
+        'cycle_stats.json'          => '{}',
+        'stats.json'                => '{}',
     ];
-    $strategyStorageDirs = glob($root . '/modules/strategy/*/storage', GLOB_ONLYDIR) ?: [];
+    // Recursively find every directory named "storage" under modules/strategy/
+    $stratRoot = $root . '/modules/strategy';
+    $strategyStorageDirs = [];
+    if (is_dir($stratRoot)) {
+        $rit = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($stratRoot, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+        foreach ($rit as $item) {
+            if ($item->isDir() && $item->getFilename() === 'storage') {
+                $strategyStorageDirs[] = $item->getPathname();
+            }
+        }
+    }
     foreach ($strategyStorageDirs as $storageDir) {
         foreach ($strategyRuntimeFiles as $filename => $emptyValue) {
             $path = $storageDir . '/' . $filename;

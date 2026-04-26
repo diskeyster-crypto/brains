@@ -1,0 +1,15 @@
+{
+    "name": "corridor_bottom_long",
+    "title": "Corridor Bottom Long · 24h corridor bottom reversal strategy",
+    "version": "0.1.0",
+    "description": "24h corridor bottom reversal strategy (validation-based)",
+    "author": "Tredercopis",
+    "category": "strategy",
+    "enabled_by_default": false,
+    "mode": "demo_only",
+    "cron_connected": false,
+    "paths": {
+        "storage": "storage",
+        "config":  "config/base.php"
+    }
+}

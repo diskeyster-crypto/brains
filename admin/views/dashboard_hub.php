@@ -1792,6 +1792,292 @@ QUAL;
 HTML;
     }
 
+    // ── Closed positions block for Overview pane ─────────────────────────
+    $closedPositionsHtml = '';
+    {
+        $closedTradesRaw = [];
+        try {
+            $botTradesRoot   = System::path('root') . '/modules/bot/storage/trades';
+            $aggregatedPath  = $botTradesRoot . '/closed_trades.json';
+            $closedDir       = $botTradesRoot . '/closed';
+
+            if (is_file($aggregatedPath)) {
+                $ct = @file_get_contents($aggregatedPath);
+                if ($ct !== false && $ct !== '') {
+                    $dec = @json_decode($ct, true);
+                    if (is_array($dec) && !empty($dec)) {
+                        $closedTradesRaw = $dec;
+                    }
+                }
+            }
+
+            if (empty($closedTradesRaw) && is_dir($closedDir)) {
+                foreach (glob($closedDir . '/*.json') ?: [] as $path) {
+                    $ct = @file_get_contents($path);
+                    if ($ct === false || $ct === '') {
+                        continue;
+                    }
+                    $tr = @json_decode($ct, true);
+                    if (is_array($tr) && !empty($tr)) {
+                        $closedTradesRaw[] = $tr;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // non-fatal — show empty state
+        }
+
+        // Helper: extract closed unix timestamp from a record
+        $extractClosedTs = static function (array $r): int {
+            foreach (['closed_at', 'closed_ts', 'closed_timestamp', 'close_time'] as $k) {
+                if (isset($r[$k])) {
+                    return is_numeric($r[$k]) ? (int)$r[$k] : (int)@strtotime((string)$r[$k]);
+                }
+            }
+            return 0;
+        };
+
+        // Sort descending by closed_at, keep last 20
+        if (!empty($closedTradesRaw)) {
+            usort($closedTradesRaw, static function (array $a, array $b) use ($extractClosedTs): int {
+                return $extractClosedTs($b) <=> $extractClosedTs($a);
+            });
+            $closedTradesRaw = array_slice($closedTradesRaw, 0, 20);
+        }
+
+        // Summary stats
+        $clTotal      = count($closedTradesRaw);
+        $clProfitable = 0;
+        $clLosing     = 0;
+        $clTotalPnl   = 0.0;
+        $clHasPnl     = false;
+        $clRoiSum     = 0.0;
+        $clRoiCount   = 0;
+        foreach ($closedTradesRaw as $ct) {
+            if (!is_array($ct)) {
+                continue;
+            }
+            $roiV = isset($ct['roi']) && is_numeric($ct['roi']) ? (float)$ct['roi'] : null;
+            $pnlV = null;
+            foreach (['pnl', 'realised_pnl', 'realised_profit', 'profit'] as $k) {
+                if (isset($ct[$k]) && is_numeric($ct[$k])) {
+                    $pnlV = (float)$ct[$k];
+                    break;
+                }
+            }
+            if ($roiV !== null) {
+                $roiV > 0 ? $clProfitable++ : $clLosing++;
+                $clRoiSum += $roiV;
+                $clRoiCount++;
+            } elseif ($pnlV !== null) {
+                $pnlV > 0 ? $clProfitable++ : $clLosing++;
+            }
+            if ($pnlV !== null) {
+                $clTotalPnl += $pnlV;
+                $clHasPnl   = true;
+            }
+        }
+        $clWinrate   = ($clTotal > 0) ? round($clProfitable / $clTotal * 100, 1) . '%' : '—';
+        $clAvgRoi    = ($clRoiCount > 0) ? number_format($clRoiSum / $clRoiCount, 2) . '%' : '—';
+        $clPnlStr    = $clHasPnl ? (($clTotalPnl >= 0 ? '+' : '') . number_format($clTotalPnl, 4)) : '—';
+        $clPnlColor  = $clTotalPnl > 0 ? '#3fb950' : ($clTotalPnl < 0 ? '#f85149' : '#8b949e');
+
+        if (empty($closedTradesRaw)) {
+            $closedPositionsHtml = '<div class="card" style="margin-bottom:16px;">'
+                . '<div class="card-header"><i class="bi bi-check2-square" style="margin-right:6px;"></i>Последние закрытые позиции</div>'
+                . '<div class="card-body" style="padding:14px 16px;color:var(--ui-text-muted);font-size:13px;">Закрытых позиций пока нет</div>'
+                . '</div>';
+        } else {
+            $clSummaryHtml = '<div style="display:flex;gap:20px;flex-wrap:wrap;padding:8px 14px 6px;background:var(--ui-bg);border-bottom:1px solid var(--ui-border);font-size:12px;">'
+                . '<span><span style="color:var(--ui-text-muted);">Всего:</span> <strong>' . $clTotal . '</strong></span>'
+                . '<span><span style="color:var(--ui-text-muted);">Прибыльных:</span> <strong style="color:#3fb950;">' . $clProfitable . '</strong></span>'
+                . '<span><span style="color:var(--ui-text-muted);">Убыточных:</span> <strong style="color:#f85149;">' . $clLosing . '</strong></span>'
+                . '<span><span style="color:var(--ui-text-muted);">Winrate:</span> <strong>' . $clWinrate . '</strong></span>'
+                . '<span><span style="color:var(--ui-text-muted);">Total PnL:</span> <strong style="color:' . $clPnlColor . ';">' . $clPnlStr . '</strong></span>'
+                . '<span><span style="color:var(--ui-text-muted);">Avg ROI:</span> <strong>' . $clAvgRoi . '</strong></span>'
+                . '</div>';
+
+            $clRows = '';
+            foreach ($closedTradesRaw as $ct) {
+                if (!is_array($ct)) {
+                    continue;
+                }
+
+                $clSymbol = $e((string)($ct['symbol'] ?? '—'));
+                $clSide   = $e(strtolower((string)($ct['side'] ?? '—')));
+                $clStrat  = $e((string)($ct['strategy_id'] ?? $ct['source'] ?? $ct['close_source'] ?? '—'));
+
+                $clEntry = '—';
+                if (isset($ct['entry_price']) && is_numeric($ct['entry_price'])) {
+                    $clEntry = number_format((float)$ct['entry_price'], 4);
+                }
+
+                $clExit = '—';
+                foreach (['exit_price', 'close_price', 'closed_price', 'last_price'] as $k) {
+                    if (isset($ct[$k]) && is_numeric($ct[$k])) {
+                        $clExit = number_format((float)$ct[$k], 4);
+                        break;
+                    }
+                }
+
+                $roiRaw = isset($ct['roi']) && is_numeric($ct['roi']) ? (float)$ct['roi'] : null;
+                if ($roiRaw !== null) {
+                    $clRoi      = ($roiRaw >= 0 ? '+' : '') . number_format($roiRaw, 2) . '%';
+                    $clRoiColor = $roiRaw > 0 ? '#3fb950' : '#f85149';
+                } else {
+                    $clRoi      = '—';
+                    $clRoiColor = '#8b949e';
+                }
+
+                $pnlRaw = null;
+                foreach (['pnl', 'realised_pnl', 'realised_profit', 'profit'] as $k) {
+                    if (isset($ct[$k]) && is_numeric($ct[$k])) {
+                        $pnlRaw = (float)$ct[$k];
+                        break;
+                    }
+                }
+                if ($pnlRaw !== null) {
+                    $clPnlVal  = ($pnlRaw >= 0 ? '+' : '') . number_format($pnlRaw, 4);
+                    $clPnlValC = $pnlRaw > 0 ? '#3fb950' : '#f85149';
+                } else {
+                    $clPnlVal  = '—';
+                    $clPnlValC = '#8b949e';
+                }
+
+                $clLev = '—';
+                foreach (['leverage', 'bot_leverage'] as $k) {
+                    if (isset($ct[$k]) && $ct[$k] !== '' && $ct[$k] !== null) {
+                        $clLev = $e((string)$ct[$k]);
+                        break;
+                    }
+                }
+
+                $clBudget = '—';
+                foreach (['budget', 'bot_budget', 'position_size'] as $k) {
+                    if (isset($ct[$k]) && is_numeric($ct[$k])) {
+                        $clBudget = number_format((float)$ct[$k], 2);
+                        break;
+                    }
+                }
+
+                // opened_at display
+                $openedRaw = null;
+                foreach (['opened_at', 'opened_ts', 'open_time', 'created_at'] as $k) {
+                    if (isset($ct[$k])) {
+                        $openedRaw = $ct[$k];
+                        break;
+                    }
+                }
+                $clOpenedAt = '—';
+                if ($openedRaw !== null) {
+                    $openedTs = is_numeric($openedRaw) ? (int)$openedRaw : (int)@strtotime((string)$openedRaw);
+                    if ($openedTs > 0) {
+                        $clOpenedAt = date('d.m.y H:i', $openedTs);
+                    }
+                }
+
+                // closed_at display
+                $closedRaw = null;
+                foreach (['closed_at', 'closed_ts', 'closed_timestamp', 'close_time'] as $k) {
+                    if (isset($ct[$k])) {
+                        $closedRaw = $ct[$k];
+                        break;
+                    }
+                }
+                $clClosedAt = '—';
+                if ($closedRaw !== null) {
+                    $closedTs = is_numeric($closedRaw) ? (int)$closedRaw : (int)@strtotime((string)$closedRaw);
+                    if ($closedTs > 0) {
+                        $clClosedAt = date('d.m.y H:i', $closedTs);
+                    }
+                }
+
+                // duration
+                $clDur = '—';
+                if (isset($ct['duration_minutes']) && is_numeric($ct['duration_minutes'])) {
+                    $clDur = $fmtDuration((int)round((float)$ct['duration_minutes'] * 60));
+                } elseif (isset($ct['duration_sec']) && is_numeric($ct['duration_sec'])) {
+                    $clDur = $fmtDuration((int)$ct['duration_sec']);
+                } elseif (isset($ct['duration']) && is_numeric($ct['duration'])) {
+                    // convention: int minutes
+                    $clDur = $fmtDuration((int)round((float)$ct['duration'] * 60));
+                } else {
+                    // compute from timestamps
+                    $oTs = 0;
+                    $cTs = 0;
+                    foreach (['opened_at', 'opened_ts', 'open_time', 'created_at'] as $k) {
+                        if (isset($ct[$k])) {
+                            $oTs = is_numeric($ct[$k]) ? (int)$ct[$k] : (int)@strtotime((string)$ct[$k]);
+                            break;
+                        }
+                    }
+                    foreach (['closed_at', 'closed_ts', 'closed_timestamp', 'close_time'] as $k) {
+                        if (isset($ct[$k])) {
+                            $cTs = is_numeric($ct[$k]) ? (int)$ct[$k] : (int)@strtotime((string)$ct[$k]);
+                            break;
+                        }
+                    }
+                    if ($oTs > 0 && $cTs > $oTs) {
+                        $clDur = $fmtDuration($cTs - $oTs);
+                    }
+                }
+
+                $clCloseSource = $e((string)($ct['close_source'] ?? $ct['closed_by'] ?? '—'));
+                $clCloseReason = $e((string)($ct['close_reason'] ?? $ct['reason'] ?? '—'));
+                $clModeVal     = strtolower((string)($ct['mode'] ?? $ct['execution_mode'] ?? ''));
+                $clMode        = $e($clModeVal !== '' ? $clModeVal : '—');
+                $clModeColor   = $clModeVal === 'live' ? '#f0883e' : '#8b949e';
+
+                $clRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
+                    . '<td style="padding:4px 8px;font-weight:600;">' . $clSymbol . '</td>'
+                    . '<td style="padding:4px 8px;color:#8b949e;">' . $clSide . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clStrat . '</td>'
+                    . '<td style="padding:4px 8px;text-align:right;">' . $clEntry . '</td>'
+                    . '<td style="padding:4px 8px;text-align:right;">' . $clExit . '</td>'
+                    . '<td style="padding:4px 8px;text-align:right;color:' . $clRoiColor . ';font-weight:600;">' . $clRoi . '</td>'
+                    . '<td style="padding:4px 8px;text-align:right;color:' . $clPnlValC . ';">' . $clPnlVal . '</td>'
+                    . '<td style="padding:4px 8px;text-align:right;">' . $clLev . '</td>'
+                    . '<td style="padding:4px 8px;text-align:right;">' . $clBudget . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clOpenedAt . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clClosedAt . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:#58a6ff;">' . $clDur . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clCloseSource . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clCloseReason . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:' . $clModeColor . ';">' . $clMode . '</td>'
+                    . '</tr>';
+            }
+
+            $closedPositionsHtml = '<div class="card" style="margin-bottom:16px;">'
+                . '<div class="card-header"><i class="bi bi-check2-square" style="margin-right:6px;"></i>Последние закрытые позиции (показаны: ' . $clTotal . ')</div>'
+                . $clSummaryHtml
+                . '<div class="card-body" style="padding:0;">'
+                . '<div style="overflow-x:auto;">'
+                . '<table style="width:100%;font-size:12px;border-collapse:collapse;">'
+                . '<thead><tr style="border-bottom:2px solid var(--ui-border);">'
+                . '<th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Symbol</th>'
+                . '<th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Side</th>'
+                . '<th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Стратегия</th>'
+                . '<th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Вход</th>'
+                . '<th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Выход</th>'
+                . '<th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">ROI%</th>'
+                . '<th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">PnL</th>'
+                . '<th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Плечо</th>'
+                . '<th style="padding:5px 8px;text-align:right;color:var(--ui-text-muted);">Бюджет</th>'
+                . '<th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Открыто</th>'
+                . '<th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Закрыто</th>'
+                . '<th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Длительность</th>'
+                . '<th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Источник закр.</th>'
+                . '<th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Причина</th>'
+                . '<th style="padding:5px 8px;text-align:left;color:var(--ui-text-muted);">Режим</th>'
+                . '</tr></thead>'
+                . '<tbody>' . $clRows . '</tbody>'
+                . '</table>'
+                . '</div>'
+                . '</div>'
+                . '</div>';
+        }
+    }
+
     // ── Module state strip for Overview pane ─────────────────────────────
     $modStripRows = '';
     // Bot
@@ -2122,6 +2408,7 @@ HTML;
   </div>
   {$stratQualHtml}
   {$overviewPositionsHtml}
+  {$closedPositionsHtml}
   {$modStripHtml}
   <div style="padding:10px 14px;margin-bottom:16px;background:rgba(240,136,62,.07);border:1px solid #f0883e44;border-radius:8px;font-size:12px;color:#f0883e;">
     <i class="bi bi-info-circle" style="margin-right:5px;"></i>

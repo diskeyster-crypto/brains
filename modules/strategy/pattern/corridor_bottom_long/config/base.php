@@ -14,7 +14,7 @@ return [
     // ── Identity ─────────────────────────────────────────────────────────────
     'strategy_id' => 'corridor_bottom_long',
     'enabled'     => false,  // must remain false until fully wired
-    'mode'        => 'demo', // demo | disabled
+    'mode'        => 'demo', // mode = demo; enabled=false controls off state
 
     // ── Universe ──────────────────────────────────────────────────────────────
     'universe_mode'       => 'all', // all | manual_list

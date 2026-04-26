@@ -6,7 +6,7 @@
     "author": "Tredercopis",
     "category": "strategy",
     "enabled_by_default": false,
-    "mode": "demo_only",
+    "mode": "demo",
     "cron_connected": false,
     "paths": {
         "storage": "storage",

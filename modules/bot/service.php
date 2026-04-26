@@ -1951,6 +1951,7 @@ final class BotService
                 $pos['mode']            = 'demo';
                 $closedPositions[]      = $pos;
                 $positionsClosed++;
+                $this->recordClosedTrade($pos, $tickAt);
             }
         }
 
@@ -2411,6 +2412,7 @@ final class BotService
                 $pos['mode']            = 'live';
                 $closedPositions[]      = $pos;
                 $positionsClosed++;
+                $this->recordClosedTrade($pos, $tickAt);
             }
         }
 
@@ -2935,5 +2937,164 @@ final class BotService
             mkdir($dir, 0755, true);
         }
         file_put_contents($path, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    }
+
+    /**
+     * Record a real closed position into the unified closed trades journal.
+     *
+     * Writes to:
+     *   storage/trades/closed_trades.json    — aggregated list (max 1 000 entries)
+     *   storage/trades/closed/{id}.json      — individual per-trade file
+     *
+     * Never modifies active_positions, never places orders, observation-only.
+     *
+     * @param array  $pos     Closed position record (already has closed_at, close_reason, mode)
+     * @param string $tickAt  Tick timestamp
+     */
+    private function recordClosedTrade(array $pos, string $tickAt): void
+    {
+        try {
+            $symbol    = (string)($pos['symbol']         ?? '');
+            $side      = (string)($pos['side']           ?? '');
+            $openedAt  = (string)($pos['opened_at']      ?? $pos['entered_at'] ?? '');
+            $closedAt  = (string)($pos['closed_at']      ?? $tickAt);
+            $mode      = (string)($pos['mode']           ?? $pos['execution_mode'] ?? 'demo');
+            $account   = (string)($pos['account']        ?? ($mode === 'live' ? 'bybit_live' : 'bybit_demo'));
+            $stratId   = (string)($pos['strategy_id']    ?? $pos['owner_strategy'] ?? '');
+            $closeReason = (string)($pos['close_reason'] ?? 'unknown');
+
+            if ($symbol === '' || $side === '') {
+                return;
+            }
+
+            // ── Trade ID: deterministic, dedup-safe ───────────────────────────
+            $idBase = $symbol . '_' . $side . '_' . ($openedAt !== '' ? $openedAt : $closedAt);
+            $tradeId = 'ct_' . substr(md5($idBase), 0, 12);
+
+            // ── Exit price: last known mark/current price from position ───────
+            $entryPrice = (float)($pos['entry_price']    ?? 0.0);
+            $exitPrice  = (float)($pos['mark_price']     ?? $pos['current_price'] ?? 0.0);
+            // Fallback: use entry as exit (ROI = 0)
+            if ($exitPrice <= 0.0) {
+                $exitPrice = $entryPrice;
+            }
+
+            // ── Leverage & budget ─────────────────────────────────────────────
+            $leverage = max(1, (int)($pos['bot_leverage'] ?? $pos['leverage'] ?? 1));
+            $budget   = (float)($pos['bot_budget']        ?? $pos['budget']   ?? 0.0);
+            $size     = (float)($pos['size']              ?? 0.0);
+
+            // ── ROI & PnL ─────────────────────────────────────────────────────
+            $roi = null;
+            $pnl = null;
+            if ($entryPrice > 0.0 && $exitPrice > 0.0 && $leverage > 0) {
+                if ($side === 'short') {
+                    $roi = ($entryPrice - $exitPrice) / $entryPrice * $leverage * 100.0;
+                } else {
+                    $roi = ($exitPrice - $entryPrice) / $entryPrice * $leverage * 100.0;
+                }
+                $roi = round($roi, 4);
+            }
+            if ($roi !== null && $budget > 0.0) {
+                $pnl = round($budget * $roi / 100.0, 6);
+            }
+
+            // ── Duration ─────────────────────────────────────────────────────
+            $durationSec = null;
+            if ($openedAt !== '' && $closedAt !== '') {
+                $oTs = is_numeric($openedAt) ? (int)$openedAt : (int)@strtotime($openedAt);
+                $cTs = is_numeric($closedAt) ? (int)$closedAt : (int)@strtotime($closedAt);
+                if ($oTs > 0 && $cTs >= $oTs) {
+                    $durationSec = $cTs - $oTs;
+                }
+            }
+
+            // ── Close source detection via SM stops.json ──────────────────────
+            $closeSource = 'unknown';
+            try {
+                $smStopsPath = $this->repoRoot . '/modules/stop_manager/storage/stops.json';
+                if (is_file($smStopsPath)) {
+                    $raw = @file_get_contents($smStopsPath);
+                    if ($raw !== false && $raw !== '') {
+                        $smStops = @json_decode($raw, true);
+                        if (is_array($smStops)) {
+                            foreach ($smStops as $stop) {
+                                if (
+                                    (string)($stop['symbol'] ?? '') === $symbol &&
+                                    (string)($stop['side']   ?? '') === $side
+                                ) {
+                                    // Stop record existed for this position → stop_manager triggered
+                                    $closeSource = 'stop_manager';
+                                    $closeReason = 'stop_loss';
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (\Throwable) {
+                // non-fatal; keep close_source = unknown
+            }
+
+            // ── Build trade record ────────────────────────────────────────────
+            $trade = [
+                'id'            => $tradeId,
+                'symbol'        => $symbol,
+                'side'          => $side,
+                'strategy_id'   => $stratId,
+                'entry_price'   => $entryPrice > 0.0 ? $entryPrice : null,
+                'exit_price'    => $exitPrice  > 0.0 ? $exitPrice  : null,
+                'roi'           => $roi,
+                'pnl'           => $pnl,
+                'leverage'      => $leverage,
+                'budget'        => $budget > 0.0 ? $budget : null,
+                'size'          => $size  > 0.0 ? $size   : null,
+                'opened_at'     => $openedAt  !== '' ? $openedAt  : null,
+                'closed_at'     => $closedAt  !== '' ? $closedAt  : null,
+                'duration_sec'  => $durationSec,
+                'mode'          => $mode,
+                'account'       => $account,
+                'close_source'  => $closeSource,
+                'close_reason'  => $closeReason,
+            ];
+
+            // ── Write individual per-trade file ───────────────────────────────
+            $indivPath = 'storage/trades/closed/' . $tradeId . '.json';
+            $this->writeJson($indivPath, $trade);
+
+            // ── Append to aggregated closed_trades.json ───────────────────────
+            $aggRelPath = 'storage/trades/closed_trades.json';
+            $aggAbsPath = $this->moduleDir . '/' . $aggRelPath;
+
+            $existing = [];
+            if (is_file($aggAbsPath)) {
+                $raw = @file_get_contents($aggAbsPath);
+                if ($raw !== false && $raw !== '') {
+                    $dec = @json_decode($raw, true);
+                    if (is_array($dec)) {
+                        $existing = $dec;
+                    }
+                }
+            }
+
+            // Dedup by id
+            foreach ($existing as $entry) {
+                if (($entry['id'] ?? '') === $tradeId) {
+                    return; // already recorded
+                }
+            }
+
+            $existing[] = $trade;
+
+            // Trim to last 1 000 entries (oldest first, keep newest)
+            if (count($existing) > 1000) {
+                $existing = array_slice($existing, -1000);
+            }
+
+            $this->writeJson($aggRelPath, $existing);
+
+        } catch (\Throwable) {
+            // Never crash the bot tick over journal write failures
+        }
     }
 }

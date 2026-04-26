@@ -28,8 +28,15 @@ return [
     'max_distance_from_low_pct' => 8,    // % — tighter zone: price ≤ 8% above corridor low
 
     // ── Validation window ─────────────────────────────────────────────────────
-    'validation_window_seconds' => 240, // 4 min — wait before evaluating a candidate
-    'validation_min_score'      => 3,   // minimum combined score to emit a signal (max 6)
+    'validation_window_seconds'  => 240, // legacy fallback (min age if min/max not set)
+    'validation_min_age_seconds' => 180, // candidate must be at least this old before evaluation
+    'validation_max_age_seconds' => 300, // candidate rejected as stale beyond this age
+    'validation_min_score'       => 3,   // minimum combined score to emit a signal (max 6)
+
+    // ── Hard signal quality gates ─────────────────────────────────────────────
+    'require_no_new_low'    => true,  // reject signal if price made a new low after detection
+    'require_micro_reversal'=> true,  // reject signal if no micro reversal detected
+    'reject_fast_dump'      => true,  // reject signal if fast dump detected in window
 
     // ── Holding-low / new-low tolerance ──────────────────────────────────────
     'allow_new_low'   => false, // reject immediately on new low when false
@@ -59,8 +66,9 @@ return [
     // ── Runtime controls ──────────────────────────────────────────────────────
     'batch_size'          => 50,
     'max_runtime_seconds' => 55,
+    'max_signals_per_run' => 3,  // max signals generated (emitted) in one execute() run
 
     // ── Handoff flood protection ──────────────────────────────────────────────
-    'max_handoff_per_run' => 3,  // max new signals written to bot_handoff_queue per run
+    'max_handoff_per_run' => 1,  // max new signals written to bot_handoff_queue per run
     'max_active_signals'  => 10, // max signals in signals.json eligible for handoff
 ];

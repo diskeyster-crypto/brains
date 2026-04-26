@@ -157,6 +157,12 @@ final class CorridorBottomLongStrategy
             'generated_signals_count'=> 0,
             'rejected'               => 0,
             'reject_reasons'         => [],
+            // Breakdown rejection counters
+            'rejected_fast_dump'          => 0,
+            'rejected_new_low'            => 0,
+            'rejected_no_micro_reversal'  => 0,
+            'rejected_low_accumulation'   => 0,
+            'rejected_risk_to_low'        => 0,
             // Universe batching
             'universe_total'         => $universeTotal,
             'batch_size'             => count($symbols),
@@ -257,7 +263,8 @@ final class CorridorBottomLongStrategy
             if ($riskToLowRoi > $maxRisk) {
                 // Candidate rejected before validation — too far from low
                 $stats['rejected']++;
-                $stats['reject_reasons'][] = $symbol . ':risk_to_low_too_high';
+                $stats['reject_reasons'][]    = $symbol . ':risk_to_low_too_high';
+                $stats['rejected_risk_to_low']++;
                 $candidate['state']        = 'rejected';
                 $candidate['reject_reason']= 'risk_to_low_too_high';
                 $candidates = $this->upsertCandidate($candidates, $candidateKey, $candidate);
@@ -292,6 +299,15 @@ final class CorridorBottomLongStrategy
                 $stats['rejected']++;
                 $rejectReason = $result['reject_reason'] ?? 'rejected';
                 $stats['reject_reasons'][] = $symbol . ':' . $rejectReason;
+                // Breakdown counters
+                match ($rejectReason) {
+                    'fast_dump'                  => $stats['rejected_fast_dump']++,
+                    'new_low_broken'             => $stats['rejected_new_low']++,
+                    'no_micro_reversal'          => $stats['rejected_no_micro_reversal']++,
+                    'no_accumulation_after_dump' => $stats['rejected_low_accumulation']++,
+                    'risk_to_low_too_high'       => $stats['rejected_risk_to_low']++,
+                    default                      => null,
+                };
                 $candidate['state']        = 'rejected';
                 $candidate['reject_reason']= $rejectReason;
                 // Store briefly for diagnostics then clean
@@ -301,6 +317,15 @@ final class CorridorBottomLongStrategy
             }
 
             // ── 7. Signal output (enter) ─────────────────────────────────────
+            // Per-run signal cap
+            $maxSignalsPerRun = max(1, (int)($config['max_signals_per_run'] ?? 3));
+            if ($stats['generated_signals_count'] >= $maxSignalsPerRun) {
+                // Cap reached — keep candidate alive for next run
+                $candidate['state'] = 'waiting_validation';
+                $candidates         = $this->upsertCandidate($candidates, $candidateKey, $candidate);
+                continue;
+            }
+
             $stats['candidates_validated']++;
             $stats['generated_signals_count']++;
 

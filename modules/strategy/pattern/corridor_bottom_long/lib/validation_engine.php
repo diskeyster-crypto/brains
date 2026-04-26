@@ -65,18 +65,28 @@ final class ValidationEngine
         array $config,
         int   $now
     ): array {
-        $detectedAt     = (int)($candidate['detected_at']  ?? $now);
-        $lowPrice       = (float)($candidate['low_price']  ?? 0.0);
-        $windowSeconds  = (int)($config['validation_window_seconds']  ?? 240);
-        $minScore       = (int)($config['validation_min_score']       ?? 3);
-        $allowNewLow    = (bool)($config['allow_new_low']             ?? false);
-        $maxNewLowPct   = (float)($config['max_new_low_pct']          ?? 0.2);
-        $minAccumScore  = (int)($config['min_accumulation_score']     ?? 2);
-        $elapsed        = $now - $detectedAt;
+        $detectedAt          = (int)($candidate['detected_at']  ?? $now);
+        $lowPrice            = (float)($candidate['low_price']  ?? 0.0);
+        $legacyWindow        = (int)($config['validation_window_seconds']  ?? 240);
+        $minAgeSeconds       = (int)($config['validation_min_age_seconds'] ?? $legacyWindow);
+        $maxAgeSeconds       = (int)($config['validation_max_age_seconds'] ?? ($legacyWindow + 120));
+        $minScore            = (int)($config['validation_min_score']       ?? 3);
+        $allowNewLow         = (bool)($config['allow_new_low']             ?? false);
+        $requireNoNewLow     = (bool)($config['require_no_new_low']        ?? true);
+        $requireMicroReversal= (bool)($config['require_micro_reversal']    ?? true);
+        $rejectFastDump      = (bool)($config['reject_fast_dump']          ?? true);
+        $maxNewLowPct        = (float)($config['max_new_low_pct']          ?? 0.2);
+        $minAccumScore       = (int)($config['min_accumulation_score']     ?? 2);
+        $elapsed             = $now - $detectedAt;
 
-        // ── Still inside validation window → keep waiting ───────────────────
-        if ($elapsed < $windowSeconds) {
+        // ── Too fresh — still inside minimum age window → keep waiting ────────
+        if ($elapsed < $minAgeSeconds) {
             return $this->result('waiting', 0, 0, ['inside_validation_window'], null);
+        }
+
+        // ── Too stale — candidate age exceeded maximum → reject ───────────────
+        if ($elapsed > $maxAgeSeconds) {
+            return $this->result('reject', 0, 0, ['candidate_too_stale'], 'candidate_too_stale');
         }
 
         // ── Collect price ticks that occurred after detection ────────────────
@@ -94,8 +104,10 @@ final class ValidationEngine
 
         // ── A. Holding low ───────────────────────────────────────────────────
         $newLowThreshold = $lowPrice * (1 - $maxNewLowPct / 100);
-        if ($minP < $newLowThreshold) {
-            if (!$allowNewLow) {
+        $hadNewLow       = $minP < $newLowThreshold;
+
+        if ($hadNewLow) {
+            if ($requireNoNewLow || !$allowNewLow) {
                 return $this->result('reject', 0, 0, ['new_low_broken'], 'new_low_broken');
             }
         }
@@ -128,10 +140,13 @@ final class ValidationEngine
 
         // ── C. Micro reversal ────────────────────────────────────────────────
         // Higher low: last price > first price OR ≥ 0.1% above observed minimum
-        $upliftPct = $lowPrice > 0 ? (($lastP - $minP) / $lowPrice) * 100 : 0.0;
-        if ($lastP > $firstP || $upliftPct >= 0.1) {
+        $upliftPct      = $lowPrice > 0 ? (($lastP - $minP) / $lowPrice) * 100 : 0.0;
+        $microReversal  = ($lastP > $firstP || $upliftPct >= 0.1);
+        if ($microReversal) {
             $score   += 1;
             $reasons[] = 'micro_reversal';
+        } elseif ($requireMicroReversal) {
+            return $this->result('reject', $score, 0, $reasons, 'no_micro_reversal');
         }
 
         // ── D. No fast dump ──────────────────────────────────────────────────
@@ -149,8 +164,7 @@ final class ValidationEngine
         if (!$fastDump) {
             $score   += 1;
             $reasons[] = 'no_fast_dump';
-        } else {
-            // Fast dump is a hard reject
+        } elseif ($rejectFastDump) {
             return $this->result('reject', $score, 0, $reasons, 'fast_dump');
         }
 

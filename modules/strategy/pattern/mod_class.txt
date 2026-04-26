@@ -1,1 +1,0 @@
-Modules\Strategy\Pattern\PatternService

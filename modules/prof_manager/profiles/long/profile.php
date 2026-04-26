@@ -66,6 +66,17 @@ class LongProfile
         $symbol = (string) ($position['symbol'] ?? '');
         $key    = $this->positionKey($symbol, 'long');
 
+        // ── Append current price to PM-owned price history ────────────────────
+        $posPrice = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
+        if ($posPrice > 0.0 && !empty($this->config['price_history_enabled'])) {
+            $this->appendPricePoint(
+                $symbol,
+                $posPrice,
+                $nowTs,
+                (string) ($position['price_source'] ?? 'bybit_gateway')
+            );
+        }
+
         $positionsState = $this->readState();
         $locks          = $this->readLocks();
 
@@ -111,6 +122,8 @@ class LongProfile
             'hybrid_support_level'       => null,
             'hybrid_detection_evidence'  => null,
             'hybrid_detection_reason'    => null,
+            'hybrid_price_source'        => 'none',
+            'hybrid_price_points'        => 0,
         ];
 
         if (!empty($this->config['hybrid_enabled'])) {
@@ -158,6 +171,8 @@ class LongProfile
             'hybrid_support_level'       => $hybridMeta['hybrid_support_level'],
             'hybrid_detection_evidence'  => $hybridMeta['hybrid_detection_evidence'],
             'hybrid_detection_reason'    => $hybridMeta['hybrid_detection_reason'],
+            'hybrid_price_source'        => $hybridMeta['hybrid_price_source']     ?? 'none',
+            'hybrid_price_points'        => $hybridMeta['hybrid_price_points']     ?? 0,
         ];
     }
 
@@ -333,12 +348,14 @@ class LongProfile
      */
     private function detectExitPattern(array $position, array $positionState, float $currentRoi): array
     {
-        $noDetect = static fn(string $reason, array $ev = []): array => [
+        $noDetect = static fn(string $reason, array $ev = [], string $src = 'none', int $pts = 0): array => [
             'detected'     => false,
             'pattern_type' => null,
             'confidence'   => 0.0,
             'reason'       => $reason,
             'evidence'     => $ev,
+            'price_source' => $src,
+            'price_points' => $pts,
         ];
 
         // ── Simulation override (priority) ────────────────────────────────────
@@ -354,6 +371,8 @@ class LongProfile
                     'confidence'   => 1.0,
                     'reason'       => 'simulation_forced',
                     'evidence'     => [],
+                    'price_source' => 'simulation',
+                    'price_points' => 0,
                 ];
             }
         }
@@ -363,22 +382,55 @@ class LongProfile
             return $noDetect('not_in_profit');
         }
 
-        // ── Read price series from parser2 NDJSON storage ────────────────────
+        // ── Resolve price series: PM history first, parser2 fallback ─────────
         $symbol      = strtoupper(trim((string) ($position['symbol'] ?? '')));
         $minPoints   = (int)   ($this->config['detection_min_price_points'] ?? 15);
         $maxPoints   = (int)   ($this->config['detection_max_price_points'] ?? 60);
         $lookbackSec = (int)   ($this->config['detection_lookback_sec']     ?? 3600);
+        $pmMinPoints = (int)   ($this->config['price_history_min_points_for_detector'] ?? 10);
 
-        $pricePoints = $this->candleReader->readRecentPrices(
-            $symbol,
-            $this->parser2StorageDir,
-            $maxPoints,
-            $lookbackSec
-        );
+        $priceSource = 'none';
+        $pricePoints = [];
+
+        // Priority 1: PM-owned price_history.json
+        if (!empty($this->config['price_history_enabled'])) {
+            $history = $this->readPriceHistory();
+            $cutoff  = time() - max($lookbackSec, 60);
+            $pmRaw   = array_values(array_filter(
+                $history[$symbol] ?? [],
+                static fn(array $p): bool => ((int) ($p['ts'] ?? 0)) >= $cutoff
+            ));
+            if (count($pmRaw) > $maxPoints) {
+                $pmRaw = array_slice($pmRaw, -$maxPoints);
+            }
+            if (count($pmRaw) >= $pmMinPoints) {
+                $pricePoints = $pmRaw;
+                $priceSource = 'pm_price_history';
+            }
+        }
+
+        // Priority 2: parser2 CandleReader fallback
+        if (empty($pricePoints)) {
+            $parser2Raw  = $this->candleReader->readRecentPrices(
+                $symbol,
+                $this->parser2StorageDir,
+                $maxPoints,
+                $lookbackSec
+            );
+            if (!empty($parser2Raw)) {
+                // Normalize to same shape as PM history (both have 'price'; use ts_unix as ts)
+                $pricePoints = array_map(
+                    static fn(array $p): array => ['ts' => $p['ts_unix'], 'price' => $p['price']],
+                    $parser2Raw
+                );
+                $priceSource = 'parser2';
+            }
+        }
 
         $n = count($pricePoints);
         if ($n < $minPoints) {
-            return $noDetect('no_candle_data', ['points_available' => $n, 'min_required' => $minPoints]);
+            $reason = ($n === 0) ? 'no_candle_data' : 'insufficient_window_data';
+            return $noDetect($reason, ['points_available' => $n, 'min_required' => $minPoints], $priceSource, $n);
         }
 
         $prices = array_column($pricePoints, 'price');
@@ -473,6 +525,8 @@ class LongProfile
             'confidence'   => $confidence,
             'reason'       => 'score_' . $score . '_of_5',
             'evidence'     => $evidence,
+            'price_source' => $priceSource,
+            'price_points' => $n,
         ];
     }
 
@@ -572,10 +626,33 @@ class LongProfile
         // ── Confirmation: two consecutive closes below support ────────────────
         $maxPoints   = (int) ($this->config['detection_max_price_points'] ?? 60);
         $lookbackSec = (int) ($this->config['detection_lookback_sec']     ?? 3600);
-        $pricePoints = $this->candleReader->readRecentPrices($symbol, $this->parser2StorageDir, $maxPoints, $lookbackSec);
 
-        if (count($pricePoints) >= 2) {
-            $recentSlice = array_slice(array_column($pricePoints, 'price'), -3);
+        // Try PM price history first; fall back to parser2
+        $confirmPrices = [];
+        if (!empty($this->config['price_history_enabled'])) {
+            $history = $this->readPriceHistory();
+            $cutoff  = time() - max($lookbackSec, 60);
+            $pmRaw   = array_values(array_filter(
+                $history[$symbol] ?? [],
+                static fn(array $p): bool => ((int) ($p['ts'] ?? 0)) >= $cutoff
+            ));
+            if (count($pmRaw) > $maxPoints) {
+                $pmRaw = array_slice($pmRaw, -$maxPoints);
+            }
+            if (count($pmRaw) >= 2) {
+                $confirmPrices = array_column($pmRaw, 'price');
+            }
+        }
+
+        if (empty($confirmPrices)) {
+            $parser2Raw = $this->candleReader->readRecentPrices($symbol, $this->parser2StorageDir, $maxPoints, $lookbackSec);
+            if (count($parser2Raw) >= 2) {
+                $confirmPrices = array_column($parser2Raw, 'price');
+            }
+        }
+
+        if (count($confirmPrices) >= 2) {
+            $recentSlice = array_slice($confirmPrices, -3);
             $closesBelow = 0;
             foreach ($recentSlice as $p) {
                 if ($p < $supportLevel) {
@@ -651,6 +728,8 @@ class LongProfile
                     'hybrid_support_level'       => null,
                     'hybrid_detection_evidence'  => null,
                     'hybrid_detection_reason'    => 'below_init_roi_hybrid_disabled',
+                    'hybrid_price_source'        => 'none',
+                    'hybrid_price_points'        => 0,
                 ],
             ];
         }
@@ -681,6 +760,8 @@ class LongProfile
         $patternType     = $patternResult['pattern_type'] ?? null;
         // Always track the most recent detection reason (e.g. no_candle_data, insufficient_window_data, score_X_of_5)
         $detectionReason = $patternResult['reason'] ?? $detectionReason;
+        $priceSource     = (string) ($patternResult['price_source'] ?? 'none');
+        $pricePts        = (int)    ($patternResult['price_points'] ?? 0);
 
         $hybridAction       = null;
         $guardActive        = false;
@@ -809,6 +890,8 @@ class LongProfile
             'hybrid_support_level'       => ($supportLevelState !== null && $supportLevelState > 0.0) ? $supportLevelState : null,
             'hybrid_detection_evidence'  => $detectionEvidence,
             'hybrid_detection_reason'    => $detectionReason,
+            'hybrid_price_source'        => $priceSource,
+            'hybrid_price_points'        => $pricePts,
         ];
 
         return [$plan, $positionState, $hybridMeta];
@@ -888,7 +971,7 @@ class LongProfile
         if (!is_dir($this->storageDir)) {
             mkdir($this->storageDir, 0775, true);
         }
-        foreach (['state.json', 'locks.json', 'patterns.json'] as $file) {
+        foreach (['state.json', 'locks.json', 'patterns.json', 'price_history.json'] as $file) {
             $path = $this->storageDir . '/' . $file;
             if (!file_exists($path)) {
                 file_put_contents($path, "{}\n", LOCK_EX);
@@ -914,6 +997,48 @@ class LongProfile
     private function writeLocks(array $data): void
     {
         $this->writeJson($this->storageDir . '/locks.json', $data);
+    }
+
+    private function readPriceHistory(): array
+    {
+        return $this->readJson($this->storageDir . '/price_history.json');
+    }
+
+    private function writePriceHistory(array $data): void
+    {
+        $this->writeJson($this->storageDir . '/price_history.json', $data);
+    }
+
+    /**
+     * Append one price point for a symbol to the PM-owned price history.
+     *
+     * Deduplicates by timestamp; trims to the configured max points.
+     * Fails silently — never throws.
+     */
+    private function appendPricePoint(string $symbol, float $price, int $ts, string $source): void
+    {
+        $maxPoints = (int) ($this->config['price_history_max_points'] ?? 120);
+        $history   = $this->readPriceHistory();
+
+        $key     = strtoupper($symbol);
+        $entries = $history[$key] ?? [];
+
+        // Deduplicate: skip if same timestamp already recorded
+        foreach ($entries as $entry) {
+            if ((int) ($entry['ts'] ?? 0) === $ts) {
+                return;
+            }
+        }
+
+        $entries[] = ['ts' => $ts, 'price' => $price, 'source' => $source];
+
+        // Keep only the most-recent N points
+        if (count($entries) > $maxPoints) {
+            $entries = array_slice($entries, -$maxPoints);
+        }
+
+        $history[$key] = $entries;
+        $this->writePriceHistory($history);
     }
 
     private function readJson(string $path): array

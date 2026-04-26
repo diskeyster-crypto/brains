@@ -1322,6 +1322,8 @@ ROWS;
             $hybridSupport      = isset($pr['hybrid_support_level'])      ? (float)  $pr['hybrid_support_level']      : null;
             $hybridEvidence     = isset($pr['hybrid_detection_evidence']) ? (string) $pr['hybrid_detection_evidence'] : null;
             $hybridReason       = isset($pr['hybrid_detection_reason'])   ? (string) $pr['hybrid_detection_reason']   : null;
+            $hybridPriceSrc     = (string) ($pr['hybrid_price_source'] ?? 'none');
+            $hybridPricePts     = (int)    ($pr['hybrid_price_points'] ?? 0);
 
             $simBadge = $hybridSimEnabled
                 ? ' <span style="font-size:9px;color:#f0883e;background:rgba(240,136,62,.15);border-radius:3px;padding:1px 4px;">SIM</span>'
@@ -1367,6 +1369,16 @@ ROWS;
             } else {
                 $hybridGuardDisplay = '<span style="color:#8b949e;">—</span>';
             }
+
+            // Append compact detector price source to Guard/Pattern display
+            $srcLabel = match ($hybridPriceSrc) {
+                'pm_price_history' => 'pm_hist',
+                'parser2'          => 'parser2',
+                'simulation'       => 'sim',
+                default            => 'none',
+            };
+            $hybridGuardDisplay .= ($hybridGuardDisplay !== '<span style="color:#8b949e;">—</span>' ? '<br>' : '')
+                . '<span style="font-size:9px;color:#6e7681;">src:' . $e($srcLabel) . ' pts:' . $hybridPricePts . '</span>';
 
             // Breathing/Result column: breathing stop + confirmation result + evidence
             if ($hybridBreathActive && $hybridBreathStop !== null) {

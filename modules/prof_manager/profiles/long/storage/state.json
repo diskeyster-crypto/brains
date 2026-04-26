@@ -98,5 +98,41 @@
         "confirmation_ticks": 0,
         "guard_stop_price": null,
         "detection_reason": "below_init_roi_hybrid_disabled"
+    },
+    "pmhisttest_long": {
+        "symbol": "PMHISTTEST",
+        "side": "long",
+        "entry_price": 100,
+        "leverage": 1,
+        "current_roi": 14.000000000000002,
+        "peak_roi": 15.400000000000006,
+        "updated_at": "2026-04-26T06:29:40+00:00",
+        "updated_at_ts": 1777184980,
+        "tracked_since": "2026-04-26T06:24:40+00:00",
+        "tracked_since_ts": 1777184680,
+        "hybrid_state": "idle",
+        "pattern_detected_at": null,
+        "pattern_type": null,
+        "confirmation_ticks": 0,
+        "guard_stop_price": null,
+        "last_breathing_stop": null
+    },
+    "newnosym_long": {
+        "symbol": "NEWNOSYM",
+        "side": "long",
+        "entry_price": 100,
+        "leverage": 1,
+        "current_roi": 15,
+        "peak_roi": 15,
+        "updated_at": "2026-04-26T06:31:20+00:00",
+        "updated_at_ts": 1777185080,
+        "tracked_since": "2026-04-26T06:31:20+00:00",
+        "tracked_since_ts": 1777185080,
+        "hybrid_state": "idle",
+        "pattern_detected_at": null,
+        "pattern_type": null,
+        "confirmation_ticks": 0,
+        "guard_stop_price": null,
+        "last_breathing_stop": null
     }
 }

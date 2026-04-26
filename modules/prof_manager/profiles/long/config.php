@@ -48,6 +48,15 @@ return [
     'confirm_strong_drop_pct'          => 2.0,   // % drop from detected high = confirmed
     'parser2_storage_path'             => '',    // '' = auto-detect
 
+    // ── PM-owned price history ────────────────────────────────────────────────
+    // When price_history_enabled = true, LongProfile records every processed tick
+    // price into profiles/long/storage/price_history.json.
+    // The hybrid detector reads from this store first; parser2 CandleReader is the
+    // fallback when PM history does not yet have enough points.
+    'price_history_enabled'                 => true,
+    'price_history_max_points'              => 120,   // max points retained per symbol
+    'price_history_min_points_for_detector' => 10,    // min PM history points before using PM source
+
     // ── Hybrid simulation/test mode ───────────────────────────────────────────
     // FOR DEMO/DEV ONLY — never enable in production.
     // Allows manual testing of the full hybrid confirmation chain without

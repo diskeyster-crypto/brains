@@ -1,0 +1,41 @@
+{
+    "PMHISTTEST": [
+        {
+            "ts": 1777184680,
+            "price": 115,
+            "source": "bybit_gateway"
+        },
+        {
+            "ts": 1777184710,
+            "price": 115.1,
+            "source": "bybit_gateway"
+        },
+        {
+            "ts": 1777184740,
+            "price": 115.2,
+            "source": "bybit_gateway"
+        },
+        {
+            "ts": 1777184770,
+            "price": 115.3,
+            "source": "bybit_gateway"
+        },
+        {
+            "ts": 1777184800,
+            "price": 115.4,
+            "source": "bybit_gateway"
+        },
+        {
+            "ts": 1777184980,
+            "price": 114,
+            "source": "bybit_gateway"
+        }
+    ],
+    "NEWNOSYM": [
+        {
+            "ts": 1777185080,
+            "price": 115,
+            "source": "bybit_gateway"
+        }
+    ]
+}

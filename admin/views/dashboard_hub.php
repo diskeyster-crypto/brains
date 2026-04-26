@@ -535,6 +535,19 @@ function renderDashboardHub(): string
             $slrGeneratedSig = (int)($stratLastRun['generated_signals_count']                   ?? $slrEmitted);
             $slrHasData      = $stratLastRun !== [];
 
+            // ── corridor_bottom_long: remap top-card fields from its own last_run keys ──
+            if ($stratId === 'corridor_bottom_long' && $slrHasData) {
+                // candidates = how many symbols entered the candidate zone
+                $slrCandidates   = (int)($stratLastRun['candidates_found']   ?? 0);
+                // pool = candidates currently waiting for validation
+                $slrPoolTotal    = (int)($stratLastRun['candidates_waiting'] ?? 0);
+                // Runtime line: corridor has no run_state.json; derive from last_run
+                $rsStatus   = $e((string)($stratLastRun['status']      ?? 'idle'));
+                $rsCursor   = (int)($stratLastRun['symbols_checked']   ?? 0);
+                $rsTotal    = (int)($stratLastRun['symbols_checked']   ?? 0);
+                $rsLastTick = $e((string)($stratLastRun['finished_at'] ?? $stratLastRun['started_at'] ?? '—'));
+            }
+
             $cardId      = 'card-edit-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $stratId);
 
             // Quick toggle button: shows action to flip enabled state
@@ -1679,16 +1692,24 @@ HTML;
             continue;
         }
 
-        $dblScanned  = $e($dblLastRun['symbols_scanned']                      ?? $dblStats['symbols_scanned_total']               ?? '—');
-        $dblFound    = $e($dblLastRun['double_bottom_found']                   ?? $dblStats['double_bottom_found_total']            ?? '—');
-        $dblFoundCur = $e($dblLastRun['double_bottom_found_current']           ?? '—');
-        $dblEmitted  = $e($dblLastRun['current_cycle_signals_emitted_total']   ?? $dblLastRun['signals_emitted']                   ?? '—');
-        $dblPool     = $e($dblLastRun['active_pool_signals_total']             ?? '—');
-        $dblHandoff  = $e($dblLastRun['bot_handoff_ready_total']               ?? '—');
+        $dblPipeline  = (array)($dblLastRun['pipeline_summary'] ?? []);
+        $dblStatus    = $e((string)($dblLastRun['status']      ?? '—'));
+        $dblStarted   = $e((string)($dblLastRun['started_at']  ?? '—'));
+        $dblFinished  = $e((string)($dblLastRun['finished_at'] ?? '—'));
+        $dblTotal     = $e((string)($dblPipeline['symbols_total']  ?? $dblLastRun['total']     ?? '—'));
+        $dblScanned   = $e((string)($dblPipeline['symbols_scanned'] ?? $dblLastRun['processed'] ?? $dblLastRun['symbols_scanned'] ?? $dblStats['symbols_scanned_total'] ?? '—'));
+        $dblChecked   = $e((string)($dblPipeline['double_bottom_checked_total'] ?? '—'));
+        $dblFound     = $e((string)($dblPipeline['double_bottom_found_total'] ?? $dblLastRun['double_bottom_found'] ?? $dblStats['double_bottom_found_total'] ?? '—'));
+        $dblFoundCur  = $e((string)($dblLastRun['double_bottom_found_current'] ?? '—'));
+        $dblWaiting   = $e((string)($dblPipeline['candidate_waiting_confirm'] ?? '—'));
+        $dblExpired   = $e((string)($dblPipeline['candidate_expired'] ?? '—'));
+        $dblEmitted   = $e((string)($dblLastRun['current_cycle_signals_emitted_total'] ?? $dblPipeline['signals_emitted_total'] ?? $dblLastRun['signals_emitted'] ?? '—'));
+        $dblPool      = $e((string)($dblLastRun['active_pool_signals_total']   ?? '—'));
+        $dblHandoff   = $e((string)($dblLastRun['bot_handoff_ready_total']     ?? '—'));
 
         // Top reject reasons
         $rejectReasonsHtml = '';
-        $rejectSrc = $dblLastRun['reject_reasons'] ?? $dblLastRun['top_reject_reasons'] ?? [];
+        $rejectSrc = $dblLastRun['reject_reasons'] ?? $dblLastRun['reject_reason_distribution'] ?? $dblLastRun['top_reject_reasons'] ?? [];
         if (is_array($rejectSrc) && count($rejectSrc) > 0) {
             $parts = [];
             foreach (array_slice($rejectSrc, 0, 5, true) as $reason => $cnt) {
@@ -1701,7 +1722,7 @@ HTML;
 
         // Final reject reasons
         $finalRejectHtml = '';
-        $finalRejectSrc = $dblLastRun['final_reject_reasons'] ?? [];
+        $finalRejectSrc = $dblLastRun['final_reject_reasons'] ?? $dblLastRun['final_reject_reason_distribution'] ?? [];
         if (is_array($finalRejectSrc) && count($finalRejectSrc) > 0) {
             $parts = [];
             foreach (array_slice($finalRejectSrc, 0, 5, true) as $reason => $cnt) {
@@ -1727,6 +1748,7 @@ HTML;
             $cblStarted    = $e((string)($dblLastRun['started_at']              ?? '—'));
             $cblFinished   = $e((string)($dblLastRun['finished_at']             ?? '—'));
             $cblSim        = ($dblLastRun['simulation'] ?? false) ? 'Да (demo)' : 'Нет';
+            $cblHandoffVal = ($dblLastRun['handoff_enabled'] ?? false) ? '<strong style="color:#3fb950;">Да</strong>' : '<strong style="color:#8b949e;">Нет</strong>';
 
             // Reject reasons
             $cblRejectHtml = '';
@@ -1745,7 +1767,7 @@ HTML;
 <div class="card" style="margin-bottom:16px;">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
     <span><i class="bi bi-activity" style="margin-right:6px;"></i>Диагностика стратегии: {$dblTitle}</span>
-    <small style="color:var(--ui-text-muted);font-size:11px;">read-only · last_run.json · handoff: <strong>Нет</strong></small>
+    <small style="color:var(--ui-text-muted);font-size:11px;">read-only · last_run.json · handoff: {$cblHandoffVal}</small>
   </div>
   <div class="card-body" style="padding:12px 16px;">
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px 16px;font-size:12px;margin-bottom:12px;">
@@ -1777,16 +1799,22 @@ QUAL;
     <small style="color:var(--ui-text-muted);font-size:11px;">read-only · last_run.json / stats.json</small>
   </div>
   <div class="card-body" style="padding:12px 16px;">
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 16px;font-size:12px;margin-bottom:12px;">
-      <div><span style="color:var(--ui-text-muted);">Символов проскан.</span><br><strong>{$dblScanned}</strong></div>
-      <div><span style="color:var(--ui-text-muted);">Double-bottom найдено</span><br><strong style="color:#f0883e;">{$dblFound}</strong> / тек. {$dblFoundCur}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px 16px;font-size:12px;margin-bottom:12px;">
+      <div><span style="color:var(--ui-text-muted);">Символов проскан.</span><br><strong>{$dblScanned}</strong> / {$dblTotal}</div>
+      <div><span style="color:var(--ui-text-muted);">Паттерн проверено</span><br><strong style="color:#8b949e;">{$dblChecked}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Double-bottom найдено</span><br><strong style="color:#f0883e;">{$dblFound}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Ожидают подтверждения</span><br><strong style="color:#58a6ff;">{$dblWaiting}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Кандидатов истекло</span><br><strong style="color:#8b949e;">{$dblExpired}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Сигналов эмитировано</span><br><strong style="color:#3fb950;">{$dblEmitted}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Активных в пуле</span><br><strong style="color:#58a6ff;">{$dblPool}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Handoff-ready</span><br><strong style="color:#a78bfa;">{$dblHandoff}</strong></div>
     </div>
     <table style="width:100%;font-size:12px;border-collapse:collapse;">
-      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;width:180px;">Причины отсева (top)</td><td>{$rejectReasonsHtml}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;width:180px;">Статус</td><td>{$dblStatus}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Причины отсева (top)</td><td>{$rejectReasonsHtml}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Финальные отсевы</td><td>{$finalRejectHtml}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Запущен</td><td>{$dblStarted}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Завершён</td><td>{$dblFinished}</td></tr>
     </table>
   </div>
 </div>

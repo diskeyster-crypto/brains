@@ -258,6 +258,36 @@ function renderDashboardHub(): string
             $disabledStrat++;
         }
     }
+
+    // ── Lazy storage init for discovered pattern strategies ───────────────
+    // Ensures storage files exist before any render or run attempt.
+    // Files are only created if absent; existing content is never overwritten.
+    {
+        $lazyStorageDefaults = [
+            'signals.json'    => '[]',
+            'candidates.json' => '[]',
+            'runtime.json'    => '{}',
+            'last_run.json'   => '{}',
+        ];
+        foreach ($registry as $_lzRec) {
+            $_lzPath = (string)($_lzRec['module_path'] ?? '');
+            if ($_lzPath === '') {
+                continue;
+            }
+            $_lzStorageDir = System::path('root') . '/' . $_lzPath . '/storage';
+            if (!is_dir($_lzStorageDir)) {
+                @mkdir($_lzStorageDir, 0755, true);
+            }
+            foreach ($lazyStorageDefaults as $_lzFile => $_lzDefault) {
+                $_lzFilePath = $_lzStorageDir . '/' . $_lzFile;
+                if (!file_exists($_lzFilePath)) {
+                    @file_put_contents($_lzFilePath, $_lzDefault);
+                }
+            }
+        }
+        unset($_lzRec, $_lzPath, $_lzStorageDir, $_lzFile, $_lzDefault, $_lzFilePath);
+    }
+
     $activeStatuses       = ['queued', 'ready'];
     $queueActiveItems     = array_filter($queue, fn($i) => in_array($i['queue_status'] ?? '', $activeStatuses, true));
     $queueSize            = count($queueActiveItems);
@@ -490,8 +520,7 @@ function renderDashboardHub(): string
             // Manual run action buttons — only active for strategies with a wired service.
             // All other strategies show disabled/unavailable buttons so the operator can see
             // the actions exist but are not yet supported for that module.
-            $supportsManualRun = ($stratId === 'double_bottom_long');
-            if ($supportsManualRun) {
+            if ($stratId === 'double_bottom_long') {
                 $actionButtonsHtml = <<<BTN
       <form method="post" action="{$stratActUrl}" style="margin:0;">
         <input type="hidden" name="dashboard_action" value="strategy_action">
@@ -521,6 +550,48 @@ function renderDashboardHub(): string
         </button>
       </form>
 BTN;
+            } elseif ($stratId === 'corridor_bottom_long') {
+                // Buttons enabled only when strategy is enabled=true and mode=demo
+                $cblRunAvailable = $opEnabled && $opMode === 'demo';
+                if ($cblRunAvailable) {
+                    $actionButtonsHtml = <<<BTN
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="queue_run">
+        <input type="hidden" name="active_tab" value="dh-strat">
+        <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;">
+          Запуск цикла
+        </button>
+      </form>
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="tick_batch">
+        <input type="hidden" name="active_tab" value="dh-strat">
+        <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.12);color:#58a6ff;border:1px solid #58a6ff55;">
+          Тик батча
+        </button>
+      </form>
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="refresh">
+        <input type="hidden" name="active_tab" value="dh-strat">
+        <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;">
+          Обновить runtime
+        </button>
+      </form>
+BTN;
+                } else {
+                    $_cblDisabledReason = !$opEnabled ? 'Стратегия отключена — нажмите Включить' : 'Требуется mode=demo';
+                    $actionButtonsHtml = <<<BTN
+      <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
+        title="{$_cblDisabledReason}">Запуск цикла</button>
+      <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
+        title="{$_cblDisabledReason}">Тик батча</button>
+BTN;
+                }
             } else {
                 $actionButtonsHtml = <<<BTN
       <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
@@ -1584,6 +1655,63 @@ HTML;
         }
 
         $dblTitle = $e($rec['title'] ?? $dblSid);
+
+        // ── corridor_bottom_long: show its own last_run fields ────────────
+        if ($dblSid === 'corridor_bottom_long') {
+            $cblChecked    = $e((string)($dblLastRun['symbols_checked']         ?? '—'));
+            $cblNoCandle   = $e((string)($dblLastRun['no_candle_data']          ?? '—'));
+            $cblSkipped    = $e((string)($dblLastRun['skipped_not_near_low']    ?? '—'));
+            $cblFound      = $e((string)($dblLastRun['candidates_found']        ?? '—'));
+            $cblWaiting    = $e((string)($dblLastRun['candidates_waiting']      ?? '—'));
+            $cblValidated  = $e((string)($dblLastRun['candidates_validated']    ?? '—'));
+            $cblSignals    = $e((string)($dblLastRun['generated_signals_count'] ?? '—'));
+            $cblRejected   = $e((string)($dblLastRun['rejected']                ?? '—'));
+            $cblStarted    = $e((string)($dblLastRun['started_at']              ?? '—'));
+            $cblFinished   = $e((string)($dblLastRun['finished_at']             ?? '—'));
+            $cblSim        = ($dblLastRun['simulation'] ?? false) ? 'Да (demo)' : 'Нет';
+
+            // Reject reasons
+            $cblRejectHtml = '';
+            $cblRejectSrc  = $dblLastRun['reject_reasons'] ?? [];
+            if (is_array($cblRejectSrc) && count($cblRejectSrc) > 0) {
+                $parts = [];
+                foreach (array_slice($cblRejectSrc, 0, 5) as $rr) {
+                    $parts[] = '<code style="font-size:11px;">' . $e((string)$rr) . '</code>';
+                }
+                $cblRejectHtml = implode(' · ', $parts);
+            } else {
+                $cblRejectHtml = '<span style="color:var(--ui-text-muted);">—</span>';
+            }
+
+            $stratQualHtml .= <<<QUAL
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span><i class="bi bi-activity" style="margin-right:6px;"></i>Диагностика стратегии: {$dblTitle}</span>
+    <small style="color:var(--ui-text-muted);font-size:11px;">read-only · last_run.json · handoff: <strong>Нет</strong></small>
+  </div>
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px 16px;font-size:12px;margin-bottom:12px;">
+      <div><span style="color:var(--ui-text-muted);">Символов проверено</span><br><strong>{$cblChecked}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Нет данных свечей</span><br><strong style="color:#8b949e;">{$cblNoCandle}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Вне зоны corridor</span><br><strong style="color:#8b949e;">{$cblSkipped}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Кандидатов найдено</span><br><strong style="color:#f0883e;">{$cblFound}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Ожидают валидации</span><br><strong style="color:#58a6ff;">{$cblWaiting}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Валидировано</span><br><strong style="color:#3fb950;">{$cblValidated}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Сигналов создано</span><br><strong style="color:#3fb950;">{$cblSignals}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Отклонено</span><br><strong style="color:#f85149;">{$cblRejected}</strong></div>
+    </div>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;width:180px;">Режим запуска</td><td>{$cblSim}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Причины отсева</td><td>{$cblRejectHtml}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Запущен</td><td>{$cblStarted}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Завершён</td><td>{$cblFinished}</td></tr>
+    </table>
+  </div>
+</div>
+QUAL;
+            continue;
+        }
+
         $stratQualHtml .= <<<QUAL
 <div class="card" style="margin-bottom:16px;">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
@@ -3101,6 +3229,21 @@ function handleDashboardOverridesSave(): void
     }
     file_put_contents($overridesFile, json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
+    // For corridor_bottom_long, also sync enabled+mode into the strategy's own active.php
+    if ($stratId === 'corridor_bottom_long') {
+        $_cblActivePath = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/active.php';
+        $_cblSafeMode   = ($mode === 'live') ? 'live' : 'demo';
+        $_cblActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
+            . "/**\n * Corridor Bottom Long — Active Config Overrides\n"
+            . " *\n * Written by the admin UI or manually.\n"
+            . " * Merged on top of base.php at runtime.\n */\n\n"
+            . "return [\n"
+            . "    'enabled' => " . ((bool)$enabled ? 'true' : 'false') . ",\n"
+            . "    'mode'    => '" . $_cblSafeMode . "',\n"
+            . "];\n";
+        @file_put_contents($_cblActivePath, $_cblActiveContent);
+    }
+
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Настройки стратегии «{$stratId}» сохранены"];
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-strat'));
     $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
@@ -3268,6 +3411,36 @@ function handleDashboardStrategyAction(): void
         }
     }
 
+    // ── corridor_bottom_long — demo simulation only, no bot handoff ──────────
+    if ($stratId === 'corridor_bottom_long') {
+        $cblModuleDir = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long';
+        if (in_array($action, ['queue_run', 'tick_batch'], true)) {
+            try {
+                require_once $cblModuleDir . '/lib/validation_engine.php';
+                require_once $cblModuleDir . '/lib/pattern_detector.php';
+                require_once $cblModuleDir . '/strategy.php';
+                $cblStrategy = new \Modules\Strategy\CorridorBottomLong\CorridorBottomLongStrategy($cblModuleDir);
+                $cblResult   = $cblStrategy->runSimulation();
+                $cblStats    = $cblResult['stats'] ?? [];
+                $cblMsg = $cblResult['ok']
+                    ? 'Симуляция выполнена · символов: ' . ($cblStats['symbols_checked'] ?? 0)
+                        . ' · кандидатов: ' . ($cblStats['candidates_found'] ?? 0)
+                        . ' · сигналов: ' . ($cblStats['generated_signals_count'] ?? 0)
+                    : 'Ошибка симуляции: ' . ($cblResult['error'] ?? 'Неизвестная');
+                $_SESSION['dashboard_flash'] = ['type' => $cblResult['ok'] ? 'success' : 'error', 'msg' => $cblMsg];
+            } catch (\Throwable $cblEx) {
+                $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка corridor_bottom_long: ' . $cblEx->getMessage()];
+            }
+            header('Location: ' . $dashUrl);
+            exit;
+        }
+        if ($action === 'refresh') {
+            $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Runtime обновлён'];
+            header('Location: ' . $dashUrl);
+            exit;
+        }
+    }
+
     $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => "Неизвестная стратегия или действие: {$stratId}/{$action}"];
     header('Location: ' . $dashUrl);
     exit;
@@ -3420,6 +3593,20 @@ function handleDashboardStrategyToggle(): void
         mkdir($storageDir, 0755, true);
     }
     file_put_contents($overridesFile, json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    // For corridor_bottom_long, also sync enabled state into the strategy's own active.php
+    if ($stratId === 'corridor_bottom_long') {
+        $_cblActivePath = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/active.php';
+        $_cblActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
+            . "/**\n * Corridor Bottom Long — Active Config Overrides\n"
+            . " *\n * Written by the admin UI or manually.\n"
+            . " * Merged on top of base.php at runtime.\n */\n\n"
+            . "return [\n"
+            . "    'enabled' => " . ($enabled ? 'true' : 'false') . ",\n"
+            . "    'mode'    => 'demo',\n"
+            . "];\n";
+        @file_put_contents($_cblActivePath, $_cblActiveContent);
+    }
 
     $label = $enabled ? 'включена' : 'выключена';
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Стратегия «{$stratId}» {$label}"];

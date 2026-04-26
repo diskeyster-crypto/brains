@@ -258,10 +258,23 @@ final class CorridorBottomLongStrategy
             $stats['generated_signals_count']++;
 
             $signal = [
+                // Identity — required by bot buildQueueItem
                 'signal_id'          => $this->makeSignalId($symbol, $now),
+                'strategy_id'        => self::STRATEGY_ID,
                 'symbol'             => $symbol,
                 'side'               => 'long',
-                'strategy_id'        => self::STRATEGY_ID,
+                'mode'               => (string)($config['mode'] ?? 'demo'),
+
+                // Entry geometry — required by bot execution path
+                'entry_type'         => 'limit_near_low',
+                'entry_mode'         => 'limit',
+                'entry_price'        => $lastClose,
+
+                // Lifecycle timestamps — detected_at used by bot age gate
+                'detected_at'        => date('c', $now),
+                'created_at'         => date('c', $now),
+
+                // Strategy-specific diagnostics
                 'pattern_type'       => $patternResult['best']['pattern_type'] ?? null,
                 'reason'             => 'validated_corridor_bottom_long',
                 'validation_score'   => $result['validation_score'],
@@ -272,7 +285,6 @@ final class CorridorBottomLongStrategy
                 'current_price'      => $lastClose,
                 'distance_pct'       => round($distancePct,  4),
                 'score_reasons'      => $result['reasons'],
-                'created_at'         => date('c', $now),
             ];
 
             $signals    = $this->upsertSignal($signals, $symbol, $signal);
@@ -280,7 +292,8 @@ final class CorridorBottomLongStrategy
             $candidates = $this->removeCandidate($candidates, $candidateKey);
         }
 
-        // Persist updated state
+        // Persist updated state (storage dirs created lazily by writeJson)
+        $this->initStorage();
         $this->writeJson('storage/candidates.json', $candidates);
         $this->writeJson('storage/signals.json',    $signals);
 
@@ -548,6 +561,37 @@ final class CorridorBottomLongStrategy
     private function makeSignalId(string $symbol, int $ts): string
     {
         return sprintf('%s_%s_%d', self::STRATEGY_ID, strtolower($symbol), $ts);
+    }
+
+    // ── Storage init ──────────────────────────────────────────────────────────
+
+    /**
+     * Lazily create all runtime storage files if they do not yet exist.
+     * Called once per execute() cycle, before any reads or writes.
+     */
+    private function initStorage(): void
+    {
+        $defaults = [
+            'storage/signals.json'           => [],
+            'storage/candidates.json'        => [],
+            'storage/runtime.json'           => (object)[],
+            'storage/last_run.json'          => (object)[],
+            'storage/bot_handoff_queue.json' => [],
+        ];
+        foreach ($defaults as $relPath => $default) {
+            $path = $this->moduleDir . '/' . $relPath;
+            $dir  = dirname($path);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            if (!file_exists($path)) {
+                file_put_contents(
+                    $path,
+                    json_encode($default, JSON_PRETTY_PRINT),
+                    LOCK_EX
+                );
+            }
+        }
     }
 
     // ── Storage helpers ───────────────────────────────────────────────────────

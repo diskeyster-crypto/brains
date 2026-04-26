@@ -284,6 +284,25 @@ final class CorridorBottomLongStrategy
         $this->writeJson('storage/candidates.json', $candidates);
         $this->writeJson('storage/signals.json',    $signals);
 
+        // ── Handoff queue (conditional on handoff_enabled) ───────────────────
+        $handoffEnabled = (bool)($config['handoff_enabled'] ?? false);
+        $stats['handoff_enabled'] = $handoffEnabled;
+        if ($handoffEnabled) {
+            $handoffQueue = [];
+            foreach ($signals as $sig) {
+                $handoffQueue[] = array_merge($sig, [
+                    'handoff_status'    => 'new',
+                    'first_seen_at'     => date('c', $now),
+                    'last_refreshed_at' => date('c', $now),
+                    'seen_count'        => 1,
+                ]);
+            }
+            $this->writeJson('storage/bot_handoff_queue.json', $handoffQueue);
+            $stats['handoff_ready'] = count($handoffQueue);
+        } else {
+            $stats['handoff_ready'] = 0;
+        }
+
         // ── 8. Last-run diagnostics ───────────────────────────────────────────
         $stats['finished_at'] = date('c');
         $this->writeJson('storage/last_run.json', $stats);

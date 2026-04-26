@@ -454,8 +454,35 @@ function renderDashboardHub(): string
             $dirStr = $e(implode(' / ', $dir));
 
             // Handoff
-            $handoffStr   = $hasHandoff ? '<span style="color:#3fb950;">Да</span>' : '<span style="color:#8b949e;">Нет</span>';
-            $signalStr    = ($signalCount !== null) ? $e((string)$signalCount) : '—';
+            // Read handoff_enabled from operator_overrides; fall back to strategy's own config.
+            // double_bottom_long always has handoff active (its service writes bot_handoff_queue natively).
+            $opHandoffEnabled = null;
+            if (array_key_exists('handoff_enabled', $op)) {
+                $opHandoffEnabled = (bool)$op['handoff_enabled'];
+            } else {
+                // Try strategy's own active.php first, then base.php
+                if ($modulePath !== '') {
+                    $_hoModDir = System::path('root') . '/' . $modulePath;
+                    foreach (['config/active.php', 'config/base.php'] as $_hoCfg) {
+                        $_hoCfgPath = $_hoModDir . '/' . $_hoCfg;
+                        if (is_file($_hoCfgPath)) {
+                            $_hoCfgData = @include $_hoCfgPath;
+                            if (is_array($_hoCfgData) && array_key_exists('handoff_enabled', $_hoCfgData)) {
+                                $opHandoffEnabled = (bool)$_hoCfgData['handoff_enabled'];
+                                break;
+                            }
+                        }
+                    }
+                }
+                if ($opHandoffEnabled === null) {
+                    // double_bottom_long: handoff is always on in its service
+                    $opHandoffEnabled = ($stratId === 'double_bottom_long');
+                }
+            }
+            $handoffStr = $opHandoffEnabled
+                ? '<span style="color:#3fb950;">Да</span>'
+                : '<span style="color:#8b949e;">Нет</span>';
+            $signalStr = ($signalCount !== null) ? $e((string)$signalCount) : '—';
 
             // Options: mode select
             $modeDemo = $opMode !== 'live' ? ' selected' : '';
@@ -464,6 +491,10 @@ function renderDashboardHub(): string
             // Options: enabled select
             $enYes = $opEnabled ? ' selected' : '';
             $enNo  = $opEnabled ? '' : ' selected';
+
+            // Options: handoff_enabled select
+            $enHandoffYes = $opHandoffEnabled ? 'selected' : '';
+            $enHandoffNo  = $opHandoffEnabled ? '' : 'selected';
 
             // ── strategy run_state ────────────────────────────────────────
             $runStatePath = System::path('root') . '/' . $modulePath . '/storage/run_state.json';
@@ -499,7 +530,9 @@ function renderDashboardHub(): string
             $slrCandidates   = (int)($stratLastRun['found']                                     ?? 0);
             $slrEmitted      = (int)($stratLastRun['current_cycle_signals_emitted_total']        ?? 0);
             $slrPoolTotal    = (int)($stratLastRun['active_pool_signals_total']                  ?? 0);
-            $slrHandoffReady = (int)($stratLastRun['bot_handoff_ready_total']                    ?? $stratSignals[$stratId] ?? 0);
+            $slrHandoffReady = (int)($stratLastRun['bot_handoff_ready_total'] ?? $stratLastRun['handoff_ready'] ?? $stratSignals[$stratId] ?? 0);
+            // For corridor_bottom_long: prefer generated_signals_count; for others: emitted total
+            $slrGeneratedSig = (int)($stratLastRun['generated_signals_count']                   ?? $slrEmitted);
             $slrHasData      = $stratLastRun !== [];
 
             $cardId      = 'card-edit-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $stratId);
@@ -601,6 +634,23 @@ BTN;
 BTN;
             }
 
+            // Handoff quick-toggle button (shows action to flip handoff_enabled)
+            $_hoTarget = $opHandoffEnabled ? '0' : '1';
+            $_hoLabel  = $opHandoffEnabled ? 'Отключить handoff' : 'Включить handoff';
+            $_hoBg     = $opHandoffEnabled ? 'rgba(248,81,73,.10)' : 'rgba(167,139,250,.10)';
+            $_hoColor  = $opHandoffEnabled ? '#f85149' : '#a78bfa';
+            $handoffToggleHtml = <<<HTG
+      <form method="post" action="{$stratToggleUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_handoff_toggle">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="handoff_enabled" value="{$_hoTarget}">
+        <input type="hidden" name="active_tab" value="dh-strat">
+        <button type="submit" class="btn btn-sm" style="background:{$_hoBg};color:{$_hoColor};border:1px solid {$_hoColor}55;">
+          {$_hoLabel}
+        </button>
+      </form>
+HTG;
+
             $stratCards .= <<<HTML
 <div class="card" style="margin-bottom:16px;">
   <!-- Card header -->
@@ -645,7 +695,7 @@ BTN;
         <td colspan="3" style="padding:3px 0;font-size:11px;">
           статус <code>{$slrStatus}</code>
           · кандидатов <code>{$slrCandidates}</code>
-          · сигналов <code>{$slrEmitted}</code>
+          · сигналов <code>{$slrGeneratedSig}</code>
           · активных <code>{$slrPoolTotal}</code>
           · handoff-ready <code>{$slrHandoffReady}</code>
         </td>
@@ -667,6 +717,7 @@ BTN;
       <button type="button" class="btn btn-sm btn-primary" onclick="dhToggleEdit('{$cardId}')">
         Изменить
       </button>
+      {$handoffToggleHtml}
       {$actionButtonsHtml}
     </div>
 
@@ -689,6 +740,13 @@ BTN;
             <select name="mode" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
               <option value="demo"{$modeDemo}>demo</option>
               <option value="live"{$modeLive}>live</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Handoff (передавать боту)</label>
+            <select name="handoff_enabled" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
+              <option value="1" {$enHandoffYes}>Да</option>
+              <option value="0" {$enHandoffNo}>Нет</option>
             </select>
           </div>
         </div>
@@ -3211,6 +3269,8 @@ function handleDashboardOverridesSave(): void
 
     $enabled   = (int)($_POST['enabled']               ?? 1);
     $mode      = trim((string)($_POST['mode']           ?? 'demo'));
+    // handoff_enabled: -1 means not submitted (don't change existing value)
+    $handoffEnabledPost = isset($_POST['handoff_enabled']) ? (int)$_POST['handoff_enabled'] : -1;
 
     if (!in_array($mode, ['demo', 'live'], true)) {
         $mode = 'demo';
@@ -3218,28 +3278,36 @@ function handleDashboardOverridesSave(): void
 
     // Preserve all bot-owned execution fields from existing override; do not clobber
     // them — they are managed via the Bot/Control tab, not the strategy card form.
-    $prev = (array)($overrides[$stratId] ?? []);
-    $overrides[$stratId] = array_merge($prev, [
+    $prev    = (array)($overrides[$stratId] ?? []);
+    $newData = [
         'enabled' => (bool)$enabled,
         'mode'    => $mode,
-    ]);
+    ];
+    if ($handoffEnabledPost >= 0) {
+        $newData['handoff_enabled'] = (bool)$handoffEnabledPost;
+    }
+    $overrides[$stratId] = array_merge($prev, $newData);
 
     if (!is_dir($storageDir)) {
         mkdir($storageDir, 0755, true);
     }
     file_put_contents($overridesFile, json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
-    // For corridor_bottom_long, also sync enabled+mode into the strategy's own active.php
+    // For corridor_bottom_long, also sync enabled+mode+handoff_enabled into the strategy's own active.php
     if ($stratId === 'corridor_bottom_long') {
         $_cblActivePath = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/active.php';
         $_cblSafeMode   = ($mode === 'live') ? 'live' : 'demo';
+        $_cblHandoff    = ($handoffEnabledPost >= 0)
+            ? ($handoffEnabledPost > 0 ? 'true' : 'false')
+            : ((bool)($overrides[$stratId]['handoff_enabled'] ?? false) ? 'true' : 'false');
         $_cblActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
             . "/**\n * Corridor Bottom Long — Active Config Overrides\n"
             . " *\n * Written by the admin UI or manually.\n"
             . " * Merged on top of base.php at runtime.\n */\n\n"
             . "return [\n"
-            . "    'enabled' => " . ((bool)$enabled ? 'true' : 'false') . ",\n"
-            . "    'mode'    => '" . $_cblSafeMode . "',\n"
+            . "    'enabled'         => " . ((bool)$enabled ? 'true' : 'false') . ",\n"
+            . "    'mode'            => '" . $_cblSafeMode . "',\n"
+            . "    'handoff_enabled' => " . $_cblHandoff . ",\n"
             . "];\n";
         @file_put_contents($_cblActivePath, $_cblActiveContent);
     }
@@ -3595,15 +3663,18 @@ function handleDashboardStrategyToggle(): void
     file_put_contents($overridesFile, json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
     // For corridor_bottom_long, also sync enabled state into the strategy's own active.php
+    // Preserve handoff_enabled from the existing override (or default false).
     if ($stratId === 'corridor_bottom_long') {
-        $_cblActivePath = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/active.php';
+        $_cblActivePath   = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/active.php';
+        $_cblHandoffVal   = (bool)($overrides[$stratId]['handoff_enabled'] ?? false);
         $_cblActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
             . "/**\n * Corridor Bottom Long — Active Config Overrides\n"
             . " *\n * Written by the admin UI or manually.\n"
             . " * Merged on top of base.php at runtime.\n */\n\n"
             . "return [\n"
-            . "    'enabled' => " . ($enabled ? 'true' : 'false') . ",\n"
-            . "    'mode'    => 'demo',\n"
+            . "    'enabled'         => " . ($enabled ? 'true' : 'false') . ",\n"
+            . "    'mode'            => 'demo',\n"
+            . "    'handoff_enabled' => " . ($_cblHandoffVal ? 'true' : 'false') . ",\n"
             . "];\n";
         @file_put_contents($_cblActivePath, $_cblActiveContent);
     }
@@ -3614,6 +3685,85 @@ function handleDashboardStrategyToggle(): void
     exit;
 }
 } // end if (!function_exists('handleDashboardStrategyToggle'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: per-strategy handoff toggle
+// Registered as: POST /admin/dashboard (dashboard_action = strategy_handoff_toggle)
+// Only flips handoff_enabled in operator_overrides.json and syncs to active.php
+// for strategies that have their own config (e.g., corridor_bottom_long).
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardHandoffToggle')) {
+function handleDashboardHandoffToggle(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+
+    $stratId        = trim((string)($_POST['strategy_id']     ?? ''));
+    $handoffEnabled = (bool)(int)($_POST['handoff_enabled']   ?? 0);
+    $validTabs      = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $postTab        = trim((string)($_POST['active_tab']      ?? 'dh-strat'));
+    $activeTab      = in_array($postTab, $validTabs, true) ? $postTab : 'dh-strat';
+    $dashUrl        = System::web('admin/dashboard') . '?tab=' . $activeTab;
+
+    if ($stratId === '') {
+        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'strategy_id не указан'];
+        header('Location: ' . $dashUrl);
+        exit;
+    }
+
+    $storageDir    = System::path('root') . '/modules/bot/storage';
+    $overridesFile = $storageDir . '/operator_overrides.json';
+
+    $overrides = [];
+    if (file_exists($overridesFile)) {
+        $raw = file_get_contents($overridesFile);
+        if ($raw !== false && $raw !== '') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $overrides = $decoded;
+            }
+        }
+    }
+
+    $prev = (array)($overrides[$stratId] ?? []);
+    $overrides[$stratId] = array_merge($prev, ['handoff_enabled' => $handoffEnabled]);
+
+    if (!is_dir($storageDir)) {
+        mkdir($storageDir, 0755, true);
+    }
+    file_put_contents($overridesFile, json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    // For corridor_bottom_long: sync handoff_enabled to the strategy's own active.php
+    // Preserve enabled and mode from the existing override.
+    if ($stratId === 'corridor_bottom_long') {
+        $_cblActivePath   = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/active.php';
+        $_cblEnabledVal   = (bool)($overrides[$stratId]['enabled']  ?? false);
+        $_cblModeVal      = (string)($overrides[$stratId]['mode']   ?? 'demo');
+        $_cblSafeMode     = ($_cblModeVal === 'live') ? 'live' : 'demo';
+        $_cblActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
+            . "/**\n * Corridor Bottom Long — Active Config Overrides\n"
+            . " *\n * Written by the admin UI or manually.\n"
+            . " * Merged on top of base.php at runtime.\n */\n\n"
+            . "return [\n"
+            . "    'enabled'         => " . ($_cblEnabledVal ? 'true' : 'false') . ",\n"
+            . "    'mode'            => '" . $_cblSafeMode . "',\n"
+            . "    'handoff_enabled' => " . ($handoffEnabled ? 'true' : 'false') . ",\n"
+            . "];\n";
+        @file_put_contents($_cblActivePath, $_cblActiveContent);
+    }
+
+    $label = $handoffEnabled ? 'включён' : 'выключен';
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Handoff стратегии «{$stratId}» {$label}"];
+    header('Location: ' . $dashUrl);
+    exit;
+}
+} // end if (!function_exists('handleDashboardHandoffToggle'))
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST handler: quick bot enable/disable toggle
@@ -4318,6 +4468,9 @@ function dispatchDashboardPost(): void
             break;
         case 'strategy_toggle':
             handleDashboardStrategyToggle();
+            break;
+        case 'strategy_handoff_toggle':
+            handleDashboardHandoffToggle();
             break;
         case 'strategy_action':
             handleDashboardStrategyAction();

@@ -660,6 +660,10 @@ final class BotService
         }
         // shadow_compare: governor queue used for orders must remain 0
 
+        // ── 4b. Reconcile stale submitted queue items ─────────────────────────
+        $reconResult = $this->reconcileSubmittedQueue($orderQueue, $activeOrders, $activePositions, $tickAt);
+        $orderQueue  = $reconResult['order_queue'];
+
         // ── 5. Execution state machine ────────────────────────────────────────
         $execResult = $this->processExecution($orderQueue, $activeOrders, $activePositions, $closedPositions, $botMode, $config, $tickAt);
         $orderQueue      = $execResult['order_queue'];
@@ -816,6 +820,15 @@ final class BotService
             'order_queue_total'      => $stats['order_queue_total'],
             'active_orders_count'    => count($activeOrders),
             'active_positions_count' => count($activePositions),
+
+            // Submitted queue reconciliation (this tick)
+            'submitted_queue_total'                    => $reconResult['submitted_total'],
+            'submitted_active_position_matched_total'  => $reconResult['active_position_matched'],
+            'submitted_active_order_matched_total'     => $reconResult['active_order_matched'],
+            'submitted_reconciled_closed_total'        => $reconResult['reconciled_closed'],
+            'submitted_reconciled_expired_total'       => $reconResult['reconciled_expired'],
+            'submitted_stale_unmatched_total'          => $reconResult['stale_unmatched'],
+            'submitted_still_blocking_total'           => $reconResult['still_blocking'],
 
             // Cumulative
             'ticks_total'                => (int)($stats['ticks_total'] ?? 0),
@@ -1023,6 +1036,201 @@ final class BotService
     }
 
     /**
+     * Reconcile stale submitted order-queue items.
+     *
+     * A submitted queue item can permanently block new signals with the same
+     * signal_id once the underlying position or order is no longer active.
+     * This method inspects each submitted item and transitions it to
+     * 'closed_reconciled' when safe to do so.
+     *
+     * An item is reconciled when ALL of these hold:
+     *   - No matching active order exists (by strategy_id + signal_id)
+     *   - No matching active position exists (by strategy_id + symbol)
+     *   - At least one of:
+     *       a) A closed trade exists for this strategy_id + symbol with
+     *          closed_at >= submitted_at (or signal_id exact match)
+     *       b) expires_at is non-empty and in the past
+     *
+     * Items with evidence of an active order or position are left submitted.
+     * Items with no active match but also no closure evidence are counted as
+     * 'stale_unmatched' and remain submitted (conservative — do not reconcile
+     * without evidence).
+     *
+     * Never creates orders, never modifies active_positions or active_orders.
+     *
+     * @return array{
+     *   order_queue: array,
+     *   submitted_total: int,
+     *   active_position_matched: int,
+     *   active_order_matched: int,
+     *   reconciled_closed: int,
+     *   reconciled_expired: int,
+     *   stale_unmatched: int,
+     *   still_blocking: int,
+     * }
+     */
+    private function reconcileSubmittedQueue(
+        array $orderQueue,
+        array $activeOrders,
+        array $activePositions,
+        string $tickAt
+    ): array {
+        $submittedTotal          = 0;
+        $activePositionMatched   = 0;
+        $activeOrderMatched      = 0;
+        $reconciledClosed        = 0;
+        $reconciledExpired       = 0;
+        $staleUnmatched          = 0;
+        $stillBlocking           = 0;
+
+        // ── Build fast-lookup sets ────────────────────────────────────────────
+        // Active orders: keyed by "strategy_id:signal_id"
+        $activeOrderKeys = [];
+        foreach ($activeOrders as $ao) {
+            $stratId  = (string)($ao['strategy_id'] ?? $ao['owner_strategy'] ?? '');
+            $signalId = (string)($ao['signal_id'] ?? '');
+            if ($stratId !== '' && $signalId !== '') {
+                $activeOrderKeys[$stratId . ':' . $signalId] = true;
+            }
+        }
+
+        // Active positions: keyed by "strategy_id:symbol" (strongest available)
+        // Also indexed by symbol alone as a fallback
+        $activePosByStratSym = [];
+        $activePosBySym      = [];
+        foreach ($activePositions as $ap) {
+            $stratId = (string)($ap['strategy_id'] ?? $ap['owner_strategy'] ?? '');
+            $symbol  = (string)($ap['symbol'] ?? '');
+            if ($symbol !== '') {
+                $activePosBySym[$symbol] = true;
+                if ($stratId !== '') {
+                    $activePosByStratSym[$stratId . ':' . $symbol] = true;
+                }
+            }
+        }
+
+        // ── Load closed trades ────────────────────────────────────────────────
+        $closedTrades     = $this->readJson('storage/trades/closed_trades.json', []);
+        // Index by strategy_id:symbol → array of closed_at timestamps
+        $closedByStratSym  = [];
+        $closedBySignalId  = [];
+        foreach ($closedTrades as $ct) {
+            $ctStratId  = (string)($ct['strategy_id']  ?? '');
+            $ctSymbol   = (string)($ct['symbol']        ?? '');
+            $ctSignalId = (string)($ct['signal_id']     ?? '');
+            $ctClosedAt = (string)($ct['closed_at']     ?? '');
+            $ctClosedTs = ($ctClosedAt !== '') ? @strtotime($ctClosedAt) : false;
+
+            if ($ctStratId !== '' && $ctSymbol !== '') {
+                $k = $ctStratId . ':' . $ctSymbol;
+                $closedByStratSym[$k][] = ($ctClosedTs !== false) ? $ctClosedTs : 0;
+            }
+            if ($ctSignalId !== '') {
+                $closedBySignalId[$ctSignalId] = ($ctClosedTs !== false) ? $ctClosedTs : 0;
+            }
+        }
+
+        $now = time();
+
+        foreach ($orderQueue as &$qItem) {
+            if ((string)($qItem['queue_status'] ?? '') !== 'submitted') {
+                continue;
+            }
+            $submittedTotal++;
+
+            $stratId  = (string)($qItem['strategy_id'] ?? $qItem['owner_strategy'] ?? '');
+            $symbol   = (string)($qItem['symbol']       ?? '');
+            $signalId = (string)($qItem['signal_id']    ?? '');
+
+            $submittedAt   = (string)($qItem['submitted_at'] ?? '');
+            $submittedTs   = ($submittedAt !== '') ? @strtotime($submittedAt) : false;
+            $expiresAt     = (string)($qItem['expires_at']   ?? '');
+            $expiresTs     = ($expiresAt  !== '') ? @strtotime($expiresAt)   : false;
+
+            // ── Check active order ──────────────────────────────────────────
+            $hasActiveOrder = false;
+            if ($stratId !== '' && $signalId !== '') {
+                $hasActiveOrder = isset($activeOrderKeys[$stratId . ':' . $signalId]);
+            }
+            if ($hasActiveOrder) {
+                $activeOrderMatched++;
+                $stillBlocking++;
+                continue;
+            }
+
+            // ── Check active position ───────────────────────────────────────
+            $hasActivePos = false;
+            if ($stratId !== '' && $symbol !== '') {
+                $hasActivePos = isset($activePosByStratSym[$stratId . ':' . $symbol]);
+            }
+            if (!$hasActivePos && $symbol !== '') {
+                $hasActivePos = isset($activePosBySym[$symbol]);
+            }
+            if ($hasActivePos) {
+                $activePositionMatched++;
+                $stillBlocking++;
+                continue;
+            }
+
+            // ── No active order/position — check if closed ──────────────────
+            $matchedClosedTrade = false;
+
+            // Strongest: signal_id exact match in closed trades
+            if ($signalId !== '' && isset($closedBySignalId[$signalId])) {
+                $matchedClosedTrade = true;
+            }
+
+            // Fallback: strategy_id + symbol with closed_at >= submitted_at
+            if (!$matchedClosedTrade && $stratId !== '' && $symbol !== '') {
+                $k = $stratId . ':' . $symbol;
+                if (isset($closedByStratSym[$k])) {
+                    foreach ($closedByStratSym[$k] as $ctTs) {
+                        // Accept if closed_at is after submitted_at, or if no timestamps available
+                        if ($submittedTs === false || $ctTs === 0 || $ctTs >= $submittedTs) {
+                            $matchedClosedTrade = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if ($matchedClosedTrade) {
+                $qItem['queue_status']       = 'closed_reconciled';
+                $qItem['reconciled_at']      = $tickAt;
+                $qItem['last_change_reason'] = 'closed_reconciled_matched_closed_trade';
+                $reconciledClosed++;
+                continue;
+            }
+
+            // ── No closed trade match — check TTL ───────────────────────────
+            $isExpired = $expiresTs !== false && $now > $expiresTs;
+            if ($isExpired) {
+                $qItem['queue_status']       = 'closed_reconciled';
+                $qItem['reconciled_at']      = $tickAt;
+                $qItem['last_change_reason'] = 'closed_reconciled_expired_no_active';
+                $reconciledExpired++;
+                continue;
+            }
+
+            // ── Insufficient evidence — leave submitted, count as stale ──────
+            $staleUnmatched++;
+            $stillBlocking++;
+        }
+        unset($qItem);
+
+        return [
+            'order_queue'             => $orderQueue,
+            'submitted_total'         => $submittedTotal,
+            'active_position_matched' => $activePositionMatched,
+            'active_order_matched'    => $activeOrderMatched,
+            'reconciled_closed'       => $reconciledClosed,
+            'reconciled_expired'      => $reconciledExpired,
+            'stale_unmatched'         => $staleUnmatched,
+            'still_blocking'          => $stillBlocking,
+        ];
+    }
+
+    /**
      * Merge handoff signals from all enabled strategies into the bot order queue.
      *
      * Deduplication key: {strategy_id}:{signal_id}  (composite, cross-strategy safe)
@@ -1168,7 +1376,7 @@ final class BotService
             }
             $prevStatus = (string)($prev['queue_status'] ?? 'queued');
             if (in_array($prevStatus, [
-                'expired', 'withdrawn', 'submitted',
+                'expired', 'withdrawn', 'submitted', 'closed_reconciled',
                 'active_order', 'active_position', 'rejected',
             ], true)) {
                 $result[$key] = $prev;
@@ -3039,6 +3247,14 @@ final class BotService
                 'shadow_compare_direct_only_examples'       => [],
                 'shadow_compare_governor_only_examples'     => [],
                 'shadow_compare_overlap_examples'           => [],
+                // Submitted queue reconciliation
+                'submitted_queue_total'                    => 0,
+                'submitted_active_position_matched_total'  => 0,
+                'submitted_active_order_matched_total'     => 0,
+                'submitted_reconciled_closed_total'        => 0,
+                'submitted_reconciled_expired_total'       => 0,
+                'submitted_stale_unmatched_total'          => 0,
+                'submitted_still_blocking_total'           => 0,
             ],
             'storage/stats.json' => $this->zeroStats(),
         ];

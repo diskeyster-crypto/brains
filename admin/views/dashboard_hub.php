@@ -930,6 +930,15 @@ HTML;
         ? '<tr><td style="color:#f85149;padding:3px 12px 3px 0;" colspan="2">⚠ Неверное значение signal_source_mode — применён fallback на direct_strategy_handoff</td></tr>'
         : '';
 
+    // ── Submitted queue reconciliation counters ───────────────────────────
+    $lrReconSubmittedTotal   = (int)($lastRun['submitted_queue_total']                   ?? 0);
+    $lrReconActivePosMatch   = (int)($lastRun['submitted_active_position_matched_total'] ?? 0);
+    $lrReconActiveOrdMatch   = (int)($lastRun['submitted_active_order_matched_total']    ?? 0);
+    $lrReconClosed           = (int)($lastRun['submitted_reconciled_closed_total']       ?? 0);
+    $lrReconExpired          = (int)($lastRun['submitted_reconciled_expired_total']      ?? 0);
+    $lrReconStaleUnmatched   = (int)($lastRun['submitted_stale_unmatched_total']         ?? 0);
+    $lrReconStillBlocking    = (int)($lastRun['submitted_still_blocking_total']          ?? 0);
+
     // $govApprovedQueueTotal will be set after $govDemoQueueRaw is loaded (further below)
     $govApprovedQueueTotal = 0;
 
@@ -3460,6 +3469,23 @@ HTML;
     $qSubmittedDemoColor  = ($queueSubmittedDemoCount > 0 && $cfgCurrentMode === 'live') ? '#f85149' : '#8b949e';
     $qStaleOtherModeColor = $queueStaleOtherModeCount > 0 ? '#f0883e' : '#8b949e';
 
+    // ── Submitted queue reconciliation card HTML ───────────────────────────
+    $reconStillBlockingColor = $lrReconStillBlocking > 0 ? '#f0883e' : '#8b949e';
+    $reconStaleColor         = $lrReconStaleUnmatched > 0 ? '#f0883e' : '#8b949e';
+    $submittedReconCardHtml = '<div class="card" style="margin-bottom:16px;">'
+        . '<div class="card-header">Reconciliation очереди submitted</div>'
+        . '<div class="card-body">'
+        . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:260px;">Submitted (всего)</td><td><code>' . $e($lrReconSubmittedTotal) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Active position match</td><td><code>' . $e($lrReconActivePosMatch) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Active order match</td><td><code>' . $e($lrReconActiveOrdMatch) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Reconciled (closed trade)</td><td><code style="color:#3fb950;">' . $e($lrReconClosed) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Reconciled (expired)</td><td><code>' . $e($lrReconExpired) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Stale unmatched</td><td><code style="color:' . $reconStaleColor . ';">' . $e($lrReconStaleUnmatched) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Still blocking</td><td><code style="color:' . $reconStillBlockingColor . ';">' . $e($lrReconStillBlocking) . '</code></td></tr>'
+        . '</table>'
+        . '</div></div>';
+
     // ── Shadow compare card: pre-computed HTML for heredoc ─────────────────
     $shadowNoDataNote = ($lrSignalSourceMode !== 'shadow_compare')
         ? '<p style="color:var(--ui-text-muted);font-size:12px;margin-top:8px;">Для получения данных установите <code>signal_source_mode = shadow_compare</code>.</p>'
@@ -3746,6 +3772,7 @@ BLCK;
     </div>
   </div>
   {$demoExecDiagHtml}
+  {$submittedReconCardHtml}
   <div class="card">
     <div class="card-header">Ручное управление</div>
     <div class="card-body">

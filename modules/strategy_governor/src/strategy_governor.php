@@ -159,8 +159,10 @@ final class StrategyGovernor
                     if ($norm === null) {
                         // Missing signal_id — invalid, do not create active pending entry.
                         $invalidTotal++;
-                        // Generate a stable key so we do not re-journal the same raw signal
-                        // every run (spam prevention).
+                        // Generate a stable deduplication key so we do not re-journal the same
+                        // raw signal on every Governor run (spam prevention).
+                        // MD5 is used here purely as a cheap non-cryptographic hash to produce
+                        // a short, stable fingerprint of the raw signal content.
                         $invalidKey = 'invalid:' . $stratId . ':' . substr(
                             md5(($raw['_source_file'] ?? '') . json_encode($raw, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
                             0, 16
@@ -232,9 +234,7 @@ final class StrategyGovernor
 
                 // ── Stale signal check ────────────────────────────────────────
                 $detectedAt = (string)($norm['detected_at']);
-                $detectedTs = $detectedAt !== ''
-                    ? (is_numeric($detectedAt) ? (int)$detectedAt : (int)@strtotime($detectedAt))
-                    : 0;
+                $detectedTs = $this->parseTimestamp($detectedAt);
                 $signalAge = ($detectedTs > 0) ? ($now - $detectedTs) : PHP_INT_MAX;
 
                 if ($signalAge > $maxSignalAge) {
@@ -387,7 +387,7 @@ final class StrategyGovernor
                 }
 
                 $pState    = $pEntry['state'] ?? '';
-                $firstSeen = (int)@strtotime((string)($pEntry['first_seen_at'] ?? ''));
+                $firstSeen = $this->parseTimestamp((string)($pEntry['first_seen_at'] ?? ''));
 
                 if (in_array($pState, self::FINAL_STATES, true)) {
                     // Final state — keep for TTL cleanup pass
@@ -438,7 +438,7 @@ final class StrategyGovernor
                     unset($newPending[$govKey]);
                     continue;
                 }
-                $updatedTs = (int)@strtotime((string)($pEntry['updated_at'] ?? $pEntry['first_seen_at'] ?? ''));
+                $updatedTs = $this->parseTimestamp((string)($pEntry['updated_at'] ?? $pEntry['first_seen_at'] ?? ''));
                 if ($updatedTs > 0 && $updatedTs < $cutoff) {
                     unset($newPending[$govKey]);
                 }
@@ -670,7 +670,7 @@ final class StrategyGovernor
         }
         // Age re-check (signal may have aged out during the confirmation window)
         $detectedAt = (string)$norm['detected_at'];
-        $ts = is_numeric($detectedAt) ? (int)$detectedAt : (int)@strtotime($detectedAt);
+        $ts = $this->parseTimestamp($detectedAt);
         if ($ts > 0 && (time() - $ts) > $maxSignalAge) {
             return 'signal_too_old';
         }
@@ -873,7 +873,7 @@ final class StrategyGovernor
             if ($sid === '' || $closedAt === '') {
                 continue;
             }
-            $ts      = is_numeric($closedAt) ? (int)$closedAt : (int)@strtotime($closedAt);
+            $ts      = $this->parseTimestamp($closedAt);
             if ($ts <= 0) {
                 continue;
             }
@@ -1115,5 +1115,23 @@ final class StrategyGovernor
             json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n",
             LOCK_EX
         );
+    }
+
+    /**
+     * Parse a timestamp string or numeric value into a Unix timestamp.
+     *
+     * Accepts either an integer Unix timestamp (as int or numeric string) or
+     * any date/time string understood by strtotime().  Returns 0 on failure.
+     */
+    private function parseTimestamp(string $value): int
+    {
+        if ($value === '') {
+            return 0;
+        }
+        if (is_numeric($value)) {
+            return (int)$value;
+        }
+        $ts = @strtotime($value);
+        return ($ts !== false && $ts > 0) ? $ts : 0;
     }
 }

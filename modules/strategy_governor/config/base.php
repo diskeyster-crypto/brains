@@ -98,4 +98,39 @@ return [
     // Seconds after approval before a queued entry is considered stale and dropped.
     // 1800 = 30 minutes.
     'approved_demo_ttl_seconds'     => 1800,
+
+    // ── Learning data quality ─────────────────────────────────────────────────
+    // When true, Governor classifies each closed trade as primary/secondary/excluded
+    // and uses only primary trades for live-gate decisions.
+    'learning_quality_enabled'      => true,
+
+    // Close sources whose trades count as reliable primary learning data.
+    'primary_learning_close_sources' => [
+        'profit_manager',
+        'stop_manager',
+    ],
+
+    // Close sources that produce secondary (noisy / unconfirmed) data.
+    'secondary_learning_close_sources' => [
+        'exchange_disappeared',
+        'unknown',
+    ],
+
+    // When true, trades with closed_at_is_estimated=true are excluded from primary.
+    'exclude_estimated_closes_from_primary'            => true,
+
+    // When true, trades with close_source=exchange_disappeared are excluded from primary.
+    'exclude_exchange_disappeared_from_primary'        => true,
+
+    // When true, trades with close_reason=position_gone_from_exchange are excluded from primary.
+    'exclude_position_gone_from_exchange_from_primary' => true,
+
+    // Maximum age of a trade (in days) to be eligible for primary learning.
+    // Trades older than this are demoted to secondary.  Bybit demo can hold
+    // very old positions whose age would skew learning statistics.
+    'max_trade_age_days_for_primary_learning' => 3,
+
+    // Minimum number of *primary* (clean) closed trades before Governor may
+    // recommend live routing.  Secondary/uncertain trades do not count here.
+    'min_primary_closed_trades_for_live' => 20,
 ];

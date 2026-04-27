@@ -106,6 +106,18 @@ final class StrategyGovernor
         $queueSkippedStale           = 0;
         $queueDeduped                = 0;
         $queueLimited                = 0;
+        // Learning quality counters (populated after buildStrategyStats)
+        $lqEnabled              = false;
+        $lqSeenTotal            = 0;
+        $lqPrimaryTotal         = 0;
+        $lqSecondaryTotal       = 0;
+        $lqExcludedTotal        = 0;
+        $lqExchangeDisappearedTotal = 0;
+        $lqUnknownSourceTotal   = 0;
+        $lqEstimatedCloseTotal  = 0;
+        $lqTooOldTotal          = 0;
+        $lqStratsWithPrimary    = 0;
+        $lqStratsOnlySecondary  = 0;
 
         try {
             // ── 1. Load config values ─────────────────────────────────────────
@@ -115,6 +127,17 @@ final class StrategyGovernor
                                     : [];
             $minClosed          = (int)($this->config['min_closed_trades_for_live']            ?? 20);
             $minHourly          = (int)($this->config['min_hourly_trades_for_live']            ?? 5);
+            // Learning quality config
+            $lqEnabled          = (bool)($this->config['learning_quality_enabled']                       ?? true);
+            $lqPrimarySources   = (array)($this->config['primary_learning_close_sources']               ?? ['profit_manager', 'stop_manager']);
+            $lqSecondarySources = (array)($this->config['secondary_learning_close_sources']             ?? ['exchange_disappeared', 'unknown']);
+            $lqExclEstimated    = (bool)($this->config['exclude_estimated_closes_from_primary']          ?? true);
+            $lqExclDisappeared  = (bool)($this->config['exclude_exchange_disappeared_from_primary']      ?? true);
+            $lqExclPosGone      = (bool)($this->config['exclude_position_gone_from_exchange_from_primary'] ?? true);
+            $lqMaxAgeDays       = max(1, (int)($this->config['max_trade_age_days_for_primary_learning']  ?? 3));
+            $minPrimaryForLive  = (int)($this->config['min_primary_closed_trades_for_live']              ?? $minClosed);
+            // Use primary threshold as the live gate minimum
+            $minClosed          = $minPrimaryForLive;
             $minWinrate         = (float)($this->config['min_winrate_for_live']                ?? 0.55);
             $minAvgRoi          = (float)($this->config['min_avg_roi_for_live']                ?? 1.0);
             $maxConsecLosses    = (int)($this->config['max_consecutive_losses_live']           ?? 3);
@@ -133,9 +156,29 @@ final class StrategyGovernor
             $strategyIds = $this->discoverStrategies();
 
             // ── 3. Build stats from closed trades ────────────────────────────
-            $closedTrades = $this->loadClosedTrades();
-            $stratStats   = $this->buildStrategyStats($closedTrades);
-            $hourlyStats  = $this->buildHourlyStats($closedTrades);
+            $closedTrades  = $this->loadClosedTrades();
+            $statsResult   = $this->buildStrategyStats(
+                $closedTrades,
+                $lqEnabled, $lqPrimarySources, $lqSecondarySources,
+                $lqExclEstimated, $lqExclDisappeared, $lqExclPosGone, $lqMaxAgeDays
+            );
+            $stratStats    = $statsResult['stats'];
+            $lqCounters    = $statsResult['counters'];
+            // Unpack learning quality counters
+            $lqSeenTotal                = $lqCounters['closed_trades_seen_total'];
+            $lqPrimaryTotal             = $lqCounters['closed_trades_primary_total'];
+            $lqSecondaryTotal           = $lqCounters['closed_trades_secondary_total'];
+            $lqExcludedTotal            = $lqCounters['closed_trades_excluded_total'];
+            $lqExchangeDisappearedTotal = $lqCounters['closed_trades_exchange_disappeared_total'];
+            $lqUnknownSourceTotal       = $lqCounters['closed_trades_unknown_source_total'];
+            $lqEstimatedCloseTotal      = $lqCounters['closed_trades_estimated_close_total'];
+            $lqTooOldTotal              = $lqCounters['closed_trades_too_old_for_primary_total'];
+            $lqStratsWithPrimary        = $lqCounters['strategies_with_primary_stats_total'];
+            $lqStratsOnlySecondary      = $lqCounters['strategies_with_only_secondary_stats_total'];
+            $hourlyStats   = $this->buildHourlyStats(
+                $closedTrades,
+                $lqEnabled, $lqPrimarySources, $lqExclEstimated, $lqExclDisappeared, $lqExclPosGone, $lqMaxAgeDays
+            );
 
             // ── 4. Collect active positions ───────────────────────────────────
             $activePositions = $this->loadJsonSafe(
@@ -291,7 +334,8 @@ final class StrategyGovernor
                     $defaultImmediateDecisions++;
                     [$decision, $route, $reason] = $this->decideImmediate(
                         $norm, $stratStats[$stratId] ?? [],
-                        $minClosed, $minWinrate, $minAvgRoi, $maxConsecLosses
+                        $minClosed, $minWinrate, $minAvgRoi, $maxConsecLosses,
+                        $lqEnabled
                     );
                     $decisionsTotal++;
                     $pEntry['state']             = $decision;
@@ -366,7 +410,8 @@ final class StrategyGovernor
                             // Confirmation window complete — make final decision
                             [$decision, $route, $reason] = $this->decideImmediate(
                                 $norm, $stratStats[$stratId] ?? [],
-                                $minClosed, $minWinrate, $minAvgRoi, $maxConsecLosses
+                                $minClosed, $minWinrate, $minAvgRoi, $maxConsecLosses,
+                                $lqEnabled
                             );
                             $pEntry['state']             = $decision;
                             $pEntry['reason']            = $reason;
@@ -667,6 +712,18 @@ final class StrategyGovernor
             'approved_demo_queue_skipped_stale' => $queueSkippedStale,
             'approved_demo_queue_deduped'       => $queueDeduped,
             'approved_demo_queue_limited'       => $queueLimited,
+            // ── Learning data quality ─────────────────────────────────────────
+            'learning_quality_enabled'                    => $lqEnabled,
+            'closed_trades_seen_total'                    => $lqSeenTotal,
+            'closed_trades_primary_total'                 => $lqPrimaryTotal,
+            'closed_trades_secondary_total'               => $lqSecondaryTotal,
+            'closed_trades_excluded_total'                => $lqExcludedTotal,
+            'closed_trades_exchange_disappeared_total'    => $lqExchangeDisappearedTotal,
+            'closed_trades_unknown_source_total'          => $lqUnknownSourceTotal,
+            'closed_trades_estimated_close_total'         => $lqEstimatedCloseTotal,
+            'closed_trades_too_old_for_primary_total'     => $lqTooOldTotal,
+            'strategies_with_primary_stats_total'         => $lqStratsWithPrimary,
+            'strategies_with_only_secondary_stats_total'  => $lqStratsOnlySecondary,
             'errors'                            => $errors,
         ];
 
@@ -833,6 +890,10 @@ final class StrategyGovernor
     /**
      * Decide immediately based on signal validity + strategy stats.
      *
+     * When $lqEnabled is true, uses primary_closed_trades_total for the live gate
+     * threshold and returns 'not_enough_primary_closed_trades' instead of
+     * 'not_enough_closed_trades' when primary data is insufficient.
+     *
      * In shadow mode stats can only determine the recommended route; they never
      * block the demo route entirely.
      *
@@ -845,6 +906,7 @@ final class StrategyGovernor
         float $minWinrate,
         float $minAvgRoi,
         int   $maxConsecLosses,
+        bool  $lqEnabled = false,
     ): array {
         // ── Signal validation (shared) ────────────────────────────────────────
         $basicFail = $this->validateSignalBasic($norm);
@@ -853,13 +915,24 @@ final class StrategyGovernor
         }
 
         // ── Stats-based route gate (never rejects demo in shadow mode) ────────
-        $closedTotal  = (int)($stats['closed_trades_total'] ?? 0);
-        $winrate      = (float)($stats['winrate']           ?? 0.0);
-        $avgRoi       = (float)($stats['avg_roi']           ?? 0.0);
-        $consecLosses = (int)($stats['consecutive_losses']  ?? 0);
+        // When learning quality is enabled, use primary_closed_trades_total so
+        // secondary/uncertain trades do not count towards the live threshold.
+        if ($lqEnabled) {
+            $closedTotal  = (int)($stats['primary']['closed_trades_total'] ?? $stats['primary_closed_trades_total'] ?? 0);
+            $winrate      = (float)($stats['primary']['winrate']           ?? $stats['winrate']          ?? 0.0);
+            $avgRoi       = (float)($stats['primary']['avg_roi']           ?? $stats['avg_roi']          ?? 0.0);
+            $consecLosses = (int)($stats['primary']['consecutive_losses']  ?? $stats['consecutive_losses'] ?? 0);
+            $insufficientReason = 'not_enough_primary_closed_trades';
+        } else {
+            $closedTotal  = (int)($stats['closed_trades_total'] ?? 0);
+            $winrate      = (float)($stats['winrate']           ?? 0.0);
+            $avgRoi       = (float)($stats['avg_roi']           ?? 0.0);
+            $consecLosses = (int)($stats['consecutive_losses']  ?? 0);
+            $insufficientReason = 'not_enough_closed_trades';
+        }
 
         if ($closedTotal < $minClosed) {
-            return [self::STATE_APPROVE_DEMO_SHADOW, self::ROUTE_DEMO, 'not_enough_closed_trades'];
+            return [self::STATE_APPROVE_DEMO_SHADOW, self::ROUTE_DEMO, $insufficientReason];
         }
         if ($consecLosses >= $maxConsecLosses) {
             // Too many consecutive losses — keep to demo, do not block
@@ -923,156 +996,452 @@ final class StrategyGovernor
     // =========================================================================
 
     /**
+     * Classify a single closed trade into primary / secondary / excluded
+     * based on learning quality rules.
+     *
+     * @return array{quality: string, reason: string}
+     */
+    private function classifyTradeQuality(
+        array $trade,
+        array $primarySources,
+        bool  $excludeEstimated,
+        bool  $excludeDisappeared,
+        bool  $excludePosGone,
+        int   $maxAgeDays,
+    ): array {
+        $sid      = (string)($trade['strategy_id'] ?? $trade['owner_strategy'] ?? '');
+        $roi      = $trade['roi'] ?? null;
+        $closedAt = (string)($trade['closed_at'] ?? '');
+        $source   = (string)($trade['close_source'] ?? '');
+        $reason   = (string)($trade['close_reason'] ?? '');
+        $isEst    = (bool)($trade['closed_at_is_estimated'] ?? false);
+
+        // ── Excluded: missing required fields ─────────────────────────────────
+        if ($sid === '') {
+            return ['quality' => 'excluded', 'reason' => 'missing_strategy_id'];
+        }
+        if ($roi === null) {
+            return ['quality' => 'excluded', 'reason' => 'missing_roi'];
+        }
+        if ($closedAt === '') {
+            return ['quality' => 'excluded', 'reason' => 'missing_closed_at'];
+        }
+        $closedTs = $this->parseTimestamp($closedAt);
+        if ($closedTs <= 0) {
+            return ['quality' => 'excluded', 'reason' => 'missing_closed_at'];
+        }
+
+        // ── Condition flags ────────────────────────────────────────────────────
+        $maxAgeSec    = $maxAgeDays * 86400;
+        $tooOld       = (time() - $closedTs) > $maxAgeSec;
+        $isDisappeared = ($source === 'exchange_disappeared' || $source === 'unknown');
+        $isPosGone    = (
+            $reason === 'position_gone_from_exchange'
+            || $reason === 'position_gone_from_bybit_demo'
+            || $reason === 'position_gone_from_bybit_live'
+        );
+        $isPrimarySource = in_array($source, $primarySources, true);
+
+        // ── Primary check ─────────────────────────────────────────────────────
+        if ($isPrimarySource
+            && !($excludeEstimated && $isEst)
+            && !($excludeDisappeared && $isDisappeared)
+            && !($excludePosGone && $isPosGone)
+            && !$tooOld
+        ) {
+            $qualReason = match ($source) {
+                'profit_manager' => 'profit_manager_confirmed',
+                'stop_manager'   => 'stop_manager_confirmed',
+                default          => 'primary_source_confirmed',
+            };
+            return ['quality' => 'primary', 'reason' => $qualReason];
+        }
+
+        // ── Secondary: has roi + strategy_id but questionable attribution ──────
+        if ($isDisappeared) {
+            return ['quality' => 'secondary', 'reason' => 'exchange_disappeared_uncertain'];
+        }
+        if ($isPosGone) {
+            return ['quality' => 'secondary', 'reason' => 'position_gone_from_exchange'];
+        }
+        if ($isEst) {
+            return ['quality' => 'secondary', 'reason' => 'estimated_close_time'];
+        }
+        if ($tooOld) {
+            return ['quality' => 'secondary', 'reason' => 'trade_too_old_for_primary'];
+        }
+
+        // Default secondary for any other source not in primary list
+        return ['quality' => 'secondary', 'reason' => 'unknown_close_source'];
+    }
+
+    /**
      * Build per-strategy stats from a closed-trades array.
      *
-     * @param array $closedTrades  array of trade records
-     * @return array<string, array>  keyed by strategy_id
+     * When $lqEnabled is true, trades are classified into primary / secondary /
+     * excluded buckets.  Top-level stats reflect primary data for backward
+     * compatibility.  The full split is available in $stats[$sid]['primary'],
+     * $stats[$sid]['secondary'], and $stats[$sid]['excluded'].
+     *
+     * @return array{stats: array<string, array>, counters: array}
      */
-    private function buildStrategyStats(array $closedTrades): array
-    {
-        $stats = [];
+    private function buildStrategyStats(
+        array $closedTrades,
+        bool  $lqEnabled       = false,
+        array $primarySources  = ['profit_manager', 'stop_manager'],
+        array $secondarySources = ['exchange_disappeared', 'unknown'],
+        bool  $excludeEstimated   = true,
+        bool  $excludeDisappeared = true,
+        bool  $excludePosGone     = true,
+        int   $maxAgeDays         = 3,
+    ): array {
+        // Global quality counters
+        $gSeenTotal            = 0;
+        $gPrimaryTotal         = 0;
+        $gSecondaryTotal       = 0;
+        $gExcludedTotal        = 0;
+        $gExchangeDisappeared  = 0;
+        $gUnknownSource        = 0;
+        $gEstimatedClose       = 0;
+        $gTooOld               = 0;
+
+        // Raw accumulator buckets per strategy
+        // Each bucket: [total, wins, losses, roi_sum, pnl_sum, last_results[], last_at]
+        $mkBucket = static fn() => [
+            'total'        => 0,
+            'wins'         => 0,
+            'losses'       => 0,
+            'roi_sum'      => 0.0,
+            'pnl_sum'      => 0.0,
+            'last_results' => [],
+            'last_at'      => null,
+            // secondary-only counters
+            'exchange_disappeared' => 0,
+            'unknown_close'        => 0,
+            'estimated_close'      => 0,
+            // excluded-only: reason counts
+            'excluded_reasons' => [],
+        ];
+
+        $primary   = []; // keyed by $sid
+        $secondary = []; // keyed by $sid
+        $excluded  = []; // keyed by $sid
+
         foreach ($closedTrades as $trade) {
+            $gSeenTotal++;
             $sid = (string)($trade['strategy_id'] ?? $trade['owner_strategy'] ?? '');
-            if ($sid === '') {
-                continue;
-            }
-            if (!isset($stats[$sid])) {
-                $stats[$sid] = [
-                    'closed_trades_total'  => 0,
-                    'wins_total'           => 0,
-                    'losses_total'         => 0,
-                    'roi_sum'              => 0.0,
-                    'total_pnl'            => 0.0,
-                    'consecutive_losses'   => 0,
-                    'consecutive_wins'     => 0,
-                    '_last_results'        => [],
-                    'last_trade_at'        => null,
-                ];
-            }
-            $s   = &$stats[$sid];
             $roi = isset($trade['roi']) ? (float)$trade['roi'] : null;
             $pnl = isset($trade['pnl']) ? (float)$trade['pnl'] : 0.0;
-
-            $s['closed_trades_total']++;
-            $s['total_pnl'] += $pnl;
-            if ($roi !== null) {
-                $s['roi_sum'] += $roi;
-            }
-            $win = ($roi !== null && $roi > 0.0);
-            if ($win) {
-                $s['wins_total']++;
-                $s['_last_results'][] = 'win';
-            } else {
-                $s['losses_total']++;
-                $s['_last_results'][] = 'loss';
-            }
             $closedAt = (string)($trade['closed_at'] ?? '');
-            if ($closedAt !== '') {
-                if ($s['last_trade_at'] === null || $closedAt > $s['last_trade_at']) {
-                    $s['last_trade_at'] = $closedAt;
+            $source   = (string)($trade['close_source'] ?? '');
+            $reason   = (string)($trade['close_reason'] ?? '');
+
+            if ($lqEnabled) {
+                $cls = $this->classifyTradeQuality(
+                    $trade, $primarySources, $excludeEstimated,
+                    $excludeDisappeared, $excludePosGone, $maxAgeDays
+                );
+                $quality    = $cls['quality'];
+                $clsReason  = $cls['reason'];
+            } else {
+                // When learning quality is disabled, treat all valid trades as primary
+                $quality = ($sid !== '' && $roi !== null && $closedAt !== '') ? 'primary' : 'excluded';
+                $clsReason = $quality === 'primary' ? 'learning_quality_disabled' : 'missing_required_field';
+            }
+
+            // Global counter tallying
+            match ($quality) {
+                'primary'   => $gPrimaryTotal++,
+                'secondary' => $gSecondaryTotal++,
+                'excluded'  => $gExcludedTotal++,
+                default     => null,
+            };
+            if ($quality === 'secondary') {
+                if ($source === 'exchange_disappeared') {
+                    $gExchangeDisappeared++;
+                }
+                if ($source === 'unknown') {
+                    $gUnknownSource++;
+                }
+                if ((bool)($trade['closed_at_is_estimated'] ?? false)) {
+                    $gEstimatedClose++;
+                }
+                if ($clsReason === 'trade_too_old_for_primary') {
+                    $gTooOld++;
                 }
             }
-            unset($s);
+
+            if ($sid === '') {
+                continue; // no strategy → can't bin into per-strategy buckets
+            }
+
+            $bucket = match ($quality) {
+                'primary'   => ($primary[$sid]   ?? null),
+                'secondary' => ($secondary[$sid] ?? null),
+                default     => ($excluded[$sid]  ?? null),
+            };
+            if ($bucket === null) {
+                $bucket = $mkBucket();
+            }
+
+            if ($quality === 'excluded') {
+                $bucket['excluded_reasons'][$clsReason] = ($bucket['excluded_reasons'][$clsReason] ?? 0) + 1;
+                $bucket['total']++;
+                $excluded[$sid] = $bucket;
+                continue;
+            }
+
+            // primary or secondary
+            $bucket['total']++;
+            $bucket['pnl_sum'] += $pnl;
+            $win = ($roi !== null && $roi > 0.0);
+            if ($roi !== null) {
+                $bucket['roi_sum'] += $roi;
+            }
+            if ($win) {
+                $bucket['wins']++;
+                $bucket['last_results'][] = 'win';
+            } else {
+                $bucket['losses']++;
+                $bucket['last_results'][] = 'loss';
+            }
+            if ($closedAt !== '') {
+                if ($bucket['last_at'] === null || $closedAt > $bucket['last_at']) {
+                    $bucket['last_at'] = $closedAt;
+                }
+            }
+            // Secondary-specific counters
+            if ($quality === 'secondary') {
+                if ($source === 'exchange_disappeared') {
+                    $bucket['exchange_disappeared']++;
+                }
+                if ($source === 'unknown') {
+                    $bucket['unknown_close']++;
+                }
+                if ((bool)($trade['closed_at_is_estimated'] ?? false)) {
+                    $bucket['estimated_close']++;
+                }
+                $secondary[$sid] = $bucket;
+            } else {
+                $primary[$sid] = $bucket;
+            }
         }
 
-        // Compute derived fields
-        foreach ($stats as &$s) {
-            $total = $s['closed_trades_total'];
-            $s['winrate'] = $total > 0 ? round($s['wins_total'] / $total, 4) : 0.0;
-            $s['avg_roi'] = $total > 0 ? round($s['roi_sum'] / $total, 4) : 0.0;
-            // Consecutive losses/wins from the end of the result list
-            $results = $s['_last_results'];
-            $cl = 0;
-            $cw = 0;
+        // ── Compute derived fields helper ─────────────────────────────────────
+        $deriveBucket = static function (array $b): array {
+            $total = $b['total'];
+            $w     = $b['wins'];
+            $l     = $b['losses'];
+            $results = $b['last_results'];
+            $cl = $cw = 0;
             for ($i = count($results) - 1; $i >= 0; $i--) {
                 if ($results[$i] === 'loss') {
-                    if ($cw === 0) {
-                        $cl++;
-                    } else {
-                        break;
-                    }
+                    if ($cw === 0) { $cl++; } else { break; }
                 } else {
-                    if ($cl === 0) {
-                        $cw++;
-                    } else {
-                        break;
-                    }
+                    if ($cl === 0) { $cw++; } else { break; }
                 }
             }
-            $s['consecutive_losses'] = $cl;
-            $s['consecutive_wins']   = $cw;
-            unset($s['roi_sum'], $s['_last_results']);
-        }
-        unset($s);
+            $out = [
+                'closed_trades_total' => $total,
+                'wins_total'          => $w,
+                'losses_total'        => $l,
+                'winrate'             => $total > 0 ? round($w / $total, 4) : 0.0,
+                'avg_roi'             => $total > 0 ? round($b['roi_sum'] / $total, 4) : 0.0,
+                'total_pnl'           => round($b['pnl_sum'], 6),
+                'consecutive_losses'  => $cl,
+                'consecutive_wins'    => $cw,
+                'last_trade_at'       => $b['last_at'],
+            ];
+            return $out;
+        };
 
-        return $stats;
+        // ── Build final per-strategy stats ────────────────────────────────────
+        $stats = [];
+        $stratsWithPrimary   = 0;
+        $stratsOnlySecondary = 0;
+
+        $allSids = array_unique(array_merge(
+            array_keys($primary), array_keys($secondary), array_keys($excluded)
+        ));
+        foreach ($allSids as $sid) {
+            $pBucket = $primary[$sid]   ?? null;
+            $sBucket = $secondary[$sid] ?? null;
+            $eBucket = $excluded[$sid]  ?? null;
+
+            $primaryDerived   = $pBucket !== null ? $deriveBucket($pBucket) : null;
+            $secondaryDerived = $sBucket !== null ? $deriveBucket($sBucket) : null;
+
+            // Secondary sub-array with extra counters
+            $secondaryOut = null;
+            if ($sBucket !== null && $secondaryDerived !== null) {
+                $secondaryOut = array_merge($secondaryDerived, [
+                    'exchange_disappeared_total' => $sBucket['exchange_disappeared'],
+                    'unknown_close_total'        => $sBucket['unknown_close'],
+                    'estimated_close_total'      => $sBucket['estimated_close'],
+                ]);
+            }
+
+            $excludedOut = $eBucket !== null
+                ? ['total' => $eBucket['total'], 'reasons' => $eBucket['excluded_reasons']]
+                : null;
+
+            // Backward-compatible top-level: primary stats if available, else secondary, else zeros
+            if ($primaryDerived !== null) {
+                $topLevel = $primaryDerived;
+                $stratsWithPrimary++;
+            } elseif ($secondaryDerived !== null) {
+                $topLevel = $secondaryDerived;
+                $stratsOnlySecondary++;
+            } else {
+                $topLevel = [
+                    'closed_trades_total' => 0,
+                    'wins_total'          => 0,
+                    'losses_total'        => 0,
+                    'winrate'             => 0.0,
+                    'avg_roi'             => 0.0,
+                    'total_pnl'           => 0.0,
+                    'consecutive_losses'  => 0,
+                    'consecutive_wins'    => 0,
+                    'last_trade_at'       => null,
+                ];
+            }
+
+            $stats[$sid] = array_merge($topLevel, [
+                'primary_closed_trades_total' => $primaryDerived !== null ? $primaryDerived['closed_trades_total'] : 0,
+                'primary'   => $primaryDerived,
+                'secondary' => $secondaryOut,
+                'excluded'  => $excludedOut,
+            ]);
+        }
+
+        $counters = [
+            'closed_trades_seen_total'                 => $gSeenTotal,
+            'closed_trades_primary_total'              => $gPrimaryTotal,
+            'closed_trades_secondary_total'            => $gSecondaryTotal,
+            'closed_trades_excluded_total'             => $gExcludedTotal,
+            'closed_trades_exchange_disappeared_total' => $gExchangeDisappeared,
+            'closed_trades_unknown_source_total'       => $gUnknownSource,
+            'closed_trades_estimated_close_total'      => $gEstimatedClose,
+            'closed_trades_too_old_for_primary_total'  => $gTooOld,
+            'strategies_with_primary_stats_total'      => $stratsWithPrimary,
+            'strategies_with_only_secondary_stats_total' => $stratsOnlySecondary,
+        ];
+
+        return ['stats' => $stats, 'counters' => $counters];
     }
 
     /**
      * Build hourly stats grouped by strategy_id + hour_of_day + weekday.
      *
-     * @return array<string, array>  keyed by strategy_id; nested by hour and weekday
+     * When $lqEnabled is true, hourly_stats.json contains only primary trades.
+     * Secondary hourly stats are written to hourly_secondary_stats.json.
+     *
+     * @return array  [$primaryHourly, $secondaryHourly]
      */
-    private function buildHourlyStats(array $closedTrades): array
-    {
-        $hourly = [];
+    private function buildHourlyStats(
+        array $closedTrades,
+        bool  $lqEnabled          = false,
+        array $primarySources     = ['profit_manager', 'stop_manager'],
+        bool  $excludeEstimated   = true,
+        bool  $excludeDisappeared = true,
+        bool  $excludePosGone     = true,
+        int   $maxAgeDays         = 3,
+    ): array {
+        $primary   = [];
+        $secondary = [];
+
         foreach ($closedTrades as $trade) {
             $sid      = (string)($trade['strategy_id'] ?? $trade['owner_strategy'] ?? '');
             $closedAt = (string)($trade['closed_at'] ?? '');
             if ($sid === '' || $closedAt === '') {
                 continue;
             }
-            $ts      = $this->parseTimestamp($closedAt);
+            $ts = $this->parseTimestamp($closedAt);
             if ($ts <= 0) {
                 continue;
             }
             $hour    = (int)date('G', $ts);   // 0-23
             $weekday = (int)date('N', $ts);   // 1=Mon…7=Sun
             $key     = $hour . '_' . $weekday;
+            $roi     = isset($trade['roi']) ? (float)$trade['roi'] : null;
+            $pnl     = isset($trade['pnl']) ? (float)$trade['pnl'] : 0.0;
 
-            if (!isset($hourly[$sid][$key])) {
-                $hourly[$sid][$key] = [
-                    'hour_of_day'  => $hour,
-                    'weekday'      => $weekday,
-                    'trades_total' => 0,
-                    'wins_total'   => 0,
-                    'losses_total' => 0,
-                    'roi_sum'      => 0.0,
-                    'total_pnl'    => 0.0,
-                ];
+            if ($lqEnabled) {
+                $cls     = $this->classifyTradeQuality(
+                    $trade, $primarySources, $excludeEstimated,
+                    $excludeDisappeared, $excludePosGone, $maxAgeDays
+                );
+                $quality = $cls['quality'];
+            } else {
+                $quality = 'primary'; // treat all as primary when quality is disabled
             }
-            $h   = &$hourly[$sid][$key];
-            $roi = isset($trade['roi']) ? (float)$trade['roi'] : null;
-            $pnl = isset($trade['pnl']) ? (float)$trade['pnl'] : 0.0;
 
-            $h['trades_total']++;
-            $h['total_pnl'] += $pnl;
-            if ($roi !== null) {
-                $h['roi_sum'] += $roi;
-                if ($roi > 0.0) {
-                    $h['wins_total']++;
+            if ($quality === 'excluded') {
+                continue;
+            }
+
+            if ($quality === 'primary') {
+                if (!isset($primary[$sid][$key])) {
+                    $primary[$sid][$key] = [
+                        'hour_of_day'  => $hour,
+                        'weekday'      => $weekday,
+                        'trades_total' => 0,
+                        'wins_total'   => 0,
+                        'losses_total' => 0,
+                        'roi_sum'      => 0.0,
+                        'total_pnl'    => 0.0,
+                    ];
+                }
+                $primary[$sid][$key]['trades_total']++;
+                $primary[$sid][$key]['total_pnl'] += $pnl;
+                if ($roi !== null) {
+                    $primary[$sid][$key]['roi_sum'] += $roi;
+                    if ($roi > 0.0) { $primary[$sid][$key]['wins_total']++; } else { $primary[$sid][$key]['losses_total']++; }
                 } else {
-                    $h['losses_total']++;
+                    $primary[$sid][$key]['losses_total']++;
                 }
             } else {
-                $h['losses_total']++;
+                if (!isset($secondary[$sid][$key])) {
+                    $secondary[$sid][$key] = [
+                        'hour_of_day'  => $hour,
+                        'weekday'      => $weekday,
+                        'trades_total' => 0,
+                        'wins_total'   => 0,
+                        'losses_total' => 0,
+                        'roi_sum'      => 0.0,
+                        'total_pnl'    => 0.0,
+                    ];
+                }
+                $secondary[$sid][$key]['trades_total']++;
+                $secondary[$sid][$key]['total_pnl'] += $pnl;
+                if ($roi !== null) {
+                    $secondary[$sid][$key]['roi_sum'] += $roi;
+                    if ($roi > 0.0) { $secondary[$sid][$key]['wins_total']++; } else { $secondary[$sid][$key]['losses_total']++; }
+                } else {
+                    $secondary[$sid][$key]['losses_total']++;
+                }
             }
-            unset($h);
         }
 
-        // Compute derived fields
-        foreach ($hourly as &$buckets) {
-            foreach ($buckets as &$h) {
-                $t = $h['trades_total'];
-                $h['winrate'] = $t > 0 ? round($h['wins_total'] / $t, 4) : 0.0;
-                $h['avg_roi'] = $t > 0 ? round($h['roi_sum']    / $t, 4) : 0.0;
-                unset($h['roi_sum']);
+        // Compute derived fields for both buckets
+        $deriveHourly = static function (array $hourly): array {
+            foreach ($hourly as &$buckets) {
+                foreach ($buckets as &$h) {
+                    $t = $h['trades_total'];
+                    $h['winrate'] = $t > 0 ? round($h['wins_total'] / $t, 4) : 0.0;
+                    $h['avg_roi'] = $t > 0 ? round($h['roi_sum']    / $t, 4) : 0.0;
+                    unset($h['roi_sum']);
+                }
+                unset($h);
             }
-            unset($h);
-        }
-        unset($buckets);
+            unset($buckets);
+            return $hourly;
+        };
 
-        return $hourly;
+        return [
+            'primary'   => $deriveHourly($primary),
+            'secondary' => $deriveHourly($secondary),
+        ];
     }
 
     // =========================================================================
@@ -1090,14 +1459,17 @@ final class StrategyGovernor
     ): void {
         $stateMap = [];
         foreach ($strategyIds as $sid) {
-            $s           = $stratStats[$sid] ?? [];
-            $total       = (int)($s['closed_trades_total'] ?? 0);
-            $winrate     = (float)($s['winrate']           ?? 0.0);
-            $avgRoi      = (float)($s['avg_roi']           ?? 0.0);
-            $consecLoss  = (int)($s['consecutive_losses']  ?? 0);
+            $s = $stratStats[$sid] ?? [];
+
+            // Use primary stats for the live gate check (primary_closed_trades_total
+            // is set by buildStrategyStats when learning quality is enabled).
+            $total      = (int)($s['primary_closed_trades_total'] ?? $s['closed_trades_total'] ?? 0);
+            $winrate    = (float)($s['primary']['winrate']        ?? $s['winrate']  ?? 0.0);
+            $avgRoi     = (float)($s['primary']['avg_roi']        ?? $s['avg_roi']  ?? 0.0);
+            $consecLoss = (int)($s['primary']['consecutive_losses'] ?? $s['consecutive_losses'] ?? 0);
 
             $liveAllowed = false;
-            $reason      = 'not_enough_closed_trades';
+            $reason      = 'not_enough_primary_closed_trades';
             $state       = 'insufficient_data';
 
             if ($total >= $minClosed) {
@@ -1119,14 +1491,15 @@ final class StrategyGovernor
                 'recommended_live_allowed' => $liveAllowed,
                 'recommended_route'        => $liveAllowed ? 'live' : 'demo',
                 'reason'                   => $reason,
+                // Backward-compatible totals (primary-based)
                 'closed_trades_total'      => $total,
                 'winrate'                  => $winrate,
                 'avg_roi'                  => $avgRoi,
                 'consecutive_losses'       => $consecLoss,
-                'consecutive_wins'         => (int)($s['consecutive_wins'] ?? 0),
-                'total_pnl'                => round((float)($s['total_pnl'] ?? 0.0), 6),
+                'consecutive_wins'         => (int)($s['primary']['consecutive_wins'] ?? $s['consecutive_wins'] ?? 0),
+                'total_pnl'                => round((float)($s['primary']['total_pnl'] ?? $s['total_pnl'] ?? 0.0), 6),
                 'current_open_positions'   => $openPerStrategy[$sid] ?? 0,
-                'last_trade_at'            => $s['last_trade_at'] ?? null,
+                'last_trade_at'            => $s['primary']['last_trade_at'] ?? $s['last_trade_at'] ?? null,
                 'updated_at'               => date('Y-m-d H:i:s'),
             ];
         }
@@ -1135,9 +1508,19 @@ final class StrategyGovernor
         $this->writeJsonFile($this->moduleDir . '/storage/strategy_stats.json', $stratStats);
     }
 
-    private function saveHourlyStats(array $hourlyStats): void
+    private function saveHourlyStats(array $hourlyResult): void
     {
-        $this->writeJsonFile($this->moduleDir . '/storage/hourly_stats.json', $hourlyStats);
+        // $hourlyResult is the ['primary' => ..., 'secondary' => ...] array
+        // returned by buildHourlyStats.
+        $primaryHourly   = is_array($hourlyResult['primary']   ?? null) ? $hourlyResult['primary']   : $hourlyResult;
+        $secondaryHourly = is_array($hourlyResult['secondary'] ?? null) ? $hourlyResult['secondary'] : [];
+
+        // hourly_stats.json — primary only (backward-compatible key)
+        $this->writeJsonFile($this->moduleDir . '/storage/hourly_stats.json', $primaryHourly);
+        // hourly_secondary_stats.json — secondary only (new diagnostic file)
+        if (!empty($secondaryHourly)) {
+            $this->writeJsonFile($this->moduleDir . '/storage/hourly_secondary_stats.json', $secondaryHourly);
+        }
     }
 
     // =========================================================================

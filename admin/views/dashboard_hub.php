@@ -2143,6 +2143,7 @@ QUAL;
         $govCfgPath    = System::path('root') . '/modules/strategy_governor/config/base.php';
         $govLastRun    = @json_decode((string)@file_get_contents($govRoot . '/last_run.json'),        true) ?: null;
         $govStateRaw   = @json_decode((string)@file_get_contents($govRoot . '/strategy_state.json'),  true) ?: null;
+        $govStatsRaw   = @json_decode((string)@file_get_contents($govRoot . '/strategy_stats.json'),  true) ?: null;
         $govPendingRaw = @json_decode((string)@file_get_contents($govRoot . '/pending_signals.json'), true) ?: null;
         $govHourlyRaw  = @json_decode((string)@file_get_contents($govRoot . '/hourly_stats.json'),    true) ?: null;
         $govCfg        = (is_file($govCfgPath) ? @include $govCfgPath : null);
@@ -2206,24 +2207,41 @@ QUAL;
             'cooldown'          => 'Cooldown',
         ];
         $govReasonLabels = [
-            'not_enough_closed_trades'          => 'Недостаточно закрытых сделок',
-            'avg_roi_negative'                  => 'Средний ROI отрицательный',
-            'winrate_too_low'                   => 'Winrate ниже порога',
-            'loss_streak'                       => 'Серия убыточных сделок',
-            'shadow_mode'                       => 'Shadow-режим: только рекомендация',
-            'missing_entry_price'               => 'Нет цены входа',
-            'missing_symbol'                    => 'Нет символа',
-            'missing_detected_at'               => 'Нет времени сигнала',
-            'missing_signal_id'                 => 'Нет идентификатора сигнала',
-            'missing_mode'                      => 'Нет режима сигнала',
-            'side_not_long'                     => 'Направление не long',
-            'signal_too_old'                    => 'Сигнал устарел',
-            'handoff_signal_invalid'            => 'Сигнал отклонён handoff',
-            'pending_confirmation_tick'         => 'Ожидание подтверждения',
-            'live_gate_passed'                  => 'Live-порог пройден',
-            'below_live_threshold'              => 'Ниже live-порога',
-            'valid_demo_shadow'                 => 'Валидный shadow demo',
-            'signal_disappeared_pending_expired'=> 'Сигнал исчез, ожидание истекло',
+            'not_enough_closed_trades'                  => 'Недостаточно закрытых сделок',
+            'not_enough_primary_closed_trades'          => 'Недостаточно чистых закрытых сделок',
+            'avg_roi_negative'                          => 'Средний ROI отрицательный',
+            'winrate_too_low'                           => 'Winrate ниже порога',
+            'loss_streak'                               => 'Серия убыточных сделок',
+            'shadow_mode'                               => 'Shadow-режим: только рекомендация',
+            'missing_entry_price'                       => 'Нет цены входа',
+            'missing_symbol'                            => 'Нет символа',
+            'missing_detected_at'                       => 'Нет времени сигнала',
+            'missing_signal_id'                         => 'Нет идентификатора сигнала',
+            'missing_mode'                              => 'Нет режима сигнала',
+            'side_not_long'                             => 'Направление не long',
+            'signal_too_old'                            => 'Сигнал устарел',
+            'handoff_signal_invalid'                    => 'Сигнал отклонён handoff',
+            'pending_confirmation_tick'                 => 'Ожидание подтверждения',
+            'live_gate_passed'                          => 'Live-порог пройден',
+            'below_live_threshold'                      => 'Ниже live-порога',
+            'valid_demo_shadow'                         => 'Валидный shadow demo',
+            'signal_disappeared_pending_expired'        => 'Сигнал исчез, ожидание истекло',
+        ];
+        // Learning quality reason labels (used in strategy_stats quality sections)
+        $govQualityReasonLabels = [
+            'profit_manager_confirmed'            => 'Чистая: Profit Manager',
+            'stop_manager_confirmed'              => 'Чистая: Stop Manager',
+            'primary_source_confirmed'            => 'Чистая: подтверждённый источник',
+            'exchange_disappeared_uncertain'      => 'Исчезла с биржи, источник закрытия не подтверждён',
+            'unknown_close_source'                => 'Неизвестный источник закрытия',
+            'estimated_close_time'                => 'Время закрытия приблизительное',
+            'position_gone_from_exchange'         => 'Позиция исчезла с биржи',
+            'trade_too_old_for_primary'           => 'Сделка слишком старая для чистого обучения',
+            'missing_strategy_id'                 => 'Нет ID стратегии',
+            'missing_roi'                         => 'Нет ROI',
+            'missing_closed_at'                   => 'Нет времени закрытия',
+            'learning_quality_disabled'           => 'Классификация отключена',
+            'missing_required_field'              => 'Отсутствует обязательное поле',
         ];
         $govDecisionLabels = [
             'observed'             => 'Наблюдение',
@@ -2236,6 +2254,7 @@ QUAL;
         $govStateLabel    = static fn (string $s) => $govStateLabels[$s]    ?? ('Неизвестно: '          . str_replace('_', ' ', $s));
         $govReasonLabel   = static fn (string $r) => $govReasonLabels[$r]   ?? ('Неизвестная причина: ' . str_replace('_', ' ', $r));
         $govDecisionLabel = static fn (string $d) => $govDecisionLabels[$d] ?? $d;
+        $govQualityLabel  = static fn (string $r) => $govQualityReasonLabels[$r] ?? str_replace('_', ' ', $r);
 
         $govHasData = ($govLastRun !== null || $govStateRaw !== null);
 
@@ -2574,6 +2593,87 @@ GOV;
                 $govHourlyRows = '<tr><td colspan="7" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Почасовой статистики пока нет</td></tr>';
             }
 
+            // ── Learning quality section ─────────────────────────────────────
+            $gLqEnabled    = (bool)($govLastRun['learning_quality_enabled']                   ?? ($govCfg['learning_quality_enabled'] ?? false));
+            $gLqSeen       = (int)($govLastRun['closed_trades_seen_total']                    ?? 0);
+            $gLqPrimary    = (int)($govLastRun['closed_trades_primary_total']                 ?? 0);
+            $gLqSecondary  = (int)($govLastRun['closed_trades_secondary_total']               ?? 0);
+            $gLqExcluded   = (int)($govLastRun['closed_trades_excluded_total']                ?? 0);
+            $gLqDisappeared= (int)($govLastRun['closed_trades_exchange_disappeared_total']    ?? 0);
+            $gLqUnknown    = (int)($govLastRun['closed_trades_unknown_source_total']          ?? 0);
+            $gLqEstimated  = (int)($govLastRun['closed_trades_estimated_close_total']         ?? 0);
+            $gLqTooOld     = (int)($govLastRun['closed_trades_too_old_for_primary_total']     ?? 0);
+            $gLqWithPrimary= (int)($govLastRun['strategies_with_primary_stats_total']         ?? 0);
+            $gLqOnlySecond = (int)($govLastRun['strategies_with_only_secondary_stats_total']  ?? 0);
+
+            // Warning banner: show when secondary or excluded trades exist
+            $govLqWarnHtml = '';
+            if ($gLqEnabled && ($gLqSecondary > 0 || $gLqExcluded > 0)) {
+                $govLqWarnHtml = '<div style="padding:8px 14px;background:rgba(240,136,62,0.1);border-bottom:1px solid var(--ui-border);font-size:12px;color:#f0883e;">'
+                    . '<i class="bi bi-exclamation-triangle" style="margin-right:6px;"></i>'
+                    . 'Часть сделок не используется для live-оценки Governor, потому что источник закрытия или время закрытия не подтверждены.'
+                    . '</div>';
+            }
+
+            // Per-strategy quality table rows
+            $govLqStratRows = '';
+            if (is_array($govStatsRaw) && count($govStatsRaw) > 0) {
+                foreach ($govStatsRaw as $qsid => $qStat) {
+                    if (!is_array($qStat)) continue;
+                    $pData = is_array($qStat['primary']   ?? null) ? $qStat['primary']   : null;
+                    $sData = is_array($qStat['secondary'] ?? null) ? $qStat['secondary'] : null;
+                    $xData = is_array($qStat['excluded']  ?? null) ? $qStat['excluded']  : null;
+
+                    $pCount   = $pData !== null ? (int)($pData['closed_trades_total'] ?? 0) : 0;
+                    $pWr      = $pData !== null ? (number_format((float)($pData['winrate'] ?? 0) * 100, 1) . '%') : '—';
+                    $pRoi     = $pData !== null ? (number_format((float)($pData['avg_roi'] ?? 0), 2) . '%') : '—';
+                    $sCount   = $sData !== null ? (int)($sData['closed_trades_total'] ?? 0) : 0;
+                    $sDisapp  = $sData !== null ? (int)($sData['exchange_disappeared_total'] ?? 0) : 0;
+                    $sUnknown = $sData !== null ? (int)($sData['unknown_close_total'] ?? 0) : 0;
+                    $xTotal   = $xData !== null ? (int)($xData['total'] ?? 0) : 0;
+
+                    // Status badge based on primary count threshold from config
+                    $minPrimary = (int)($govCfg['min_primary_closed_trades_for_live'] ?? $govCfg['min_closed_trades_for_live'] ?? 20);
+                    if ($pCount >= $minPrimary) {
+                        $qStatus      = '<span style="color:#3fb950;font-size:11px;">✓ достаточно</span>';
+                    } elseif ($pCount > 0) {
+                        $qStatus      = '<span style="color:#f0883e;font-size:11px;">⚠ мало чистых</span>';
+                    } else {
+                        $qStatus      = '<span style="color:#f85149;font-size:11px;">✗ нет чистых</span>';
+                    }
+                    $qReason = $pCount < $minPrimary ? 'not_enough_primary_closed_trades' : '';
+                    $qReasonDisp = $qReason !== '' ? '<div style="font-size:10px;color:#f0883e;margin-top:2px;">' . htmlspecialchars($govQualityLabel($qReason), ENT_QUOTES, 'UTF-8') . '</div>' : '';
+
+                    $govLqStratRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
+                        . '<td style="padding:4px 8px 4px 0;font-weight:600;white-space:nowrap;">' . $e((string)$qsid) . '</td>'
+                        . '<td style="padding:4px 8px;text-align:right;color:#3fb950;">' . $e((string)$pCount) . '</td>'
+                        . '<td style="padding:4px 8px;text-align:right;">' . $e($pWr) . '</td>'
+                        . '<td style="padding:4px 8px;text-align:right;">' . $e($pRoi) . '</td>'
+                        . '<td style="padding:4px 8px;text-align:right;color:#f0883e;">' . $e((string)$sCount) . '</td>'
+                        . '<td style="padding:4px 8px;text-align:right;color:#8b949e;">' . $e((string)($sDisapp + $sUnknown)) . '</td>'
+                        . '<td style="padding:4px 8px;text-align:right;color:#8b949e;">' . $e((string)$xTotal) . '</td>'
+                        . '<td style="padding:4px 8px;">' . $qStatus . '</td>'
+                        . '<td style="padding:4px 8px;font-size:11px;color:var(--ui-text-muted);">' . $qReasonDisp . '</td>'
+                        . '</tr>';
+                }
+            }
+            if ($govLqStratRows === '') {
+                $govLqStratRows = '<tr><td colspan="9" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Нет данных по стратегиям</td></tr>';
+            }
+
+            $gLqEnabledStr  = $gLqEnabled ? 'да' : 'нет';
+            $gLqPrimaryStr  = $e((string)$gLqPrimary);
+            $gLqSecondaryStr= $e((string)$gLqSecondary);
+            $gLqExcludedStr = $e((string)$gLqExcluded);
+            $gLqSeenStr     = $e((string)$gLqSeen);
+            $gLqDisapStr    = $e((string)$gLqDisappeared);
+            $gLqUnknownStr  = $e((string)$gLqUnknown);
+            $gLqEstStr      = $e((string)$gLqEstimated);
+            $gLqOldStr      = $e((string)$gLqTooOld);
+            $gLqWithPrimStr = $e((string)$gLqWithPrimary);
+            $gLqOnlySecStr  = $e((string)$gLqOnlySecond);
+            $govLqStratRowsStr = $govLqStratRows;
+
             $governorFullHtml = <<<GOV
 <!-- ── Governor: summary ──────────────────────────────────────────── -->
 <div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
@@ -2647,6 +2747,46 @@ GOV;
       </table>
     </div>
     <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">Источник: <code>strategy_state.json</code></p>
+  </div>
+</div>
+
+<!-- ── Governor: learning quality ────────────────────────────────── -->
+<div class="card" style="margin-bottom:16px;border-color:#f0883e44;">
+  <div class="card-header"><i class="bi bi-funnel" style="margin-right:6px;color:#f0883e;"></i>Качество обучающей статистики</div>
+  {$govLqWarnHtml}
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 18px;font-size:12px;margin-bottom:14px;">
+      <div><span style="color:var(--ui-text-muted);">Классификация</span><br><strong>{$gLqEnabledStr}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Всего закрытых сделок</span><br><strong>{$gLqSeenStr}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Primary / чистые</span><br><strong style="color:#3fb950;">{$gLqPrimaryStr}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Secondary / сомнительные</span><br><strong style="color:#f0883e;">{$gLqSecondaryStr}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Excluded / исключены</span><br><strong style="color:#f85149;">{$gLqExcludedStr}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Exchange disappeared</span><br><strong style="color:#8b949e;">{$gLqDisapStr}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Unknown source</span><br><strong style="color:#8b949e;">{$gLqUnknownStr}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Estimated close time</span><br><strong style="color:#8b949e;">{$gLqEstStr}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Too old for primary</span><br><strong style="color:#8b949e;">{$gLqOldStr}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Стратегий с primary</span><br><strong style="color:#3fb950;">{$gLqWithPrimStr}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Только secondary</span><br><strong style="color:#f0883e;">{$gLqOnlySecStr}</strong></div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;font-size:11px;border-collapse:collapse;">
+        <thead>
+          <tr style="color:var(--ui-text-muted);border-bottom:1px solid var(--ui-border);">
+            <th style="padding:4px 8px 4px 0;text-align:left;white-space:nowrap;">Стратегия</th>
+            <th style="padding:4px 8px;text-align:right;white-space:nowrap;">Primary сделок</th>
+            <th style="padding:4px 8px;text-align:right;white-space:nowrap;">Primary winrate</th>
+            <th style="padding:4px 8px;text-align:right;white-space:nowrap;">Primary avg ROI</th>
+            <th style="padding:4px 8px;text-align:right;white-space:nowrap;">Secondary сделок</th>
+            <th style="padding:4px 8px;text-align:right;white-space:nowrap;">Unknown / disappeared</th>
+            <th style="padding:4px 8px;text-align:right;white-space:nowrap;">Excluded</th>
+            <th style="padding:4px 8px;white-space:nowrap;">Статус обучения</th>
+            <th style="padding:4px 8px;white-space:nowrap;">Причина</th>
+          </tr>
+        </thead>
+        <tbody>{$govLqStratRowsStr}</tbody>
+      </table>
+    </div>
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">primary = Чистая статистика · secondary = Сомнительная статистика · excluded = Исключено · Источник: <code>strategy_stats.json</code>, <code>last_run.json</code></p>
   </div>
 </div>
 

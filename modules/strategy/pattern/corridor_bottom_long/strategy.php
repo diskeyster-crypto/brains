@@ -157,7 +157,7 @@ final class CorridorBottomLongStrategy
             'generated_signals_count'=> 0,
             'rejected'               => 0,
             'reject_reasons'         => [],
-            // Breakdown rejection counters
+            // Breakdown rejection counters (legacy names kept for UI compatibility)
             'rejected_fast_dump'          => 0,
             'rejected_new_low'            => 0,
             'rejected_no_micro_reversal'  => 0,
@@ -172,7 +172,40 @@ final class CorridorBottomLongStrategy
             'next_cursor'            => $nextCursor,
             'universe_cycle_id'      => $universeCycleId,
             'universe_wrapped'       => $universeWrapped,
+            // ── PART 1: Explicit validation pipeline counters ─────────────────
+            'candidates_total_loaded'               => 0,
+            'candidates_new_created'                => 0,
+            'candidates_existing_rechecked'         => 0,
+            'candidates_waiting_too_fresh'          => 0,
+            'candidates_rejected_too_stale'         => 0,
+            'candidates_rejected_new_low'           => 0,
+            'candidates_rejected_fast_dump'         => 0,
+            'candidates_rejected_no_micro_reversal' => 0,
+            'candidates_rejected_no_accumulation'   => 0,
+            'candidates_rejected_risk_to_low'       => 0,
+            'candidates_validated_ok'               => 0,
+            'signals_blocked_by_max_signals_per_run'=> 0,
+            'signals_generated_current_run'         => 0,
+            // ── PART 2: Candidate age diagnostics (computed after loop) ───────
+            'candidate_min_age_seconds'  => null,
+            'candidate_max_age_seconds'  => null,
+            'candidate_avg_age_seconds'  => null,
+            'validation_min_age_seconds' => null,
+            'validation_max_age_seconds' => null,
+            // ── PART 3: Normalized reject counters (computed after loop) ──────
+            'reject_reasons_normalized'  => (object)[],
+            'reject_examples'            => [],
+            // ── PART 4: Signal readiness diagnostics ─────────────────────────
+            'signal_rejected_cap_reached' => 0,
+            'signal_rejected_unknown'     => 0,
         ];
+
+        // Age-tracking arrays (used for PART 2 — computed after the main loop)
+        $_waitingAges   = [];   // age-in-seconds for every 'waiting' candidate
+        $_validatedAges = [];   // age-in-seconds for every validated candidate
+        // Reject tracking for PART 3
+        $_rejectCounters = [];  // [ reason => count ]
+        $_rejectExamples = [];  // [ ['symbol'=>…, 'reason'=>…], … ] (max 10)
 
         // Track signals generated in THIS run only (not accumulated historical pool)
         $currentRunSignals = [];
@@ -180,6 +213,8 @@ final class CorridorBottomLongStrategy
         // Load persisted state
         $candidates = $this->readJson('storage/candidates.json', []);
         $signals    = $this->readJson('storage/signals.json',    []);
+
+        $stats['candidates_total_loaded'] = count($candidates);
 
         $detector = new PatternDetector();
         $engine   = new ValidationEngine();
@@ -237,6 +272,7 @@ final class CorridorBottomLongStrategy
                     'risk_to_low_roi'    => 0.0,
                     'reject_reason'      => null,
                 ];
+                $stats['candidates_new_created']++;
             } else {
                 // Continuation: update live price snapshot, keep detected_at
                 $candidate                  = $existing;
@@ -244,6 +280,7 @@ final class CorridorBottomLongStrategy
                 $candidate['distance_pct']  = round($distancePct, 4);
                 $candidate['low_price']     = $corridorLow;
                 $candidate['high_price']    = $corridorHigh;
+                $stats['candidates_existing_rechecked']++;
             }
 
             // ── 5. Pattern detection ─────────────────────────────────────────
@@ -265,6 +302,12 @@ final class CorridorBottomLongStrategy
                 $stats['rejected']++;
                 $stats['reject_reasons'][]    = $symbol . ':risk_to_low_too_high';
                 $stats['rejected_risk_to_low']++;
+                $stats['candidates_rejected_risk_to_low']++;
+                // PART 3: normalized
+                $_rejectCounters['risk_to_low_too_high'] = ($_rejectCounters['risk_to_low_too_high'] ?? 0) + 1;
+                if (count($_rejectExamples) < 10) {
+                    $_rejectExamples[] = ['symbol' => $symbol, 'reason' => 'risk_to_low_too_high'];
+                }
                 $candidate['state']        = 'rejected';
                 $candidate['reject_reason']= 'risk_to_low_too_high';
                 $candidates = $this->upsertCandidate($candidates, $candidateKey, $candidate);
@@ -290,6 +333,9 @@ final class CorridorBottomLongStrategy
 
             if ($decision === 'waiting') {
                 $stats['candidates_waiting']++;
+                $stats['candidates_waiting_too_fresh']++;
+                // PART 2: track age of waiting candidates
+                $_waitingAges[] = $now - (int)($candidate['detected_at'] ?? $now);
                 $candidate['state'] = 'waiting_validation';
                 $candidates         = $this->upsertCandidate($candidates, $candidateKey, $candidate);
                 continue;
@@ -299,7 +345,7 @@ final class CorridorBottomLongStrategy
                 $stats['rejected']++;
                 $rejectReason = $result['reject_reason'] ?? 'rejected';
                 $stats['reject_reasons'][] = $symbol . ':' . $rejectReason;
-                // Breakdown counters
+                // Legacy breakdown counters
                 match ($rejectReason) {
                     'fast_dump'                  => $stats['rejected_fast_dump']++,
                     'new_low_broken'             => $stats['rejected_new_low']++,
@@ -308,6 +354,21 @@ final class CorridorBottomLongStrategy
                     'risk_to_low_too_high'       => $stats['rejected_risk_to_low']++,
                     default                      => null,
                 };
+                // PART 1: named pipeline counters
+                match ($rejectReason) {
+                    'candidate_too_stale'        => $stats['candidates_rejected_too_stale']++,
+                    'new_low_broken'             => $stats['candidates_rejected_new_low']++,
+                    'fast_dump'                  => $stats['candidates_rejected_fast_dump']++,
+                    'no_micro_reversal'          => $stats['candidates_rejected_no_micro_reversal']++,
+                    'no_accumulation_after_dump' => $stats['candidates_rejected_no_accumulation']++,
+                    'risk_to_low_too_high'       => $stats['candidates_rejected_risk_to_low']++,
+                    default                      => null,
+                };
+                // PART 3: normalized reject counters + examples
+                $_rejectCounters[$rejectReason] = ($_rejectCounters[$rejectReason] ?? 0) + 1;
+                if (count($_rejectExamples) < 10) {
+                    $_rejectExamples[] = ['symbol' => $symbol, 'reason' => $rejectReason];
+                }
                 $candidate['state']        = 'rejected';
                 $candidate['reject_reason']= $rejectReason;
                 // Store briefly for diagnostics then clean
@@ -321,13 +382,20 @@ final class CorridorBottomLongStrategy
             $maxSignalsPerRun = max(1, (int)($config['max_signals_per_run'] ?? 3));
             if ($stats['generated_signals_count'] >= $maxSignalsPerRun) {
                 // Cap reached — keep candidate alive for next run
+                $stats['signals_blocked_by_max_signals_per_run']++;
+                $stats['signal_rejected_cap_reached']++;
                 $candidate['state'] = 'waiting_validation';
                 $candidates         = $this->upsertCandidate($candidates, $candidateKey, $candidate);
                 continue;
             }
 
+            // PART 2: track age of validated candidates
+            $_validatedAges[] = $now - (int)($candidate['detected_at'] ?? $now);
+
             $stats['candidates_validated']++;
+            $stats['candidates_validated_ok']++;
             $stats['generated_signals_count']++;
+            $stats['signals_generated_current_run']++;
 
             $signal = [
                 // Identity — required by bot buildQueueItem
@@ -364,6 +432,22 @@ final class CorridorBottomLongStrategy
             $candidate['state'] = 'emitted';
             $candidates = $this->removeCandidate($candidates, $candidateKey);
         }
+
+        // ── PART 2: Compute candidate age diagnostics ─────────────────────────
+        if (!empty($_waitingAges)) {
+            $stats['candidate_min_age_seconds'] = min($_waitingAges);
+            $stats['candidate_max_age_seconds'] = max($_waitingAges);
+            $stats['candidate_avg_age_seconds'] = (int)round(array_sum($_waitingAges) / count($_waitingAges));
+        }
+        if (!empty($_validatedAges)) {
+            $stats['validation_min_age_seconds'] = min($_validatedAges);
+            $stats['validation_max_age_seconds'] = max($_validatedAges);
+        }
+
+        // ── PART 3: Normalized reject counters ────────────────────────────────
+        arsort($_rejectCounters);
+        $stats['reject_reasons_normalized'] = (object)$_rejectCounters;
+        $stats['reject_examples']           = $_rejectExamples;
 
         // Persist updated state (storage dirs created lazily by writeJson)
         $this->initStorage();

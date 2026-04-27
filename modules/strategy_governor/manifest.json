@@ -1,0 +1,13 @@
+{
+    "name": "strategy_governor",
+    "title": "Strategy Governor · Shadow Routing Layer",
+    "version": "0.1.0",
+    "description": "V1 shadow-only self-learning routing layer. Observes signals, queues, positions and closed trades. Writes recommended routing decisions. Does NOT block orders or change bot/strategy behaviour.",
+    "author": "Tredercopis",
+    "category": "strategy_governor",
+    "paths": {
+        "storage": "storage",
+        "config":  "config/base.php",
+        "logs":    "logs"
+    }
+}

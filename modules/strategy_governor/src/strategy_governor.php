@@ -97,6 +97,15 @@ final class StrategyGovernor
         $pendingTotalForRun          = 0;
         $newPending                  = [];
         $decisionsBatch              = [];
+        // Phase 3A: approved demo queue counters
+        $queueEnabled                = false;
+        $queueMode                   = 'shadow_bridge';
+        $queueTotal                  = 0;
+        $queueAdded                  = 0;
+        $queueSkippedInvalid         = 0;
+        $queueSkippedStale           = 0;
+        $queueDeduped                = 0;
+        $queueLimited                = 0;
 
         try {
             // ── 1. Load config values ─────────────────────────────────────────
@@ -114,6 +123,11 @@ final class StrategyGovernor
             $maxPendingAge      = (int)($this->config['max_pending_age_seconds']               ?? 3600);
             $keepFinalInPending = (bool)($this->config['keep_final_decisions_in_pending']      ?? true);
             $finalDecisionTtl   = (int)($this->config['final_decision_ttl_seconds']           ?? 86400);
+            // Phase 3A queue config
+            $queueEnabled       = (bool)($this->config['approved_demo_queue_enabled']         ?? true);
+            $queueMode          = (string)($this->config['approved_demo_queue_mode']          ?? 'shadow_bridge');
+            $maxPerRun          = max(1, (int)($this->config['max_approved_demo_per_run']     ?? 10));
+            $demoTtl            = max(60, (int)($this->config['approved_demo_ttl_seconds']    ?? 1800));
 
             // ── 2. Discover strategies ────────────────────────────────────────
             $strategyIds = $this->discoverStrategies();
@@ -484,6 +498,124 @@ final class StrategyGovernor
             $this->saveHourlyStats($hourlyStats);
             $this->appendDecisions($decisionsBatch);
 
+            // ── 13. Phase 3A: build approved demo queue ───────────────────────
+            $queuePath     = $this->moduleDir . '/storage/approved_demo_queue.json';
+            $existingQueue = $this->loadJsonSafe($queuePath, []);
+            if (!is_array($existingQueue)) {
+                $existingQueue = [];
+            }
+
+            // Index existing queue entries by governor_signal_key for O(1) dedup lookup
+            $existingQueueByKey = [];
+            foreach ($existingQueue as $qItem) {
+                $k = (string)($qItem['governor_signal_key'] ?? '');
+                if ($k !== '') {
+                    $existingQueueByKey[$k] = $qItem;
+                }
+            }
+
+            $newQueue          = [];   // keyed by governor_signal_key
+            $queueJournalBatch = [];
+
+            if ($queueEnabled) {
+                foreach ($newPending as $govKey => $pEntry) {
+                    // Only process approve_demo_shadow + demo route entries
+                    if (($pEntry['state']              ?? '') !== self::STATE_APPROVE_DEMO_SHADOW
+                        || ($pEntry['recommended_route'] ?? '') !== self::ROUTE_DEMO
+                    ) {
+                        continue;
+                    }
+
+                    // Build a pseudo-norm for validateSignalBasic (pending entry has all required fields)
+                    $pseudoNorm = [
+                        'governor_signal_key' => $govKey,
+                        'signal_id'           => $pEntry['signal_id']   ?? '',
+                        'strategy_id'         => $pEntry['strategy_id'] ?? '',
+                        'symbol'              => $pEntry['symbol']       ?? '',
+                        'side'                => $pEntry['side']         ?? '',
+                        'mode'                => $pEntry['mode']         ?? '',
+                        'entry_price'         => $pEntry['entry_price']  ?? null,
+                        'detected_at'         => $pEntry['detected_at']  ?? '',
+                        'handoff_valid'       => null, // not stored in pending; treated as unset
+                    ];
+
+                    // Basic signal validity check
+                    if ($this->validateSignalBasic($pseudoNorm) !== null) {
+                        $queueSkippedInvalid++;
+                        continue;
+                    }
+
+                    // Age check: signal must not be older than the demo TTL
+                    $detectedTs = $this->parseTimestamp((string)($pEntry['detected_at'] ?? ''));
+                    if ($detectedTs > 0 && ($now - $detectedTs) > $demoTtl) {
+                        $queueSkippedStale++;
+                        continue;
+                    }
+
+                    // Deduplication: already in queue from a previous run
+                    if (isset($existingQueueByKey[$govKey])) {
+                        $carried                   = $existingQueueByKey[$govKey];
+                        $carried['last_seen_at']   = date('Y-m-d H:i:s');
+                        $newQueue[$govKey]          = $carried;
+                        $queueDeduped++;
+                        continue;
+                    }
+
+                    // Per-run limit
+                    if ($queueAdded >= $maxPerRun) {
+                        $queueLimited++;
+                        continue;
+                    }
+
+                    // Build new queue item
+                    $approvedAt   = (string)($pEntry['updated_at'] ?? $pEntry['last_seen_at'] ?? date('Y-m-d H:i:s'));
+                    $approvedTs   = $this->parseTimestamp($approvedAt);
+                    $ttlExpiresAt = date('Y-m-d H:i:s', ($approvedTs > 0 ? $approvedTs : $now) + $demoTtl);
+
+                    // Pull extra fields from the normalised signal if it is still available
+                    $norm = $normalizedSignals[$govKey] ?? null;
+
+                    $newQueue[$govKey] = [
+                        'governor_queue_id'   => 'gq_' . substr(md5($govKey . $approvedAt), 0, 12),
+                        'governor_signal_key' => $govKey,
+                        'signal_id'           => $pEntry['signal_id']   ?? '',
+                        'strategy_id'         => $pEntry['strategy_id'] ?? '',
+                        'symbol'              => $pEntry['symbol']       ?? '',
+                        'side'                => $pEntry['side']         ?? '',
+                        'mode'                => $pEntry['mode']         ?? '',
+                        'entry_price'         => $pEntry['entry_price']  ?? null,
+                        'entry_mode'          => $norm['entry_mode']     ?? null,
+                        'entry_type'          => $norm['entry_type']     ?? null,
+                        'detected_at'         => $pEntry['detected_at']  ?? '',
+                        'created_at'          => $pEntry['first_seen_at'] ?? '',
+                        'approved_at'         => $approvedAt,
+                        'last_seen_at'        => date('Y-m-d H:i:s'),
+                        'decision_id'         => '',
+                        'source'              => $norm ? ($norm['source']      ?? '') : '',
+                        'source_file'         => $norm ? ($norm['source_file'] ?? '') : '',
+                        'governor_reason'     => $pEntry['reason'] ?? '',
+                        'governor_state'      => $pEntry['state']  ?? '',
+                        'ttl_expires_at'      => $ttlExpiresAt,
+                    ];
+                    $queueAdded++;
+
+                    // Journal one event per new queue addition (no repeat spam)
+                    $queueJournalBatch[] = $this->buildDecisionRecord(
+                        $govKey, $pseudoNorm,
+                        self::STATE_APPROVE_DEMO_SHADOW, 'approved_demo_queued_shadow',
+                        'approved_demo_queued_shadow', self::ROUTE_DEMO,
+                        'governor_demo_queue_shadow_bridge',
+                        (int)($pEntry['tick_count'] ?? 0), (int)($pEntry['max_ticks'] ?? 0),
+                        $mode
+                    );
+                }
+            }
+
+            $queueTotal = count($newQueue);
+            $this->appendDecisions($queueJournalBatch);
+            // Save as a flat array (values only, no associative key export)
+            $this->writeJsonFile($queuePath, array_values($newQueue));
+
         } catch (\Throwable $ex) {
             $errors[] = $ex->getMessage();
         }
@@ -518,6 +650,15 @@ final class StrategyGovernor
             'current_rejected_shadow_total'     => $currRejectedShadow     ?? 0,
             'current_expired_shadow_total'      => $currExpiredShadow      ?? 0,
             'current_final_decisions_total'     => $currFinalDecisions     ?? 0,
+            // ── Phase 3A: approved demo queue ──────────────────────────────────
+            'approved_demo_queue_enabled'       => $queueEnabled,
+            'approved_demo_queue_mode'          => $queueMode,
+            'approved_demo_queue_total'         => $queueTotal,
+            'approved_demo_queue_added'         => $queueAdded,
+            'approved_demo_queue_skipped_invalid' => $queueSkippedInvalid,
+            'approved_demo_queue_skipped_stale' => $queueSkippedStale,
+            'approved_demo_queue_deduped'       => $queueDeduped,
+            'approved_demo_queue_limited'       => $queueLimited,
             'errors'                            => $errors,
         ];
 

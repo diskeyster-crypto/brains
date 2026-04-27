@@ -82,4 +82,20 @@ return [
 
     // Minutes to keep a strategy in cooldown after a recommended block.
     'cooldown_minutes_after_block'  => 180,
+
+    // ── Phase 3A: approved demo queue (shadow bridge) ─────────────────────────
+    // When true, Governor maintains its own approved demo queue for inspection.
+    // The bot does NOT read this queue in this phase.
+    'approved_demo_queue_enabled'   => true,
+
+    // Queue operating mode.  'shadow_bridge' = Governor writes for visibility only;
+    // the bot must not consume it until Phase 3B+ explicitly enables consumption.
+    'approved_demo_queue_mode'      => 'shadow_bridge',
+
+    // Maximum number of new queue items written per Governor run.
+    'max_approved_demo_per_run'     => 10,
+
+    // Seconds after approval before a queued entry is considered stale and dropped.
+    // 1800 = 30 minutes.
+    'approved_demo_ttl_seconds'     => 1800,
 ];

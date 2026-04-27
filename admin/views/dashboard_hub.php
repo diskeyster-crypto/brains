@@ -2087,6 +2087,10 @@ QUAL;
         $govCfg        = (is_file($govCfgPath) ? @include $govCfgPath : null);
         $govCfg        = is_array($govCfg) ? $govCfg : [];
 
+        // Load approved demo queue (Phase 3A)
+        $govDemoQueueRaw  = @json_decode((string)@file_get_contents($govRoot . '/approved_demo_queue.json'), true) ?: null;
+        $govDemoQueueRaw  = is_array($govDemoQueueRaw) ? $govDemoQueueRaw : [];
+
         // Last 50 lines of decisions.ndjson — tail reader (no full file load)
         $govDecisionsRaw = [];
         $govNdjsonPath   = $govRoot . '/decisions.ndjson';
@@ -2299,6 +2303,16 @@ GOV;
             $gCurrExpired     = $e((string)(int)($govLastRun['current_expired_shadow_total']       ?? 0));
             $gCurrFinal       = $e((string)(int)($govLastRun['current_final_decisions_total']      ?? 0));
 
+            // ── Phase 3A: approved demo queue counters ────────────────────────
+            $gQueueEnabled  = ($govLastRun['approved_demo_queue_enabled']  ?? $govCfg['approved_demo_queue_enabled']  ?? true) ? 'да' : 'нет';
+            $gQueueMode     = $e((string)($govLastRun['approved_demo_queue_mode'] ?? $govCfg['approved_demo_queue_mode'] ?? 'shadow_bridge'));
+            $gQueueTotal    = $e((string)(int)($govLastRun['approved_demo_queue_total']           ?? count($govDemoQueueRaw)));
+            $gQueueAdded    = $e((string)(int)($govLastRun['approved_demo_queue_added']           ?? 0));
+            $gQueueSkipInv  = $e((string)(int)($govLastRun['approved_demo_queue_skipped_invalid'] ?? 0));
+            $gQueueSkipStl  = $e((string)(int)($govLastRun['approved_demo_queue_skipped_stale']  ?? 0));
+            $gQueueDeduped  = $e((string)(int)($govLastRun['approved_demo_queue_deduped']         ?? 0));
+            $gQueueLimited  = $e((string)(int)($govLastRun['approved_demo_queue_limited']         ?? 0));
+
             // ── Error list ───────────────────────────────────────────────────
             $gErrorListHtml = '';
             if ($gErrors > 0 && is_array($govLastRun['errors'] ?? null)) {
@@ -2439,6 +2453,36 @@ GOV;
             }
             if ($govDecJrnRows === '') {
                 $govDecJrnRows = '<tr><td colspan="9" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Журнал решений пока пуст</td></tr>';
+            }
+
+            // ── Approved demo queue rows (Phase 3A) ──────────────────────────
+            $govDemoQueueRows = '';
+            if (count($govDemoQueueRaw) > 0) {
+                $govDemoQueueSlice = array_slice(array_reverse(array_values($govDemoQueueRaw)), 0, 20);
+                foreach ($govDemoQueueSlice as $qi) {
+                    if (!is_array($qi)) continue;
+                    $qiStrat   = $e((string)($qi['strategy_id']   ?? '—'));
+                    $qiSym     = $e((string)($qi['symbol']        ?? '—'));
+                    $qiState   = $e((string)($qi['governor_state'] ?? '—'));
+                    $qiReason  = $e((string)($qi['governor_reason'] ?? '—'));
+                    $qiPrice   = $qi['entry_price'] !== null ? $e(number_format((float)$qi['entry_price'], 2)) : '—';
+                    $qiDetect  = $e((string)($qi['detected_at']  ?? '—'));
+                    $qiApprove = $e((string)($qi['approved_at']  ?? '—'));
+                    $qiTtl     = $e((string)($qi['ttl_expires_at'] ?? '—'));
+                    $govDemoQueueRows .= '<tr>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $qiStrat . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $qiSym . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:#3fb950;">' . $qiState . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $qiReason . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $qiPrice . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);white-space:nowrap;">' . $qiDetect . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);white-space:nowrap;">' . $qiApprove . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);white-space:nowrap;">' . $qiTtl . '</td>'
+                        . '</tr>';
+                }
+            }
+            if ($govDemoQueueRows === '') {
+                $govDemoQueueRows = '<tr><td colspan="8" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Очередь пуста</td></tr>';
             }
 
             // ── Hourly stats rows ────────────────────────────────────────────
@@ -2617,6 +2661,47 @@ GOV;
       </table>
     </div>
     <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">Последние 50 строк · Источник: <code>decisions.ndjson</code></p>
+  </div>
+</div>
+
+<!-- ── Governor: approved demo queue (Phase 3A shadow bridge) ────── -->
+<div class="card" style="margin-bottom:16px;border-color:#3fb95044;">
+  <div class="card-header"><i class="bi bi-card-checklist" style="margin-right:6px;color:#3fb950;"></i>Очередь Governor demo approval</div>
+  <div class="card-body" style="padding:12px 16px;">
+    <!-- Shadow bridge warning -->
+    <div style="background:rgba(248,81,73,.07);border:1px solid #f8514933;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#f85149;">
+      <i class="bi bi-exclamation-triangle-fill" style="margin-right:5px;"></i>Shadow bridge: бот пока не читает эту очередь
+    </div>
+    <!-- Queue counters -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 16px;font-size:12px;margin-bottom:14px;">
+      <div><span style="color:var(--ui-text-muted);">Режим очереди</span><br><strong>{$gQueueMode}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Очередь включена</span><br><strong>{$gQueueEnabled}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Всего в очереди</span><br><strong style="color:#3fb950;">{$gQueueTotal}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Добавлено за тик</span><br><strong style="color:#3fb950;">{$gQueueAdded}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Пропущено (невал.)</span><br><strong style="color:#f85149;">{$gQueueSkipInv}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Пропущено (устар.)</span><br><strong style="color:#8b949e;">{$gQueueSkipStl}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Дедуплицировано</span><br><strong style="color:#f0883e;">{$gQueueDeduped}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Ограничено (лимит)</span><br><strong style="color:#8b949e;">{$gQueueLimited}</strong></div>
+    </div>
+    <!-- Queue entries table -->
+    <div style="overflow-x:auto;">
+      <table style="width:100%;font-size:11px;border-collapse:collapse;">
+        <thead>
+          <tr style="color:var(--ui-text-muted);border-bottom:1px solid var(--ui-border);">
+            <th style="padding:3px 8px 3px 0;text-align:left;">Стратегия</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">Символ</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">Состояние</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">Причина</th>
+            <th style="padding:3px 8px 3px 0;text-align:right;">entry_price</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;white-space:nowrap;">detected_at</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;white-space:nowrap;">approved_at</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;white-space:nowrap;">ttl_expires_at</th>
+          </tr>
+        </thead>
+        <tbody>{$govDemoQueueRows}</tbody>
+      </table>
+    </div>
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">Последние 20 · Источник: <code>approved_demo_queue.json</code></p>
   </div>
 </div>
 

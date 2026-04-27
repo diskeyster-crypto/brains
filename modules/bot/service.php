@@ -421,9 +421,19 @@ final class BotService
         $allSignals          = [];
         $ignoredSignalsCount = 0;
 
+        $handoffSourcesAllowed       = 0;
+        $handoffSourcesBlockedByHandoff = 0;
+        $handoffSourcesLegacyAllowed = 0;
+
         foreach ($enabledStrategies as $rec) {
-            if (!$this->resolveHandoffEnabled((string)($rec['strategy_id'] ?? ''), $overrides, (string)($rec['module_path'] ?? ''))) {
+            $handoffResult = $this->resolveHandoffEnabled((string)($rec['strategy_id'] ?? ''), $overrides, (string)($rec['module_path'] ?? ''));
+            if (!$handoffResult['allowed']) {
+                $handoffSourcesBlockedByHandoff++;
                 continue;
+            }
+            $handoffSourcesAllowed++;
+            if ($handoffResult['legacy']) {
+                $handoffSourcesLegacyAllowed++;
             }
             $signals    = $this->readHandoffQueueForStrategy($rec);
             $allSignals = array_merge($allSignals, $signals);
@@ -518,6 +528,13 @@ final class BotService
             'strategies_enabled_total'    => count($enabledStrategies),
             'strategies_disabled_total'   => count($disabledStrategies),
             'handoff_sources_active_total'=> $handoffSourcesActive,
+
+            // Handoff gate breakdown (per tick, current state)
+            'handoff_sources_discovered_total'        => count($registry),
+            'handoff_sources_enabled_total'           => count($enabledStrategies),
+            'handoff_sources_allowed_total'           => $handoffSourcesAllowed,
+            'handoff_sources_blocked_by_handoff_total'=> $handoffSourcesBlockedByHandoff,
+            'handoff_sources_legacy_allowed_total'    => $handoffSourcesLegacyAllowed,
 
             // Signals this tick
             'handoff_signals_processed'                  => $result['signals_seen'],
@@ -695,11 +712,24 @@ final class BotService
      *   2. strategy config (active.php merged over base.php)
      *   3. default false — never ingest unless explicitly enabled
      */
-    private function resolveHandoffEnabled(string $stratId, array $overrides, string $modulePath): bool
+    /**
+     * Resolve whether a strategy's handoff queue may be ingested.
+     *
+     * Returns an array:
+     *   'allowed' => bool   — whether ingestion is permitted
+     *   'legacy'  => bool   — true when allowed only because the key is absent everywhere
+     *                         (backward-compat default); false for an explicit decision
+     *
+     * Resolution order:
+     *   1. Operator override (explicit true/false) — highest precedence
+     *   2. Strategy config/active.php → config/base.php (explicit true/false)
+     *   3. Key absent everywhere → allow (legacy backward-compat, NOT a block)
+     */
+    private function resolveHandoffEnabled(string $stratId, array $overrides, string $modulePath): array
     {
         // 1. Operator override takes precedence when explicitly set
         if (isset($overrides[$stratId]['handoff_enabled'])) {
-            return (bool)$overrides[$stratId]['handoff_enabled'];
+            return ['allowed' => (bool)$overrides[$stratId]['handoff_enabled'], 'legacy' => false];
         }
 
         // 2. Strategy config files
@@ -721,12 +751,14 @@ final class BotService
                 }
             }
             if (isset($cfg['handoff_enabled'])) {
-                return (bool)$cfg['handoff_enabled'];
+                return ['allowed' => (bool)$cfg['handoff_enabled'], 'legacy' => false];
             }
         }
 
-        // 3. Default: do not ingest
-        return false;
+        // 3. Key absent everywhere — allow for backward compatibility.
+        //    Strategies built before handoff_enabled existed must continue working
+        //    without requiring a config migration.
+        return ['allowed' => true, 'legacy' => true];
     }
 
     /**

@@ -529,9 +529,11 @@ final class StrategyGovernor
                     // Build a pseudo-norm for validateSignalBasic (pending entry has all required fields).
                     // For approve_demo_shadow signals with recommended_route=demo, mode may be absent in
                     // the pending record — normalise it to 'demo' so the basic validator does not reject.
+                    // This is safe because we are inside the filter:
+                    //   state === STATE_APPROVE_DEMO_SHADOW && recommended_route === ROUTE_DEMO  (line 523–526)
                     $pMode = (string)($pEntry['mode'] ?? '');
                     if ($pMode === '') {
-                        $pMode = 'demo'; // safe: we are inside the ROUTE_DEMO filter above
+                        $pMode = 'demo'; // normalised: recommended_route is already confirmed to be ROUTE_DEMO
                     }
                     $pseudoNorm = [
                         'governor_signal_key' => $govKey,
@@ -588,7 +590,7 @@ final class StrategyGovernor
                         'strategy_id'         => $pEntry['strategy_id'] ?? '',
                         'symbol'              => $pEntry['symbol']       ?? '',
                         'side'                => $pEntry['side']         ?? '',
-                        'mode'                => $pMode,           // normalised: always 'demo' for this branch
+                        'mode'                => $pMode,           // from pending record; empty → 'demo' (see normalization above)
                         'entry_price'         => $pEntry['entry_price']  ?? null,
                         'entry_mode'          => $norm['entry_mode']     ?? null,
                         'entry_type'          => $norm['entry_type']     ?? null,

@@ -542,10 +542,38 @@ function renderDashboardHub(): string
                 // pool = candidates currently waiting for validation
                 $slrPoolTotal    = (int)($stratLastRun['candidates_waiting'] ?? 0);
                 // Runtime line: corridor has no run_state.json; derive from last_run
-                $rsStatus   = $e((string)($stratLastRun['status']      ?? 'idle'));
-                $rsCursor   = (int)($stratLastRun['symbols_checked']   ?? 0);
-                $rsTotal    = (int)($stratLastRun['symbols_checked']   ?? 0);
+                // Derive status: prefer explicit last_run.status; fallback to completed/idle
+                $_cblRawStatus = $stratLastRun['status'] ?? null;
+                if ($_cblRawStatus !== null && $_cblRawStatus !== '') {
+                    $rsStatus = $e((string)$_cblRawStatus);
+                } elseif (!empty($stratLastRun['finished_at'])) {
+                    $rsStatus = 'completed';
+                } else {
+                    $rsStatus = 'idle';
+                }
+                // cursor = next_cursor (where next batch starts); total = universe_total
+                $rsCursor   = (int)($stratLastRun['next_cursor']       ?? $stratLastRun['symbols_checked'] ?? 0);
+                $rsTotal    = (int)($stratLastRun['universe_total']     ?? $stratLastRun['symbols_checked'] ?? 0);
+                $rsCycleId  = (int)($stratLastRun['universe_cycle_id']  ?? 0);
                 $rsLastTick = $e((string)($stratLastRun['finished_at'] ?? $stratLastRun['started_at'] ?? '—'));
+            }
+
+            // ── Build cycle-line HTML (strategy-specific labels) ──────────
+            if ($stratId === 'corridor_bottom_long') {
+                $_cblValidated    = (int)($stratLastRun['candidates_validated']    ?? 0);
+                $_cblHandoffReady = (int)($stratLastRun['handoff_ready'] ?? $slrHandoffReady);
+                $cycleLineHtml = 'статус <code>' . $e($rsStatus) . '</code>'
+                    . ' · кандидатов <code>' . $slrCandidates . '</code>'
+                    . ' · ожидают <code>' . $slrPoolTotal . '</code>'
+                    . ' · валидировано <code>' . $_cblValidated . '</code>'
+                    . ' · сигналов <code>' . $slrGeneratedSig . '</code>'
+                    . ' · handoff-ready <code>' . $_cblHandoffReady . '</code>';
+            } else {
+                $cycleLineHtml = 'статус <code>' . $slrStatus . '</code>'
+                    . ' · кандидатов <code>' . $slrCandidates . '</code>'
+                    . ' · сигналов <code>' . $slrGeneratedSig . '</code>'
+                    . ' · активных <code>' . $slrPoolTotal . '</code>'
+                    . ' · handoff-ready <code>' . $slrHandoffReady . '</code>';
             }
 
             $cardId      = 'card-edit-' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $stratId);
@@ -706,11 +734,7 @@ HTG;
       <tr>
         <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Цикл</td>
         <td colspan="3" style="padding:3px 0;font-size:11px;">
-          статус <code>{$slrStatus}</code>
-          · кандидатов <code>{$slrCandidates}</code>
-          · сигналов <code>{$slrGeneratedSig}</code>
-          · активных <code>{$slrPoolTotal}</code>
-          · handoff-ready <code>{$slrHandoffReady}</code>
+          {$cycleLineHtml}
         </td>
       </tr>
     </table>

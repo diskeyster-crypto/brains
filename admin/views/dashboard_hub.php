@@ -1059,6 +1059,43 @@ ROWS;
         'unsupported_side'               => 'Сторона не поддерживается',
     ];
 
+    // ── Strategy reject-reason label helper ──────────────────────────────
+    $stratReasonLabels = [
+        // corridor_bottom_long
+        'candidate_too_stale'           => 'Кандидат устарел: окно подтверждения прошло',
+        'waiting_validation'            => 'Ожидает окна подтверждения',
+        'new_low_broken'                => 'Пробит новый минимум после обнаружения',
+        'no_micro_reversal'             => 'Нет микроразворота',
+        'fast_dump'                     => 'Быстрый слив после обнаружения',
+        'no_accumulation_after_dump'    => 'Нет накопления после снижения',
+        'risk_to_low_too_high'          => 'Слишком большой риск до минимума',
+        'not_near_low'                  => 'Цена не у нижней границы коридора',
+        'no_candle_data'                => 'Нет данных свечей',
+        'no_data'                       => 'Недостаточно данных',
+        'invalid_entry_price'           => 'Некорректная цена входа',
+        'missing_detected_at'           => 'Нет времени обнаружения',
+        'missing_entry_mode'            => 'Нет режима входа',
+        'missing_entry_type'            => 'Нет типа входа',
+        // double_bottom_long
+        'wave_unknown'                  => 'Волна не определена',
+        'waiting_for_confirm_bar'       => 'Ожидание подтверждающей свечи',
+        'bucket_rejected_long_bucket_5' => 'Отклонено корзиной качества LONG bucket 5',
+        'bucket_rejected_long_bucket_6' => 'Отклонено корзиной качества LONG bucket 6',
+        'bucket_rejected_long_bucket_9' => 'Отклонено корзиной качества LONG bucket 9',
+        'final_low_neckline'            => 'Финальный отсев: слабый neckline / низкое подтверждение',
+        'final_trend_mismatch'          => 'Финальный отсев: тренд не совпадает с LONG',
+        'final_low_quality'             => 'Финальный отсев: низкое качество паттерна',
+        'final_duplicate'               => 'Финальный отсев: дубликат сигнала',
+        'final_stale'                   => 'Финальный отсев: сигнал устарел',
+    ];
+    $formatStrategyReasonLabel = static function (string $reason) use ($stratReasonLabels): string {
+        if (isset($stratReasonLabels[$reason])) {
+            return $stratReasonLabels[$reason];
+        }
+        // Fallback: convert underscores to spaces and prefix
+        return 'Неизвестная причина: ' . str_replace('_', ' ', $reason);
+    };
+
     // Normal demo-runtime skip conditions (WARN, not ERR)
     $pmNormalSkipReasons = [
         'below_init_roi', 'below_activation_roi',
@@ -1713,7 +1750,10 @@ HTML;
         if (is_array($rejectSrc) && count($rejectSrc) > 0) {
             $parts = [];
             foreach (array_slice($rejectSrc, 0, 5, true) as $reason => $cnt) {
-                $parts[] = $e(is_int($reason) ? (string)$reason : $reason) . ': <strong>' . $e($cnt) . '</strong>';
+                $rawCode = is_int($reason) ? (string)$reason : $reason;
+                $label   = $formatStrategyReasonLabel($rawCode);
+                $parts[] = '<span title="' . htmlspecialchars($rawCode, ENT_QUOTES, 'UTF-8') . '" style="font-size:11px;">'
+                    . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</span>: <strong>' . $e($cnt) . '</strong>';
             }
             $rejectReasonsHtml = implode(' · ', $parts);
         } else {
@@ -1726,7 +1766,10 @@ HTML;
         if (is_array($finalRejectSrc) && count($finalRejectSrc) > 0) {
             $parts = [];
             foreach (array_slice($finalRejectSrc, 0, 5, true) as $reason => $cnt) {
-                $parts[] = $e(is_int($reason) ? (string)$reason : $reason) . ': <strong>' . $e($cnt) . '</strong>';
+                $rawCode = is_int($reason) ? (string)$reason : $reason;
+                $label   = $formatStrategyReasonLabel($rawCode);
+                $parts[] = '<span title="' . htmlspecialchars($rawCode, ENT_QUOTES, 'UTF-8') . '" style="font-size:11px;">'
+                    . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</span>: <strong>' . $e($cnt) . '</strong>';
             }
             $finalRejectHtml = implode(' · ', $parts);
         } else {
@@ -1756,7 +1799,10 @@ HTML;
             if (is_array($cblRejectSrc) && count($cblRejectSrc) > 0) {
                 $parts = [];
                 foreach (array_slice($cblRejectSrc, 0, 5) as $rr) {
-                    $parts[] = '<code style="font-size:11px;">' . $e((string)$rr) . '</code>';
+                    $rawCode = (string)$rr;
+                    $label   = $formatStrategyReasonLabel($rawCode);
+                    $parts[] = '<span title="' . htmlspecialchars($rawCode, ENT_QUOTES, 'UTF-8') . '" style="font-size:11px;">'
+                        . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</span>';
                 }
                 $cblRejectHtml = implode(' · ', $parts);
             } else {

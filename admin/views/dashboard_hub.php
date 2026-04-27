@@ -2076,6 +2076,186 @@ QUAL;
 QUAL;
     }
 
+    // ── Strategy Governor UI block ────────────────────────────────────────────
+    {
+        $govRoot      = System::path('root') . '/modules/strategy_governor/storage';
+        $govLastRun   = @json_decode((string)@file_get_contents($govRoot . '/last_run.json'),   true) ?: null;
+        $govStateRaw  = @json_decode((string)@file_get_contents($govRoot . '/strategy_state.json'), true) ?: null;
+        $govStatsRaw  = @json_decode((string)@file_get_contents($govRoot . '/strategy_stats.json'), true) ?: null;
+        $govPending   = @json_decode((string)@file_get_contents($govRoot . '/pending_signals.json'), true) ?: null;
+
+        $govStateLabels = [
+            'insufficient_data' => 'Недостаточно данных',
+            'shadow_observe'    => 'Shadow-наблюдение',
+            'demo_only'         => 'Только demo',
+            'live_allowed'      => 'Live разрешён',
+            'live_blocked'      => 'Live заблокирован',
+            'cooldown'          => 'Cooldown',
+        ];
+        $govReasonLabels = [
+            'not_enough_closed_trades' => 'Недостаточно закрытых сделок',
+            'avg_roi_negative'         => 'Средний ROI отрицательный',
+            'winrate_too_low'          => 'Winrate ниже порога',
+            'loss_streak'              => 'Серия убыточных сделок',
+            'shadow_mode'              => 'Shadow-режим: только рекомендация',
+        ];
+        $govStateLabel  = static function (string $s) use ($govStateLabels): string {
+            return $govStateLabels[$s] ?? ('Неизвестно: ' . str_replace('_', ' ', $s));
+        };
+        $govReasonLabel = static function (string $r) use ($govReasonLabels): string {
+            return $govReasonLabels[$r] ?? ('Неизвестная причина: ' . str_replace('_', ' ', $r));
+        };
+
+        if ($govLastRun === null && $govStateRaw === null) {
+            $stratQualHtml .= <<<GOV
+<div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span><i class="bi bi-shield-check" style="margin-right:6px;color:#a78bfa;"></i>Губернатор стратегий <span style="font-size:11px;font-weight:400;color:var(--ui-text-muted);">/ Strategy Governor</span></span>
+    <small style="color:var(--ui-text-muted);font-size:11px;">shadow-only · read-only</small>
+  </div>
+  <div class="card-body" style="padding:12px 16px;">
+    <span style="color:var(--ui-text-muted);font-size:13px;"><i class="bi bi-hourglass" style="margin-right:5px;"></i>Данных пока нет — Governor ещё не запускался</span>
+  </div>
+</div>
+GOV;
+        } else {
+            // ── Summary metrics from last_run ────────────────────────────────
+            $gStatus      = $e((string)($govLastRun['status']                      ?? '—'));
+            $gMode        = $e((string)($govLastRun['mode']                        ?? '—'));
+            $gStrategies  = $e((string)(int)($govLastRun['strategies_seen']        ?? 0));
+            $gSignals     = $e((string)(int)($govLastRun['signals_seen']           ?? 0));
+            $gPending     = $e((string)(int)($govLastRun['pending_total']          ?? (is_array($govPending) ? count($govPending) : 0)));
+            $gDecisions   = $e((string)(int)($govLastRun['decisions_total']        ?? 0));
+            $gAppDemo     = $e((string)(int)($govLastRun['approved_demo_shadow_total'] ?? 0));
+            $gAppLive     = $e((string)(int)($govLastRun['approved_live_shadow_total'] ?? 0));
+            $gRejected    = $e((string)(int)($govLastRun['rejected_shadow_total']  ?? 0));
+            $gExpired     = $e((string)(int)($govLastRun['expired_shadow_total']   ?? 0));
+            $gErrors      = is_array($govLastRun['errors'] ?? null) ? count($govLastRun['errors']) : 0;
+            $gErrorsHtml  = $gErrors > 0
+                ? '<strong style="color:#f85149;">' . $e((string)$gErrors) . '</strong>'
+                : '<span style="color:var(--ui-text-muted);">0</span>';
+            $gStarted     = $e((string)($govLastRun['started_at']  ?? '—'));
+            $gFinished    = $e((string)($govLastRun['finished_at'] ?? '—'));
+
+            // ── Per-strategy table ───────────────────────────────────────────
+            $govTableRows = '';
+            if (is_array($govStateRaw) && count($govStateRaw) > 0) {
+                foreach ($govStateRaw as $sid => $sEntry) {
+                    $sEntry     = is_array($sEntry) ? $sEntry : [];
+                    $sStats     = is_array($govStatsRaw[$sid] ?? null) ? $govStatsRaw[$sid] : [];
+                    $stateKey   = (string)($sEntry['state'] ?? '');
+                    $stateLabel = $govStateLabel($stateKey);
+                    $stateColor = match ($stateKey) {
+                        'live_allowed'   => '#3fb950',
+                        'live_blocked'   => '#f85149',
+                        'cooldown'       => '#f0883e',
+                        'demo_only'      => '#58a6ff',
+                        'shadow_observe' => '#a78bfa',
+                        default          => '#8b949e',
+                    };
+                    $reason        = $govReasonLabel((string)($sEntry['reason'] ?? ''));
+                    $route         = $e((string)($sEntry['recommended_route'] ?? '—'));
+                    $liveAllowed   = (bool)($sEntry['recommended_live_allowed'] ?? false)
+                        ? '<span style="color:#3fb950;">✓ да</span>'
+                        : '<span style="color:var(--ui-text-muted);">— нет</span>';
+                    $closedTrades  = $e((string)(int)($sEntry['closed_trades_total']   ?? 0));
+                    $winrate       = isset($sEntry['winrate'])
+                        ? $e(number_format((float)$sEntry['winrate'] * 100, 1)) . '%'
+                        : '—';
+                    $avgRoi        = isset($sEntry['avg_roi'])
+                        ? $e(number_format((float)$sEntry['avg_roi'], 2)) . '%'
+                        : '—';
+                    $totalPnl      = isset($sEntry['total_pnl'])
+                        ? $e(number_format((float)$sEntry['total_pnl'], 4))
+                        : '—';
+                    $openPos       = $e((string)(int)($sEntry['current_open_positions'] ?? 0));
+                    $consecWins    = $e((string)(int)($sEntry['consecutive_wins']       ?? 0));
+                    $consecLosses  = $e((string)(int)($sEntry['consecutive_losses']     ?? 0));
+                    $lastTrade     = $e((string)($sEntry['last_trade_at'] ?? '—'));
+
+                    $govTableRows .= '<tr>'
+                        . '<td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:600;">' . $e((string)$sid) . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;white-space:nowrap;"><span style="color:' . $stateColor . ';">' . htmlspecialchars($stateLabel, ENT_QUOTES, 'UTF-8') . '</span></td>'
+                        . '<td style="padding:4px 10px 4px 0;">' . $route . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;">' . $liveAllowed . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;color:var(--ui-text-muted);font-size:11px;">' . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $closedTrades . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $winrate . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $avgRoi . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $totalPnl . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $openPos . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $consecWins . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $consecLosses . '</td>'
+                        . '<td style="padding:4px 10px 4px 0;font-size:11px;color:var(--ui-text-muted);white-space:nowrap;">' . $lastTrade . '</td>'
+                        . '</tr>';
+                }
+            } else {
+                $govTableRows = '<tr><td colspan="13" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Нет данных по стратегиям</td></tr>';
+            }
+
+            $stratQualHtml .= <<<GOV
+<div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span><i class="bi bi-shield-check" style="margin-right:6px;color:#a78bfa;"></i>Губернатор стратегий <span style="font-size:11px;font-weight:400;color:var(--ui-text-muted);">/ Strategy Governor</span></span>
+    <small style="color:var(--ui-text-muted);font-size:11px;">shadow-only · read-only · last_run.json</small>
+  </div>
+  <div class="card-body" style="padding:12px 16px;">
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px 16px;font-size:12px;margin-bottom:12px;">
+      <div><span style="color:var(--ui-text-muted);">Статус</span><br><strong>{$gStatus}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Режим</span><br><strong>{$gMode}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Стратегий увидено</span><br><strong>{$gStrategies}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Сигналов увидено</span><br><strong>{$gSignals}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Pending всего</span><br><strong style="color:#58a6ff;">{$gPending}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Решений всего</span><br><strong>{$gDecisions}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Approved demo shadow</span><br><strong style="color:#3fb950;">{$gAppDemo}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Approved live shadow</span><br><strong style="color:#a78bfa;">{$gAppLive}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Rejected shadow</span><br><strong style="color:#f85149;">{$gRejected}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Expired shadow</span><br><strong style="color:#8b949e;">{$gExpired}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Ошибки</span><br>{$gErrorsHtml}</div>
+    </div>
+
+    <table style="width:100%;font-size:11px;border-collapse:collapse;margin-bottom:8px;">
+      <tr style="color:var(--ui-text-muted);">
+        <td style="padding:3px 12px 3px 0;width:160px;">Запущен</td><td>{$gStarted}</td>
+      </tr>
+      <tr style="color:var(--ui-text-muted);">
+        <td style="padding:3px 12px 3px 0;">Завершён</td><td>{$gFinished}</td>
+      </tr>
+    </table>
+
+    <hr style="border-color:var(--ui-border);margin:10px 0;">
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:0 0 8px 0;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Состояние по стратегиям</p>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;font-size:11px;border-collapse:collapse;">
+        <thead>
+          <tr style="color:var(--ui-text-muted);border-bottom:1px solid var(--ui-border);">
+            <th style="padding:4px 10px 4px 0;text-align:left;white-space:nowrap;">Стратегия</th>
+            <th style="padding:4px 10px 4px 0;text-align:left;white-space:nowrap;">Состояние</th>
+            <th style="padding:4px 10px 4px 0;text-align:left;">Маршрут</th>
+            <th style="padding:4px 10px 4px 0;text-align:left;">Live</th>
+            <th style="padding:4px 10px 4px 0;text-align:left;">Причина</th>
+            <th style="padding:4px 10px 4px 0;text-align:right;">Сделок</th>
+            <th style="padding:4px 10px 4px 0;text-align:right;">Winrate</th>
+            <th style="padding:4px 10px 4px 0;text-align:right;">Avg ROI</th>
+            <th style="padding:4px 10px 4px 0;text-align:right;">Total PnL</th>
+            <th style="padding:4px 10px 4px 0;text-align:right;">Открыт.</th>
+            <th style="padding:4px 10px 4px 0;text-align:right;">W-сер.</th>
+            <th style="padding:4px 10px 4px 0;text-align:right;">L-сер.</th>
+            <th style="padding:4px 10px 4px 0;text-align:left;white-space:nowrap;">Посл. сделка</th>
+          </tr>
+        </thead>
+        <tbody>{$govTableRows}</tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+GOV;
+        }
+    }
+    // ── END Strategy Governor UI block ────────────────────────────────────────
+
     if ($pmLastError !== '') {
         $pmLastErrorRow = '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td>'
             . '<td style="color:#f85149;font-size:12px;">' . $e($pmLastError) . '</td></tr>';

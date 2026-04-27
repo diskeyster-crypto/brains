@@ -1093,15 +1093,17 @@ ROWS;
         'fast_dump'                     => 'Быстрый слив после обнаружения',
         'no_accumulation_after_dump'    => 'Нет накопления после снижения',
         'risk_to_low_too_high'          => 'Слишком большой риск до минимума',
-        'candidate_too_stale'           => 'Кандидат устарел',
         'score_below_minimum'           => 'Счёт ниже минимального',
         'not_near_low'                  => 'Цена не у нижней границы коридора',
         'no_candle_data'                => 'Нет данных свечей',
         'no_data'                       => 'Недостаточно данных',
         'invalid_entry_price'           => 'Некорректная цена входа',
+        'missing_entry_price'           => 'Нет цены входа',
         'missing_detected_at'           => 'Нет времени обнаружения',
         'missing_entry_mode'            => 'Нет режима входа',
         'missing_entry_type'            => 'Нет типа входа',
+        'signal_too_old'                => 'Сигнал устарел',
+        'strategy_disabled'             => 'Стратегия отключена',
         // double_bottom_long
         'wave_unknown'                  => 'Волна не определена',
         'waiting_for_confirm_bar'       => 'Ожидание подтверждающей свечи',
@@ -1110,17 +1112,34 @@ ROWS;
         'final_low_quality'             => 'Финальный отсев: низкое качество паттерна',
         'final_duplicate'               => 'Финальный отсев: дубликат сигнала',
         'final_stale'                   => 'Финальный отсев: сигнал устарел',
+        'neckline_too_weak'             => 'Слабый уровень neckline',
+        'volume_insufficient'           => 'Недостаточный объём',
+        'no_pattern_detected'           => 'Паттерн не обнаружен',
+        'trend_mismatch'                => 'Тренд не совпадает',
+        'low_quality_pattern'           => 'Низкое качество паттерна',
+        'duplicate_signal'              => 'Дубликат сигнала',
+        'stale_signal'                  => 'Сигнал устарел',
+        'confirm_bar_failed'            => 'Подтверждающая свеча не прошла проверку',
     ];
     $formatStrategyReasonLabel = static function (string $reason) use ($stratReasonLabels): string {
+        // Handle SYMBOL:reason format (e.g. "PENDLEUSDT:candidate_too_stale")
+        $rawFull = $reason;
+        $sym     = null;
+        if (str_contains($reason, ':')) {
+            [$sym, $reason] = explode(':', $reason, 2);
+        }
         if (isset($stratReasonLabels[$reason])) {
-            return $stratReasonLabels[$reason];
+            $label = $stratReasonLabels[$reason];
+            return $sym !== null ? htmlspecialchars($sym, ENT_QUOTES, 'UTF-8') . ' — ' . $label : $label;
         }
         // Pattern: bucket_rejected_long_bucket_N
         if (preg_match('/^bucket_rejected_long_bucket_(\d+)$/', $reason, $m)) {
-            return 'Отклонено корзиной качества LONG bucket ' . $m[1];
+            $label = 'Отклонено корзиной качества LONG bucket ' . $m[1];
+            return $sym !== null ? htmlspecialchars($sym, ENT_QUOTES, 'UTF-8') . ' — ' . $label : $label;
         }
-        // Fallback: convert underscores to spaces and prefix
-        return 'Неизвестная причина: ' . str_replace('_', ' ', $reason);
+        // Fallback: convert underscores to spaces
+        $label = 'Неизвестная причина: ' . str_replace('_', ' ', $reason);
+        return $sym !== null ? htmlspecialchars($sym, ENT_QUOTES, 'UTF-8') . ' — ' . $label : $label;
     };
 
     // Normal demo-runtime skip conditions (WARN, not ERR)
@@ -1899,6 +1918,12 @@ HTML;
             } elseif (isset($cblCfgMerged['validation_window_seconds'])) {
                 $cblValWindowSec = $e((string)(int)$cblCfgMerged['validation_window_seconds']) . ' с';
             }
+            // Override with explicit last_run fields (more reliable — written fresh by strategy)
+            if (isset($dblLastRun['validation_window_min_seconds'])) {
+                $cblValWindowSec = $e((string)(int)$dblLastRun['validation_window_min_seconds'])
+                    . '–' . $e((string)(int)($dblLastRun['validation_window_max_seconds'] ?? (int)$dblLastRun['validation_window_min_seconds'] + 120))
+                    . ' с';
+            }
 
             // ── Normalized reject reasons (PART 3) ───────────────────────────
             // Prefer the new normalized object; fall back to raw string array
@@ -1912,8 +1937,11 @@ HTML;
                 arsort($cblNormReject);
                 $rows = [];
                 foreach ($cblNormReject as $rCode => $rCnt) {
-                    $rLabel = $formatStrategyReasonLabel((string)$rCode);
-                    $rows[] = '<tr><td style="color:var(--ui-text-muted);padding:2px 12px 2px 0;white-space:nowrap;">'
+                    $rawCode = (string)$rCode;
+                    $rLabel  = $formatStrategyReasonLabel($rawCode);
+                    $rows[]  = '<tr>'
+                        . '<td style="color:var(--ui-text-muted);padding:2px 12px 2px 0;white-space:nowrap;" title="'
+                        . htmlspecialchars($rawCode, ENT_QUOTES, 'UTF-8') . '">'
                         . htmlspecialchars($rLabel, ENT_QUOTES, 'UTF-8')
                         . '</td><td><strong style="color:#f85149;">'
                         . $e((string)(int)$rCnt) . '</strong></td></tr>';
@@ -1968,7 +1996,7 @@ HTML;
   <div class="card-body" style="padding:12px 16px;">
 
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px 16px;font-size:12px;margin-bottom:12px;">
-      <div><span style="color:var(--ui-text-muted);">Символов проверено</span><br><strong>{$cblChecked}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Символов проверено в текущем батче</span><br><strong>{$cblChecked}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Нет данных свечей</span><br><strong style="color:#8b949e;">{$cblNoCandle}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Вне зоны corridor</span><br><strong style="color:#8b949e;">{$cblSkipped}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Кандидатов найдено</span><br><strong style="color:#f0883e;">{$cblFound}</strong></div>

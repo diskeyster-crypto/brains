@@ -196,11 +196,24 @@ final class CorridorBottomLongStrategy
             'reject_reasons_normalized'  => (object)[],
             'reject_examples'            => [],
             // ── PART 4: Signal readiness diagnostics ─────────────────────────
-            'signal_rejected_cap_reached' => 0,
-            'signal_rejected_unknown'     => 0,
+            'signal_rejected_cap_reached'        => 0,
+            'signal_rejected_unknown'            => 0,
+            'signal_rejected_missing_entry_price'=> 0,
+            'signal_rejected_low_score'          => 0,
+            'signal_rejected_duplicate'          => 0,
+            // ── Config validation window (explicit, always populated) ─────────
+            'validation_window_min_seconds'      => null,
+            'validation_window_max_seconds'      => null,
         ];
 
         // Age-tracking arrays (used for PART 2 — computed after the main loop)
+        // Populate config validation window from loaded config (always present even when no candidates validated)
+        $stats['validation_window_min_seconds'] = isset($config['validation_min_age_seconds'])
+            ? (int)$config['validation_min_age_seconds']
+            : (isset($config['validation_window_seconds']) ? (int)$config['validation_window_seconds'] : null);
+        $stats['validation_window_max_seconds'] = isset($config['validation_max_age_seconds'])
+            ? (int)$config['validation_max_age_seconds']
+            : null;
         $_waitingAges   = [];   // age-in-seconds for every 'waiting' candidate
         $_validatedAges = [];   // age-in-seconds for every validated candidate
         // Reject tracking for PART 3

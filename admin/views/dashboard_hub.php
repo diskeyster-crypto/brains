@@ -5589,6 +5589,7 @@ function handleDashboardResetRuntime(): void
 
     $filesClearedCount  = 0;
     $filesDeletedCount  = 0;
+    $ndjsonClearedCount = 0;
 
     // ── Helper: write JSON to fixed path, create dir if needed ────────────
     $safeWriteJson = static function (string $path, string $content) use (&$filesClearedCount): void {
@@ -5624,11 +5625,23 @@ function handleDashboardResetRuntime(): void
         }
     };
 
-    // ── PART 3 — Bot runtime ──────────────────────────────────────────────
+    // ── Helper: truncate a single NDJSON / log file to empty string ───────
+    $safeWriteNdjson = static function (string $path) use (&$ndjsonClearedCount): void {
+        if (!is_file($path)) {
+            return;
+        }
+        file_put_contents($path, '');
+        $ndjsonClearedCount++;
+    };
+
+    // ── PART 1 — Bot runtime ─────────────────────────────────────────────
     $safeWriteJson($root . '/modules/bot/storage/order_queue.json',           '[]');
     $safeWriteJson($root . '/modules/bot/storage/active_orders.json',         '[]');
     $safeWriteJson($root . '/modules/bot/storage/active_positions.json',      '[]');
+    $safeWriteJson($root . '/modules/bot/storage/closed_positions.json',      '[]');
     $safeWriteJson($root . '/modules/bot/storage/position_runtime_age.json',  '{}');
+    $safeWriteJson($root . '/modules/bot/storage/last_run.json',              '{}');
+    $safeWriteJson($root . '/modules/bot/storage/stats.json',                 '{}');
 
     // bot/storage/runtime/*.json → {}
     $safeWriteJsonDir($root . '/modules/bot/storage/runtime', '{}');
@@ -5638,6 +5651,19 @@ function handleDashboardResetRuntime(): void
 
     // bot/storage/trades/closed/*.json → delete files
     $safeDeleteJsonFilesInDir($root . '/modules/bot/storage/trades/closed');
+
+    // bot runtime NDJSON logs → empty
+    $safeWriteNdjson($root . '/modules/bot/storage/execution_log.ndjson');
+
+    // ── PART 2 — Strategy Governor runtime ───────────────────────────────
+    $safeWriteJson($root . '/modules/strategy_governor/storage/pending_signals.json',        '{}');
+    $safeWriteJson($root . '/modules/strategy_governor/storage/strategy_state.json',         '{}');
+    $safeWriteJson($root . '/modules/strategy_governor/storage/strategy_stats.json',         '{}');
+    $safeWriteJson($root . '/modules/strategy_governor/storage/hourly_stats.json',           '{}');
+    $safeWriteJson($root . '/modules/strategy_governor/storage/hourly_secondary_stats.json', '{}');
+    $safeWriteJson($root . '/modules/strategy_governor/storage/approved_demo_queue.json',    '[]');
+    $safeWriteJson($root . '/modules/strategy_governor/storage/last_run.json',               '{}');
+    $safeWriteNdjson($root . '/modules/strategy_governor/storage/decisions.ndjson');
 
     // ── PART 4 — Profit Manager runtime ──────────────────────────────────
     $safeWriteJsonDir($root . '/modules/prof_manager/storage/runtime', '{}');
@@ -5659,18 +5685,24 @@ function handleDashboardResetRuntime(): void
     // ── PART 5 — Stop Manager runtime ────────────────────────────────────
     $safeWriteJson($root . '/modules/stop_manager/storage/stops.json',    '{}');
     $safeWriteJson($root . '/modules/stop_manager/storage/last_run.json', '{}');
+    $safeWriteJson($root . '/modules/stop_manager/storage/stats.json',    '{}');
 
     // stop_manager/storage/runtime/*.json → {}
     $safeWriteJsonDir($root . '/modules/stop_manager/storage/runtime', '{}');
+
+    // stop_manager NDJSON log → empty
+    $safeWriteNdjson($root . '/modules/stop_manager/storage/actions_log.ndjson');
 
     // ── PART 6 — Strategy runtime (recursive) ────────────────────────────
     $strategyRuntimeFiles = [
         'active_positions.json'     => '[]',
         'bot_active_positions.json' => '[]',
+        'closed_positions.json'     => '[]',
         'signals.json'              => '[]',
         'active_signals.json'       => '[]',
         'last_signal.json'          => '{}',
         'last_run.json'             => '{}',
+        'bot_last_run.json'         => '{}',
         'runtime.json'              => '{}',
         'candidates.json'           => '[]',
         'handoff.json'              => '[]',
@@ -5678,9 +5710,18 @@ function handleDashboardResetRuntime(): void
         'candidates_found.json'     => '[]',
         'candidates_emitted.json'   => '[]',
         'bot_handoff_queue.json'    => '[]',
+        'bot_active_orders.json'    => '[]',
+        'run_symbols.json'          => '[]',
         'run_state.json'            => '{}',
         'cycle_stats.json'          => '{}',
         'stats.json'                => '{}',
+        'bot_stats.json'            => '{}',
+        'market_regime.json'        => '{}',
+    ];
+    // NDJSON log files inside strategy storage dirs — cleared to empty string
+    $strategyNdjsonFiles = [
+        'cycle_history.ndjson',
+        'market_regime_history.ndjson',
     ];
     // Recursively find every directory named "storage" under modules/strategy/
     $stratRoot = $root . '/modules/strategy';
@@ -5704,12 +5745,21 @@ function handleDashboardResetRuntime(): void
                 $filesClearedCount++;
             }
         }
+        foreach ($strategyNdjsonFiles as $ndjsonFile) {
+            $path = $storageDir . '/' . $ndjsonFile;
+            if (is_file($path)) {
+                file_put_contents($path, '');
+                $ndjsonClearedCount++;
+            }
+        }
     }
 
     // ── Flash & redirect ──────────────────────────────────────────────────
-    $msg = 'Полный локальный reset выполнен. Bybit позиции не закрывались.'
-         . ' Очищено файлов: ' . $filesClearedCount . ', удалено: ' . $filesDeletedCount . '.'
-         . ' Если Bybit позиции ещё открыты, они появятся снова после sync.';
+    $msg = 'Локальный runtime reset выполнен. Позиции на Bybit не закрывались.'
+         . ' Если на Bybit остались открытые demo-позиции, они появятся снова после sync.'
+         . ' JSON очищено: ' . $filesClearedCount
+         . ', NDJSON логи очищены: ' . $ndjsonClearedCount
+         . ', удалено: ' . $filesDeletedCount . '.';
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => $msg];
 
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-overview'));

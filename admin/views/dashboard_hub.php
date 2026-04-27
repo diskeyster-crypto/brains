@@ -1093,6 +1093,8 @@ ROWS;
         'fast_dump'                     => 'Быстрый слив после обнаружения',
         'no_accumulation_after_dump'    => 'Нет накопления после снижения',
         'risk_to_low_too_high'          => 'Слишком большой риск до минимума',
+        'candidate_too_stale'           => 'Кандидат устарел',
+        'score_below_minimum'           => 'Счёт ниже минимального',
         'not_near_low'                  => 'Цена не у нижней границы коридора',
         'no_candle_data'                => 'Нет данных свечей',
         'no_data'                       => 'Недостаточно данных',
@@ -1842,28 +1844,119 @@ HTML;
             $cblCycleIdHtml    = $cblCycleId    !== null ? $e((string)$cblCycleId)    : '—';
             $cblWrappedHtml    = $cblWrapped === true ? 'да' : ($cblWrapped === false ? 'нет' : '—');
 
-            // Reject reasons (supports SYMBOL:reason_code format)
-            $cblRejectHtml = '';
-            $cblRejectSrc  = $dblLastRun['reject_reasons'] ?? [];
-            if (is_array($cblRejectSrc) && count($cblRejectSrc) > 0) {
-                $parts = [];
-                foreach (array_slice($cblRejectSrc, 0, 5) as $rr) {
-                    $rawFull = (string)$rr;
-                    if (str_contains($rawFull, ':')) {
-                        [$sym, $code] = explode(':', $rawFull, 2);
-                        $label   = $formatStrategyReasonLabel($code);
-                        $display = htmlspecialchars($sym, ENT_QUOTES, 'UTF-8') . ' — '
-                            . htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
-                    } else {
-                        $label   = $formatStrategyReasonLabel($rawFull);
-                        $display = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
-                    }
-                    $parts[] = '<span title="' . htmlspecialchars($rawFull, ENT_QUOTES, 'UTF-8') . '" style="font-size:11px;">'
-                        . $display . '</span>';
+            // ── Pipeline counters (PART 1 new fields) ────────────────────────
+            $cblPipeFields = [
+                'candidates_total_loaded'               => 'Всего кандидатов загружено',
+                'candidates_new_created'                => 'Новых кандидатов',
+                'candidates_existing_rechecked'         => 'Повторно проверено',
+                'candidates_waiting_too_fresh'          => 'Слишком свежие',
+                'candidates_rejected_too_stale'         => 'Устарели',
+                'candidates_rejected_new_low'           => 'Пробили новый минимум',
+                'candidates_rejected_fast_dump'         => 'Быстрый слив',
+                'candidates_rejected_no_micro_reversal' => 'Нет микроразворота',
+                'candidates_rejected_no_accumulation'   => 'Нет накопления',
+                'candidates_rejected_risk_to_low'       => 'Риск до low слишком большой',
+                'candidates_validated_ok'               => 'Успешно валидировано',
+                'signals_generated_current_run'         => 'Сигналов создано',
+                'handoff_ready'                         => 'Handoff-ready',
+            ];
+            $cblPipeHtml = '';
+            foreach ($cblPipeFields as $fKey => $fLabel) {
+                $fVal = isset($dblLastRun[$fKey]) ? $e((string)(int)$dblLastRun[$fKey]) : '—';
+                // colour coding
+                if (in_array($fKey, ['candidates_validated_ok', 'signals_generated_current_run', 'handoff_ready'], true)) {
+                    $fStyle = 'color:#3fb950;';
+                } elseif (str_starts_with($fKey, 'candidates_rejected_')) {
+                    $fStyle = 'color:#f85149;';
+                } elseif ($fKey === 'candidates_waiting_too_fresh') {
+                    $fStyle = 'color:#58a6ff;';
+                } else {
+                    $fStyle = '';
                 }
-                $cblRejectHtml = implode(' · ', $parts);
+                $cblPipeHtml .= '<div><span style="color:var(--ui-text-muted);">'
+                    . htmlspecialchars($fLabel, ENT_QUOTES, 'UTF-8')
+                    . '</span><br><strong style="' . $fStyle . '">' . $fVal . '</strong></div>';
+            }
+
+            // ── Candidate age diagnostics (PART 2) ───────────────────────────
+            $cblAgeMin    = isset($dblLastRun['candidate_min_age_seconds'])  ? $e((string)(int)$dblLastRun['candidate_min_age_seconds'])  : '—';
+            $cblAgeMax    = isset($dblLastRun['candidate_max_age_seconds'])  ? $e((string)(int)$dblLastRun['candidate_max_age_seconds'])  : '—';
+            $cblAgeAvg    = isset($dblLastRun['candidate_avg_age_seconds'])  ? $e((string)(int)$dblLastRun['candidate_avg_age_seconds'])  : '—';
+            $cblValMin    = isset($dblLastRun['validation_min_age_seconds']) ? $e((string)(int)$dblLastRun['validation_min_age_seconds']) : '—';
+            $cblValMax    = isset($dblLastRun['validation_max_age_seconds']) ? $e((string)(int)$dblLastRun['validation_max_age_seconds']) : '—';
+            // Show the configured validation window so the reader can compare ages
+            // Try to read from config via the already-known moduleDir
+            $cblValWindowSec = '—';
+            $cblCfgActivePath = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/active.php';
+            $cblCfgBasePath   = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/base.php';
+            $cblCfgMerged = [];
+            if (file_exists($cblCfgBasePath))   { $tmp = @include $cblCfgBasePath;   if (is_array($tmp)) $cblCfgMerged = array_merge($cblCfgMerged, $tmp); }
+            if (file_exists($cblCfgActivePath)) { $tmp = @include $cblCfgActivePath; if (is_array($tmp)) $cblCfgMerged = array_merge($cblCfgMerged, $tmp); }
+            if (isset($cblCfgMerged['validation_min_age_seconds'])) {
+                $cblValWindowSec = $e((string)(int)$cblCfgMerged['validation_min_age_seconds'])
+                    . '–' . $e((string)(int)($cblCfgMerged['validation_max_age_seconds'] ?? $cblCfgMerged['validation_min_age_seconds'] + 120))
+                    . ' с';
+            } elseif (isset($cblCfgMerged['validation_window_seconds'])) {
+                $cblValWindowSec = $e((string)(int)$cblCfgMerged['validation_window_seconds']) . ' с';
+            }
+
+            // ── Normalized reject reasons (PART 3) ───────────────────────────
+            // Prefer the new normalized object; fall back to raw string array
+            $cblNormReject = $dblLastRun['reject_reasons_normalized'] ?? null;
+            if (is_object($cblNormReject)) {
+                $cblNormReject = (array)$cblNormReject;
+            }
+
+            $cblNormRejectHtml = '';
+            if (is_array($cblNormReject) && count($cblNormReject) > 0) {
+                arsort($cblNormReject);
+                $rows = [];
+                foreach ($cblNormReject as $rCode => $rCnt) {
+                    $rLabel = $formatStrategyReasonLabel((string)$rCode);
+                    $rows[] = '<tr><td style="color:var(--ui-text-muted);padding:2px 12px 2px 0;white-space:nowrap;">'
+                        . htmlspecialchars($rLabel, ENT_QUOTES, 'UTF-8')
+                        . '</td><td><strong style="color:#f85149;">'
+                        . $e((string)(int)$rCnt) . '</strong></td></tr>';
+                }
+                $cblNormRejectHtml = '<table style="font-size:12px;border-collapse:collapse;">' . implode('', $rows) . '</table>';
             } else {
-                $cblRejectHtml = '<span style="color:var(--ui-text-muted);">—</span>';
+                // Fallback: old raw string list
+                $cblRejectSrc = $dblLastRun['reject_reasons'] ?? [];
+                if (is_array($cblRejectSrc) && count($cblRejectSrc) > 0) {
+                    $parts = [];
+                    foreach (array_slice($cblRejectSrc, 0, 5) as $rr) {
+                        $rawFull = (string)$rr;
+                        if (str_contains($rawFull, ':')) {
+                            [$sym, $code] = explode(':', $rawFull, 2);
+                            $label   = $formatStrategyReasonLabel($code);
+                            $display = htmlspecialchars($sym, ENT_QUOTES, 'UTF-8') . ' — '
+                                . htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+                        } else {
+                            $label   = $formatStrategyReasonLabel($rawFull);
+                            $display = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+                        }
+                        $parts[] = '<span title="' . htmlspecialchars($rawFull, ENT_QUOTES, 'UTF-8') . '" style="font-size:11px;">'
+                            . $display . '</span>';
+                    }
+                    $cblNormRejectHtml = implode(' · ', $parts);
+                } else {
+                    $cblNormRejectHtml = '<span style="color:var(--ui-text-muted);">—</span>';
+                }
+            }
+
+            // ── reject_examples (PART 3) ──────────────────────────────────────
+            $cblExamples    = $dblLastRun['reject_examples'] ?? [];
+            $cblExHtml      = '';
+            if (is_array($cblExamples) && count($cblExamples) > 0) {
+                $exParts = [];
+                foreach (array_slice($cblExamples, 0, 5) as $ex) {
+                    $exSym    = htmlspecialchars((string)($ex['symbol'] ?? '?'), ENT_QUOTES, 'UTF-8');
+                    $exReason = $formatStrategyReasonLabel((string)($ex['reason'] ?? ''));
+                    $exParts[] = '<span style="font-size:11px;">' . $exSym . ': ' . htmlspecialchars($exReason, ENT_QUOTES, 'UTF-8') . '</span>';
+                }
+                $cblExHtml = implode(' · ', $exParts);
+            } else {
+                $cblExHtml = '<span style="color:var(--ui-text-muted);">—</span>';
             }
 
             $stratQualHtml .= <<<QUAL
@@ -1873,6 +1966,7 @@ HTML;
     <small style="color:var(--ui-text-muted);font-size:11px;">read-only · last_run.json · handoff: {$cblHandoffVal}</small>
   </div>
   <div class="card-body" style="padding:12px 16px;">
+
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px 16px;font-size:12px;margin-bottom:12px;">
       <div><span style="color:var(--ui-text-muted);">Символов проверено</span><br><strong>{$cblChecked}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Нет данных свечей</span><br><strong style="color:#8b949e;">{$cblNoCandle}</strong></div>
@@ -1883,15 +1977,39 @@ HTML;
       <div><span style="color:var(--ui-text-muted);">Сигналов создано</span><br><strong style="color:#3fb950;">{$cblSignals}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Отклонено</span><br><strong style="color:#f85149;">{$cblRejected}</strong></div>
     </div>
+
+    <hr style="border-color:var(--ui-border);margin:10px 0;">
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:0 0 8px 0;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Конвейер валидации</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px 16px;font-size:12px;margin-bottom:12px;">
+      {$cblPipeHtml}
+    </div>
+
+    <hr style="border-color:var(--ui-border);margin:10px 0;">
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:0 0 8px 0;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Возраст кандидатов</p>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;margin-bottom:12px;">
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;width:200px;">Минимальный возраст кандидата</td><td>{$cblAgeMin} с</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Средний возраст кандидата</td><td>{$cblAgeAvg} с</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Максимальный возраст кандидата</td><td>{$cblAgeMax} с</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Окно валидации (конфиг)</td><td>{$cblValWindowSec}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Возраст на момент валидации: мин</td><td>{$cblValMin} с</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Возраст на момент валидации: макс</td><td>{$cblValMax} с</td></tr>
+    </table>
+
+    <hr style="border-color:var(--ui-border);margin:10px 0;">
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:0 0 8px 0;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Причины отклонения</p>
+    <div style="margin-bottom:8px;">{$cblNormRejectHtml}</div>
+    <div style="margin-bottom:12px;line-height:1.7;">{$cblExHtml}</div>
+
+    <hr style="border-color:var(--ui-border);margin:10px 0;">
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:0 0 8px 0;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Universe / батч</p>
     <table style="width:100%;font-size:12px;border-collapse:collapse;">
-      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;width:180px;">Режим запуска</td><td>{$cblSim}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;width:200px;">Режим запуска</td><td>{$cblSim}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Всего в universe</td><td>{$cblUnivTotalHtml}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Батч universe</td><td>{$cblBatchRangeHtml}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Размер батча</td><td>{$cblBatchSizeHtml}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Следующий старт</td><td>{$cblNextCursorHtml}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Цикл universe</td><td>{$cblCycleIdHtml}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Оборачивание</td><td>{$cblWrappedHtml}</td></tr>
-      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Причины отсева</td><td>{$cblRejectHtml}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Запущен</td><td>{$cblStarted}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Завершён</td><td>{$cblFinished}</td></tr>
     </table>

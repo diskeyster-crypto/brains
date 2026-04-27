@@ -75,6 +75,14 @@ return [
     //                             strategy's storage/bot_handoff_queue.json.
     //   governor_approved_demo  — bot reads the Strategy Governor's approved
     //                             demo queue instead.  Items must have mode=demo.
+    //                             Governor source is demo-only; no live orders.
+    //   shadow_compare          — bot executes direct strategy handoff unchanged
+    //                             AND reads the Governor approved_demo_queue for
+    //                             diagnostics only.  No orders are created from
+    //                             the Governor queue.  Comparison counters and
+    //                             example arrays are written to last_run.json.
+    //
+    // Invalid or unknown values fall back to direct_strategy_handoff automatically.
     //
     // Default: direct_strategy_handoff  (preserves existing working behaviour).
     // Do NOT set governor_approved_demo in production without explicit operator action.

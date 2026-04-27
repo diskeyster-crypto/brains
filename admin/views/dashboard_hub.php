@@ -900,14 +900,35 @@ HTML;
     $trQueueTotal  = (int)($lastRun['order_queue_total']                            ?? 0);
 
     // ── Bot tab: signal source selector status ────────────────────────────
-    $lrSignalSourceMode   = (string)($lastRun['signal_source_mode']                    ?? ($botConfig['signal_source_mode'] ?? 'direct_strategy_handoff'));
-    $lrGovQueueSeen       = (int)($lastRun['governor_queue_seen_total']               ?? 0);
-    $lrGovQueueValid      = (int)($lastRun['governor_queue_valid_total']              ?? 0);
-    $lrGovQueueUsed       = (int)($lastRun['governor_queue_used_for_orders_total']    ?? 0);
-    $lrGovQueueDupSkip    = (int)($lastRun['governor_queue_duplicate_skipped_total']  ?? 0);
-    $lrDirectHandoffUsed  = (int)($lastRun['direct_handoff_used_total']               ?? 0);
+    $lrSignalSourceMode      = (string)($lastRun['signal_source_mode']                         ?? ($botConfig['signal_source_mode'] ?? 'direct_strategy_handoff'));
+    $lrSsmInvalidFallback    = (bool)($lastRun['signal_source_mode_invalid_fallback']           ?? false);
+    $lrGovQueueSeen          = (int)($lastRun['governor_queue_seen_total']                      ?? 0);
+    $lrGovQueueValid         = (int)($lastRun['governor_queue_valid_total']                     ?? 0);
+    $lrGovQueueUsed          = (int)($lastRun['governor_queue_used_for_orders_total']           ?? 0);
+    $lrGovQueueDupSkip       = (int)($lastRun['governor_queue_duplicate_skipped_total']         ?? 0);
+    $lrGovQueueSkipNonDemo   = (int)($lastRun['governor_queue_skipped_non_demo_total']          ?? 0);
+    $lrGovQueueSkipInvalid   = (int)($lastRun['governor_queue_skipped_invalid_total']           ?? 0);
+    $lrGovQueueSkipExpired   = (int)($lastRun['governor_queue_skipped_expired_total']           ?? 0);
+    $lrDirectHandoffSeen     = (int)($lastRun['direct_handoff_seen_total']                      ?? 0);
+    $lrDirectHandoffUsed     = (int)($lastRun['direct_handoff_used_total']                      ?? 0);
+    $lrShadowOverlap         = (int)($lastRun['shadow_compare_overlap_total']                   ?? 0);
+    $lrShadowDirectOnly      = (int)($lastRun['shadow_compare_direct_only_total']               ?? 0);
+    $lrShadowGovOnly         = (int)($lastRun['shadow_compare_governor_only_total']             ?? 0);
+    $lrShadowWouldFilter     = (int)($lastRun['shadow_compare_governor_would_filter_total']     ?? 0);
+    $lrShadowWouldAdd        = (int)($lastRun['shadow_compare_governor_would_add_total']        ?? 0);
+    $lrShadowDirectOnlyEx    = (array)($lastRun['shadow_compare_direct_only_examples']          ?? []);
+    $lrShadowGovOnlyEx       = (array)($lastRun['shadow_compare_governor_only_examples']        ?? []);
+    $lrShadowOverlapEx       = (array)($lastRun['shadow_compare_overlap_examples']              ?? []);
 
-    $lrBotReadsGovLabel   = ($lrSignalSourceMode === 'governor_approved_demo') ? '<span style="color:#3fb950;font-weight:600;">да</span>' : '<span style="color:#8b949e;">нет</span>';
+    $lrBotReadsGovLabel   = in_array($lrSignalSourceMode, ['governor_approved_demo', 'shadow_compare'], true)
+        ? '<span style="color:#3fb950;font-weight:600;">да</span>'
+        : '<span style="color:#8b949e;">нет</span>';
+    $lrShadowCompareLabel = ($lrSignalSourceMode === 'shadow_compare')
+        ? '<span style="color:#f0883e;font-weight:600;">да</span>'
+        : '<span style="color:#8b949e;">нет</span>';
+    $lrSsmFallbackRow = $lrSsmInvalidFallback
+        ? '<tr><td style="color:#f85149;padding:3px 12px 3px 0;" colspan="2">⚠ Неверное значение signal_source_mode — применён fallback на direct_strategy_handoff</td></tr>'
+        : '';
 
     // $govApprovedQueueTotal will be set after $govDemoQueueRaw is loaded (further below)
     $govApprovedQueueTotal = 0;
@@ -3439,6 +3460,68 @@ HTML;
     $qSubmittedDemoColor  = ($queueSubmittedDemoCount > 0 && $cfgCurrentMode === 'live') ? '#f85149' : '#8b949e';
     $qStaleOtherModeColor = $queueStaleOtherModeCount > 0 ? '#f0883e' : '#8b949e';
 
+    // ── Shadow compare card: pre-computed HTML for heredoc ─────────────────
+    $shadowNoDataNote = ($lrSignalSourceMode !== 'shadow_compare')
+        ? '<p style="color:var(--ui-text-muted);font-size:12px;margin-top:8px;">Для получения данных установите <code>signal_source_mode = shadow_compare</code>.</p>'
+        : '';
+
+    $buildExampleTableRows = static function (array $examples) use ($e): string {
+        $rows = '';
+        foreach (array_slice($examples, 0, 10) as $ex) {
+            $sid = $e((string)($ex['strategy_id'] ?? ''));
+            $sym = $e((string)($ex['symbol']      ?? ''));
+            $sgid= $e((string)($ex['signal_id']   ?? ''));
+            $det = $e((string)($ex['detected_at'] ?? ''));
+            $rows .= "<tr>"
+                   . "<td style='padding:2px 8px 2px 0;color:#8b949e;'>{$sid}</td>"
+                   . "<td style='padding:2px 8px 2px 0;'>{$sym}</td>"
+                   . "<td style='padding:2px 8px 2px 0;color:#8b949e;'>{$sgid}</td>"
+                   . "<td style='padding:2px 8px 2px 0;color:#8b949e;'>{$det}</td>"
+                   . "</tr>\n";
+        }
+        return $rows;
+    };
+
+    $exTableHeader = '<tr style="color:var(--ui-text-muted);border-bottom:1px solid var(--ui-border);">'
+        . '<td style="padding:2px 8px 2px 0;width:120px;">strategy_id</td>'
+        . '<td style="padding:2px 8px 2px 0;width:100px;">symbol</td>'
+        . '<td style="padding:2px 8px 2px 0;">signal_id</td>'
+        . '<td style="padding:2px 8px 2px 0;">detected_at</td>'
+        . '</tr>';
+
+    $shadowDirectOnlyBlock = '';
+    if (count($lrShadowDirectOnlyEx) > 0) {
+        $rows = $buildExampleTableRows($lrShadowDirectOnlyEx);
+        $shadowDirectOnlyBlock = <<<BLCK
+<div style="margin-top:10px;">
+  <div style="font-size:12px;font-weight:600;color:var(--ui-text-muted);margin-bottom:4px;">Только direct (примеры)</div>
+  <table style="width:100%;font-size:11px;border-collapse:collapse;">{$exTableHeader}{$rows}</table>
+</div>
+BLCK;
+    }
+
+    $shadowGovOnlyBlock = '';
+    if (count($lrShadowGovOnlyEx) > 0) {
+        $rows = $buildExampleTableRows($lrShadowGovOnlyEx);
+        $shadowGovOnlyBlock = <<<BLCK
+<div style="margin-top:10px;">
+  <div style="font-size:12px;font-weight:600;color:var(--ui-text-muted);margin-bottom:4px;">Только Governor (примеры)</div>
+  <table style="width:100%;font-size:11px;border-collapse:collapse;">{$exTableHeader}{$rows}</table>
+</div>
+BLCK;
+    }
+
+    $shadowOverlapBlock = '';
+    if (count($lrShadowOverlapEx) > 0) {
+        $rows = $buildExampleTableRows($lrShadowOverlapEx);
+        $shadowOverlapBlock = <<<BLCK
+<div style="margin-top:10px;">
+  <div style="font-size:12px;font-weight:600;color:var(--ui-text-muted);margin-bottom:4px;">Совпали (примеры)</div>
+  <table style="width:100%;font-size:11px;border-collapse:collapse;">{$exTableHeader}{$rows}</table>
+</div>
+BLCK;
+    }
+
     return <<<HTML
 <style>
 .dh-tab-nav{display:flex;gap:0;border-bottom:1px solid var(--ui-border);margin-bottom:20px;}
@@ -3712,15 +3795,38 @@ HTML;
     <div class="card-header">Источник сигналов бота</div>
     <div class="card-body" style="padding:12px 16px;">
       <table style="width:100%;font-size:13px;border-collapse:collapse;">
-        <tr><td style="color:var(--ui-text-muted);width:200px;padding:3px 12px 3px 0;">Источник сигналов бота</td><td><code>{$e($lrSignalSourceMode)}</code></td></tr>
+        {$lrSsmFallbackRow}
+        <tr><td style="color:var(--ui-text-muted);width:240px;padding:3px 12px 3px 0;">Режим источника</td><td><code>{$e($lrSignalSourceMode)}</code></td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Бот читает Governor</td><td>{$lrBotReadsGovLabel}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Shadow compare</td><td>{$lrShadowCompareLabel}</td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Governor approved queue (всего)</td><td>{$e($govApprovedQueueTotal)}</td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Gov очередь увидено (этот тик)</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;">{$e($lrGovQueueSeen)}</td></tr>
-        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov очередь валидных</td><td>{$e($lrGovQueueValid)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov валидных</td><td>{$e($lrGovQueueValid)}</td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov использовано для ордеров</td><td>{$e($lrGovQueueUsed)}</td></tr>
-        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov пропущено (не demo/stale)</td><td>{$e($lrGovQueueDupSkip)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov пропущено (не demo)</td><td>{$e($lrGovQueueSkipNonDemo)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov пропущено (невалид.)</td><td>{$e($lrGovQueueSkipInvalid)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov пропущено (истекло TTL)</td><td>{$e($lrGovQueueSkipExpired)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov дубликаты пропущено</td><td>{$e($lrGovQueueDupSkip)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Direct handoff увидено</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;">{$e($lrDirectHandoffSeen)}</td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Direct handoff использовано</td><td>{$e($lrDirectHandoffUsed)}</td></tr>
       </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Сравнение direct vs Governor</div>
+    <div class="card-body" style="padding:12px 16px;">
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tr><td style="color:var(--ui-text-muted);width:240px;padding:3px 12px 3px 0;">Совпали (overlap)</td><td><strong>{$e($lrShadowOverlap)}</strong></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Только direct</td><td>{$e($lrShadowDirectOnly)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Только Governor</td><td>{$e($lrShadowGovOnly)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Governor отфильтровал бы</td><td style="color:#f0883e;">{$e($lrShadowWouldFilter)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Governor добавил бы</td><td style="color:#3fb950;">{$e($lrShadowWouldAdd)}</td></tr>
+      </table>
+      {$shadowNoDataNote}
+      {$shadowDirectOnlyBlock}
+      {$shadowGovOnlyBlock}
+      {$shadowOverlapBlock}
     </div>
   </div>
 

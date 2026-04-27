@@ -426,20 +426,46 @@ final class BotService
         $handoffSourcesLegacyAllowed    = 0;
 
         // Signal source selector (set in config/base.php, default: direct_strategy_handoff).
-        // Allowed values: direct_strategy_handoff | governor_approved_demo
-        $signalSourceMode   = (string)($config['signal_source_mode'] ?? 'direct_strategy_handoff');
-        $govQueueSeen       = 0;
-        $govQueueValid      = 0;
-        $govQueueUsed       = 0;
-        $govQueueDupSkipped = 0;
-        $directHandoffUsed  = 0;
+        // Allowed values: direct_strategy_handoff | governor_approved_demo | shadow_compare
+        // Unknown/missing values fall back to direct_strategy_handoff.
+        $signalSourceModeRaw = (string)($config['signal_source_mode'] ?? 'direct_strategy_handoff');
+        $validSourceModes    = ['direct_strategy_handoff', 'governor_approved_demo', 'shadow_compare'];
+        $signalSourceMode    = in_array($signalSourceModeRaw, $validSourceModes, true)
+                                 ? $signalSourceModeRaw
+                                 : 'direct_strategy_handoff';
+        $signalSourceModeInvalidFallback = ($signalSourceMode !== $signalSourceModeRaw);
 
-        if ($signalSourceMode === 'governor_approved_demo') {
-            // ── Governor approved demo queue ──────────────────────────────
+        // Governor queue counters
+        $govQueueSeen           = 0;
+        $govQueueValid          = 0;
+        $govQueueUsed           = 0;
+        $govQueueDupSkipped     = 0;
+        $govQueueSkippedNonDemo = 0;
+        $govQueueSkippedInvalid = 0;
+        $govQueueSkippedExpired = 0;
+
+        // Direct handoff counters
+        $directHandoffSeen = 0;
+        $directHandoffUsed = 0;
+
+        // Shadow compare counters (shadow_compare mode only)
+        $shadowOverlap       = 0;
+        $shadowDirectOnly    = 0;
+        $shadowGovOnly       = 0;
+        $shadowWouldFilter   = 0;
+        $shadowWouldAdd      = 0;
+        $shadowDirectOnlyEx  = [];
+        $shadowGovOnlyEx     = [];
+        $shadowOverlapEx     = [];
+
+        // ── Helper: load Governor approved_demo_queue ─────────────────────
+        $loadGovQueue = function () use (&$govQueueSeen, &$govQueueValid, &$govQueueDupSkipped,
+                                         &$govQueueSkippedNonDemo, &$govQueueSkippedInvalid,
+                                         &$govQueueSkippedExpired): array {
             $govQueuePath = $this->repoRoot . '/modules/strategy_governor/storage/approved_demo_queue.json';
             $govRaw = [];
             if (file_exists($govQueuePath)) {
-                $rawContent = file_get_contents($govQueuePath);
+                $rawContent = @file_get_contents($govQueuePath);
                 if ($rawContent !== false && $rawContent !== '') {
                     $govDecoded = json_decode($rawContent, true);
                     if (is_array($govDecoded)) {
@@ -449,19 +475,20 @@ final class BotService
             }
             $govQueueSeen = count($govRaw);
 
-            // Filter: safety — only accept demo mode, valid signal_id/symbol, not TTL expired
             $govFiltered = [];
             foreach ($govRaw as $govItem) {
-                // PART 4: demo-only safety — skip any non-demo item
+                // Demo-only safety — skip any non-demo item
                 $govItemMode = (string)($govItem['mode'] ?? '');
                 if ($govItemMode !== 'demo') {
+                    $govQueueSkippedNonDemo++;
                     $govQueueDupSkipped++;
                     continue;
                 }
-                if ((string)($govItem['signal_id'] ?? '') === '') {
-                    continue;
-                }
-                if ((string)($govItem['symbol'] ?? '') === '') {
+                // Required fields
+                if ((string)($govItem['signal_id'] ?? '') === ''
+                    || (string)($govItem['symbol']    ?? '') === ''
+                ) {
+                    $govQueueSkippedInvalid++;
                     continue;
                 }
                 // TTL check
@@ -469,19 +496,125 @@ final class BotService
                 if ($govTtl !== '') {
                     $govTtlTs = strtotime($govTtl);
                     if ($govTtlTs !== false && time() > $govTtlTs) {
+                        $govQueueSkippedExpired++;
                         continue;
                     }
                 }
                 // Set handoff_status so processHandoff recognises the item
-                $govItem['handoff_status'] = 'new';
-                // Ensure entry_mode has a sensible default when Governor did not record it
+                $govItem['handoff_status'] = $govItem['handoff_status'] ?? 'new';
+                // Ensure entry_mode has a sensible default
                 if (empty($govItem['entry_mode'])) {
                     $govItem['entry_mode'] = 'limit';
                 }
                 $govFiltered[] = $govItem;
             }
             $govQueueValid = count($govFiltered);
-            $allSignals    = $govFiltered;
+            return $govFiltered;
+        };
+
+        if ($signalSourceMode === 'governor_approved_demo') {
+            // ── Governor approved demo queue ──────────────────────────────
+            $allSignals = $loadGovQueue();
+
+        } elseif ($signalSourceMode === 'shadow_compare') {
+            // ── Shadow compare: direct handoff executed + Governor read for diagnostics only ──
+            // Step 1: collect direct strategy handoff signals (unchanged behaviour)
+            foreach ($enabledStrategies as $rec) {
+                $handoffResult = $this->resolveHandoffEnabled((string)($rec['strategy_id'] ?? ''), $overrides, (string)($rec['module_path'] ?? ''));
+                if (!$handoffResult['allowed']) {
+                    $handoffSourcesBlockedByHandoff++;
+                    continue;
+                }
+                $handoffSourcesAllowed++;
+                if ($handoffResult['legacy']) {
+                    $handoffSourcesLegacyAllowed++;
+                }
+                $signals    = $this->readHandoffQueueForStrategy($rec);
+                $allSignals = array_merge($allSignals, $signals);
+            }
+            foreach ($disabledStrategies as $rec) {
+                $ignoredSignalsCount += count($this->readHandoffQueueForStrategy($rec));
+            }
+            $directHandoffSeen = count($allSignals);
+            $directHandoffUsed = $directHandoffSeen;
+
+            // Step 2: load Governor queue for diagnostics only — do NOT pass into processHandoff
+            $govFiltered = $loadGovQueue();
+
+            // Step 3: build stable key sets for comparison
+            $buildKey = static function (array $item): string {
+                $govKey = (string)($item['governor_signal_key'] ?? '');
+                if ($govKey !== '') {
+                    return $govKey;
+                }
+                $sid  = (string)($item['strategy_id'] ?? '');
+                $sgid = (string)($item['signal_id']   ?? '');
+                if ($sid !== '' && $sgid !== '') {
+                    return $sid . ':' . $sgid;
+                }
+                $sym = (string)($item['symbol']      ?? '');
+                $det = (string)($item['detected_at'] ?? '');
+                if ($sid !== '' && $sym !== '' && $det !== '') {
+                    return $sid . ':' . $sym . ':' . $det;
+                }
+                return '';
+            };
+
+            $directKeys  = [];
+            $directByKey = [];
+            foreach ($allSignals as $sig) {
+                $k = $buildKey($sig);
+                if ($k !== '') {
+                    $directKeys[$k]  = true;
+                    $directByKey[$k] = $sig;
+                }
+            }
+
+            $govKeys  = [];
+            $govByKey = [];
+            foreach ($govFiltered as $gSig) {
+                $k = $buildKey($gSig);
+                if ($k !== '') {
+                    $govKeys[$k]  = true;
+                    $govByKey[$k] = $gSig;
+                }
+            }
+
+            // Step 4: compute compare counters
+            $buildExample = static function (array $item): array {
+                return [
+                    'strategy_id' => (string)($item['strategy_id'] ?? ''),
+                    'symbol'      => (string)($item['symbol']      ?? ''),
+                    'signal_id'   => (string)($item['signal_id']   ?? ''),
+                    'detected_at' => (string)($item['detected_at'] ?? ''),
+                    'reason'      => (string)($item['reason']      ?? $item['governor_reason'] ?? ''),
+                ];
+            };
+
+            foreach ($directKeys as $k => $_) {
+                if (isset($govKeys[$k])) {
+                    $shadowOverlap++;
+                    if (count($shadowOverlapEx) < 20) {
+                        $shadowOverlapEx[] = $buildExample($directByKey[$k]);
+                    }
+                } else {
+                    $shadowDirectOnly++;
+                    $shadowWouldFilter++;
+                    if (count($shadowDirectOnlyEx) < 20) {
+                        $shadowDirectOnlyEx[] = $buildExample($directByKey[$k]);
+                    }
+                }
+            }
+            foreach ($govKeys as $k => $_) {
+                if (!isset($directKeys[$k])) {
+                    $shadowGovOnly++;
+                    $shadowWouldAdd++;
+                    if (count($shadowGovOnlyEx) < 20) {
+                        $shadowGovOnlyEx[] = $buildExample($govByKey[$k]);
+                    }
+                }
+            }
+
         } else {
             // ── Direct strategy handoff (existing behaviour, unchanged) ───
             foreach ($enabledStrategies as $rec) {
@@ -501,7 +634,8 @@ final class BotService
             foreach ($disabledStrategies as $rec) {
                 $ignoredSignalsCount += count($this->readHandoffQueueForStrategy($rec));
             }
-            $directHandoffUsed = count($allSignals);
+            $directHandoffSeen = count($allSignals);
+            $directHandoffUsed = $directHandoffSeen;
         }
 
         // ── 3. Load bot state ─────────────────────────────────────────────────
@@ -519,6 +653,7 @@ final class BotService
         if ($signalSourceMode === 'governor_approved_demo') {
             $govQueueUsed = $result['new_total'] + $result['refreshed_total'];
         }
+        // shadow_compare: governor queue used for orders must remain 0
 
         // ── 5. Execution state machine ────────────────────────────────────────
         $execResult = $this->processExecution($orderQueue, $activeOrders, $activePositions, $closedPositions, $botMode, $config, $tickAt);
@@ -604,11 +739,24 @@ final class BotService
 
             // Signal source selector
             'signal_source_mode'                      => $signalSourceMode,
+            'signal_source_mode_invalid_fallback'     => $signalSourceModeInvalidFallback,
             'governor_queue_seen_total'               => $govQueueSeen,
             'governor_queue_valid_total'              => $govQueueValid,
             'governor_queue_used_for_orders_total'    => $govQueueUsed,
             'governor_queue_duplicate_skipped_total'  => $govQueueDupSkipped,
+            'governor_queue_skipped_non_demo_total'   => $govQueueSkippedNonDemo,
+            'governor_queue_skipped_invalid_total'    => $govQueueSkippedInvalid,
+            'governor_queue_skipped_expired_total'    => $govQueueSkippedExpired,
+            'direct_handoff_seen_total'               => $directHandoffSeen,
             'direct_handoff_used_total'               => $directHandoffUsed,
+            'shadow_compare_overlap_total'            => $shadowOverlap,
+            'shadow_compare_direct_only_total'        => $shadowDirectOnly,
+            'shadow_compare_governor_only_total'      => $shadowGovOnly,
+            'shadow_compare_governor_would_filter_total' => $shadowWouldFilter,
+            'shadow_compare_governor_would_add_total'    => $shadowWouldAdd,
+            'shadow_compare_direct_only_examples'     => $shadowDirectOnlyEx,
+            'shadow_compare_governor_only_examples'   => $shadowGovOnlyEx,
+            'shadow_compare_overlap_examples'         => $shadowOverlapEx,
 
             // Signals this tick
             'handoff_signals_processed'                  => $result['signals_seen'],
@@ -2868,11 +3016,24 @@ final class BotService
                 'ticks_total'                               => 0,
                 'handoff_signals_seen_total'                => 0,
                 'signal_source_mode'                        => 'direct_strategy_handoff',
+                'signal_source_mode_invalid_fallback'       => false,
                 'governor_queue_seen_total'                 => 0,
                 'governor_queue_valid_total'                => 0,
                 'governor_queue_used_for_orders_total'      => 0,
                 'governor_queue_duplicate_skipped_total'    => 0,
+                'governor_queue_skipped_non_demo_total'     => 0,
+                'governor_queue_skipped_invalid_total'      => 0,
+                'governor_queue_skipped_expired_total'      => 0,
+                'direct_handoff_seen_total'                 => 0,
                 'direct_handoff_used_total'                 => 0,
+                'shadow_compare_overlap_total'              => 0,
+                'shadow_compare_direct_only_total'          => 0,
+                'shadow_compare_governor_only_total'        => 0,
+                'shadow_compare_governor_would_filter_total'=> 0,
+                'shadow_compare_governor_would_add_total'   => 0,
+                'shadow_compare_direct_only_examples'       => [],
+                'shadow_compare_governor_only_examples'     => [],
+                'shadow_compare_overlap_examples'           => [],
             ],
             'storage/stats.json' => $this->zeroStats(),
         ];

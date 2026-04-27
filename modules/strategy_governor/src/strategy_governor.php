@@ -68,7 +68,10 @@ final class StrategyGovernor
 
         try {
             // ── 1. Load config values ─────────────────────────────────────────
-            $maxTicks           = max(1, (int)($this->config['pending_confirmation_ticks']  ?? 5));
+            $globalMaxTicks     = max(0, (int)($this->config['pending_confirmation_ticks']  ?? 0));
+            $stratPolicies      = is_array($this->config['strategy_policies'] ?? null)
+                                    ? $this->config['strategy_policies']
+                                    : [];
             $minClosed          = (int)($this->config['min_closed_trades_for_live']         ?? 20);
             $minHourly          = (int)($this->config['min_hourly_trades_for_live']         ?? 5);
             $minWinrate         = (float)($this->config['min_winrate_for_live']             ?? 0.55);
@@ -132,6 +135,16 @@ final class StrategyGovernor
                 // Derive a stable pending key
                 $pendingKey = $stratId . ':' . ($signalId !== '' ? $signalId : ($symbol . ':' . ($detectedAt ?? 'unknown')));
 
+                // ── Resolve per-strategy confirmation policy ──────────────────
+                $policy             = $stratPolicies[$stratId]
+                                        ?? $stratPolicies['default']
+                                        ?? [];
+                $confirmRequired    = (bool)($policy['confirmation_required']      ?? false);
+                $maxTicks           = $confirmRequired
+                    ? max(1, (int)($policy['pending_confirmation_ticks'] ?? $globalMaxTicks))
+                    : 0;
+                $pEntry['max_ticks'] = $maxTicks;
+
                 // Retrieve or initialise pending entry
                 $pEntry = $pendingSignals[$pendingKey] ?? [
                     'strategy_id'   => $stratId,
@@ -141,6 +154,8 @@ final class StrategyGovernor
                     'first_seen_at' => date('Y-m-d H:i:s'),
                 ];
                 $pEntry['tick_count'] = (int)($pEntry['tick_count'] ?? 0) + 1;
+                $pEntry['max_ticks']  = $maxTicks;
+                $pEntry['updated_at'] = date('Y-m-d H:i:s');
                 $tickCount = $pEntry['tick_count'];
 
                 // ── Decision logic ────────────────────────────────────────────

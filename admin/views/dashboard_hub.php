@@ -2076,13 +2076,30 @@ QUAL;
 QUAL;
     }
 
-    // ── Strategy Governor UI block ────────────────────────────────────────────
+    // ── Strategy Governor: shared data + full tab HTML ───────────────────────
     {
-        $govRoot      = System::path('root') . '/modules/strategy_governor/storage';
-        $govLastRun   = @json_decode((string)@file_get_contents($govRoot . '/last_run.json'),   true) ?: null;
-        $govStateRaw  = @json_decode((string)@file_get_contents($govRoot . '/strategy_state.json'), true) ?: null;
-        $govStatsRaw  = @json_decode((string)@file_get_contents($govRoot . '/strategy_stats.json'), true) ?: null;
-        $govPending   = @json_decode((string)@file_get_contents($govRoot . '/pending_signals.json'), true) ?: null;
+        $govRoot       = System::path('root') . '/modules/strategy_governor/storage';
+        $govCfgPath    = System::path('root') . '/modules/strategy_governor/config/base.php';
+        $govLastRun    = @json_decode((string)@file_get_contents($govRoot . '/last_run.json'),        true) ?: null;
+        $govStateRaw   = @json_decode((string)@file_get_contents($govRoot . '/strategy_state.json'),  true) ?: null;
+        $govPendingRaw = @json_decode((string)@file_get_contents($govRoot . '/pending_signals.json'), true) ?: null;
+        $govHourlyRaw  = @json_decode((string)@file_get_contents($govRoot . '/hourly_stats.json'),    true) ?: null;
+        $govCfg        = (is_file($govCfgPath) ? @include $govCfgPath : null);
+        $govCfg        = is_array($govCfg) ? $govCfg : [];
+
+        // Last 50 lines of decisions.ndjson
+        $govDecisionsRaw = [];
+        $govNdjsonPath   = $govRoot . '/decisions.ndjson';
+        if (is_file($govNdjsonPath)) {
+            $govLines = @file($govNdjsonPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+            $govLines = array_slice($govLines, -50);
+            foreach (array_reverse($govLines) as $line) {
+                $dec = @json_decode($line, true);
+                if (is_array($dec)) {
+                    $govDecisionsRaw[] = $dec;
+                }
+            }
+        }
 
         $govStateLabels = [
             'insufficient_data' => 'Недостаточно данных',
@@ -2093,25 +2110,90 @@ QUAL;
             'cooldown'          => 'Cooldown',
         ];
         $govReasonLabels = [
-            'not_enough_closed_trades' => 'Недостаточно закрытых сделок',
-            'avg_roi_negative'         => 'Средний ROI отрицательный',
-            'winrate_too_low'          => 'Winrate ниже порога',
-            'loss_streak'              => 'Серия убыточных сделок',
-            'shadow_mode'              => 'Shadow-режим: только рекомендация',
+            'not_enough_closed_trades'    => 'Недостаточно закрытых сделок',
+            'avg_roi_negative'            => 'Средний ROI отрицательный',
+            'winrate_too_low'             => 'Winrate ниже порога',
+            'loss_streak'                 => 'Серия убыточных сделок',
+            'shadow_mode'                 => 'Shadow-режим: только рекомендация',
+            'too_many_consecutive_losses' => 'Серия убыточных сделок (лимит)',
+            'not_enough_closed_trades'    => 'Недостаточно закрытых сделок',
+            'missing_entry_price'         => 'Нет цены входа',
+            'missing_symbol'              => 'Нет символа',
+            'missing_detected_at'         => 'Нет времени сигнала',
+            'signal_too_old'              => 'Сигнал устарел',
+            'handoff_signal_invalid'      => 'Сигнал отклонён handoff',
+            'pending_confirmation_tick'   => 'Ожидание подтверждения',
+            'live_gate_passed'            => 'Live-порог пройден',
+            'below_live_threshold'        => 'Ниже live-порога',
         ];
-        $govStateLabel  = static function (string $s) use ($govStateLabels): string {
-            return $govStateLabels[$s] ?? ('Неизвестно: ' . str_replace('_', ' ', $s));
-        };
-        $govReasonLabel = static function (string $r) use ($govReasonLabels): string {
-            return $govReasonLabels[$r] ?? ('Неизвестная причина: ' . str_replace('_', ' ', $r));
+        $govDecisionLabels = [
+            'observed'             => 'Наблюдение',
+            'wait_confirmation'    => 'Ожидание подтверждения',
+            'approve_demo_shadow'  => 'Shadow: одобрить demo',
+            'approve_live_shadow'  => 'Shadow: одобрить live',
+            'reject_shadow'        => 'Shadow: отклонить',
+            'expired_shadow'       => 'Shadow: истекло',
+        ];
+        $govStateLabel    = static fn (string $s) => $govStateLabels[$s]    ?? ('Неизвестно: '          . str_replace('_', ' ', $s));
+        $govReasonLabel   = static fn (string $r) => $govReasonLabels[$r]   ?? ('Неизвестная причина: ' . str_replace('_', ' ', $r));
+        $govDecisionLabel = static fn (string $d) => $govDecisionLabels[$d] ?? $d;
+
+        $govHasData = ($govLastRun !== null || $govStateRaw !== null);
+
+        // ── Helper: build state row cells ────────────────────────────────────
+        $govBuildStateRows = static function (array $stateRaw, callable $stLabel, callable $rLabel, callable $esc): string {
+            $rows = '';
+            foreach ($stateRaw as $sid => $sEntry) {
+                $sEntry     = is_array($sEntry) ? $sEntry : [];
+                $stateKey   = (string)($sEntry['state'] ?? '');
+                $stateLabel = $stLabel($stateKey);
+                $stateColor = match ($stateKey) {
+                    'live_allowed'   => '#3fb950',
+                    'live_blocked'   => '#f85149',
+                    'cooldown'       => '#f0883e',
+                    'demo_only'      => '#58a6ff',
+                    'shadow_observe' => '#a78bfa',
+                    default          => '#8b949e',
+                };
+                $reason       = $rLabel((string)($sEntry['reason'] ?? ''));
+                $route        = $esc((string)($sEntry['recommended_route'] ?? '—'));
+                $liveAllowed  = (bool)($sEntry['recommended_live_allowed'] ?? false)
+                    ? '<span style="color:#3fb950;">✓ да</span>'
+                    : '<span style="color:var(--ui-text-muted);">— нет</span>';
+                $closed       = $esc((string)(int)($sEntry['closed_trades_total']   ?? 0));
+                $winrate      = isset($sEntry['winrate'])    ? $esc(number_format((float)$sEntry['winrate'] * 100, 1)) . '%' : '—';
+                $avgRoi       = isset($sEntry['avg_roi'])    ? $esc(number_format((float)$sEntry['avg_roi'], 2)) . '%'        : '—';
+                $totalPnl     = isset($sEntry['total_pnl'])  ? $esc(number_format((float)$sEntry['total_pnl'], 4))            : '—';
+                $openPos      = $esc((string)(int)($sEntry['current_open_positions'] ?? 0));
+                $cWins        = $esc((string)(int)($sEntry['consecutive_wins']        ?? 0));
+                $cLoss        = $esc((string)(int)($sEntry['consecutive_losses']      ?? 0));
+                $lastTrade    = $esc((string)($sEntry['last_trade_at'] ?? '—'));
+                $rows .= '<tr>'
+                    . '<td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:600;">' . $esc((string)$sid) . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;white-space:nowrap;"><span style="color:' . $stateColor . ';">' . htmlspecialchars($stateLabel, ENT_QUOTES, 'UTF-8') . '</span></td>'
+                    . '<td style="padding:4px 10px 4px 0;">' . $route . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;">' . $liveAllowed . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;color:var(--ui-text-muted);font-size:11px;">' . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $closed . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $winrate . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $avgRoi . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $totalPnl . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $openPos . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $cWins . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $cLoss . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;font-size:11px;color:var(--ui-text-muted);white-space:nowrap;">' . $lastTrade . '</td>'
+                    . '</tr>';
+            }
+            return $rows !== '' ? $rows : '<tr><td colspan="13" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Нет данных</td></tr>';
         };
 
-        if ($govLastRun === null && $govStateRaw === null) {
+        // ── Compact overview mini-card ───────────────────────────────────────
+        if (!$govHasData) {
             $stratQualHtml .= <<<GOV
 <div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
   <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
     <span><i class="bi bi-shield-check" style="margin-right:6px;color:#a78bfa;"></i>Губернатор стратегий <span style="font-size:11px;font-weight:400;color:var(--ui-text-muted);">/ Strategy Governor</span></span>
-    <small style="color:var(--ui-text-muted);font-size:11px;">shadow-only · read-only</small>
+    <small style="color:var(--ui-text-muted);font-size:11px;"><button class="dh-tab-btn" data-tab-target="dh-governor" type="button" style="background:none;border:none;cursor:pointer;color:var(--ui-accent);font-size:11px;padding:0;">→ полная вкладка</button></small>
   </div>
   <div class="card-body" style="padding:12px 16px;">
     <span style="color:var(--ui-text-muted);font-size:13px;"><i class="bi bi-hourglass" style="margin-right:5px;"></i>Данных пока нет — Governor ещё не запускался</span>
@@ -2119,12 +2201,44 @@ QUAL;
 </div>
 GOV;
         } else {
-            // ── Summary metrics from last_run ────────────────────────────────
+            $gStatus    = $e((string)($govLastRun['status']       ?? '—'));
+            $gMode      = $e((string)($govLastRun['mode']         ?? '—'));
+            $gPendCount = (int)($govLastRun['pending_total']      ?? (is_array($govPendingRaw) ? count($govPendingRaw) : 0));
+            $gDecCount  = (int)($govLastRun['decisions_total']    ?? 0);
+            $gStarted   = $e((string)($govLastRun['started_at']   ?? '—'));
+            $stratQualHtml .= <<<GOV
+<div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <span><i class="bi bi-shield-check" style="margin-right:6px;color:#a78bfa;"></i>Губернатор стратегий <span style="font-size:11px;font-weight:400;color:var(--ui-text-muted);">/ Strategy Governor</span></span>
+    <small style="color:var(--ui-text-muted);font-size:11px;"><button class="dh-tab-btn" data-tab-target="dh-governor" type="button" style="background:none;border:none;cursor:pointer;color:var(--ui-accent);font-size:11px;padding:0;">→ полная вкладка</button></small>
+  </div>
+  <div class="card-body" style="padding:10px 16px;">
+    <div style="display:flex;flex-wrap:wrap;gap:8px 24px;font-size:12px;">
+      <span><span style="color:var(--ui-text-muted);">Статус:</span> <strong>{$gStatus}</strong></span>
+      <span><span style="color:var(--ui-text-muted);">Режим:</span> <strong>{$gMode}</strong></span>
+      <span><span style="color:var(--ui-text-muted);">Pending:</span> <strong style="color:#58a6ff;">{$gPendCount}</strong></span>
+      <span><span style="color:var(--ui-text-muted);">Решений:</span> <strong>{$gDecCount}</strong></span>
+      <span><span style="color:var(--ui-text-muted);">Запущен:</span> {$gStarted}</span>
+    </div>
+  </div>
+</div>
+GOV;
+        }
+
+        // ── Build full $governorFullHtml ─────────────────────────────────────
+        if (!$govHasData) {
+            $governorFullHtml = '<div style="padding:32px;text-align:center;color:var(--ui-text-muted);font-size:14px;">'
+                . '<i class="bi bi-hourglass" style="font-size:24px;display:block;margin-bottom:10px;"></i>'
+                . 'Данных пока нет — Governor ещё не запускался'
+                . '</div>';
+        } else {
+            // ── Summary ──────────────────────────────────────────────────────
             $gStatus      = $e((string)($govLastRun['status']                      ?? '—'));
             $gMode        = $e((string)($govLastRun['mode']                        ?? '—'));
+            $gEnforce     = $e((string)($govCfg['enforce_live_gate']  ?? false) ? 'enforce' : 'shadow');
             $gStrategies  = $e((string)(int)($govLastRun['strategies_seen']        ?? 0));
             $gSignals     = $e((string)(int)($govLastRun['signals_seen']           ?? 0));
-            $gPending     = $e((string)(int)($govLastRun['pending_total']          ?? (is_array($govPending) ? count($govPending) : 0)));
+            $gPending     = $e((string)(int)($govLastRun['pending_total']          ?? (is_array($govPendingRaw) ? count($govPendingRaw) : 0)));
             $gDecisions   = $e((string)(int)($govLastRun['decisions_total']        ?? 0));
             $gAppDemo     = $e((string)(int)($govLastRun['approved_demo_shadow_total'] ?? 0));
             $gAppLive     = $e((string)(int)($govLastRun['approved_live_shadow_total'] ?? 0));
@@ -2137,73 +2251,164 @@ GOV;
             $gStarted     = $e((string)($govLastRun['started_at']  ?? '—'));
             $gFinished    = $e((string)($govLastRun['finished_at'] ?? '—'));
 
-            // ── Per-strategy table ───────────────────────────────────────────
-            $govTableRows = '';
-            if (is_array($govStateRaw) && count($govStateRaw) > 0) {
-                foreach ($govStateRaw as $sid => $sEntry) {
-                    $sEntry     = is_array($sEntry) ? $sEntry : [];
-                    $sStats     = is_array($govStatsRaw[$sid] ?? null) ? $govStatsRaw[$sid] : [];
-                    $stateKey   = (string)($sEntry['state'] ?? '');
-                    $stateLabel = $govStateLabel($stateKey);
-                    $stateColor = match ($stateKey) {
-                        'live_allowed'   => '#3fb950',
-                        'live_blocked'   => '#f85149',
-                        'cooldown'       => '#f0883e',
-                        'demo_only'      => '#58a6ff',
-                        'shadow_observe' => '#a78bfa',
-                        default          => '#8b949e',
-                    };
-                    $reason        = $govReasonLabel((string)($sEntry['reason'] ?? ''));
-                    $route         = $e((string)($sEntry['recommended_route'] ?? '—'));
-                    $liveAllowed   = (bool)($sEntry['recommended_live_allowed'] ?? false)
-                        ? '<span style="color:#3fb950;">✓ да</span>'
-                        : '<span style="color:var(--ui-text-muted);">— нет</span>';
-                    $closedTrades  = $e((string)(int)($sEntry['closed_trades_total']   ?? 0));
-                    $winrate       = isset($sEntry['winrate'])
-                        ? $e(number_format((float)$sEntry['winrate'] * 100, 1)) . '%'
-                        : '—';
-                    $avgRoi        = isset($sEntry['avg_roi'])
-                        ? $e(number_format((float)$sEntry['avg_roi'], 2)) . '%'
-                        : '—';
-                    $totalPnl      = isset($sEntry['total_pnl'])
-                        ? $e(number_format((float)$sEntry['total_pnl'], 4))
-                        : '—';
-                    $openPos       = $e((string)(int)($sEntry['current_open_positions'] ?? 0));
-                    $consecWins    = $e((string)(int)($sEntry['consecutive_wins']       ?? 0));
-                    $consecLosses  = $e((string)(int)($sEntry['consecutive_losses']     ?? 0));
-                    $lastTrade     = $e((string)($sEntry['last_trade_at'] ?? '—'));
-
-                    $govTableRows .= '<tr>'
-                        . '<td style="padding:4px 10px 4px 0;white-space:nowrap;font-weight:600;">' . $e((string)$sid) . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;white-space:nowrap;"><span style="color:' . $stateColor . ';">' . htmlspecialchars($stateLabel, ENT_QUOTES, 'UTF-8') . '</span></td>'
-                        . '<td style="padding:4px 10px 4px 0;">' . $route . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;">' . $liveAllowed . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;color:var(--ui-text-muted);font-size:11px;">' . htmlspecialchars($reason, ENT_QUOTES, 'UTF-8') . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $closedTrades . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $winrate . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $avgRoi . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $totalPnl . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $openPos . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $consecWins . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $consecLosses . '</td>'
-                        . '<td style="padding:4px 10px 4px 0;font-size:11px;color:var(--ui-text-muted);white-space:nowrap;">' . $lastTrade . '</td>'
-                        . '</tr>';
+            // ── Error list ───────────────────────────────────────────────────
+            $gErrorListHtml = '';
+            if ($gErrors > 0 && is_array($govLastRun['errors'] ?? null)) {
+                $gErrorListHtml = '<div style="background:rgba(248,81,73,.07);border:1px solid #f8514933;border-radius:6px;padding:8px 12px;margin-top:8px;">';
+                foreach ($govLastRun['errors'] as $gerr) {
+                    $gErrorListHtml .= '<div style="font-size:11px;color:#f85149;">' . $e((string)$gerr) . '</div>';
                 }
-            } else {
-                $govTableRows = '<tr><td colspan="13" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Нет данных по стратегиям</td></tr>';
+                $gErrorListHtml .= '</div>';
             }
 
-            $stratQualHtml .= <<<GOV
-<div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
-  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-    <span><i class="bi bi-shield-check" style="margin-right:6px;color:#a78bfa;"></i>Губернатор стратегий <span style="font-size:11px;font-weight:400;color:var(--ui-text-muted);">/ Strategy Governor</span></span>
-    <small style="color:var(--ui-text-muted);font-size:11px;">shadow-only · read-only · last_run.json</small>
-  </div>
-  <div class="card-body" style="padding:12px 16px;">
+            // ── State table ──────────────────────────────────────────────────
+            $govStateTableRows = is_array($govStateRaw) && count($govStateRaw) > 0
+                ? $govBuildStateRows($govStateRaw, $govStateLabel, $govReasonLabel, $e)
+                : '<tr><td colspan="13" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Нет данных по стратегиям</td></tr>';
 
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px 16px;font-size:12px;margin-bottom:12px;">
+            // ── Policy table ─────────────────────────────────────────────────
+            $govPolicies        = is_array($govCfg['strategy_policies'] ?? null) ? $govCfg['strategy_policies'] : [];
+            $govPolicyRows      = '';
+            $govKnownStrategies = array_unique(array_merge(
+                array_keys($govPolicies),
+                is_array($govStateRaw) ? array_keys($govStateRaw) : []
+            ));
+            foreach ($govKnownStrategies as $spid) {
+                if ($spid === 'default') continue;
+                $pol    = $govPolicies[$spid] ?? $govPolicies['default'] ?? [];
+                $req    = (bool)($pol['confirmation_required']      ?? false) ? '<span style="color:#f0883e;">да</span>' : '<span style="color:var(--ui-text-muted);">нет</span>';
+                $ticks  = (int)($pol['pending_confirmation_ticks']  ?? 0);
+                $govPolicyRows .= '<tr>'
+                    . '<td style="padding:4px 10px 4px 0;font-weight:600;">' . $e($spid) . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;">' . $req . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $e((string)$ticks) . '</td>'
+                    . '</tr>';
+            }
+            // Add default row
+            if (isset($govPolicies['default'])) {
+                $polD   = $govPolicies['default'];
+                $reqD   = (bool)($polD['confirmation_required'] ?? false) ? '<span style="color:#f0883e;">да</span>' : '<span style="color:var(--ui-text-muted);">нет</span>';
+                $ticksD = (int)($polD['pending_confirmation_ticks'] ?? 0);
+                $govPolicyRows .= '<tr style="color:var(--ui-text-muted);font-style:italic;">'
+                    . '<td style="padding:4px 10px 4px 0;">default (прочие)</td>'
+                    . '<td style="padding:4px 10px 4px 0;">' . $reqD . '</td>'
+                    . '<td style="padding:4px 10px 4px 0;text-align:right;">' . $e((string)$ticksD) . '</td>'
+                    . '</tr>';
+            }
+            if ($govPolicyRows === '') {
+                $govPolicyRows = '<tr><td colspan="3" style="color:var(--ui-text-muted);font-style:italic;padding:8px 0;">Политики не заданы</td></tr>';
+            }
+
+            // ── Pending signals table ────────────────────────────────────────
+            $govPendingRows = '';
+            $govPendByStrat = [];
+            if (is_array($govPendingRaw) && count($govPendingRaw) > 0) {
+                $govPendSlice = array_slice(array_values($govPendingRaw), -20);
+                foreach (array_reverse($govPendSlice) as $pk) {
+                    if (!is_array($pk)) continue;
+                    $pStrat   = $e((string)($pk['strategy_id'] ?? '—'));
+                    $pSig     = $e((string)($pk['signal_id']   ?? '—'));
+                    $pSym     = $e((string)($pk['symbol']      ?? '—'));
+                    $pTicks   = $e((string)(int)($pk['tick_count'] ?? 0));
+                    $pMaxT    = $e((string)(int)($pk['max_ticks']  ?? 0));
+                    $pFirst   = $e((string)($pk['first_seen_at'] ?? '—'));
+                    $pUpd     = $e((string)($pk['updated_at']    ?? '—'));
+                    $pReason  = $e((string)($pk['reason']        ?? '—'));
+                    $pState   = $e((string)($pk['state']         ?? '—'));
+                    $pWindow  = (int)($pk['max_ticks'] ?? 0) > 0
+                        ? 'Окно: ' . $e((string)(int)$pk['max_ticks']) . ' тиков'
+                        : '<span style="color:var(--ui-text-muted);">без ожидания</span>';
+                    $govPendByStrat[$pStrat] = ($govPendByStrat[$pStrat] ?? 0) + 1;
+                    $govPendingRows .= '<tr>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $pSig . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pStrat . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pSym . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pState . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $pTicks . '/' . $pMaxT . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pWindow . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $pFirst . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $pUpd . '</td>'
+                        . '</tr>';
+                }
+            }
+            $govPendingTotalHtml = is_array($govPendingRaw) ? $e((string)count($govPendingRaw)) : '0';
+            $govPendByStratHtml  = '';
+            foreach ($govPendByStrat as $ps => $pc) {
+                $govPendByStratHtml .= '<span style="margin-right:12px;">' . $e($ps) . ': <strong>' . $e((string)$pc) . '</strong></span>';
+            }
+            if ($govPendingRows === '') {
+                $govPendingRows = '<tr><td colspan="8" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Pending сигналов нет</td></tr>';
+            }
+
+            // ── Decision journal rows ────────────────────────────────────────
+            $govDecJrnRows = '';
+            foreach ($govDecisionsRaw as $dec) {
+                if (!is_array($dec)) continue;
+                $dTime   = $e((string)($dec['time']              ?? '—'));
+                $dStrat  = $e((string)($dec['strategy_id']       ?? '—'));
+                $dSym    = $e((string)($dec['symbol']            ?? '—'));
+                $dDec    = $e($govDecisionLabel((string)($dec['decision']          ?? '')));
+                $dRoute  = $e((string)($dec['recommended_route'] ?? '—'));
+                $dReason = $govReasonLabel((string)($dec['reason'] ?? ''));
+                $dTicks  = $e((string)(int)($dec['tick_count']   ?? 0));
+                $dMode   = $e((string)($dec['mode']              ?? '—'));
+                $decColor = match ($dec['decision'] ?? '') {
+                    'approve_live_shadow'  => '#a78bfa',
+                    'approve_demo_shadow'  => '#3fb950',
+                    'reject_shadow'        => '#f85149',
+                    'expired_shadow'       => '#8b949e',
+                    default                => 'var(--ui-text)',
+                };
+                $govDecJrnRows .= '<tr>'
+                    . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);white-space:nowrap;">' . $dTime . '</td>'
+                    . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $dStrat . '</td>'
+                    . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $dSym . '</td>'
+                    . '<td style="padding:3px 8px 3px 0;font-size:11px;white-space:nowrap;"><span style="color:' . $decColor . ';">' . $dDec . '</span></td>'
+                    . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $dRoute . '</td>'
+                    . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . htmlspecialchars($dReason, ENT_QUOTES, 'UTF-8') . '</td>'
+                    . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $dTicks . '</td>'
+                    . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $dMode . '</td>'
+                    . '</tr>';
+            }
+            if ($govDecJrnRows === '') {
+                $govDecJrnRows = '<tr><td colspan="8" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Журнал решений пуст</td></tr>';
+            }
+
+            // ── Hourly stats rows ────────────────────────────────────────────
+            $govHourlyRows = '';
+            if (is_array($govHourlyRaw) && count($govHourlyRaw) > 0) {
+                foreach ($govHourlyRaw as $hsid => $hBuckets) {
+                    if (!is_array($hBuckets)) continue;
+                    foreach ($hBuckets as $hKey => $hStat) {
+                        if (!is_array($hStat)) continue;
+                        $hWr  = isset($hStat['winrate']) ? $e(number_format((float)$hStat['winrate'] * 100, 1)) . '%' : '—';
+                        $hRoi = isset($hStat['avg_roi']) ? $e(number_format((float)$hStat['avg_roi'], 2)) . '%' : '—';
+                        $hPnl = isset($hStat['total_pnl']) ? $e(number_format((float)$hStat['total_pnl'], 4)) : '—';
+                        $govHourlyRows .= '<tr>'
+                            . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $e((string)$hsid) . '</td>'
+                            . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $e((string)($hStat['weekday'] ?? $hKey)) . '</td>'
+                            . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $e((string)($hStat['hour'] ?? '—')) . '</td>'
+                            . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $e((string)(int)($hStat['trades'] ?? 0)) . '</td>'
+                            . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $hWr . '</td>'
+                            . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $hRoi . '</td>'
+                            . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $hPnl . '</td>'
+                            . '</tr>';
+                    }
+                }
+            }
+            if ($govHourlyRows === '') {
+                $govHourlyRows = '<tr><td colspan="7" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Почасовой статистики пока нет</td></tr>';
+            }
+
+            $governorFullHtml = <<<GOV
+<!-- ── Governor: summary ──────────────────────────────────────────── -->
+<div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+  <div class="card-header"><i class="bi bi-info-circle" style="margin-right:6px;color:#a78bfa;"></i>Последний запуск</div>
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 16px;font-size:12px;margin-bottom:10px;">
       <div><span style="color:var(--ui-text-muted);">Статус</span><br><strong>{$gStatus}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Режим</span><br><strong>{$gMode}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Shadow / Enforce</span><br><strong>{$gEnforce}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Стратегий увидено</span><br><strong>{$gStrategies}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Сигналов увидено</span><br><strong>{$gSignals}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Pending всего</span><br><strong style="color:#58a6ff;">{$gPending}</strong></div>
@@ -2214,18 +2419,18 @@ GOV;
       <div><span style="color:var(--ui-text-muted);">Expired shadow</span><br><strong style="color:#8b949e;">{$gExpired}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Ошибки</span><br>{$gErrorsHtml}</div>
     </div>
-
-    <table style="width:100%;font-size:11px;border-collapse:collapse;margin-bottom:8px;">
-      <tr style="color:var(--ui-text-muted);">
-        <td style="padding:3px 12px 3px 0;width:160px;">Запущен</td><td>{$gStarted}</td>
-      </tr>
-      <tr style="color:var(--ui-text-muted);">
-        <td style="padding:3px 12px 3px 0;">Завершён</td><td>{$gFinished}</td>
-      </tr>
+    <table style="font-size:11px;border-collapse:collapse;margin-bottom:0;">
+      <tr><td style="color:var(--ui-text-muted);padding:2px 14px 2px 0;">Запущен</td><td>{$gStarted}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:2px 14px 2px 0;">Завершён</td><td>{$gFinished}</td></tr>
     </table>
+    {$gErrorListHtml}
+  </div>
+</div>
 
-    <hr style="border-color:var(--ui-border);margin:10px 0;">
-    <p style="font-size:11px;color:var(--ui-text-muted);margin:0 0 8px 0;font-weight:600;text-transform:uppercase;letter-spacing:.5px;">Состояние по стратегиям</p>
+<!-- ── Governor: strategy state table ────────────────────────────── -->
+<div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+  <div class="card-header"><i class="bi bi-table" style="margin-right:6px;color:#a78bfa;"></i>Состояние по стратегиям</div>
+  <div class="card-body" style="padding:12px 16px;">
     <div style="overflow-x:auto;">
       <table style="width:100%;font-size:11px;border-collapse:collapse;">
         <thead>
@@ -2245,16 +2450,115 @@ GOV;
             <th style="padding:4px 10px 4px 0;text-align:left;white-space:nowrap;">Посл. сделка</th>
           </tr>
         </thead>
-        <tbody>{$govTableRows}</tbody>
+        <tbody>{$govStateTableRows}</tbody>
       </table>
     </div>
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">Источник: <code>strategy_state.json</code></p>
+  </div>
+</div>
 
+<!-- ── Governor: policy table ─────────────────────────────────────── -->
+<div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+  <div class="card-header"><i class="bi bi-gear" style="margin-right:6px;color:#a78bfa;"></i>Политика подтверждения по стратегиям</div>
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="overflow-x:auto;">
+      <table style="width:100%;font-size:12px;border-collapse:collapse;">
+        <thead>
+          <tr style="color:var(--ui-text-muted);border-bottom:1px solid var(--ui-border);">
+            <th style="padding:4px 10px 4px 0;text-align:left;">Стратегия</th>
+            <th style="padding:4px 10px 4px 0;text-align:left;">Требуется подтверждение</th>
+            <th style="padding:4px 10px 4px 0;text-align:right;">Окно подтверждения, тиков</th>
+          </tr>
+        </thead>
+        <tbody>{$govPolicyRows}</tbody>
+      </table>
+    </div>
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">Источник: <code>modules/strategy_governor/config/base.php</code> → <code>strategy_policies</code></p>
+  </div>
+</div>
+
+<!-- ── Governor: pending signals ─────────────────────────────────── -->
+<div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+  <div class="card-header"><i class="bi bi-hourglass-split" style="margin-right:6px;color:#58a6ff;"></i>Pending-сигналы</div>
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="font-size:12px;margin-bottom:8px;">
+      <span style="color:var(--ui-text-muted);">Всего pending:</span> <strong style="color:#58a6ff;">{$govPendingTotalHtml}</strong>
+      &nbsp;&nbsp;
+      {$govPendByStratHtml}
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;font-size:11px;border-collapse:collapse;">
+        <thead>
+          <tr style="color:var(--ui-text-muted);border-bottom:1px solid var(--ui-border);">
+            <th style="padding:3px 8px 3px 0;text-align:left;">signal_id</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">strategy</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">symbol</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">state</th>
+            <th style="padding:3px 8px 3px 0;text-align:right;">tick/max</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">окно</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">first_seen</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">updated</th>
+          </tr>
+        </thead>
+        <tbody>{$govPendingRows}</tbody>
+      </table>
+    </div>
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">Последние 20 · Источник: <code>pending_signals.json</code></p>
+  </div>
+</div>
+
+<!-- ── Governor: decision journal ────────────────────────────────── -->
+<div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+  <div class="card-header"><i class="bi bi-journal-text" style="margin-right:6px;color:#a78bfa;"></i>Журнал решений</div>
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="overflow-x:auto;">
+      <table style="width:100%;font-size:11px;border-collapse:collapse;">
+        <thead>
+          <tr style="color:var(--ui-text-muted);border-bottom:1px solid var(--ui-border);">
+            <th style="padding:3px 8px 3px 0;text-align:left;white-space:nowrap;">Время</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">Стратегия</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">Символ</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">Решение</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">Маршрут</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">Причина</th>
+            <th style="padding:3px 8px 3px 0;text-align:right;">Тики</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">Режим</th>
+          </tr>
+        </thead>
+        <tbody>{$govDecJrnRows}</tbody>
+      </table>
+    </div>
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">Последние 50 строк · Источник: <code>decisions.ndjson</code></p>
+  </div>
+</div>
+
+<!-- ── Governor: hourly stats ─────────────────────────────────────── -->
+<div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+  <div class="card-header"><i class="bi bi-clock-history" style="margin-right:6px;color:#a78bfa;"></i>Почасовая статистика</div>
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="overflow-x:auto;">
+      <table style="width:100%;font-size:11px;border-collapse:collapse;">
+        <thead>
+          <tr style="color:var(--ui-text-muted);border-bottom:1px solid var(--ui-border);">
+            <th style="padding:3px 8px 3px 0;text-align:left;">Стратегия</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">День</th>
+            <th style="padding:3px 8px 3px 0;text-align:right;">Час</th>
+            <th style="padding:3px 8px 3px 0;text-align:right;">Сделок</th>
+            <th style="padding:3px 8px 3px 0;text-align:right;">Winrate</th>
+            <th style="padding:3px 8px 3px 0;text-align:right;">Avg ROI</th>
+            <th style="padding:3px 8px 3px 0;text-align:right;">Total PnL</th>
+          </tr>
+        </thead>
+        <tbody>{$govHourlyRows}</tbody>
+      </table>
+    </div>
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">Источник: <code>hourly_stats.json</code></p>
   </div>
 </div>
 GOV;
         }
     }
-    // ── END Strategy Governor UI block ────────────────────────────────────────
+    // ── END Strategy Governor shared block ────────────────────────────────────
 
     if ($pmLastError !== '') {
         $pmLastErrorRow = '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последняя ошибка</td>'
@@ -3038,6 +3342,9 @@ HTML;
   <button class="dh-tab-btn" data-tab-target="dh-ctrl" type="button">
     <i class="bi bi-sliders" style="margin-right:5px;"></i>Управление
   </button>
+  <button class="dh-tab-btn" data-tab-target="dh-governor" type="button">
+    <i class="bi bi-shield-check" style="margin-right:5px;color:#a78bfa;"></i>Губернатор
+  </button>
 </nav>
 
 <!-- ── Overview pane (default) ─────────────────────────────────────── -->
@@ -3665,6 +3972,16 @@ HTML;
 
 </div><!-- /max-width -->
 
+<!-- ── Governor pane (full tab) ───────────────────────────────────────────── -->
+<!-- NOTE: injected after /max-width wrapper so it can use full container width -->
+<div id="dh-governor" class="dh-pane" style="max-width:1280px;margin:0 auto;padding:0 16px 24px;">
+  <div style="padding:8px 0 16px;">
+    <h2 style="margin:0 0 2px;font-size:18px;font-weight:700;"><i class="bi bi-shield-check" style="color:#a78bfa;margin-right:8px;"></i>Губернатор стратегий <span style="font-size:13px;font-weight:400;color:var(--ui-text-muted);">/ Strategy Governor</span></h2>
+    <p style="margin:0;font-size:11px;color:var(--ui-text-muted);">shadow-only · read-only · Governor не блокирует торговлю</p>
+  </div>
+  {$governorFullHtml}
+</div>
+
 <script>
 function dhTab(panelId) {
     document.querySelectorAll('.dh-tab-btn').forEach(function(b){ b.classList.remove('dh-active'); });
@@ -3688,7 +4005,7 @@ document.addEventListener('click', function(e) {
 });
 // Activate tab from URL ?tab= on page load
 (function() {
-    var valid = ['dh-overview','dh-strat','dh-bot','dh-sm','dh-pm','dh-ctrl'];
+    var valid = ['dh-overview','dh-strat','dh-bot','dh-sm','dh-pm','dh-ctrl','dh-governor'];
     var params = new URLSearchParams(window.location.search);
     var tab = params.get('tab');
     if (tab && valid.indexOf(tab) !== -1) {
@@ -3777,7 +4094,7 @@ function handleDashboardOverridesSave(): void
 
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Настройки стратегии «{$stratId}» сохранены"];
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-strat'));
-    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-strat'; }
     header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
     exit;
@@ -3866,7 +4183,7 @@ function handleDashboardGlobalSave(): void
 
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Глобальные настройки бота сохранены'];
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
-    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }
     header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
     exit;
@@ -3892,7 +4209,7 @@ function handleDashboardStrategyAction(): void
 
     $stratId = trim((string)($_POST['strategy_id'] ?? ''));
     $action  = trim((string)($_POST['action']      ?? ''));
-    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab   = trim((string)($_POST['active_tab'] ?? 'dh-strat'));
     $activeTab = in_array($postTab, $validTabs, true) ? $postTab : 'dh-strat';
     $dashUrl = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -3996,7 +4313,7 @@ function handleDashboardBotTick(): void
     }
 
     $action  = trim((string)($_POST['action'] ?? 'tick'));
-    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab   = trim((string)($_POST['active_tab'] ?? 'dh-bot'));
     $activeTab = in_array($postTab, $validTabs, true) ? $postTab : 'dh-bot';
     $dashUrl = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -4045,7 +4362,7 @@ function handleDashboardStopManagerTick(): void
     }
 
     $action  = trim((string)($_POST['action'] ?? 'tick'));
-    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab   = trim((string)($_POST['active_tab'] ?? 'dh-sm'));
     $activeTab = in_array($postTab, $validTabs, true) ? $postTab : 'dh-sm';
     $dashUrl = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -4092,7 +4409,7 @@ function handleDashboardStrategyToggle(): void
 
     $stratId = trim((string)($_POST['strategy_id'] ?? ''));
     $enabled = (bool)(int)($_POST['enabled'] ?? 0);
-    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab   = trim((string)($_POST['active_tab'] ?? 'dh-strat'));
     $activeTab = in_array($postTab, $validTabs, true) ? $postTab : 'dh-strat';
     $dashUrl = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -4169,7 +4486,7 @@ function handleDashboardHandoffToggle(): void
 
     $stratId        = trim((string)($_POST['strategy_id']     ?? ''));
     $handoffEnabled = (bool)(int)($_POST['handoff_enabled']   ?? 0);
-    $validTabs      = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs      = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab        = trim((string)($_POST['active_tab']      ?? 'dh-strat'));
     $activeTab      = in_array($postTab, $validTabs, true) ? $postTab : 'dh-strat';
     $dashUrl        = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -4246,7 +4563,7 @@ function handleDashboardBotToggle(): void
     }
 
     $enabled    = (bool)(int)($_POST['enabled'] ?? 0);
-    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-bot'));
     $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-bot';
     $dashUrl    = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -4297,7 +4614,7 @@ function handleDashboardSmToggle(): void
     }
 
     $enabled    = (bool)(int)($_POST['enabled'] ?? 0);
-    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-sm'));
     $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-sm';
     $dashUrl    = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -4469,7 +4786,7 @@ function handleDashboardPmTick(): void
     }
 
     $action  = trim((string)($_POST['action'] ?? 'tick'));
-    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab   = trim((string)($_POST['active_tab'] ?? 'dh-pm'));
     $activeTab = in_array($postTab, $validTabs, true) ? $postTab : 'dh-pm';
     $dashUrl = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -4518,7 +4835,7 @@ function handleDashboardPmToggle(): void
     }
 
     $enabled    = (bool)(int)($_POST['enabled'] ?? 0);
-    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-pm'));
     $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-pm';
     $dashUrl    = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -4569,7 +4886,7 @@ function handleDashboardPmConfigSave(): void
         exit;
     }
 
-    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
     $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-ctrl';
     $dashUrl    = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -4811,7 +5128,7 @@ function handleDashboardResetRuntime(): void
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => $msg];
 
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-overview'));
-    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-overview'; }
     header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
     exit;
@@ -4837,7 +5154,7 @@ function handleDashboardSwitchMode(): void
 
     $mode       = trim((string)($_POST['mode'] ?? ''));
     $validModes = ['demo', 'live'];
-    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs  = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     $postTab    = trim((string)($_POST['active_tab'] ?? 'dh-bot'));
     $activeTab  = in_array($postTab, $validTabs, true) ? $postTab : 'dh-bot';
     $dashUrl    = System::web('admin/dashboard') . '?tab=' . $activeTab;
@@ -4914,7 +5231,7 @@ function dispatchDashboardPost(): void
 
     $action    = trim((string)($_POST['dashboard_action'] ?? ''));
     $activeTab = trim((string)($_POST['active_tab']       ?? 'dh-overview'));
-    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl'];
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     if (!in_array($activeTab, $validTabs, true)) {
         $activeTab = 'dh-overview';
     }

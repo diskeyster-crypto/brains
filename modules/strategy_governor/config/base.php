@@ -28,7 +28,23 @@ return [
 
     // Number of Governor ticks a signal may remain in wait_confirmation before
     // it must receive a final decision (approve or reject).
+    // Used only as a legacy fallback; prefer strategy_policies below.
     'pending_confirmation_ticks'    => 5,
+
+    // Per-strategy confirmation policy.
+    // Keys must match strategy_id values used in signal/trade records.
+    // 'default' applies to any strategy not explicitly listed.
+    // Priority: strategy_policies[strategy_id] > strategy_policies['default'] > global fallback (no wait).
+    'strategy_policies'             => [
+        'corridor_bottom_long' => [
+            'confirmation_required'       => true,
+            'pending_confirmation_ticks'  => 5,
+        ],
+        'default' => [
+            'confirmation_required'       => false,
+            'pending_confirmation_ticks'  => 0,
+        ],
+    ],
 
     // Minimum total closed trades before the Governor may recommend live routing.
     'min_closed_trades_for_live'    => 20,

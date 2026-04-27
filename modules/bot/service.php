@@ -435,6 +435,16 @@ final class BotService
                                  : 'direct_strategy_handoff';
         $signalSourceModeInvalidFallback = ($signalSourceMode !== $signalSourceModeRaw);
 
+        // shadow_compare_enabled: when true in direct mode, also compute comparison counters
+        $shadowCompareEnabled = (bool)($config['shadow_compare_enabled'] ?? false);
+
+        // Effective execution path (what actually creates orders)
+        $signalSourceEffectiveExecution = match ($signalSourceMode) {
+            'governor_approved_demo' => 'governor_approved_demo',
+            'shadow_compare'         => 'direct_strategy_handoff',
+            default                  => 'direct_strategy_handoff',
+        };
+
         // Governor queue counters
         $govQueueSeen           = 0;
         $govQueueValid          = 0;
@@ -448,7 +458,7 @@ final class BotService
         $directHandoffSeen = 0;
         $directHandoffUsed = 0;
 
-        // Shadow compare counters (shadow_compare mode only)
+        // Shadow compare counters (shadow_compare mode or shadow_compare_enabled=true in direct mode)
         $shadowOverlap       = 0;
         $shadowDirectOnly    = 0;
         $shadowGovOnly       = 0;
@@ -641,6 +651,85 @@ final class BotService
             }
             $directHandoffSeen = count($allSignals);
             $directHandoffUsed = $directHandoffSeen;
+
+            // ── Optional shadow compare in direct mode ─────────────────────
+            // When shadow_compare_enabled=true, also read the Governor queue for
+            // diagnostics.  Execution is unchanged — no Governor items reach processHandoff.
+            if ($shadowCompareEnabled) {
+                $govFiltered = $loadGovQueue();
+
+                $buildKey = static function (array $item): string {
+                    $govKey = (string)($item['governor_signal_key'] ?? '');
+                    if ($govKey !== '') {
+                        return $govKey;
+                    }
+                    $sid  = (string)($item['strategy_id'] ?? '');
+                    $sgid = (string)($item['signal_id']   ?? '');
+                    if ($sid !== '' && $sgid !== '') {
+                        return $sid . ':' . $sgid;
+                    }
+                    $sym = (string)($item['symbol']      ?? '');
+                    $det = (string)($item['detected_at'] ?? '');
+                    if ($sid !== '' && $sym !== '' && $det !== '') {
+                        return $sid . ':' . $sym . ':' . $det;
+                    }
+                    return '';
+                };
+
+                $buildExample = static function (array $item): array {
+                    return [
+                        'strategy_id' => (string)($item['strategy_id'] ?? ''),
+                        'symbol'      => (string)($item['symbol']      ?? ''),
+                        'signal_id'   => (string)($item['signal_id']   ?? ''),
+                        'detected_at' => (string)($item['detected_at'] ?? ''),
+                        'reason'      => (string)($item['reason']      ?? $item['governor_reason'] ?? ''),
+                    ];
+                };
+
+                $directKeys  = [];
+                $directByKey = [];
+                foreach ($allSignals as $sig) {
+                    $k = $buildKey($sig);
+                    if ($k !== '') {
+                        $directKeys[$k]  = true;
+                        $directByKey[$k] = $sig;
+                    }
+                }
+
+                $govKeys  = [];
+                $govByKey = [];
+                foreach ($govFiltered as $gSig) {
+                    $k = $buildKey($gSig);
+                    if ($k !== '') {
+                        $govKeys[$k]  = true;
+                        $govByKey[$k] = $gSig;
+                    }
+                }
+
+                foreach ($directKeys as $k => $_) {
+                    if (isset($govKeys[$k])) {
+                        $shadowOverlap++;
+                        if (count($shadowOverlapEx) < 20) {
+                            $shadowOverlapEx[] = $buildExample($directByKey[$k]);
+                        }
+                    } else {
+                        $shadowDirectOnly++;
+                        $shadowWouldFilter++;
+                        if (count($shadowDirectOnlyEx) < 20) {
+                            $shadowDirectOnlyEx[] = $buildExample($directByKey[$k]);
+                        }
+                    }
+                }
+                foreach ($govKeys as $k => $_) {
+                    if (!isset($directKeys[$k])) {
+                        $shadowGovOnly++;
+                        $shadowWouldAdd++;
+                        if (count($shadowGovOnlyEx) < 20) {
+                            $shadowGovOnlyEx[] = $buildExample($govByKey[$k]);
+                        }
+                    }
+                }
+            }
         }
 
         // ── 3. Load bot state ─────────────────────────────────────────────────
@@ -748,7 +837,9 @@ final class BotService
 
             // Signal source selector
             'signal_source_mode'                      => $signalSourceMode,
+            'signal_source_effective_execution'       => $signalSourceEffectiveExecution,
             'signal_source_mode_invalid_fallback'     => $signalSourceModeInvalidFallback,
+            'shadow_compare_enabled'                  => $shadowCompareEnabled,
             'governor_queue_seen_total'               => $govQueueSeen,
             'governor_queue_valid_total'              => $govQueueValid,
             'governor_queue_used_for_orders_total'    => $govQueueUsed,
@@ -3302,7 +3393,9 @@ final class BotService
                 'ticks_total'                               => 0,
                 'handoff_signals_seen_total'                => 0,
                 'signal_source_mode'                        => 'direct_strategy_handoff',
+                'signal_source_effective_execution'         => 'direct_strategy_handoff',
                 'signal_source_mode_invalid_fallback'       => false,
+                'shadow_compare_enabled'                    => false,
                 'governor_queue_seen_total'                 => 0,
                 'governor_queue_valid_total'                => 0,
                 'governor_queue_used_for_orders_total'      => 0,

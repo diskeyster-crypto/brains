@@ -900,8 +900,10 @@ HTML;
     $trQueueTotal  = (int)($lastRun['order_queue_total']                            ?? 0);
 
     // ── Bot tab: signal source selector status ────────────────────────────
-    $lrSignalSourceMode      = (string)($lastRun['signal_source_mode']                         ?? ($botConfig['signal_source_mode'] ?? 'direct_strategy_handoff'));
-    $lrSsmInvalidFallback    = (bool)($lastRun['signal_source_mode_invalid_fallback']           ?? false);
+    $lrSignalSourceMode           = (string)($lastRun['signal_source_mode']                         ?? ($botConfig['signal_source_mode'] ?? 'direct_strategy_handoff'));
+    $lrSignalSourceEffectiveExec  = (string)($lastRun['signal_source_effective_execution']          ?? 'direct_strategy_handoff');
+    $lrSsmInvalidFallback         = (bool)($lastRun['signal_source_mode_invalid_fallback']           ?? false);
+    $lrShadowCompareEnabled       = (bool)($lastRun['shadow_compare_enabled']                        ?? (bool)($botConfig['shadow_compare_enabled'] ?? false));
     $lrGovQueueSeen          = (int)($lastRun['governor_queue_seen_total']                      ?? 0);
     $lrGovQueueValid         = (int)($lastRun['governor_queue_valid_total']                     ?? 0);
     $lrGovQueueUsed          = (int)($lastRun['governor_queue_used_for_orders_total']           ?? 0);
@@ -923,12 +925,25 @@ HTML;
     $lrBotReadsGovLabel   = in_array($lrSignalSourceMode, ['governor_approved_demo', 'shadow_compare'], true)
         ? '<span style="color:#3fb950;font-weight:600;">да</span>'
         : '<span style="color:#8b949e;">нет</span>';
-    $lrShadowCompareLabel = ($lrSignalSourceMode === 'shadow_compare')
+    $lrShadowCompareActiveLabel = ($lrSignalSourceMode === 'shadow_compare' || $lrShadowCompareEnabled)
         ? '<span style="color:#f0883e;font-weight:600;">да</span>'
         : '<span style="color:#8b949e;">нет</span>';
+    $lrShadowCompareLabel = $lrShadowCompareActiveLabel; // kept for backwards-compat
     $lrSsmFallbackRow = $lrSsmInvalidFallback
         ? '<tr><td style="color:#f85149;padding:3px 12px 3px 0;" colspan="2">⚠ Неверное значение signal_source_mode — применён fallback на direct_strategy_handoff</td></tr>'
         : '';
+
+    // ── Safety warnings for signal source mode ────────────────────────────
+    $signalSourceWarningHtml = '';
+    if ($lrSignalSourceMode === 'shadow_compare') {
+        $signalSourceWarningHtml = '<div style="background:rgba(240,136,62,.10);border:1px solid #f0883e66;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px;color:#f0883e;">'
+            . '<strong>Shadow compare:</strong> бот исполняет direct handoff, Governor только сравнивается'
+            . '</div>';
+    } elseif ($lrSignalSourceMode === 'governor_approved_demo') {
+        $signalSourceWarningHtml = '<div style="background:rgba(248,81,73,.10);border:1px solid #f8514966;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px;color:#f85149;">'
+            . '<strong>Внимание:</strong> бот читает Governor approved queue'
+            . '</div>';
+    }
 
     // ── Submitted queue reconciliation counters ───────────────────────────
     $lrReconEnabled          = (bool)($lastRun['submitted_reconcile_enabled']              ?? true);
@@ -3495,9 +3510,14 @@ HTML;
         . '</div></div>';
 
     // ── Shadow compare card: pre-computed HTML for heredoc ─────────────────
-    $shadowNoDataNote = ($lrSignalSourceMode !== 'shadow_compare')
-        ? '<p style="color:var(--ui-text-muted);font-size:12px;margin-top:8px;">Для получения данных установите <code>signal_source_mode = shadow_compare</code>.</p>'
-        : '';
+    $shadowCompareActive = ($lrSignalSourceMode === 'shadow_compare' || $lrShadowCompareEnabled);
+    if (!$shadowCompareActive) {
+        $shadowNoDataNote = '<p style="color:var(--ui-text-muted);font-size:12px;margin-top:8px;">Для получения данных установите <code>signal_source_mode = shadow_compare</code> или <code>shadow_compare_enabled = true</code>.</p>';
+    } elseif ($lrGovQueueSeen === 0) {
+        $shadowNoDataNote = '<p style="color:var(--ui-text-muted);font-size:12px;margin-top:8px;">Governor approved queue пуста — сравнение пока нечего анализировать.</p>';
+    } else {
+        $shadowNoDataNote = '';
+    }
 
     $buildExampleTableRows = static function (array $examples) use ($e): string {
         $rows = '';
@@ -3831,9 +3851,10 @@ BLCK;
     <div class="card-body" style="padding:12px 16px;">
       <table style="width:100%;font-size:13px;border-collapse:collapse;">
         {$lrSsmFallbackRow}
-        <tr><td style="color:var(--ui-text-muted);width:240px;padding:3px 12px 3px 0;">Режим источника</td><td><code>{$e($lrSignalSourceMode)}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);width:260px;padding:3px 12px 3px 0;">Режим источника</td><td><code>{$e($lrSignalSourceMode)}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Фактическое исполнение</td><td><code>{$e($lrSignalSourceEffectiveExec)}</code></td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Бот читает Governor</td><td>{$lrBotReadsGovLabel}</td></tr>
-        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Shadow compare</td><td>{$lrShadowCompareLabel}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Shadow compare включён</td><td>{$lrShadowCompareActiveLabel}</td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Governor approved queue (всего)</td><td>{$e($govApprovedQueueTotal)}</td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Gov очередь увидено (этот тик)</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;">{$e($lrGovQueueSeen)}</td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov валидных</td><td>{$e($lrGovQueueValid)}</td></tr>
@@ -3851,8 +3872,15 @@ BLCK;
   <div class="card">
     <div class="card-header">Сравнение direct vs Governor</div>
     <div class="card-body" style="padding:12px 16px;">
+      {$signalSourceWarningHtml}
       <table style="width:100%;font-size:13px;border-collapse:collapse;">
-        <tr><td style="color:var(--ui-text-muted);width:240px;padding:3px 12px 3px 0;">Совпали (overlap)</td><td><strong>{$e($lrShadowOverlap)}</strong></td></tr>
+        <tr><td style="color:var(--ui-text-muted);width:260px;padding:3px 12px 3px 0;">Shadow compare включён</td><td>{$lrShadowCompareActiveLabel}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Фактическое исполнение</td><td><code>{$e($lrSignalSourceEffectiveExec)}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Direct сигналов увидено</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;">{$e($lrDirectHandoffSeen)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Direct использовано</td><td>{$e($lrDirectHandoffUsed)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Governor queue увидено</td><td>{$e($lrGovQueueSeen)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Governor queue валидно</td><td>{$e($lrGovQueueValid)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Совпали</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;"><strong>{$e($lrShadowOverlap)}</strong></td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Только direct</td><td>{$e($lrShadowDirectOnly)}</td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Только Governor</td><td>{$e($lrShadowGovOnly)}</td></tr>
         <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Governor отфильтровал бы</td><td style="color:#f0883e;">{$e($lrShadowWouldFilter)}</td></tr>

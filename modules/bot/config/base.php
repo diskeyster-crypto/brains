@@ -101,4 +101,15 @@ return [
     // Default: direct_strategy_handoff  (preserves existing working behaviour).
     // Do NOT set governor_approved_demo in production without explicit operator action.
     'signal_source_mode' => 'direct_strategy_handoff',
+
+    // ── Shadow compare optional flag ───────────────────────────────────────
+    // When signal_source_mode = shadow_compare, compare runs automatically and
+    // Governor data is read for diagnostics only; execution remains direct.
+    //
+    // When signal_source_mode = direct_strategy_handoff AND this flag = true,
+    // direct execution continues unchanged AND Governor comparison counters are
+    // also calculated and written to last_run.json for diagnostics.
+    //
+    // Default false preserves current behaviour and imposes no overhead.
+    'shadow_compare_enabled' => false,
 ];

@@ -2087,16 +2087,45 @@ QUAL;
         $govCfg        = (is_file($govCfgPath) ? @include $govCfgPath : null);
         $govCfg        = is_array($govCfg) ? $govCfg : [];
 
-        // Last 50 lines of decisions.ndjson
+        // Last 50 lines of decisions.ndjson — tail reader (no full file load)
         $govDecisionsRaw = [];
         $govNdjsonPath   = $govRoot . '/decisions.ndjson';
-        if (is_file($govNdjsonPath)) {
-            $govLines = @file($govNdjsonPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
-            $govLines = array_slice($govLines, -50);
-            foreach (array_reverse($govLines) as $line) {
-                $dec = @json_decode($line, true);
-                if (is_array($dec)) {
-                    $govDecisionsRaw[] = $dec;
+        if (is_file($govNdjsonPath) && filesize($govNdjsonPath) > 0) {
+            $fh = @fopen($govNdjsonPath, 'rb');
+            if ($fh !== false) {
+                $chunkSize = 8192;
+                fseek($fh, 0, SEEK_END);
+                $pos    = ftell($fh);
+                $buf    = '';
+                $govTailLines = [];
+                while ($pos > 0 && count($govTailLines) < 51) {
+                    $read   = min($chunkSize, $pos);
+                    $pos   -= $read;
+                    fseek($fh, $pos);
+                    $chunk  = fread($fh, $read);
+                    $buf    = $chunk . $buf;
+                    $parts  = explode("\n", $buf);
+                    $buf    = array_shift($parts); // may be incomplete leading line
+                    foreach (array_reverse($parts) as $l) {
+                        $l = trim($l);
+                        if ($l !== '') {
+                            array_unshift($govTailLines, $l);
+                            if (count($govTailLines) >= 51) {
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (trim($buf) !== '') {
+                    array_unshift($govTailLines, trim($buf));
+                }
+                fclose($fh);
+                $govTailLines = array_slice($govTailLines, -50);
+                foreach (array_reverse($govTailLines) as $line) {
+                    $dec = @json_decode($line, true);
+                    if (is_array($dec)) {
+                        $govDecisionsRaw[] = $dec;
+                    }
                 }
             }
         }
@@ -2262,6 +2291,13 @@ GOV;
                 : '<span style="color:var(--ui-text-muted);">0</span>';
             $gStarted     = $e((string)($govLastRun['started_at']  ?? '—'));
             $gFinished    = $e((string)($govLastRun['finished_at'] ?? '—'));
+            // ── Current-state snapshot counters ──────────────────────────────
+            $gCurrPending     = $e((string)(int)($govLastRun['current_pending_total']              ?? (is_array($govPendingRaw) ? count($govPendingRaw) : 0)));
+            $gCurrWait        = $e((string)(int)($govLastRun['current_wait_confirmation_total']    ?? 0));
+            $gCurrAppDemo     = $e((string)(int)($govLastRun['current_approved_demo_shadow_total'] ?? 0));
+            $gCurrRejected    = $e((string)(int)($govLastRun['current_rejected_shadow_total']      ?? 0));
+            $gCurrExpired     = $e((string)(int)($govLastRun['current_expired_shadow_total']       ?? 0));
+            $gCurrFinal       = $e((string)(int)($govLastRun['current_final_decisions_total']      ?? 0));
 
             // ── Error list ───────────────────────────────────────────────────
             $gErrorListHtml = '';
@@ -2402,7 +2438,7 @@ GOV;
                     . '</tr>';
             }
             if ($govDecJrnRows === '') {
-                $govDecJrnRows = '<tr><td colspan="9" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Журнал решений пуст</td></tr>';
+                $govDecJrnRows = '<tr><td colspan="9" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Журнал решений пока пуст</td></tr>';
             }
 
             // ── Hourly stats rows ────────────────────────────────────────────
@@ -2436,30 +2472,43 @@ GOV;
 <div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
   <div class="card-header"><i class="bi bi-info-circle" style="margin-right:6px;color:#a78bfa;"></i>Последний запуск</div>
   <div class="card-body" style="padding:12px 16px;">
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 16px;font-size:12px;margin-bottom:10px;">
-      <div><span style="color:var(--ui-text-muted);">Статус</span><br><strong>{$gStatus}</strong></div>
-      <div><span style="color:var(--ui-text-muted);">Режим</span><br><strong>{$gMode}</strong></div>
-      <div><span style="color:var(--ui-text-muted);">Shadow / Enforce</span><br><strong>{$gEnforce}</strong></div>
+    <table style="font-size:11px;border-collapse:collapse;margin-bottom:10px;">
+      <tr><td style="color:var(--ui-text-muted);padding:2px 14px 2px 0;">Запущен</td><td>{$gStarted}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:2px 14px 2px 0;">Завершён</td><td>{$gFinished}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:2px 14px 2px 0;">Статус</td><td><strong>{$gStatus}</strong></td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:2px 14px 2px 0;">Режим</td><td><strong>{$gMode}</strong> / {$gEnforce}</td></tr>
+    </table>
+
+    <!-- За тик -->
+    <div style="font-size:11px;font-weight:600;color:var(--ui-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">За тик</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px 16px;font-size:12px;margin-bottom:14px;">
       <div><span style="color:var(--ui-text-muted);">Стратегий увидено</span><br><strong>{$gStrategies}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Сигналов увидено</span><br><strong>{$gSignals}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Нормализовано</span><br><strong>{$gNormalized}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Невалидных</span><br><strong style="color:#f85149;">{$gInvalid}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Устаревших</span><br><strong style="color:#8b949e;">{$gStale}</strong></div>
-      <div><span style="color:var(--ui-text-muted);">Ожидают подтверждения</span><br><strong style="color:#f0883e;">{$gWaiting}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Ожидают подтв.</span><br><strong style="color:#f0883e;">{$gWaiting}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Corridor pending</span><br><strong style="color:#f0883e;">{$gCorridorPend}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Мгновенных решений</span><br><strong>{$gImmediateDec}</strong></div>
-      <div><span style="color:var(--ui-text-muted);">Pending всего</span><br><strong style="color:#58a6ff;">{$gPending}</strong></div>
-      <div><span style="color:var(--ui-text-muted);">Approved demo shadow</span><br><strong style="color:#3fb950;">{$gAppDemo}</strong></div>
-      <div><span style="color:var(--ui-text-muted);">Approved live shadow</span><br><strong style="color:#a78bfa;">{$gAppLive}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Записей в журнал</span><br><strong>{$gDecWritten}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Approved demo</span><br><strong style="color:#3fb950;">{$gAppDemo}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Approved live</span><br><strong style="color:#a78bfa;">{$gAppLive}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Rejected shadow</span><br><strong style="color:#f85149;">{$gRejected}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Expired shadow</span><br><strong style="color:#8b949e;">{$gExpired}</strong></div>
-      <div><span style="color:var(--ui-text-muted);">Записей в журнал</span><br><strong>{$gDecWritten}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Ошибки</span><br>{$gErrorsHtml}</div>
     </div>
-    <table style="font-size:11px;border-collapse:collapse;margin-bottom:0;">
-      <tr><td style="color:var(--ui-text-muted);padding:2px 14px 2px 0;">Запущен</td><td>{$gStarted}</td></tr>
-      <tr><td style="color:var(--ui-text-muted);padding:2px 14px 2px 0;">Завершён</td><td>{$gFinished}</td></tr>
-    </table>
+
+    <!-- Текущее состояние -->
+    <div style="font-size:11px;font-weight:600;color:var(--ui-text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;">Текущее состояние</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px 16px;font-size:12px;margin-bottom:8px;">
+      <div><span style="color:var(--ui-text-muted);">Pending всего</span><br><strong style="color:#58a6ff;">{$gCurrPending}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Ожидают подтв.</span><br><strong style="color:#f0883e;">{$gCurrWait}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Approved demo</span><br><strong style="color:#3fb950;">{$gCurrAppDemo}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Rejected shadow</span><br><strong style="color:#f85149;">{$gCurrRejected}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Expired shadow</span><br><strong style="color:#8b949e;">{$gCurrExpired}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Финальных решений</span><br><strong>{$gCurrFinal}</strong></div>
+    </div>
+
     {$gErrorListHtml}
   </div>
 </div>

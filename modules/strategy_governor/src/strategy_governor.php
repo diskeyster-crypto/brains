@@ -157,8 +157,59 @@ final class StrategyGovernor
                     $signalsSeen++;
                     $norm = $this->normalizeSignal($raw, $stratId);
                     if ($norm === null) {
-                        // Missing signal_id — invalid, do not create a pending entry
+                        // Missing signal_id — invalid, do not create active pending entry.
                         $invalidTotal++;
+                        // Generate a stable key so we do not re-journal the same raw signal
+                        // every run (spam prevention).
+                        $invalidKey = 'invalid:' . $stratId . ':' . substr(
+                            md5(($raw['_source_file'] ?? '') . json_encode($raw, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+                            0, 16
+                        );
+                        // Journal only once — skip if already in pending as reject_shadow
+                        $existingInvalid = $pendingSignals[$invalidKey] ?? null;
+                        if ($existingInvalid === null || ($existingInvalid['state'] ?? '') !== self::STATE_REJECT_SHADOW) {
+                            $invalidNorm = [
+                                'governor_signal_key' => $invalidKey,
+                                'signal_id'           => '',
+                                'strategy_id'         => $stratId,
+                                'symbol'              => (string)($raw['symbol']      ?? ''),
+                                'side'                => (string)($raw['side']         ?? ''),
+                                'mode'                => (string)($raw['mode']         ?? ''),
+                                'entry_price'         => null,
+                                'detected_at'         => '',
+                            ];
+                            $decisionsBatch[] = $this->buildDecisionRecord(
+                                $invalidKey, $invalidNorm,
+                                null, self::STATE_REJECT_SHADOW, self::STATE_REJECT_SHADOW,
+                                self::ROUTE_NONE, 'missing_signal_id',
+                                0, 0, $mode
+                            );
+                            $decisionsWritten++;
+                            $decisionsTotal++;
+                            $rejectedShadow++;
+                            $nowStr = date('Y-m-d H:i:s');
+                            $newPending[$invalidKey] = [
+                                'governor_signal_key' => $invalidKey,
+                                'signal_id'           => '',
+                                'strategy_id'         => $stratId,
+                                'symbol'              => (string)($raw['symbol']      ?? ''),
+                                'side'                => (string)($raw['side']         ?? ''),
+                                'mode'                => (string)($raw['mode']         ?? ''),
+                                'entry_price'         => null,
+                                'detected_at'         => '',
+                                'tick_count'          => 0,
+                                'max_ticks'           => 0,
+                                'state'               => self::STATE_REJECT_SHADOW,
+                                'reason'              => 'missing_signal_id',
+                                'recommended_route'   => self::ROUTE_NONE,
+                                'first_seen_at'       => $nowStr,
+                                'last_seen_at'        => $nowStr,
+                                'updated_at'          => $nowStr,
+                            ];
+                        } else {
+                            // Already rejected — keep in newPending without re-journalling
+                            $newPending[$invalidKey] = $existingInvalid;
+                        }
                         continue;
                     }
                     $normalizedTotal++;
@@ -395,9 +446,32 @@ final class StrategyGovernor
 
             // ── 11. Tally pending stats ───────────────────────────────────────
             $pendingTotalForRun = count($newPending);
+            // Per-run transition counters
             foreach ($newPending as $pEntry) {
                 if (in_array($pEntry['state'] ?? '', self::FINAL_STATES, true)) {
                     $finalDecisionsTotal++;
+                }
+            }
+            // Current-state snapshot counters (reflect actual state of pending_signals.json)
+            $currPendingTotal        = count($newPending);
+            $currWaitConfirmation    = 0;
+            $currApprovedDemoShadow  = 0;
+            $currApprovedLiveShadow  = 0;
+            $currRejectedShadow      = 0;
+            $currExpiredShadow       = 0;
+            $currFinalDecisions      = 0;
+            foreach ($newPending as $pEntry) {
+                $s = $pEntry['state'] ?? '';
+                match ($s) {
+                    self::STATE_WAIT_CONFIRM        => $currWaitConfirmation++,
+                    self::STATE_APPROVE_DEMO_SHADOW => $currApprovedDemoShadow++,
+                    self::STATE_APPROVE_LIVE_SHADOW => $currApprovedLiveShadow++,
+                    self::STATE_REJECT_SHADOW       => $currRejectedShadow++,
+                    self::STATE_EXPIRED_SHADOW      => $currExpiredShadow++,
+                    default                         => null,
+                };
+                if (in_array($s, self::FINAL_STATES, true)) {
+                    $currFinalDecisions++;
                 }
             }
 
@@ -436,6 +510,14 @@ final class StrategyGovernor
             'decisions_total'                   => $decisionsTotal,
             'corridor_pending_total'            => $corridorPending,
             'default_immediate_decisions_total' => $defaultImmediateDecisions,
+            // ── Current snapshot (what exists in pending_signals.json right now) ──
+            'current_pending_total'             => $currPendingTotal       ?? 0,
+            'current_wait_confirmation_total'   => $currWaitConfirmation   ?? 0,
+            'current_approved_demo_shadow_total'=> $currApprovedDemoShadow ?? 0,
+            'current_approved_live_shadow_total'=> $currApprovedLiveShadow ?? 0,
+            'current_rejected_shadow_total'     => $currRejectedShadow     ?? 0,
+            'current_expired_shadow_total'      => $currExpiredShadow      ?? 0,
+            'current_final_decisions_total'     => $currFinalDecisions     ?? 0,
             'errors'                            => $errors,
         ];
 
@@ -534,6 +616,43 @@ final class StrategyGovernor
     }
 
     // =========================================================================
+    // Basic signal validation (shared)
+    // =========================================================================
+
+    /**
+     * Perform basic validity checks that apply to any normalised signal.
+     *
+     * Checks: symbol, entry_price > 0, detected_at, side (empty or "long"),
+     * mode, handoff_valid not false.
+     *
+     * Returns the rejection reason string, or null if the signal is valid.
+     */
+    private function validateSignalBasic(array $norm): ?string
+    {
+        if ((string)($norm['symbol'] ?? '') === '') {
+            return 'missing_symbol';
+        }
+        $ep = $norm['entry_price'] ?? null;
+        if ($ep === null || (float)$ep <= 0.0) {
+            return 'missing_entry_price';
+        }
+        if ((string)($norm['detected_at'] ?? '') === '') {
+            return 'missing_detected_at';
+        }
+        $side = (string)($norm['side'] ?? '');
+        if ($side !== '' && $side !== 'long') {
+            return 'side_not_long';
+        }
+        if ((string)($norm['mode'] ?? '') === '') {
+            return 'missing_mode';
+        }
+        if (isset($norm['handoff_valid']) && $norm['handoff_valid'] === false) {
+            return 'handoff_signal_invalid';
+        }
+        return null;
+    }
+
+    // =========================================================================
     // Hard-reject conditions (used during confirmation window)
     // =========================================================================
 
@@ -544,28 +663,13 @@ final class StrategyGovernor
      */
     private function checkHardReject(array $norm, int $maxSignalAge): ?string
     {
-        if ($norm['symbol'] === '') {
-            return 'missing_symbol';
-        }
-        $ep = $norm['entry_price'];
-        if ($ep === null || (float)$ep <= 0.0) {
-            return 'missing_entry_price';
-        }
-        $detectedAt = (string)$norm['detected_at'];
-        if ($detectedAt === '') {
-            return 'missing_detected_at';
-        }
-        $side = (string)$norm['side'];
-        if ($side !== '' && $side !== 'long') {
-            return 'side_not_long';
-        }
-        if ((string)$norm['mode'] === '') {
-            return 'missing_mode';
-        }
-        if (isset($norm['handoff_valid']) && $norm['handoff_valid'] === false) {
-            return 'handoff_signal_invalid';
+        // Use the shared basic validator first
+        $basicFail = $this->validateSignalBasic($norm);
+        if ($basicFail !== null) {
+            return $basicFail;
         }
         // Age re-check (signal may have aged out during the confirmation window)
+        $detectedAt = (string)$norm['detected_at'];
         $ts = is_numeric($detectedAt) ? (int)$detectedAt : (int)@strtotime($detectedAt);
         if ($ts > 0 && (time() - $ts) > $maxSignalAge) {
             return 'signal_too_old';
@@ -593,19 +697,10 @@ final class StrategyGovernor
         float $minAvgRoi,
         int   $maxConsecLosses,
     ): array {
-        // ── Signal validation ─────────────────────────────────────────────────
-        if ($norm['symbol'] === '') {
-            return [self::STATE_REJECT_SHADOW, self::ROUTE_NONE, 'missing_symbol'];
-        }
-        $ep = $norm['entry_price'];
-        if ($ep === null || (float)$ep <= 0.0) {
-            return [self::STATE_REJECT_SHADOW, self::ROUTE_NONE, 'missing_entry_price'];
-        }
-        if ((string)$norm['detected_at'] === '') {
-            return [self::STATE_REJECT_SHADOW, self::ROUTE_NONE, 'missing_detected_at'];
-        }
-        if (isset($norm['handoff_valid']) && $norm['handoff_valid'] === false) {
-            return [self::STATE_REJECT_SHADOW, self::ROUTE_NONE, 'handoff_signal_invalid'];
+        // ── Signal validation (shared) ────────────────────────────────────────
+        $basicFail = $this->validateSignalBasic($norm);
+        if ($basicFail !== null) {
+            return [self::STATE_REJECT_SHADOW, self::ROUTE_NONE, $basicFail];
         }
 
         // ── Stats-based route gate (never rejects demo in shadow mode) ────────

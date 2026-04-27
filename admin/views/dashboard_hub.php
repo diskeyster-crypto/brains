@@ -1079,9 +1079,6 @@ ROWS;
         // double_bottom_long
         'wave_unknown'                  => 'Волна не определена',
         'waiting_for_confirm_bar'       => 'Ожидание подтверждающей свечи',
-        'bucket_rejected_long_bucket_5' => 'Отклонено корзиной качества LONG bucket 5',
-        'bucket_rejected_long_bucket_6' => 'Отклонено корзиной качества LONG bucket 6',
-        'bucket_rejected_long_bucket_9' => 'Отклонено корзиной качества LONG bucket 9',
         'final_low_neckline'            => 'Финальный отсев: слабый neckline / низкое подтверждение',
         'final_trend_mismatch'          => 'Финальный отсев: тренд не совпадает с LONG',
         'final_low_quality'             => 'Финальный отсев: низкое качество паттерна',
@@ -1091,6 +1088,10 @@ ROWS;
     $formatStrategyReasonLabel = static function (string $reason) use ($stratReasonLabels): string {
         if (isset($stratReasonLabels[$reason])) {
             return $stratReasonLabels[$reason];
+        }
+        // Pattern: bucket_rejected_long_bucket_N
+        if (preg_match('/^bucket_rejected_long_bucket_(\d+)$/', $reason, $m)) {
+            return 'Отклонено корзиной качества LONG bucket ' . $m[1];
         }
         // Fallback: convert underscores to spaces and prefix
         return 'Неизвестная причина: ' . str_replace('_', ' ', $reason);
@@ -1793,16 +1794,48 @@ HTML;
             $cblSim        = ($dblLastRun['simulation'] ?? false) ? 'Да (demo)' : 'Нет';
             $cblHandoffVal = ($dblLastRun['handoff_enabled'] ?? false) ? '<strong style="color:#3fb950;">Да</strong>' : '<strong style="color:#8b949e;">Нет</strong>';
 
-            // Reject reasons
+            // Universe / batch progress fields
+            $cblUnivTotal    = isset($dblLastRun['universe_total'])    ? (int)$dblLastRun['universe_total']    : null;
+            $cblBatchSize    = isset($dblLastRun['batch_size'])        ? (int)$dblLastRun['batch_size']        : null;
+            $cblBatchStart   = isset($dblLastRun['batch_start_index']) ? (int)$dblLastRun['batch_start_index'] : null;
+            $cblBatchEnd     = isset($dblLastRun['batch_end_index'])   ? (int)$dblLastRun['batch_end_index']   : null;
+            $cblNextCursor   = isset($dblLastRun['next_cursor'])       ? (int)$dblLastRun['next_cursor']       : null;
+            $cblCycleId      = isset($dblLastRun['universe_cycle_id']) ? (int)$dblLastRun['universe_cycle_id'] : null;
+            $cblWrapped      = $dblLastRun['universe_wrapped'] ?? null;
+
+            $cblBatchRangeHtml = '';
+            if ($cblBatchStart !== null && $cblBatchEnd !== null && $cblUnivTotal !== null) {
+                $cblBatchRangeHtml = $e($cblBatchStart . '–' . $cblBatchEnd . ' из ' . $cblUnivTotal);
+            } elseif ($cblBatchStart !== null && $cblBatchEnd !== null) {
+                $cblBatchRangeHtml = $e($cblBatchStart . '–' . $cblBatchEnd);
+            } else {
+                $cblBatchRangeHtml = '—';
+            }
+
+            $cblUnivTotalHtml  = $cblUnivTotal  !== null ? $e((string)$cblUnivTotal)  : '—';
+            $cblBatchSizeHtml  = $cblBatchSize  !== null ? $e((string)$cblBatchSize)  : '—';
+            $cblNextCursorHtml = $cblNextCursor !== null ? $e((string)$cblNextCursor) : '—';
+            $cblCycleIdHtml    = $cblCycleId    !== null ? $e((string)$cblCycleId)    : '—';
+            $cblWrappedHtml    = $cblWrapped === true ? 'да' : ($cblWrapped === false ? 'нет' : '—');
+
+            // Reject reasons (supports SYMBOL:reason_code format)
             $cblRejectHtml = '';
             $cblRejectSrc  = $dblLastRun['reject_reasons'] ?? [];
             if (is_array($cblRejectSrc) && count($cblRejectSrc) > 0) {
                 $parts = [];
                 foreach (array_slice($cblRejectSrc, 0, 5) as $rr) {
-                    $rawCode = (string)$rr;
-                    $label   = $formatStrategyReasonLabel($rawCode);
-                    $parts[] = '<span title="' . htmlspecialchars($rawCode, ENT_QUOTES, 'UTF-8') . '" style="font-size:11px;">'
-                        . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</span>';
+                    $rawFull = (string)$rr;
+                    if (str_contains($rawFull, ':')) {
+                        [$sym, $code] = explode(':', $rawFull, 2);
+                        $label   = $formatStrategyReasonLabel($code);
+                        $display = htmlspecialchars($sym, ENT_QUOTES, 'UTF-8') . ' — '
+                            . htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+                    } else {
+                        $label   = $formatStrategyReasonLabel($rawFull);
+                        $display = htmlspecialchars($label, ENT_QUOTES, 'UTF-8');
+                    }
+                    $parts[] = '<span title="' . htmlspecialchars($rawFull, ENT_QUOTES, 'UTF-8') . '" style="font-size:11px;">'
+                        . $display . '</span>';
                 }
                 $cblRejectHtml = implode(' · ', $parts);
             } else {
@@ -1828,6 +1861,12 @@ HTML;
     </div>
     <table style="width:100%;font-size:12px;border-collapse:collapse;">
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;width:180px;">Режим запуска</td><td>{$cblSim}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Всего в universe</td><td>{$cblUnivTotalHtml}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Батч universe</td><td>{$cblBatchRangeHtml}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Размер батча</td><td>{$cblBatchSizeHtml}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Следующий старт</td><td>{$cblNextCursorHtml}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Цикл universe</td><td>{$cblCycleIdHtml}</td></tr>
+      <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Оборачивание</td><td>{$cblWrappedHtml}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Причины отсева</td><td>{$cblRejectHtml}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Запущен</td><td>{$cblStarted}</td></tr>
       <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Завершён</td><td>{$cblFinished}</td></tr>

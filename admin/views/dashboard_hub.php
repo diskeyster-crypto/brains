@@ -2110,21 +2110,24 @@ QUAL;
             'cooldown'          => 'Cooldown',
         ];
         $govReasonLabels = [
-            'not_enough_closed_trades'    => 'Недостаточно закрытых сделок',
-            'avg_roi_negative'            => 'Средний ROI отрицательный',
-            'winrate_too_low'             => 'Winrate ниже порога',
-            'loss_streak'                 => 'Серия убыточных сделок',
-            'shadow_mode'                 => 'Shadow-режим: только рекомендация',
-            'too_many_consecutive_losses' => 'Серия убыточных сделок (лимит)',
-            'not_enough_closed_trades'    => 'Недостаточно закрытых сделок',
-            'missing_entry_price'         => 'Нет цены входа',
-            'missing_symbol'              => 'Нет символа',
-            'missing_detected_at'         => 'Нет времени сигнала',
-            'signal_too_old'              => 'Сигнал устарел',
-            'handoff_signal_invalid'      => 'Сигнал отклонён handoff',
-            'pending_confirmation_tick'   => 'Ожидание подтверждения',
-            'live_gate_passed'            => 'Live-порог пройден',
-            'below_live_threshold'        => 'Ниже live-порога',
+            'not_enough_closed_trades'          => 'Недостаточно закрытых сделок',
+            'avg_roi_negative'                  => 'Средний ROI отрицательный',
+            'winrate_too_low'                   => 'Winrate ниже порога',
+            'loss_streak'                       => 'Серия убыточных сделок',
+            'shadow_mode'                       => 'Shadow-режим: только рекомендация',
+            'missing_entry_price'               => 'Нет цены входа',
+            'missing_symbol'                    => 'Нет символа',
+            'missing_detected_at'               => 'Нет времени сигнала',
+            'missing_signal_id'                 => 'Нет идентификатора сигнала',
+            'missing_mode'                      => 'Нет режима сигнала',
+            'side_not_long'                     => 'Направление не long',
+            'signal_too_old'                    => 'Сигнал устарел',
+            'handoff_signal_invalid'            => 'Сигнал отклонён handoff',
+            'pending_confirmation_tick'         => 'Ожидание подтверждения',
+            'live_gate_passed'                  => 'Live-порог пройден',
+            'below_live_threshold'              => 'Ниже live-порога',
+            'valid_demo_shadow'                 => 'Валидный shadow demo',
+            'signal_disappeared_pending_expired'=> 'Сигнал исчез, ожидание истекло',
         ];
         $govDecisionLabels = [
             'observed'             => 'Наблюдение',
@@ -2205,6 +2208,7 @@ GOV;
             $gMode      = $e((string)($govLastRun['mode']         ?? '—'));
             $gPendCount = (int)($govLastRun['pending_total']      ?? (is_array($govPendingRaw) ? count($govPendingRaw) : 0));
             $gDecCount  = (int)($govLastRun['decisions_total']    ?? 0);
+            $gWaitCount = (int)($govLastRun['waiting_confirmation_total'] ?? 0);
             $gStarted   = $e((string)($govLastRun['started_at']   ?? '—'));
             $stratQualHtml .= <<<GOV
 <div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
@@ -2217,6 +2221,7 @@ GOV;
       <span><span style="color:var(--ui-text-muted);">Статус:</span> <strong>{$gStatus}</strong></span>
       <span><span style="color:var(--ui-text-muted);">Режим:</span> <strong>{$gMode}</strong></span>
       <span><span style="color:var(--ui-text-muted);">Pending:</span> <strong style="color:#58a6ff;">{$gPendCount}</strong></span>
+      <span><span style="color:var(--ui-text-muted);">Ожидают подтв.:</span> <strong style="color:#f0883e;">{$gWaitCount}</strong></span>
       <span><span style="color:var(--ui-text-muted);">Решений:</span> <strong>{$gDecCount}</strong></span>
       <span><span style="color:var(--ui-text-muted);">Запущен:</span> {$gStarted}</span>
     </div>
@@ -2238,8 +2243,15 @@ GOV;
             $gEnforce     = $e((string)($govCfg['enforce_live_gate']  ?? false) ? 'enforce' : 'shadow');
             $gStrategies  = $e((string)(int)($govLastRun['strategies_seen']        ?? 0));
             $gSignals     = $e((string)(int)($govLastRun['signals_seen']           ?? 0));
+            $gNormalized  = $e((string)(int)($govLastRun['normalized_signals_total']   ?? 0));
+            $gInvalid     = $e((string)(int)($govLastRun['invalid_signals_total']      ?? 0));
+            $gStale       = $e((string)(int)($govLastRun['stale_signals_total']        ?? 0));
+            $gWaiting     = $e((string)(int)($govLastRun['waiting_confirmation_total'] ?? 0));
+            $gCorridorPend= $e((string)(int)($govLastRun['corridor_pending_total']     ?? 0));
+            $gImmediateDec= $e((string)(int)($govLastRun['default_immediate_decisions_total'] ?? 0));
             $gPending     = $e((string)(int)($govLastRun['pending_total']          ?? (is_array($govPendingRaw) ? count($govPendingRaw) : 0)));
             $gDecisions   = $e((string)(int)($govLastRun['decisions_total']        ?? 0));
+            $gDecWritten  = $e((string)(int)($govLastRun['decisions_written_total']    ?? 0));
             $gAppDemo     = $e((string)(int)($govLastRun['approved_demo_shadow_total'] ?? 0));
             $gAppLive     = $e((string)(int)($govLastRun['approved_live_shadow_total'] ?? 0));
             $gRejected    = $e((string)(int)($govLastRun['rejected_shadow_total']  ?? 0));
@@ -2302,32 +2314,48 @@ GOV;
             // ── Pending signals table ────────────────────────────────────────
             $govPendingRows = '';
             $govPendByStrat = [];
+            $govFinalStates = ['approve_demo_shadow', 'approve_live_shadow', 'reject_shadow', 'expired_shadow'];
             if (is_array($govPendingRaw) && count($govPendingRaw) > 0) {
                 $govPendSlice = array_slice(array_values($govPendingRaw), -20);
                 foreach (array_reverse($govPendSlice) as $pk) {
                     if (!is_array($pk)) continue;
-                    $pStrat   = $e((string)($pk['strategy_id'] ?? '—'));
-                    $pSig     = $e((string)($pk['signal_id']   ?? '—'));
-                    $pSym     = $e((string)($pk['symbol']      ?? '—'));
-                    $pTicks   = $e((string)(int)($pk['tick_count'] ?? 0));
-                    $pMaxT    = $e((string)(int)($pk['max_ticks']  ?? 0));
-                    $pFirst   = $e((string)($pk['first_seen_at'] ?? '—'));
-                    $pUpd     = $e((string)($pk['updated_at']    ?? '—'));
-                    $pReason  = $e((string)($pk['reason']        ?? '—'));
-                    $pState   = $e((string)($pk['state']         ?? '—'));
-                    $pWindow  = (int)($pk['max_ticks'] ?? 0) > 0
+                    $pStrat      = $e((string)($pk['strategy_id'] ?? '—'));
+                    $pSig        = $e((string)($pk['signal_id']   ?? '—'));
+                    $pSym        = $e((string)($pk['symbol']      ?? '—'));
+                    $pTicks      = $e((string)(int)($pk['tick_count'] ?? 0));
+                    $pMaxT       = $e((string)(int)($pk['max_ticks']  ?? 0));
+                    $pFirst      = $e((string)($pk['first_seen_at'] ?? '—'));
+                    $pLastSeen   = $e((string)($pk['last_seen_at'] ?? $pk['updated_at'] ?? '—'));
+                    $pRawReason  = (string)($pk['reason'] ?? '');
+                    $pReasonDisp = $pRawReason !== '' ? htmlspecialchars($govReasonLabel($pRawReason), ENT_QUOTES, 'UTF-8') : '<span style="color:var(--ui-text-muted);">—</span>';
+                    $pRawState   = (string)($pk['state'] ?? '');
+                    $pStateColor = match ($pRawState) {
+                        'approve_demo_shadow'  => '#3fb950',
+                        'approve_live_shadow'  => '#a78bfa',
+                        'reject_shadow'        => '#f85149',
+                        'expired_shadow'       => '#8b949e',
+                        'wait_confirmation'    => '#f0883e',
+                        default                => 'var(--ui-text)',
+                    };
+                    $pStateDisp = '<span style="color:' . $pStateColor . ';">' . $e($govDecisionLabel($pRawState)) . '</span>';
+                    $isFinal     = in_array($pRawState, $govFinalStates, true);
+                    $pWindow     = (int)($pk['max_ticks'] ?? 0) > 0
                         ? 'Окно: ' . $e((string)(int)$pk['max_ticks']) . ' тиков'
                         : '<span style="color:var(--ui-text-muted);">без ожидания</span>';
+                    if ($isFinal) {
+                        $pWindow = '<span style="color:var(--ui-text-muted);font-style:italic;">финально</span>';
+                    }
                     $govPendByStrat[$pStrat] = ($govPendByStrat[$pStrat] ?? 0) + 1;
                     $govPendingRows .= '<tr>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $pSig . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pStrat . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pSym . '</td>'
-                        . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pState . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pStateDisp . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $pTicks . '/' . $pMaxT . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pWindow . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $pFirst . '</td>'
-                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $pUpd . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $pLastSeen . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $pReasonDisp . '</td>'
                         . '</tr>';
                 }
             }
@@ -2337,21 +2365,23 @@ GOV;
                 $govPendByStratHtml .= '<span style="margin-right:12px;">' . $e($ps) . ': <strong>' . $e((string)$pc) . '</strong></span>';
             }
             if ($govPendingRows === '') {
-                $govPendingRows = '<tr><td colspan="8" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Pending сигналов нет</td></tr>';
+                $govPendingRows = '<tr><td colspan="9" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Pending сигналов нет</td></tr>';
             }
 
             // ── Decision journal rows ────────────────────────────────────────
             $govDecJrnRows = '';
             foreach ($govDecisionsRaw as $dec) {
                 if (!is_array($dec)) continue;
-                $dTime   = $e((string)($dec['time']              ?? '—'));
-                $dStrat  = $e((string)($dec['strategy_id']       ?? '—'));
-                $dSym    = $e((string)($dec['symbol']            ?? '—'));
-                $dDec    = $e($govDecisionLabel((string)($dec['decision']          ?? '')));
-                $dRoute  = $e((string)($dec['recommended_route'] ?? '—'));
-                $dReason = $govReasonLabel((string)($dec['reason'] ?? ''));
-                $dTicks  = $e((string)(int)($dec['tick_count']   ?? 0));
-                $dMode   = $e((string)($dec['mode']              ?? '—'));
+                $dTime      = $e((string)($dec['time']              ?? '—'));
+                $dStrat     = $e((string)($dec['strategy_id']       ?? '—'));
+                $dSym       = $e((string)($dec['symbol']            ?? '—'));
+                $dDec       = $e($govDecisionLabel((string)($dec['decision']          ?? '')));
+                $dRoute     = $e((string)($dec['recommended_route'] ?? '—'));
+                $dReason    = $govReasonLabel((string)($dec['reason'] ?? ''));
+                $dTicks     = $e((string)(int)($dec['tick_count']   ?? 0));
+                $dMaxTicks  = $e((string)(int)($dec['max_ticks']    ?? 0));
+                $dMode      = $e((string)($dec['mode']              ?? '—'));
+                $dPrevState = $e((string)($dec['previous_state']    ?? '—'));
                 $decColor = match ($dec['decision'] ?? '') {
                     'approve_live_shadow'  => '#a78bfa',
                     'approve_demo_shadow'  => '#3fb950',
@@ -2366,12 +2396,13 @@ GOV;
                     . '<td style="padding:3px 8px 3px 0;font-size:11px;white-space:nowrap;"><span style="color:' . $decColor . ';">' . $dDec . '</span></td>'
                     . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $dRoute . '</td>'
                     . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . htmlspecialchars($dReason, ENT_QUOTES, 'UTF-8') . '</td>'
-                    . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $dTicks . '</td>'
+                    . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;white-space:nowrap;">' . $dTicks . '/' . $dMaxTicks . '</td>'
+                    . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $dPrevState . '</td>'
                     . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $dMode . '</td>'
                     . '</tr>';
             }
             if ($govDecJrnRows === '') {
-                $govDecJrnRows = '<tr><td colspan="8" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Журнал решений пуст</td></tr>';
+                $govDecJrnRows = '<tr><td colspan="9" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Журнал решений пуст</td></tr>';
             }
 
             // ── Hourly stats rows ────────────────────────────────────────────
@@ -2411,12 +2442,18 @@ GOV;
       <div><span style="color:var(--ui-text-muted);">Shadow / Enforce</span><br><strong>{$gEnforce}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Стратегий увидено</span><br><strong>{$gStrategies}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Сигналов увидено</span><br><strong>{$gSignals}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Нормализовано</span><br><strong>{$gNormalized}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Невалидных</span><br><strong style="color:#f85149;">{$gInvalid}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Устаревших</span><br><strong style="color:#8b949e;">{$gStale}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Ожидают подтверждения</span><br><strong style="color:#f0883e;">{$gWaiting}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Corridor pending</span><br><strong style="color:#f0883e;">{$gCorridorPend}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Мгновенных решений</span><br><strong>{$gImmediateDec}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Pending всего</span><br><strong style="color:#58a6ff;">{$gPending}</strong></div>
-      <div><span style="color:var(--ui-text-muted);">Решений всего</span><br><strong>{$gDecisions}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Approved demo shadow</span><br><strong style="color:#3fb950;">{$gAppDemo}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Approved live shadow</span><br><strong style="color:#a78bfa;">{$gAppLive}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Rejected shadow</span><br><strong style="color:#f85149;">{$gRejected}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Expired shadow</span><br><strong style="color:#8b949e;">{$gExpired}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Записей в журнал</span><br><strong>{$gDecWritten}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Ошибки</span><br>{$gErrorsHtml}</div>
     </div>
     <table style="font-size:11px;border-collapse:collapse;margin-bottom:0;">
@@ -2493,17 +2530,18 @@ GOV;
             <th style="padding:3px 8px 3px 0;text-align:left;">signal_id</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">strategy</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">symbol</th>
-            <th style="padding:3px 8px 3px 0;text-align:left;">state</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">state / решение</th>
             <th style="padding:3px 8px 3px 0;text-align:right;">tick/max</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">окно</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">first_seen</th>
-            <th style="padding:3px 8px 3px 0;text-align:left;">updated</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">last_seen</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">причина</th>
           </tr>
         </thead>
         <tbody>{$govPendingRows}</tbody>
       </table>
     </div>
-    <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">Последние 20 · Источник: <code>pending_signals.json</code></p>
+    <p style="font-size:11px;color:var(--ui-text-muted);margin:6px 0 0;">Последние 20 (включая финальные) · Источник: <code>pending_signals.json</code></p>
   </div>
 </div>
 
@@ -2521,7 +2559,8 @@ GOV;
             <th style="padding:3px 8px 3px 0;text-align:left;">Решение</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">Маршрут</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">Причина</th>
-            <th style="padding:3px 8px 3px 0;text-align:right;">Тики</th>
+            <th style="padding:3px 8px 3px 0;text-align:right;">Тик/Макс</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">Предыдущее состояние</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">Режим</th>
           </tr>
         </thead>

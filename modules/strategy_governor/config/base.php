@@ -31,6 +31,24 @@ return [
     // Used only as a legacy fallback; prefer strategy_policies below.
     'pending_confirmation_ticks'    => 5,
 
+    // Maximum age (seconds) of a newly discovered signal before it is considered
+    // stale and rejected without entering active pending state.
+    // 1800 = 30 minutes.
+    'max_signal_age_seconds'        => 1800,
+
+    // Maximum time (seconds) a pending signal may wait without appearing in the
+    // current signal batch before it is expired (signal disappeared).
+    // 3600 = 1 hour.
+    'max_pending_age_seconds'       => 3600,
+
+    // When true, finalized pending entries (approve/reject/expire) are kept in
+    // pending_signals.json for visibility until final_decision_ttl_seconds passes.
+    'keep_final_decisions_in_pending' => true,
+
+    // Seconds after which a final pending entry is removed from pending_signals.json.
+    // 86400 = 24 hours.
+    'final_decision_ttl_seconds'    => 86400,
+
     // Per-strategy confirmation policy.
     // Keys must match strategy_id values used in signal/trade records.
     // 'default' applies to any strategy not explicitly listed.

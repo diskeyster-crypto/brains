@@ -931,13 +931,16 @@ HTML;
         : '';
 
     // ── Submitted queue reconciliation counters ───────────────────────────
-    $lrReconSubmittedTotal   = (int)($lastRun['submitted_queue_total']                   ?? 0);
-    $lrReconActivePosMatch   = (int)($lastRun['submitted_active_position_matched_total'] ?? 0);
-    $lrReconActiveOrdMatch   = (int)($lastRun['submitted_active_order_matched_total']    ?? 0);
-    $lrReconClosed           = (int)($lastRun['submitted_reconciled_closed_total']       ?? 0);
-    $lrReconExpired          = (int)($lastRun['submitted_reconciled_expired_total']      ?? 0);
-    $lrReconStaleUnmatched   = (int)($lastRun['submitted_stale_unmatched_total']         ?? 0);
-    $lrReconStillBlocking    = (int)($lastRun['submitted_still_blocking_total']          ?? 0);
+    $lrReconEnabled          = (bool)($lastRun['submitted_reconcile_enabled']              ?? true);
+    $lrReconSubmittedTotal   = (int)($lastRun['submitted_queue_total']                    ?? 0);
+    $lrReconActivePosMatch   = (int)($lastRun['submitted_active_position_matched_total']  ?? 0);
+    $lrReconActiveOrdMatch   = (int)($lastRun['submitted_active_order_matched_total']     ?? 0);
+    $lrReconClosedTradeMatch = (int)($lastRun['submitted_closed_trade_matched_total']     ?? 0);
+    $lrReconClosed           = (int)($lastRun['submitted_reconciled_closed_total']        ?? 0);
+    $lrReconExpired          = (int)($lastRun['submitted_reconciled_expired_total']       ?? 0);
+    $lrReconWaitingMatch     = (int)($lastRun['submitted_waiting_match_total']            ?? 0);
+    $lrReconStaleUnmatched   = (int)($lastRun['submitted_stale_unmatched_total']          ?? 0);
+    $lrReconStillBlocking    = (int)($lastRun['submitted_still_blocking_total']           ?? 0);
 
     // $govApprovedQueueTotal will be set after $govDemoQueueRaw is loaded (further below)
     $govApprovedQueueTotal = 0;
@@ -3472,16 +3475,21 @@ HTML;
     // ── Submitted queue reconciliation card HTML ───────────────────────────
     $reconStillBlockingColor = $lrReconStillBlocking > 0 ? '#f0883e' : '#8b949e';
     $reconStaleColor         = $lrReconStaleUnmatched > 0 ? '#f0883e' : '#8b949e';
+    $reconWaitingColor       = $lrReconWaitingMatch  > 0 ? '#e3b341' : '#8b949e';
+    $reconEnabledLabel       = $lrReconEnabled ? '<code style="color:#3fb950;">true</code>' : '<code style="color:#f85149;">false</code>';
     $submittedReconCardHtml = '<div class="card" style="margin-bottom:16px;">'
         . '<div class="card-header">Reconciliation очереди submitted</div>'
         . '<div class="card-body">'
         . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
-        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:260px;">Submitted (всего)</td><td><code>' . $e($lrReconSubmittedTotal) . '</code></td></tr>'
-        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Active position match</td><td><code>' . $e($lrReconActivePosMatch) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:260px;">Reconciliation enabled</td><td>' . $reconEnabledLabel . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Submitted (всего)</td><td><code>' . $e($lrReconSubmittedTotal) . '</code></td></tr>'
         . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Active order match</td><td><code>' . $e($lrReconActiveOrdMatch) . '</code></td></tr>'
-        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Reconciled (closed trade)</td><td><code style="color:#3fb950;">' . $e($lrReconClosed) . '</code></td></tr>'
-        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Reconciled (expired)</td><td><code>' . $e($lrReconExpired) . '</code></td></tr>'
-        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Stale unmatched</td><td><code style="color:' . $reconStaleColor . ';">' . $e($lrReconStaleUnmatched) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Active position match</td><td><code>' . $e($lrReconActivePosMatch) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Closed trade matched</td><td><code>' . $e($lrReconClosedTradeMatch) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Reconciled (closed_reconciled)</td><td><code style="color:#3fb950;">' . $e($lrReconClosed) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Reconciled (submitted_expired)</td><td><code style="color:#3fb950;">' . $e($lrReconExpired) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Waiting match (within TTL)</td><td><code style="color:' . $reconWaitingColor . ';">' . $e($lrReconWaitingMatch) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Stale unmatched (no timestamp)</td><td><code style="color:' . $reconStaleColor . ';">' . $e($lrReconStaleUnmatched) . '</code></td></tr>'
         . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Still blocking</td><td><code style="color:' . $reconStillBlockingColor . ';">' . $e($lrReconStillBlocking) . '</code></td></tr>'
         . '</table>'
         . '</div></div>';

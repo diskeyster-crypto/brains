@@ -661,7 +661,7 @@ final class BotService
         // shadow_compare: governor queue used for orders must remain 0
 
         // ── 4b. Reconcile stale submitted queue items ─────────────────────────
-        $reconResult = $this->reconcileSubmittedQueue($orderQueue, $activeOrders, $activePositions, $tickAt);
+        $reconResult = $this->reconcileSubmittedQueue($orderQueue, $activeOrders, $activePositions, $tickAt, $config);
         $orderQueue  = $reconResult['order_queue'];
 
         // ── 5. Execution state machine ────────────────────────────────────────
@@ -822,11 +822,14 @@ final class BotService
             'active_positions_count' => count($activePositions),
 
             // Submitted queue reconciliation (this tick)
+            'submitted_reconcile_enabled'              => $reconResult['reconcile_enabled'],
             'submitted_queue_total'                    => $reconResult['submitted_total'],
             'submitted_active_position_matched_total'  => $reconResult['active_position_matched'],
             'submitted_active_order_matched_total'     => $reconResult['active_order_matched'],
+            'submitted_closed_trade_matched_total'     => $reconResult['closed_trade_matched'],
             'submitted_reconciled_closed_total'        => $reconResult['reconciled_closed'],
             'submitted_reconciled_expired_total'       => $reconResult['reconciled_expired'],
+            'submitted_waiting_match_total'            => $reconResult['waiting_match'],
             'submitted_stale_unmatched_total'          => $reconResult['stale_unmatched'],
             'submitted_still_blocking_total'           => $reconResult['still_blocking'],
 
@@ -1040,31 +1043,32 @@ final class BotService
      *
      * A submitted queue item can permanently block new signals with the same
      * signal_id once the underlying position or order is no longer active.
-     * This method inspects each submitted item and transitions it to
-     * 'closed_reconciled' when safe to do so.
+     * This method inspects each submitted item and transitions it to a safe
+     * terminal status when appropriate.
      *
-     * An item is reconciled when ALL of these hold:
-     *   - No matching active order exists (by strategy_id + signal_id)
-     *   - No matching active position exists (by strategy_id + symbol)
-     *   - At least one of:
-     *       a) A closed trade exists for this strategy_id + symbol with
-     *          closed_at >= submitted_at (or signal_id exact match)
-     *       b) expires_at is non-empty and in the past
+     * Resolution order for each submitted item:
+     *   1. Active order exists (strategy_id + signal_id)          → keep submitted
+     *   2. Active position exists (strategy_id + symbol)          → keep submitted
+     *   3. Closed trade matched (signal_id or strategy+symbol+ts) → closed_reconciled
+     *   4. Age > submitted_without_position_ttl_minutes config    → submitted_expired
+     *   5. Age within TTL but no evidence yet                     → waiting_match (submitted)
+     *   6. No timestamps at all / suspicious                      → stale_unmatched (submitted)
      *
-     * Items with evidence of an active order or position are left submitted.
-     * Items with no active match but also no closure evidence are counted as
-     * 'stale_unmatched' and remain submitted (conservative — do not reconcile
-     * without evidence).
+     * When submitted_reconcile_enabled = false the method is a no-op
+     * (all counters zero, queue returned unchanged).
      *
      * Never creates orders, never modifies active_positions or active_orders.
      *
      * @return array{
      *   order_queue: array,
+     *   reconcile_enabled: bool,
      *   submitted_total: int,
      *   active_position_matched: int,
      *   active_order_matched: int,
+     *   closed_trade_matched: int,
      *   reconciled_closed: int,
      *   reconciled_expired: int,
+     *   waiting_match: int,
      *   stale_unmatched: int,
      *   still_blocking: int,
      * }
@@ -1073,15 +1077,47 @@ final class BotService
         array $orderQueue,
         array $activeOrders,
         array $activePositions,
-        string $tickAt
+        string $tickAt,
+        array $config = []
     ): array {
+        $reconcileEnabled = (bool)($config['submitted_reconcile_enabled'] ?? true);
+
         $submittedTotal          = 0;
         $activePositionMatched   = 0;
         $activeOrderMatched      = 0;
+        $closedTradeMatched      = 0;
         $reconciledClosed        = 0;
         $reconciledExpired       = 0;
+        $waitingMatch            = 0;
         $staleUnmatched          = 0;
         $stillBlocking           = 0;
+
+        if (!$reconcileEnabled) {
+            // Count how many submitted items exist for diagnostics, but don't mutate.
+            foreach ($orderQueue as $qItem) {
+                if ((string)($qItem['queue_status'] ?? '') === 'submitted') {
+                    $submittedTotal++;
+                    $stillBlocking++;
+                }
+            }
+            return [
+                'order_queue'             => $orderQueue,
+                'reconcile_enabled'       => false,
+                'submitted_total'         => $submittedTotal,
+                'active_position_matched' => 0,
+                'active_order_matched'    => 0,
+                'closed_trade_matched'    => 0,
+                'reconciled_closed'       => 0,
+                'reconciled_expired'      => 0,
+                'waiting_match'           => 0,
+                'stale_unmatched'         => 0,
+                'still_blocking'          => $stillBlocking,
+            ];
+        }
+
+        // Config TTL
+        $ttlWithoutPosMins = (int)($config['submitted_without_position_ttl_minutes'] ?? 30);
+        $ttlWithoutPosSecs = max(1, $ttlWithoutPosMins) * 60;
 
         // ── Build fast-lookup sets ────────────────────────────────────────────
         // Active orders: keyed by "strategy_id:signal_id"
@@ -1142,10 +1178,15 @@ final class BotService
             $symbol   = (string)($qItem['symbol']       ?? '');
             $signalId = (string)($qItem['signal_id']    ?? '');
 
-            $submittedAt   = (string)($qItem['submitted_at'] ?? '');
-            $submittedTs   = ($submittedAt !== '') ? @strtotime($submittedAt) : false;
-            $expiresAt     = (string)($qItem['expires_at']   ?? '');
-            $expiresTs     = ($expiresAt  !== '') ? @strtotime($expiresAt)   : false;
+            // Best timestamp for age calculation: submitted_at → updated_at → created_at → detected_at
+            $ageRefAt = (string)($qItem['submitted_at']  ?? '')
+                     ?: (string)($qItem['updated_at']    ?? '')
+                     ?: (string)($qItem['created_at']    ?? '')
+                     ?: (string)($qItem['detected_at']   ?? '');
+            $ageRefTs = ($ageRefAt !== '') ? @strtotime($ageRefAt) : false;
+
+            $expiresAt = (string)($qItem['expires_at'] ?? '');
+            $expiresTs = ($expiresAt !== '') ? @strtotime($expiresAt) : false;
 
             // ── Check active order ──────────────────────────────────────────
             $hasActiveOrder = false;
@@ -1174,6 +1215,7 @@ final class BotService
 
             // ── No active order/position — check if closed ──────────────────
             $matchedClosedTrade = false;
+            $submittedTs        = $ageRefTs; // reuse for closed_at >= submitted_at check
 
             // Strongest: signal_id exact match in closed trades
             if ($signalId !== '' && isset($closedBySignalId[$signalId])) {
@@ -1195,36 +1237,56 @@ final class BotService
             }
 
             if ($matchedClosedTrade) {
-                $qItem['queue_status']       = 'closed_reconciled';
-                $qItem['reconciled_at']      = $tickAt;
-                $qItem['last_change_reason'] = 'closed_reconciled_matched_closed_trade';
+                $closedTradeMatched++;
+                $qItem['queue_status']           = 'closed_reconciled';
+                $qItem['previous_queue_status']  = 'submitted';
+                $qItem['reconciled_at']          = $tickAt;
+                $qItem['last_change_reason']     = 'closed_reconciled_matched_closed_trade';
+                $qItem['lifecycle_note']         = 'Matched closed trade; terminal — does not block new signals.';
                 $reconciledClosed++;
                 continue;
             }
 
-            // ── No closed trade match — check TTL ───────────────────────────
-            $isExpired = $expiresTs !== false && $now > $expiresTs;
-            if ($isExpired) {
-                $qItem['queue_status']       = 'closed_reconciled';
-                $qItem['reconciled_at']      = $tickAt;
-                $qItem['last_change_reason'] = 'closed_reconciled_expired_no_active';
+            // ── No closed trade match — check signal expires_at or config TTL ──
+            $isSignalExpired = $expiresTs !== false && $now > $expiresTs;
+            $isTtlExpired    = $ageRefTs !== false && ($now - $ageRefTs) > $ttlWithoutPosSecs;
+
+            if ($isSignalExpired || $isTtlExpired) {
+                $reason = $isSignalExpired
+                    ? 'submitted_ttl_expired_signal_expires_at'
+                    : 'submitted_ttl_expired_no_active_position';
+                $qItem['queue_status']           = 'submitted_expired';
+                $qItem['previous_queue_status']  = 'submitted';
+                $qItem['reconciled_at']          = $tickAt;
+                $qItem['last_change_reason']     = $reason;
+                $qItem['lifecycle_note']         = 'Expired by TTL with no active order/position; terminal — does not block new signals.';
                 $reconciledExpired++;
                 continue;
             }
 
-            // ── Insufficient evidence — leave submitted, count as stale ──────
-            $staleUnmatched++;
-            $stillBlocking++;
+            // ── Within TTL, no evidence yet — conservative hold ─────────────
+            if ($ageRefTs !== false) {
+                // Timestamp present but within TTL — keep submitted, will be re-checked next tick
+                $waitingMatch++;
+                $stillBlocking++;
+            } else {
+                // No usable timestamp — suspicious, count separately
+                $staleUnmatched++;
+                $stillBlocking++;
+            }
         }
         unset($qItem);
 
         return [
             'order_queue'             => $orderQueue,
+            'reconcile_enabled'       => true,
             'submitted_total'         => $submittedTotal,
             'active_position_matched' => $activePositionMatched,
             'active_order_matched'    => $activeOrderMatched,
+            'closed_trade_matched'    => $closedTradeMatched,
             'reconciled_closed'       => $reconciledClosed,
             'reconciled_expired'      => $reconciledExpired,
+            'waiting_match'           => $waitingMatch,
             'stale_unmatched'         => $staleUnmatched,
             'still_blocking'          => $stillBlocking,
         ];
@@ -1328,17 +1390,28 @@ final class BotService
                 // as a blocking duplicate — create a fresh queue item for the current mode.
                 $isModeSwitchedTerminal = ($prevStatus === 'submitted' && $prevMode !== $botMode);
 
-                if (in_array($prevStatus, ['queued', 'ready'], true) || $isModeSwitchedTerminal) {
+                // Terminal/reconciled statuses must not block new valid future signals.
+                // closed_reconciled and submitted_expired are lifecycle-terminal; if the signal
+                // is still present in the handoff queue on the next tick, treat it as new.
+                $isLifecycleTerminal = in_array($prevStatus, [
+                    'closed_reconciled', 'submitted_expired',
+                    'expired', 'withdrawn', 'rejected', 'failed', 'skipped', 'cancelled', 'closed',
+                ], true);
+
+                if (in_array($prevStatus, ['queued', 'ready'], true) || $isModeSwitchedTerminal || $isLifecycleTerminal) {
                     $item = $this->buildQueueItem($signal, $opOverrides, $config, $tickAt, $botMode);
                     $item['entry_mode'] = $entryMode;
 
-                    if ($isModeSwitchedTerminal) {
-                        // Fresh item for the new mode; start back at queued
+                    if ($isModeSwitchedTerminal || $isLifecycleTerminal) {
+                        // Fresh item; start back at queued (lifecycle terminal cleared)
+                        $reason = $isModeSwitchedTerminal
+                            ? 'new_from_handoff_after_mode_switch'
+                            : 'new_from_handoff_after_terminal_lifecycle';
                         $item['queue_status']          = 'queued';
                         $item['first_queued_at']       = $tickAt;
                         $item['seen_count']            = 1;
                         $item['last_refreshed_at']     = $tickAt;
-                        $item['last_change_reason']    = 'new_from_handoff_after_mode_switch';
+                        $item['last_change_reason']    = $reason;
                         $item['source_handoff_status'] = (string)($signal['handoff_status'] ?? 'new');
                         $result[$key]                  = $item;
                         $newTotal++;
@@ -1376,7 +1449,7 @@ final class BotService
             }
             $prevStatus = (string)($prev['queue_status'] ?? 'queued');
             if (in_array($prevStatus, [
-                'expired', 'withdrawn', 'submitted', 'closed_reconciled',
+                'expired', 'withdrawn', 'submitted', 'closed_reconciled', 'submitted_expired',
                 'active_order', 'active_position', 'rejected',
             ], true)) {
                 $result[$key] = $prev;
@@ -3248,11 +3321,14 @@ final class BotService
                 'shadow_compare_governor_only_examples'     => [],
                 'shadow_compare_overlap_examples'           => [],
                 // Submitted queue reconciliation
+                'submitted_reconcile_enabled'              => true,
                 'submitted_queue_total'                    => 0,
                 'submitted_active_position_matched_total'  => 0,
                 'submitted_active_order_matched_total'     => 0,
+                'submitted_closed_trade_matched_total'     => 0,
                 'submitted_reconciled_closed_total'        => 0,
                 'submitted_reconciled_expired_total'       => 0,
+                'submitted_waiting_match_total'            => 0,
                 'submitted_stale_unmatched_total'          => 0,
                 'submitted_still_blocking_total'           => 0,
             ],

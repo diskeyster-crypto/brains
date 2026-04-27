@@ -67,6 +67,20 @@ return [
     // Continuous processing
     'continuous_enabled' => true,
 
+    // ── Submitted queue reconciliation ────────────────────────────────────
+    // submitted_reconcile_enabled:
+    //   Master feature flag.  Set false to skip reconciliation entirely.
+    // submitted_without_position_ttl_minutes:
+    //   If a submitted item has no active order and no active position and no
+    //   closed-trade match, expire it after this many minutes (status →
+    //   submitted_expired).  30 min is safe for most strategies.
+    // submitted_with_position_ttl_minutes:
+    //   Not currently used for forced expiry; reserved so future logic can
+    //   keep items alive longer when a position exists.  1440 = 24 h.
+    'submitted_reconcile_enabled'              => true,
+    'submitted_without_position_ttl_minutes'   => 30,
+    'submitted_with_position_ttl_minutes'      => 1440,
+
     // ── Signal source selector ─────────────────────────────────────────────
     // Determines which source the bot reads signals from.
     //

@@ -899,6 +899,19 @@ HTML;
     $trIgnMode     = (int)($lastRun['handoff_signals_ignored_invalid_entry_mode']   ?? 0);
     $trQueueTotal  = (int)($lastRun['order_queue_total']                            ?? 0);
 
+    // ── Bot tab: signal source selector status ────────────────────────────
+    $lrSignalSourceMode   = (string)($lastRun['signal_source_mode']                    ?? ($botConfig['signal_source_mode'] ?? 'direct_strategy_handoff'));
+    $lrGovQueueSeen       = (int)($lastRun['governor_queue_seen_total']               ?? 0);
+    $lrGovQueueValid      = (int)($lastRun['governor_queue_valid_total']              ?? 0);
+    $lrGovQueueUsed       = (int)($lastRun['governor_queue_used_for_orders_total']    ?? 0);
+    $lrGovQueueDupSkip    = (int)($lastRun['governor_queue_duplicate_skipped_total']  ?? 0);
+    $lrDirectHandoffUsed  = (int)($lastRun['direct_handoff_used_total']               ?? 0);
+
+    $lrBotReadsGovLabel   = ($lrSignalSourceMode === 'governor_approved_demo') ? '<span style="color:#3fb950;font-weight:600;">да</span>' : '<span style="color:#8b949e;">нет</span>';
+
+    // $govApprovedQueueTotal will be set after $govDemoQueueRaw is loaded (further below)
+    $govApprovedQueueTotal = 0;
+
     $tickTraceRows = <<<ROWS
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;">Сигналов получено</td><td><strong>{$e($trSeenTotal)}</strong></td></tr>
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">→ новых в очереди</td><td style="color:#3fb950;"><strong>{$e($trNew)}</strong></td></tr>
@@ -2090,6 +2103,8 @@ QUAL;
         // Load approved demo queue (Phase 3A)
         $govDemoQueueRaw  = @json_decode((string)@file_get_contents($govRoot . '/approved_demo_queue.json'), true) ?: null;
         $govDemoQueueRaw  = is_array($govDemoQueueRaw) ? $govDemoQueueRaw : [];
+        // Update the bot-section counter now that we have the actual data
+        $govApprovedQueueTotal = count($govDemoQueueRaw);
 
         // Last 50 lines of decisions.ndjson — tail reader (no full file load)
         $govDecisionsRaw = [];
@@ -3689,6 +3704,22 @@ HTML;
     <div class="card-body" style="padding:12px 16px;">
       <table style="width:100%;font-size:13px;border-collapse:collapse;">
         {$tickTraceRows}
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Источник сигналов бота</div>
+    <div class="card-body" style="padding:12px 16px;">
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tr><td style="color:var(--ui-text-muted);width:200px;padding:3px 12px 3px 0;">Источник сигналов бота</td><td><code>{$e($lrSignalSourceMode)}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Бот читает Governor</td><td>{$lrBotReadsGovLabel}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Governor approved queue (всего)</td><td>{$e($govApprovedQueueTotal)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Gov очередь увидено (этот тик)</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;">{$e($lrGovQueueSeen)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov очередь валидных</td><td>{$e($lrGovQueueValid)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov использовано для ордеров</td><td>{$e($lrGovQueueUsed)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Gov пропущено (не demo/stale)</td><td>{$e($lrGovQueueDupSkip)}</td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Direct handoff использовано</td><td>{$e($lrDirectHandoffUsed)}</td></tr>
       </table>
     </div>
   </div>

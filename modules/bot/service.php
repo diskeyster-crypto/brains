@@ -421,26 +421,87 @@ final class BotService
         $allSignals          = [];
         $ignoredSignalsCount = 0;
 
-        $handoffSourcesAllowed       = 0;
+        $handoffSourcesAllowed          = 0;
         $handoffSourcesBlockedByHandoff = 0;
-        $handoffSourcesLegacyAllowed = 0;
+        $handoffSourcesLegacyAllowed    = 0;
 
-        foreach ($enabledStrategies as $rec) {
-            $handoffResult = $this->resolveHandoffEnabled((string)($rec['strategy_id'] ?? ''), $overrides, (string)($rec['module_path'] ?? ''));
-            if (!$handoffResult['allowed']) {
-                $handoffSourcesBlockedByHandoff++;
-                continue;
+        // Signal source selector (set in config/base.php, default: direct_strategy_handoff).
+        // Allowed values: direct_strategy_handoff | governor_approved_demo
+        $signalSourceMode   = (string)($config['signal_source_mode'] ?? 'direct_strategy_handoff');
+        $govQueueSeen       = 0;
+        $govQueueValid      = 0;
+        $govQueueUsed       = 0;
+        $govQueueDupSkipped = 0;
+        $directHandoffUsed  = 0;
+
+        if ($signalSourceMode === 'governor_approved_demo') {
+            // ── Governor approved demo queue ──────────────────────────────
+            $govQueuePath = $this->repoRoot . '/modules/strategy_governor/storage/approved_demo_queue.json';
+            $govRaw = [];
+            if (file_exists($govQueuePath)) {
+                $rawContent = file_get_contents($govQueuePath);
+                if ($rawContent !== false && $rawContent !== '') {
+                    $govDecoded = json_decode($rawContent, true);
+                    if (is_array($govDecoded)) {
+                        $govRaw = $govDecoded;
+                    }
+                }
             }
-            $handoffSourcesAllowed++;
-            if ($handoffResult['legacy']) {
-                $handoffSourcesLegacyAllowed++;
+            $govQueueSeen = count($govRaw);
+
+            // Filter: safety — only accept demo mode, valid signal_id/symbol, not TTL expired
+            $govFiltered = [];
+            foreach ($govRaw as $govItem) {
+                // PART 4: demo-only safety — skip any non-demo item
+                $govItemMode = (string)($govItem['mode'] ?? '');
+                if ($govItemMode !== 'demo') {
+                    $govQueueDupSkipped++;
+                    continue;
+                }
+                if ((string)($govItem['signal_id'] ?? '') === '') {
+                    continue;
+                }
+                if ((string)($govItem['symbol'] ?? '') === '') {
+                    continue;
+                }
+                // TTL check
+                $govTtl = (string)($govItem['ttl_expires_at'] ?? '');
+                if ($govTtl !== '') {
+                    $govTtlTs = strtotime($govTtl);
+                    if ($govTtlTs !== false && time() > $govTtlTs) {
+                        continue;
+                    }
+                }
+                // Set handoff_status so processHandoff recognises the item
+                $govItem['handoff_status'] = 'new';
+                // Ensure entry_mode has a sensible default when Governor did not record it
+                if (empty($govItem['entry_mode'])) {
+                    $govItem['entry_mode'] = 'limit';
+                }
+                $govFiltered[] = $govItem;
             }
-            $signals    = $this->readHandoffQueueForStrategy($rec);
-            $allSignals = array_merge($allSignals, $signals);
-        }
-        // Count signals from disabled strategies (tracked but not processed)
-        foreach ($disabledStrategies as $rec) {
-            $ignoredSignalsCount += count($this->readHandoffQueueForStrategy($rec));
+            $govQueueValid = count($govFiltered);
+            $allSignals    = $govFiltered;
+        } else {
+            // ── Direct strategy handoff (existing behaviour, unchanged) ───
+            foreach ($enabledStrategies as $rec) {
+                $handoffResult = $this->resolveHandoffEnabled((string)($rec['strategy_id'] ?? ''), $overrides, (string)($rec['module_path'] ?? ''));
+                if (!$handoffResult['allowed']) {
+                    $handoffSourcesBlockedByHandoff++;
+                    continue;
+                }
+                $handoffSourcesAllowed++;
+                if ($handoffResult['legacy']) {
+                    $handoffSourcesLegacyAllowed++;
+                }
+                $signals    = $this->readHandoffQueueForStrategy($rec);
+                $allSignals = array_merge($allSignals, $signals);
+            }
+            // Count signals from disabled strategies (tracked but not processed)
+            foreach ($disabledStrategies as $rec) {
+                $ignoredSignalsCount += count($this->readHandoffQueueForStrategy($rec));
+            }
+            $directHandoffUsed = count($allSignals);
         }
 
         // ── 3. Load bot state ─────────────────────────────────────────────────
@@ -453,6 +514,11 @@ final class BotService
         // ── 4. Process handoff → order queue ──────────────────────────────────
         $result     = $this->processHandoff($allSignals, $orderQueue, $config, $overrides, $tickAt, $botMode);
         $orderQueue = $result['order_queue'];
+
+        // Compute governor queue "used" counter (new + refreshed entries from governor source)
+        if ($signalSourceMode === 'governor_approved_demo') {
+            $govQueueUsed = $result['new_total'] + $result['refreshed_total'];
+        }
 
         // ── 5. Execution state machine ────────────────────────────────────────
         $execResult = $this->processExecution($orderQueue, $activeOrders, $activePositions, $closedPositions, $botMode, $config, $tickAt);
@@ -535,6 +601,14 @@ final class BotService
             'handoff_sources_allowed_total'           => $handoffSourcesAllowed,
             'handoff_sources_blocked_by_handoff_total'=> $handoffSourcesBlockedByHandoff,
             'handoff_sources_legacy_allowed_total'    => $handoffSourcesLegacyAllowed,
+
+            // Signal source selector
+            'signal_source_mode'                      => $signalSourceMode,
+            'governor_queue_seen_total'               => $govQueueSeen,
+            'governor_queue_valid_total'              => $govQueueValid,
+            'governor_queue_used_for_orders_total'    => $govQueueUsed,
+            'governor_queue_duplicate_skipped_total'  => $govQueueDupSkipped,
+            'direct_handoff_used_total'               => $directHandoffUsed,
 
             // Signals this tick
             'handoff_signals_processed'                  => $result['signals_seen'],
@@ -2793,6 +2867,12 @@ final class BotService
                 'active_positions_count'                    => 0,
                 'ticks_total'                               => 0,
                 'handoff_signals_seen_total'                => 0,
+                'signal_source_mode'                        => 'direct_strategy_handoff',
+                'governor_queue_seen_total'                 => 0,
+                'governor_queue_valid_total'                => 0,
+                'governor_queue_used_for_orders_total'      => 0,
+                'governor_queue_duplicate_skipped_total'    => 0,
+                'direct_handoff_used_total'                 => 0,
             ],
             'storage/stats.json' => $this->zeroStats(),
         ];

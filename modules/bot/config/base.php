@@ -66,4 +66,17 @@ return [
 
     // Continuous processing
     'continuous_enabled' => true,
+
+    // ── Signal source selector ─────────────────────────────────────────────
+    // Determines which source the bot reads signals from.
+    //
+    // Allowed values:
+    //   direct_strategy_handoff — current behaviour; bot reads each enabled
+    //                             strategy's storage/bot_handoff_queue.json.
+    //   governor_approved_demo  — bot reads the Strategy Governor's approved
+    //                             demo queue instead.  Items must have mode=demo.
+    //
+    // Default: direct_strategy_handoff  (preserves existing working behaviour).
+    // Do NOT set governor_approved_demo in production without explicit operator action.
+    'signal_source_mode' => 'direct_strategy_handoff',
 ];

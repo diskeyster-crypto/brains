@@ -481,13 +481,18 @@ final class BotService
                 $govItemMode = (string)($govItem['mode'] ?? '');
                 if ($govItemMode !== 'demo') {
                     $govQueueSkippedNonDemo++;
-                    $govQueueDupSkipped++;
                     continue;
                 }
                 // Required fields
                 if ((string)($govItem['signal_id'] ?? '') === ''
                     || (string)($govItem['symbol']    ?? '') === ''
                 ) {
+                    $govQueueSkippedInvalid++;
+                    continue;
+                }
+                // entry_price must exist, be numeric and > 0
+                $govEntryPrice = $govItem['entry_price'] ?? null;
+                if ($govEntryPrice === null || !is_numeric($govEntryPrice) || (float)$govEntryPrice <= 0.0) {
                     $govQueueSkippedInvalid++;
                     continue;
                 }

@@ -3049,6 +3049,7 @@ HTML;
         $clHasPnl     = false;
         $clRoiSum     = 0.0;
         $clRoiCount   = 0;
+        $clHasEstimated = false; // any record with exchange_disappeared or estimated close
         foreach ($closedTradesRaw as $ct) {
             if (!is_array($ct)) {
                 continue;
@@ -3072,6 +3073,11 @@ HTML;
                 $clTotalPnl += $pnlV;
                 $clHasPnl   = true;
             }
+            $ctSrc = (string)($ct['close_source'] ?? '');
+            $ctEst = (bool)($ct['closed_at_is_estimated'] ?? false);
+            if ($ctSrc === 'exchange_disappeared' || $ctSrc === 'unknown' || $ctEst) {
+                $clHasEstimated = true;
+            }
         }
         $clWinrate   = ($clTotal > 0) ? round($clProfitable / $clTotal * 100, 1) . '%' : '—';
         $clAvgRoi    = ($clRoiCount > 0) ? number_format($clRoiSum / $clRoiCount, 2) . '%' : '—';
@@ -3092,6 +3098,15 @@ HTML;
                 . '<span><span style="color:var(--ui-text-muted);">Total PnL:</span> <strong style="color:' . $clPnlColor . ';">' . $clPnlStr . '</strong></span>'
                 . '<span><span style="color:var(--ui-text-muted);">Avg ROI:</span> <strong>' . $clAvgRoi . '</strong></span>'
                 . '</div>';
+
+            // Warning when any close was determined by position disappearing
+            $clEstWarningHtml = '';
+            if ($clHasEstimated) {
+                $clEstWarningHtml = '<div style="padding:7px 14px;background:rgba(240,136,62,0.1);border-bottom:1px solid var(--ui-border);font-size:12px;color:#f0883e;">'
+                    . '<i class="bi bi-exclamation-triangle" style="margin-right:5px;"></i>'
+                    . 'Часть закрытий определена по исчезновению позиции с биржи; источник/время закрытия приблизительные.'
+                    . '</div>';
+            }
 
             $clRows = '';
             foreach ($closedTradesRaw as $ct) {
@@ -3172,19 +3187,12 @@ HTML;
                     }
                 }
 
-                // closed_at display
+                // closed_at: compute $closedRaw for duration and display
                 $closedRaw = null;
                 foreach (['closed_at', 'closed_ts', 'closed_timestamp', 'close_time'] as $k) {
                     if (isset($ct[$k])) {
                         $closedRaw = $ct[$k];
                         break;
-                    }
-                }
-                $clClosedAt = '—';
-                if ($closedRaw !== null) {
-                    $closedTs = is_numeric($closedRaw) ? (int)$closedRaw : (int)@strtotime((string)$closedRaw);
-                    if ($closedTs > 0) {
-                        $clClosedAt = date('d.m.y H:i', $closedTs);
                     }
                 }
 
@@ -3218,11 +3226,74 @@ HTML;
                     }
                 }
 
-                $clCloseSource = $e((string)($ct['close_source'] ?? $ct['closed_by'] ?? '—'));
-                $clCloseReason = $e((string)($ct['close_reason'] ?? $ct['reason'] ?? '—'));
-                $clModeVal     = strtolower((string)($ct['mode'] ?? $ct['execution_mode'] ?? ''));
-                $clMode        = $e($clModeVal !== '' ? $clModeVal : '—');
-                $clModeColor   = $clModeVal === 'live' ? '#f0883e' : '#8b949e';
+                // Duration annotation: note if opened_at is from exchange or close is estimated
+                $openedAtDisplaySrc = (string)($ct['opened_at_display_source'] ?? '');
+                $closedAtIsEst      = (bool)($ct['closed_at_is_estimated'] ?? false);
+                $clDurNote = '';
+                if (in_array($openedAtDisplaySrc, ['bybit_createdTime_ms', 'bybit_createdTime_sec', 'local_cache'], true)
+                    && $openedAtDisplaySrc !== ''
+                ) {
+                    $clDurNote .= '<span style="color:#8b949e;font-size:10px;margin-left:3px;" title="Время открытия по данным биржи">по бирже</span>';
+                }
+                if ($closedAtIsEst) {
+                    $clDurNote .= '<span style="color:#f0883e;font-size:10px;margin-left:3px;" title="Время закрытия приблизительное">примерно</span>';
+                }
+
+                // Translate close_source
+                $closeSourceRaw = (string)($ct['close_source'] ?? $ct['closed_by'] ?? '');
+                $clCloseSource = $e(match($closeSourceRaw) {
+                    'profit_manager'       => 'Profit Manager',
+                    'stop_manager'         => 'Stop Manager',
+                    'exchange_disappeared' => 'Исчезла с биржи',
+                    'unknown'              => 'Неизвестно',
+                    ''                     => '—',
+                    default                => $closeSourceRaw,
+                });
+                $clCloseSourceColor = match($closeSourceRaw) {
+                    'profit_manager'       => '#3fb950',
+                    'stop_manager'         => '#58a6ff',
+                    'exchange_disappeared' => '#f0883e',
+                    default                => '#8b949e',
+                };
+
+                // Translate close_reason
+                $closeReasonRaw = (string)($ct['close_reason'] ?? $ct['reason'] ?? '');
+                $clCloseReason = $e(match($closeReasonRaw) {
+                    'position_gone_from_exchange'              => 'Позиция исчезла с биржи',
+                    'position_gone_from_bybit_demo'            => 'Позиция исчезла с биржи',
+                    'position_gone_from_bybit_live'            => 'Позиция исчезла с биржи',
+                    'lock_touch'                               => 'Lock touch',
+                    'hybrid_confirmed'                         => 'Hybrid confirmed',
+                    'submitted_ttl_expired_no_active_position' => 'TTL submitted истёк',
+                    'closed_trade_reconciled'                  => 'Закрытая сделка сопоставлена',
+                    ''                                         => '—',
+                    default                                    => $closeReasonRaw,
+                });
+
+                // Inferred close type note
+                $inferredClose = (string)($ct['inferred_close_type'] ?? '');
+                $clInferredNote = '';
+                if ($inferredClose === 'loss_exit_candidate') {
+                    $clInferredNote = '<div style="font-size:10px;color:#f85149;margin-top:1px;">похоже на убыточное внешнее/стоп-закрытие</div>';
+                } elseif ($inferredClose === 'profit_exit_candidate') {
+                    $clInferredNote = '<div style="font-size:10px;color:#3fb950;margin-top:1px;">похоже на внешнее прибыльное закрытие</div>';
+                }
+
+                // Closed_at display with estimated marker — reuse $closedRaw from duration block
+                $clClosedAtDisplay = '—';
+                if ($closedRaw !== null) {
+                    $closedTs2 = is_numeric($closedRaw) ? (int)$closedRaw : (int)@strtotime((string)$closedRaw);
+                    if ($closedTs2 > 0) {
+                        $clClosedAtDisplay = date('d.m.y H:i', $closedTs2);
+                        if ($closedAtIsEst) {
+                            $clClosedAtDisplay .= ' <span style="color:#f0883e;font-size:10px;" title="Время закрытия обнаружено, не точное">обнаружено</span>';
+                        }
+                    }
+                }
+
+                $clModeVal   = strtolower((string)($ct['mode'] ?? $ct['execution_mode'] ?? ''));
+                $clMode      = $e($clModeVal !== '' ? $clModeVal : '—');
+                $clModeColor = $clModeVal === 'live' ? '#f0883e' : '#8b949e';
 
                 $clRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
                     . '<td style="padding:4px 8px;font-weight:600;">' . $clSymbol . '</td>'
@@ -3235,10 +3306,10 @@ HTML;
                     . '<td style="padding:4px 8px;text-align:right;">' . $clLev . '</td>'
                     . '<td style="padding:4px 8px;text-align:right;">' . $clBudget . '</td>'
                     . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clOpenedAt . '</td>'
-                    . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clClosedAt . '</td>'
-                    . '<td style="padding:4px 8px;font-size:11px;color:#58a6ff;">' . $clDur . '</td>'
-                    . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clCloseSource . '</td>'
-                    . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clCloseReason . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clClosedAtDisplay . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:#58a6ff;">' . $clDur . $clDurNote . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:' . $clCloseSourceColor . ';">' . $clCloseSource . '</td>'
+                    . '<td style="padding:4px 8px;font-size:11px;color:#8b949e;">' . $clCloseReason . $clInferredNote . '</td>'
                     . '<td style="padding:4px 8px;font-size:11px;color:' . $clModeColor . ';">' . $clMode . '</td>'
                     . '</tr>';
             }
@@ -3246,6 +3317,7 @@ HTML;
             $closedPositionsHtml = '<div class="card" style="margin-bottom:16px;">'
                 . '<div class="card-header"><i class="bi bi-check2-square" style="margin-right:6px;"></i>Последние закрытые позиции (показаны: ' . $clTotal . ')</div>'
                 . $clSummaryHtml
+                . $clEstWarningHtml
                 . '<div class="card-body" style="padding:0;">'
                 . '<div style="overflow-x:auto;">'
                 . '<table style="width:100%;font-size:12px;border-collapse:collapse;">'

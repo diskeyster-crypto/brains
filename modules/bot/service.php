@@ -1833,6 +1833,25 @@ final class BotService
             // else: value too small to be a valid Unix timestamp, fall back to local
         }
 
+        // Exchange-sourced opened_at (may be very old on Bybit demo)
+        $exchangeOpenedAt       = $openedAt;
+        $exchangeOpenedAtSource = $openedAtSource;
+
+        // Bot timestamps from queue item — more reliable for duration display
+        $botConfirmedAt      = (string)($qItem['confirmed_at'] ?? '');
+        $botSubmittedAt      = (string)($qItem['submitted_at'] ?? '');
+        $botSignalDetectedAt = (string)($qItem['detected_at']  ?? '');
+
+        // Prefer bot_confirmed_at > bot_submitted_at > exchange_opened_at for display
+        $openedAtDisplaySource = $exchangeOpenedAtSource;
+        if ($botConfirmedAt !== '') {
+            $openedAt              = $botConfirmedAt;
+            $openedAtDisplaySource = 'bot_confirmed_at';
+        } elseif ($botSubmittedAt !== '') {
+            $openedAt              = $botSubmittedAt;
+            $openedAtDisplaySource = 'bot_submitted_at';
+        }
+
         $synced_at   = $tickAt;
         $durationSec = (int)(time() - @strtotime($openedAt));
         if ($durationSec < 0) {
@@ -1874,14 +1893,20 @@ final class BotService
             'mode'              => 'demo',
             'account'           => 'bybit_demo',
             'transition_reason' => 'synced_from_bybit_demo',
-            'opened_at'             => $openedAt,
-            'opened_at_source'      => $openedAtSource,
-            'raw_created_time'      => $rawCreatedTime,
-            'raw_created_time_unit' => $rawCreatedTimeUnit,
-            'synced_at'             => $synced_at,
-            'duration_sec'          => $durationSec,
-            'entered_at'            => $openedAt,
-            'last_updated_at'       => $tickAt,
+            'opened_at'                 => $openedAt,
+            'opened_at_source'          => $openedAtSource,
+            'opened_at_display_source'  => $openedAtDisplaySource,
+            'exchange_opened_at'        => $exchangeOpenedAt !== '' ? $exchangeOpenedAt : null,
+            'exchange_opened_at_source' => $exchangeOpenedAtSource,
+            'bot_submitted_at'          => $botSubmittedAt      !== '' ? $botSubmittedAt      : null,
+            'bot_confirmed_at'          => $botConfirmedAt      !== '' ? $botConfirmedAt      : null,
+            'bot_signal_detected_at'    => $botSignalDetectedAt !== '' ? $botSignalDetectedAt : null,
+            'raw_created_time'          => $rawCreatedTime,
+            'raw_created_time_unit'     => $rawCreatedTimeUnit,
+            'synced_at'                 => $synced_at,
+            'duration_sec'              => $durationSec,
+            'entered_at'                => $openedAt,
+            'last_updated_at'           => $tickAt,
         ];
     }
 
@@ -2620,12 +2645,16 @@ final class BotService
             $sym = (string)($pos['symbol'] ?? '');
             if ($sym !== '' && !isset($freshSymbols[$sym]) && ($pos['execution_mode'] ?? '') === 'demo') {
                 // Position gone from Bybit Demo — move to closed
-                $pos['position_status'] = 'closed';
-                $pos['closed_at']       = $tickAt;
-                $pos['close_reason']    = 'position_gone_from_bybit_demo';
-                $pos['last_updated_at'] = $tickAt;
-                $pos['mode']            = 'demo';
-                $closedPositions[]      = $pos;
+                $pos['position_status']           = 'closed';
+                $pos['closed_at']                 = $tickAt;
+                $pos['close_reason']              = 'position_gone_from_bybit_demo';
+                $pos['close_source']              = 'exchange_disappeared';
+                $pos['close_source_confidence']   = 'inferred';
+                $pos['closed_at_source']          = 'detected_missing_from_exchange';
+                $pos['closed_at_is_estimated']    = true;
+                $pos['last_updated_at']           = $tickAt;
+                $pos['mode']                      = 'demo';
+                $closedPositions[]                = $pos;
                 $positionsClosed++;
                 $this->recordClosedTrade($pos, $tickAt);
             }
@@ -3081,12 +3110,16 @@ final class BotService
         foreach ($activePositions as $pos) {
             $sym = (string)($pos['symbol'] ?? '');
             if ($sym !== '' && !isset($freshSymbols[$sym]) && ($pos['execution_mode'] ?? '') === 'live') {
-                $pos['position_status'] = 'closed';
-                $pos['closed_at']       = $tickAt;
-                $pos['close_reason']    = 'position_gone_from_bybit_live';
-                $pos['last_updated_at'] = $tickAt;
-                $pos['mode']            = 'live';
-                $closedPositions[]      = $pos;
+                $pos['position_status']          = 'closed';
+                $pos['closed_at']                = $tickAt;
+                $pos['close_reason']             = 'position_gone_from_bybit_live';
+                $pos['close_source']             = 'exchange_disappeared';
+                $pos['close_source_confidence']  = 'inferred';
+                $pos['closed_at_source']         = 'detected_missing_from_exchange';
+                $pos['closed_at_is_estimated']   = true;
+                $pos['last_updated_at']          = $tickAt;
+                $pos['mode']                     = 'live';
+                $closedPositions[]               = $pos;
                 $positionsClosed++;
                 $this->recordClosedTrade($pos, $tickAt);
             }
@@ -3735,6 +3768,15 @@ final class BotService
             $explicitCloseSource = (string)($pos['close_source'] ?? '');
             $explicitCloseReason = (string)($pos['close_reason'] ?? '');
 
+            // Read diagnostic fields propagated from position-gone detection
+            $closeSourceConfidence = (string)($pos['close_source_confidence'] ?? '');
+            $closedAtSource        = (string)($pos['closed_at_source']        ?? '');
+            $closedAtIsEstimated   = (bool)($pos['closed_at_is_estimated']    ?? false);
+            $openedAtDisplaySource = (string)($pos['opened_at_display_source']?? '');
+            $exchangeOpenedAt      = isset($pos['exchange_opened_at']) ? (string)$pos['exchange_opened_at'] : null;
+            $botSubmittedAt        = isset($pos['bot_submitted_at'])   ? (string)$pos['bot_submitted_at']   : null;
+            $botConfirmedAt        = isset($pos['bot_confirmed_at'])   ? (string)$pos['bot_confirmed_at']   : null;
+
             if ($explicitCloseSource !== '') {
                 $closeSource = $explicitCloseSource;
             }
@@ -3761,12 +3803,15 @@ final class BotService
                             $entryTs = (int)($entry['ts'] ?? 0);
                             if ($entryTs > 0 && (time() - $entryTs) <= $pmRegistryTtl) {
                                 // Registry hit — override close attribution
-                                $closeSource   = (string)($entry['close_source']   ?? 'profit_manager');
-                                $closeReason   = (string)($entry['close_reason']   ?? $closeReason);
-                                $closeOrderId  = ($entry['close_order_id'] ?? null) !== null
+                                $closeSource           = (string)($entry['close_source']   ?? 'profit_manager');
+                                $closeReason           = (string)($entry['close_reason']   ?? $closeReason);
+                                $closeOrderId          = ($entry['close_order_id'] ?? null) !== null
                                     ? (string)$entry['close_order_id']
                                     : null;
-                                $executionType = 'pm_market_close';
+                                $executionType         = 'pm_market_close';
+                                $closeSourceConfidence = 'confirmed';
+                                $closedAtIsEstimated   = false;
+                                $closedAtSource        = 'pm_registry';
                             }
                             // Remove entry (consumed or stale)
                             unset($registry[$pmRegistryKey]);
@@ -3780,6 +3825,26 @@ final class BotService
                 }
             } catch (\Throwable) {
                 // Never crash over registry read/write failures
+            }
+
+            // Normalise legacy 'unknown' source — when no explicit source was found,
+            // the position disappeared from the exchange without a clear PM/Stop hit.
+            if ($closeSource === 'unknown') {
+                $closeSource = 'exchange_disappeared';
+                if ($closeSourceConfidence === '') {
+                    $closeSourceConfidence = 'inferred';
+                }
+                if ($closedAtSource === '') {
+                    $closedAtSource = 'detected_missing_from_exchange';
+                }
+                $closedAtIsEstimated = true;
+            }
+
+            // Infer close type from ROI when the source is exchange_disappeared.
+            // Do NOT label as stop_loss — negative ROI alone is not sufficient.
+            $inferredCloseType = null;
+            if ($closeSource === 'exchange_disappeared' && $roi !== null) {
+                $inferredCloseType = ($roi < 0.0) ? 'loss_exit_candidate' : 'profit_exit_candidate';
             }
 
             // ── Build trade record ────────────────────────────────────────────
@@ -3801,10 +3866,18 @@ final class BotService
                 'duration_sec'     => $durationSec,
                 'mode'             => $mode,
                 'account'          => $account,
-                'close_source'     => $closeSource,
-                'close_reason'     => $closeReason,
-                'close_order_id'   => $closeOrderId,
-                'execution_type'   => $executionType,
+                'close_source'               => $closeSource,
+                'close_reason'               => $closeReason,
+                'close_order_id'             => $closeOrderId,
+                'execution_type'             => $executionType,
+                'close_source_confidence'    => $closeSourceConfidence !== '' ? $closeSourceConfidence : null,
+                'closed_at_source'           => $closedAtSource         !== '' ? $closedAtSource         : null,
+                'closed_at_is_estimated'     => $closedAtIsEstimated,
+                'inferred_close_type'        => $inferredCloseType,
+                'opened_at_display_source'   => $openedAtDisplaySource  !== '' ? $openedAtDisplaySource  : null,
+                'exchange_opened_at'         => $exchangeOpenedAt,
+                'bot_submitted_at'           => $botSubmittedAt,
+                'bot_confirmed_at'           => $botConfirmedAt,
             ];
 
             // ── Write individual per-trade file ───────────────────────────────

@@ -511,6 +511,47 @@ function renderDashboardHub(): string
                 : '<span style="color:#8b949e;">Нет</span>';
             $signalStr = ($signalCount !== null) ? $e((string)$signalCount) : '—';
 
+            // ── Scan limit config (max_symbols_per_run, batch_size) ───────────
+            // Load from strategy's own base.php then active.php (active overrides base)
+            $opMaxSymbolsPerRun = null;
+            $opBatchSize        = null;
+            if ($modulePath !== '') {
+                $_scanModDir   = System::path('root') . '/' . $modulePath;
+                $_scanMerged   = [];
+                foreach (['config/base.php', 'config/active.php'] as $_scanCfgFile) {
+                    $_scanCfgPath = $_scanModDir . '/' . $_scanCfgFile;
+                    if (is_file($_scanCfgPath)) {
+                        $_scanCfgData = @include $_scanCfgPath;
+                        if (is_array($_scanCfgData)) {
+                            $_scanMerged = array_merge($_scanMerged, $_scanCfgData);
+                        }
+                    }
+                }
+                if (isset($_scanMerged['max_symbols_per_run'])) {
+                    $opMaxSymbolsPerRun = (int)$_scanMerged['max_symbols_per_run'];
+                }
+                if (isset($_scanMerged['batch_size'])) {
+                    $opBatchSize = (int)$_scanMerged['batch_size'];
+                }
+            }
+            // operator_overrides.json values take priority (written by save handler)
+            if (array_key_exists('max_symbols_per_run', $op)) {
+                $opMaxSymbolsPerRun = (int)$op['max_symbols_per_run'];
+            }
+            if (array_key_exists('batch_size', $op)) {
+                $opBatchSize = (int)$op['batch_size'];
+            }
+            $opMaxSymbolsPerRunStr = $opMaxSymbolsPerRun !== null ? (string)$opMaxSymbolsPerRun : '';
+            $opBatchSizeStr        = $opBatchSize        !== null ? (string)$opBatchSize        : '';
+            // Human-readable scan summary line (shown in card body)
+            $scanSummaryHtml = '';
+            if ($opMaxSymbolsPerRun !== null || $opBatchSize !== null) {
+                $scanParts = [];
+                if ($opMaxSymbolsPerRun !== null) { $scanParts[] = $opMaxSymbolsPerRun . ' монет/цикл'; }
+                if ($opBatchSize        !== null) { $scanParts[] = 'батч ' . $opBatchSize; }
+                $scanSummaryHtml = implode(' · ', $scanParts);
+            }
+
             // Options: mode select
             $modeDemo = $opMode !== 'live' ? ' selected' : '';
             $modeLive = $opMode === 'live' ? ' selected' : '';
@@ -801,6 +842,16 @@ HTG;
           {$cycleLineHtml}
         </td>
       </tr>
+HTML;
+            if ($scanSummaryHtml !== '') {
+                $stratCards .= <<<HTML
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Скан</td>
+        <td colspan="3" style="padding:3px 0;font-size:11px;color:var(--ui-text-muted);">{$scanSummaryHtml}</td>
+      </tr>
+HTML;
+            }
+            $stratCards .= <<<HTML
     </table>
 
     <!-- Toggle edit / manual action buttons -->
@@ -849,6 +900,18 @@ HTG;
               <option value="1" {$enHandoffYes}>Да</option>
               <option value="0" {$enHandoffNo}>Нет</option>
             </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Монет за цикл</label>
+            <input type="number" name="max_symbols_per_run" min="1" max="1000"
+              value="{$opMaxSymbolsPerRunStr}" placeholder="по умолчанию"
+              class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Размер батча</label>
+            <input type="number" name="batch_size" min="1" max="1000"
+              value="{$opBatchSizeStr}" placeholder="по умолчанию"
+              class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
           </div>
         </div>
         <div style="display:flex;gap:8px;">
@@ -5062,6 +5125,21 @@ function handleDashboardOverridesSave(): void
         $mode = 'demo';
     }
 
+    // Safety: controlled_daily_momentum_long is demo-only — never save mode='live'
+    if ($stratId === 'controlled_daily_momentum_long') {
+        $mode = 'demo';
+    }
+
+    // Scan limit inputs: validate integer 1..1000; empty or invalid = null (not saved)
+    $_postMaxSymbols = $_POST['max_symbols_per_run'] ?? '';
+    $_postBatchSize  = $_POST['batch_size']          ?? '';
+    $saveMaxSymbols  = (is_numeric($_postMaxSymbols) && (int)$_postMaxSymbols >= 1)
+        ? max(1, min(1000, (int)$_postMaxSymbols))
+        : null;
+    $saveBatchSize   = (is_numeric($_postBatchSize) && (int)$_postBatchSize >= 1)
+        ? max(1, min(1000, (int)$_postBatchSize))
+        : null;
+
     // Preserve all bot-owned execution fields from existing override; do not clobber
     // them — they are managed via the Bot/Control tab, not the strategy card form.
     $prev    = (array)($overrides[$stratId] ?? []);
@@ -5072,6 +5150,12 @@ function handleDashboardOverridesSave(): void
     if ($handoffEnabledPost >= 0) {
         $newData['handoff_enabled'] = (bool)$handoffEnabledPost;
     }
+    if ($saveMaxSymbols !== null) {
+        $newData['max_symbols_per_run'] = $saveMaxSymbols;
+    }
+    if ($saveBatchSize !== null) {
+        $newData['batch_size'] = $saveBatchSize;
+    }
     $overrides[$stratId] = array_merge($prev, $newData);
 
     if (!is_dir($storageDir)) {
@@ -5079,42 +5163,76 @@ function handleDashboardOverridesSave(): void
     }
     file_put_contents($overridesFile, json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
-    // For corridor_bottom_long, also sync enabled+mode+handoff_enabled into the strategy's own active.php
-    if ($stratId === 'corridor_bottom_long') {
-        $_cblActivePath = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/active.php';
-        $_cblSafeMode   = ($mode === 'live') ? 'live' : 'demo';
-        $_cblHandoff    = ($handoffEnabledPost >= 0)
-            ? ($handoffEnabledPost > 0 ? 'true' : 'false')
-            : ((bool)($overrides[$stratId]['handoff_enabled'] ?? false) ? 'true' : 'false');
-        $_cblActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
-            . "/**\n * Corridor Bottom Long — Active Config Overrides\n"
-            . " *\n * Written by the admin UI or manually.\n"
-            . " * Merged on top of base.php at runtime.\n */\n\n"
-            . "return [\n"
-            . "    'enabled'         => " . ((bool)$enabled ? 'true' : 'false') . ",\n"
-            . "    'mode'            => '" . $_cblSafeMode . "',\n"
-            . "    'handoff_enabled' => " . $_cblHandoff . ",\n"
-            . "];\n";
-        @file_put_contents($_cblActivePath, $_cblActiveContent);
+    // Generic: sync relevant config keys into the strategy's own config/active.php.
+    // Works for all strategies that have a module_path pointing to a config/ directory.
+    // Read the strategy registry to find the module_path.
+    $_ovRegFile = $storageDir . '/strategy_registry.json';
+    $_ovModPath = '';
+    if (is_file($_ovRegFile)) {
+        $_ovRegRaw = @file_get_contents($_ovRegFile);
+        if ($_ovRegRaw !== false && $_ovRegRaw !== '') {
+            $_ovReg = @json_decode($_ovRegRaw, true);
+            if (is_array($_ovReg)) {
+                foreach ($_ovReg as $_ovRec) {
+                    if (is_array($_ovRec) && (string)($_ovRec['strategy_id'] ?? '') === $stratId) {
+                        $_ovModPath = (string)($_ovRec['module_path'] ?? '');
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if ($_ovModPath === '') {
+        // Fallback: hard-coded paths for known strategies that predate registry population
+        $_knownPaths = [
+            'corridor_bottom_long'            => 'modules/strategy/pattern/corridor_bottom_long',
+            'controlled_daily_momentum_long'  => 'modules/strategy/pattern/controlled_daily_momentum_long',
+            'double_bottom_long'              => 'modules/strategy/pattern/double_bottom_long',
+        ];
+        $_ovModPath = $_knownPaths[$stratId] ?? '';
     }
 
-    // For controlled_daily_momentum_long, also sync enabled+mode+handoff_enabled into the strategy's own active.php
-    if ($stratId === 'controlled_daily_momentum_long') {
-        $_cdmlActivePath = System::path('root') . '/modules/strategy/pattern/controlled_daily_momentum_long/config/active.php';
-        $_cdmlSafeMode   = ($mode === 'live') ? 'live' : 'demo';
-        $_cdmlHandoff    = ($handoffEnabledPost >= 0)
-            ? ($handoffEnabledPost > 0 ? 'true' : 'false')
-            : ((bool)($overrides[$stratId]['handoff_enabled'] ?? false) ? 'true' : 'false');
-        $_cdmlActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
-            . "/**\n * Controlled Daily Momentum Long — Active Config Overrides\n"
-            . " *\n * Written by the admin UI or manually.\n"
-            . " * Merged on top of base.php at runtime.\n */\n\n"
-            . "return [\n"
-            . "    'enabled'         => " . ((bool)$enabled ? 'true' : 'false') . ",\n"
-            . "    'mode'            => '" . $_cdmlSafeMode . "',\n"
-            . "    'handoff_enabled' => " . $_cdmlHandoff . ",\n"
-            . "];\n";
-        @file_put_contents($_cdmlActivePath, $_cdmlActiveContent);
+    if ($_ovModPath !== '') {
+        $_ovActivePath = System::path('root') . '/' . $_ovModPath . '/config/active.php';
+        $_ovCfgDir     = dirname($_ovActivePath);
+
+        // Read existing active.php to preserve unmanaged keys
+        $_ovExisting = [];
+        if (is_file($_ovActivePath)) {
+            $_ovLoaded = @include $_ovActivePath;
+            if (is_array($_ovLoaded)) {
+                $_ovExisting = $_ovLoaded;
+            }
+        }
+
+        // Merge managed keys on top of existing
+        $_ovMerge = array_merge($_ovExisting, [
+            'enabled'         => (bool)$enabled,
+            'mode'            => $mode,
+        ]);
+        // handoff_enabled: only update if explicitly submitted
+        if ($handoffEnabledPost >= 0) {
+            $_ovMerge['handoff_enabled'] = (bool)($handoffEnabledPost > 0);
+        } elseif (!array_key_exists('handoff_enabled', $_ovMerge)) {
+            $_ovMerge['handoff_enabled'] = false;
+        }
+        // Scan limits: update only if a valid value was submitted; keep existing otherwise
+        if ($saveMaxSymbols !== null) {
+            $_ovMerge['max_symbols_per_run'] = $saveMaxSymbols;
+        }
+        if ($saveBatchSize !== null) {
+            $_ovMerge['batch_size'] = $saveBatchSize;
+        }
+
+        if (!is_dir($_ovCfgDir)) {
+            @mkdir($_ovCfgDir, 0755, true);
+        }
+
+        $_ovPhp  = "<?php\n\ndeclare(strict_types=1);\n\n";
+        $_ovPhp .= "/**\n * Strategy Active Config Overrides — {$stratId}\n";
+        $_ovPhp .= " * Written by the admin UI. Do not edit manually.\n */\n\n";
+        $_ovPhp .= "return " . var_export($_ovMerge, true) . ";\n";
+        @file_put_contents($_ovActivePath, $_ovPhp);
     }
 
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Настройки стратегии «{$stratId}» сохранены"];
@@ -5555,37 +5673,57 @@ function handleDashboardStrategyToggle(): void
     }
     file_put_contents($overridesFile, json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
-    // For corridor_bottom_long, also sync enabled state into the strategy's own active.php
-    // Preserve handoff_enabled from the existing override (or default false).
-    if ($stratId === 'corridor_bottom_long') {
-        $_cblActivePath   = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/active.php';
-        $_cblHandoffVal   = (bool)($overrides[$stratId]['handoff_enabled'] ?? false);
-        $_cblActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
-            . "/**\n * Corridor Bottom Long — Active Config Overrides\n"
-            . " *\n * Written by the admin UI or manually.\n"
-            . " * Merged on top of base.php at runtime.\n */\n\n"
-            . "return [\n"
-            . "    'enabled'         => " . ($enabled ? 'true' : 'false') . ",\n"
-            . "    'mode'            => 'demo',\n"
-            . "    'handoff_enabled' => " . ($_cblHandoffVal ? 'true' : 'false') . ",\n"
-            . "];\n";
-        @file_put_contents($_cblActivePath, $_cblActiveContent);
+    // Generic: sync enabled state into the strategy's own config/active.php (preserves all other keys).
+    // Look up module_path from registry.
+    $_togRegFile = $storageDir . '/strategy_registry.json';
+    $_togModPath = '';
+    if (is_file($_togRegFile)) {
+        $_togRegRaw = @file_get_contents($_togRegFile);
+        if ($_togRegRaw !== false && $_togRegRaw !== '') {
+            $_togReg = @json_decode($_togRegRaw, true);
+            if (is_array($_togReg)) {
+                foreach ($_togReg as $_togRec) {
+                    if (is_array($_togRec) && (string)($_togRec['strategy_id'] ?? '') === $stratId) {
+                        $_togModPath = (string)($_togRec['module_path'] ?? '');
+                        break;
+                    }
+                }
+            }
+        }
     }
-
-    // For controlled_daily_momentum_long, also sync enabled state into the strategy's own active.php
-    if ($stratId === 'controlled_daily_momentum_long') {
-        $_cdmlActivePath  = System::path('root') . '/modules/strategy/pattern/controlled_daily_momentum_long/config/active.php';
-        $_cdmlHandoffVal  = (bool)($overrides[$stratId]['handoff_enabled'] ?? false);
-        $_cdmlActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
-            . "/**\n * Controlled Daily Momentum Long — Active Config Overrides\n"
-            . " *\n * Written by the admin UI or manually.\n"
-            . " * Merged on top of base.php at runtime.\n */\n\n"
-            . "return [\n"
-            . "    'enabled'         => " . ($enabled ? 'true' : 'false') . ",\n"
-            . "    'mode'            => 'demo',\n"
-            . "    'handoff_enabled' => " . ($_cdmlHandoffVal ? 'true' : 'false') . ",\n"
-            . "];\n";
-        @file_put_contents($_cdmlActivePath, $_cdmlActiveContent);
+    if ($_togModPath === '') {
+        $_togKnownPaths = [
+            'corridor_bottom_long'           => 'modules/strategy/pattern/corridor_bottom_long',
+            'controlled_daily_momentum_long' => 'modules/strategy/pattern/controlled_daily_momentum_long',
+            'double_bottom_long'             => 'modules/strategy/pattern/double_bottom_long',
+        ];
+        $_togModPath = $_togKnownPaths[$stratId] ?? '';
+    }
+    if ($_togModPath !== '') {
+        $_togActivePath = System::path('root') . '/' . $_togModPath . '/config/active.php';
+        $_togExisting = [];
+        if (is_file($_togActivePath)) {
+            $_togLoaded = @include $_togActivePath;
+            if (is_array($_togLoaded)) {
+                $_togExisting = $_togLoaded;
+            }
+        }
+        $_togMerge = array_merge($_togExisting, ['enabled' => $enabled]);
+        // controlled_daily_momentum_long is always demo-only
+        if ($stratId === 'controlled_daily_momentum_long') {
+            $_togMerge['mode'] = 'demo';
+        }
+        if (!array_key_exists('mode', $_togMerge)) {
+            $_togMerge['mode'] = 'demo';
+        }
+        if (!array_key_exists('handoff_enabled', $_togMerge)) {
+            $_togMerge['handoff_enabled'] = false;
+        }
+        $_togPhp  = "<?php\n\ndeclare(strict_types=1);\n\n";
+        $_togPhp .= "/**\n * Strategy Active Config Overrides — {$stratId}\n";
+        $_togPhp .= " * Written by the admin UI. Do not edit manually.\n */\n\n";
+        $_togPhp .= "return " . var_export($_togMerge, true) . ";\n";
+        @file_put_contents($_togActivePath, $_togPhp);
     }
 
     $label = $enabled ? 'включена' : 'выключена';
@@ -5648,41 +5786,56 @@ function handleDashboardHandoffToggle(): void
     }
     file_put_contents($overridesFile, json_encode($overrides, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
-    // For corridor_bottom_long: sync handoff_enabled to the strategy's own active.php
-    // Preserve enabled and mode from the existing override.
-    if ($stratId === 'corridor_bottom_long') {
-        $_cblActivePath   = System::path('root') . '/modules/strategy/pattern/corridor_bottom_long/config/active.php';
-        $_cblEnabledVal   = (bool)($overrides[$stratId]['enabled']  ?? false);
-        $_cblModeVal      = (string)($overrides[$stratId]['mode']   ?? 'demo');
-        $_cblSafeMode     = ($_cblModeVal === 'live') ? 'live' : 'demo';
-        $_cblActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
-            . "/**\n * Corridor Bottom Long — Active Config Overrides\n"
-            . " *\n * Written by the admin UI or manually.\n"
-            . " * Merged on top of base.php at runtime.\n */\n\n"
-            . "return [\n"
-            . "    'enabled'         => " . ($_cblEnabledVal ? 'true' : 'false') . ",\n"
-            . "    'mode'            => '" . $_cblSafeMode . "',\n"
-            . "    'handoff_enabled' => " . ($handoffEnabled ? 'true' : 'false') . ",\n"
-            . "];\n";
-        @file_put_contents($_cblActivePath, $_cblActiveContent);
+    // Generic: sync handoff_enabled state into the strategy's own config/active.php (preserves all other keys).
+    $_hoRegFile = $storageDir . '/strategy_registry.json';
+    $_hoModPath = '';
+    if (is_file($_hoRegFile)) {
+        $_hoRegRaw = @file_get_contents($_hoRegFile);
+        if ($_hoRegRaw !== false && $_hoRegRaw !== '') {
+            $_hoReg = @json_decode($_hoRegRaw, true);
+            if (is_array($_hoReg)) {
+                foreach ($_hoReg as $_hoRec) {
+                    if (is_array($_hoRec) && (string)($_hoRec['strategy_id'] ?? '') === $stratId) {
+                        $_hoModPath = (string)($_hoRec['module_path'] ?? '');
+                        break;
+                    }
+                }
+            }
+        }
     }
-
-    // For controlled_daily_momentum_long: sync handoff_enabled to the strategy's own active.php
-    if ($stratId === 'controlled_daily_momentum_long') {
-        $_cdmlActivePath  = System::path('root') . '/modules/strategy/pattern/controlled_daily_momentum_long/config/active.php';
-        $_cdmlEnabledVal  = (bool)($overrides[$stratId]['enabled'] ?? true);
-        $_cdmlModeVal     = (string)($overrides[$stratId]['mode']  ?? 'demo');
-        $_cdmlSafeMode    = ($_cdmlModeVal === 'live') ? 'live' : 'demo';
-        $_cdmlActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
-            . "/**\n * Controlled Daily Momentum Long — Active Config Overrides\n"
-            . " *\n * Written by the admin UI or manually.\n"
-            . " * Merged on top of base.php at runtime.\n */\n\n"
-            . "return [\n"
-            . "    'enabled'         => " . ($_cdmlEnabledVal ? 'true' : 'false') . ",\n"
-            . "    'mode'            => '" . $_cdmlSafeMode . "',\n"
-            . "    'handoff_enabled' => " . ($handoffEnabled ? 'true' : 'false') . ",\n"
-            . "];\n";
-        @file_put_contents($_cdmlActivePath, $_cdmlActiveContent);
+    if ($_hoModPath === '') {
+        $_hoKnownPaths = [
+            'corridor_bottom_long'           => 'modules/strategy/pattern/corridor_bottom_long',
+            'controlled_daily_momentum_long' => 'modules/strategy/pattern/controlled_daily_momentum_long',
+            'double_bottom_long'             => 'modules/strategy/pattern/double_bottom_long',
+        ];
+        $_hoModPath = $_hoKnownPaths[$stratId] ?? '';
+    }
+    if ($_hoModPath !== '') {
+        $_hoActivePath = System::path('root') . '/' . $_hoModPath . '/config/active.php';
+        $_hoExisting = [];
+        if (is_file($_hoActivePath)) {
+            $_hoLoaded = @include $_hoActivePath;
+            if (is_array($_hoLoaded)) {
+                $_hoExisting = $_hoLoaded;
+            }
+        }
+        $_hoMerge = array_merge($_hoExisting, ['handoff_enabled' => $handoffEnabled]);
+        // controlled_daily_momentum_long is always demo-only
+        if ($stratId === 'controlled_daily_momentum_long') {
+            $_hoMerge['mode'] = 'demo';
+        }
+        if (!array_key_exists('mode', $_hoMerge)) {
+            $_hoMerge['mode'] = 'demo';
+        }
+        if (!array_key_exists('enabled', $_hoMerge)) {
+            $_hoMerge['enabled'] = true;
+        }
+        $_hoPhp  = "<?php\n\ndeclare(strict_types=1);\n\n";
+        $_hoPhp .= "/**\n * Strategy Active Config Overrides — {$stratId}\n";
+        $_hoPhp .= " * Written by the admin UI. Do not edit manually.\n */\n\n";
+        $_hoPhp .= "return " . var_export($_hoMerge, true) . ";\n";
+        @file_put_contents($_hoActivePath, $_hoPhp);
     }
 
     $label = $handoffEnabled ? 'включён' : 'выключен';

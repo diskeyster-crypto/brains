@@ -30,14 +30,14 @@ return [
     'universe_mode'       => 'all',
     'allowed_symbols'     => [],
     'excluded_symbols'    => [],
-    'max_symbols_per_run' => 50,
+    'max_symbols_per_run' => 200,
 
     // ── Candle data (Bybit 1m) ────────────────────────────────────────────────
     'kline_interval'    => '1',
     'lookback_candles'  => 1440,
     'bybit_base_url'    => 'https://api.bybit.com',
     'bybit_timeout_sec' => 10,
-    'batch_size'        => 50,
+    'batch_size'        => 200,
 
     // ── Daily momentum gate ────────────────────────────────────────────────────
     'hard_min_daily_change_pct'  => 5.0,   // below this: ignore (ignore_low_momentum_below_5pct)

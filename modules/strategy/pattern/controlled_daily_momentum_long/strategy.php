@@ -117,6 +117,18 @@ final class ControlledDailyMomentumLongStrategy
         $stats = [
             'started_at'              => date('c', $now),
             'simulation'              => $simulation,
+            // Explicit counters (new)
+            'scanned_total'                  => 0,
+            'universe_total'                 => $universeTotal,
+            'batch_start_index'              => $batchStartIndex,
+            'batch_end_index'                => $batchEndIndex,
+            'next_cursor'                    => $nextCursor,
+            'ignored_low_momentum_total'     => 0,
+            'weak_watch_only_total'          => 0,
+            'candidates_total'               => 0,
+            'signals_total'                  => 0,
+            'rejects_total'                  => 0,
+            // Backwards-compatible existing counters
             'symbols_checked'         => 0,
             'no_candle_data'          => 0,
             'candidates_found'        => 0,
@@ -125,11 +137,7 @@ final class ControlledDailyMomentumLongStrategy
             'handoff_enabled'         => false,
             'handoff_ready'           => 0,
             // Universe batching
-            'universe_total'          => $universeTotal,
             'batch_size'              => count($symbols),
-            'batch_start_index'       => $batchStartIndex,
-            'batch_end_index'         => $batchEndIndex,
-            'next_cursor'             => $nextCursor,
             'universe_cycle_id'       => $universeCycleId,
             'universe_wrapped'        => $universeWrapped,
             // Reject breakdown
@@ -150,6 +158,7 @@ final class ControlledDailyMomentumLongStrategy
 
         $maxSignalsPerRun = max(1, (int)($config['max_signals_per_run'] ?? 10));
         $signalsThisRun   = 0;
+        $hardMinPct       = (float)($config['hard_min_daily_change_pct'] ?? 5.0);
 
         // Load persisted state
         $candidates = $this->readJson('storage/candidates.json', []);
@@ -159,6 +168,7 @@ final class ControlledDailyMomentumLongStrategy
         $currentRunSignals = [];
 
         foreach ($symbols as $symbol) {
+            $stats['scanned_total']++;
             $stats['symbols_checked']++;
 
             // ── 1. Fetch candles ──────────────────────────────────────────────
@@ -176,49 +186,149 @@ final class ControlledDailyMomentumLongStrategy
 
             // ── 2. daily_momentum ─────────────────────────────────────────────
             $momentumResult = $this->pipelineDailyMomentum($candles, $config);
-            if (!$momentumResult['pass']) {
-                $this->recordReject($symbol, $momentumResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now);
+            $dailyChangePct = (float)($momentumResult['daily_change_pct'] ?? 0.0);
+            $momentumClass  = (string)($momentumResult['class'] ?? 'ignore');
+
+            // Symbols below hard_min: silently ignore (no candidate record)
+            if ($momentumResult['reason'] === 'ignore_low_momentum_below_5pct' || $dailyChangePct < $hardMinPct) {
+                $stats['ignored_low_momentum_total']++;
                 $stats['rejected']++;
+                $this->recordReject($symbol, $momentumResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, [
+                    'daily_change_pct' => $dailyChangePct,
+                ]);
                 continue;
             }
-            $dailyChangePct   = $momentumResult['daily_change_pct'];
-            $open24h          = $momentumResult['open_24h'];
-            $high24h          = $momentumResult['high_24h'];
-            $low24h           = $momentumResult['low_24h'];
-            $momentumClass    = $momentumResult['class']; // watch_only | valid | ideal
+
+            // All symbols >= hard_min are diagnostic candidates — write to candidates.json
+            $candidateKey = strtolower($symbol) . '_' . self::STRATEGY_ID;
+            $stats['candidates_total']++;
+
+            // Accumulate diagnostic fields as the symbol progresses through stages
+            $diagFields = [
+                'daily_change_pct' => $dailyChangePct,
+                'momentum_class'   => $momentumClass,
+            ];
+
+            // Weak watch_only (daily >= hard_min but < min_daily): record and skip
+            if (!$momentumResult['pass']) {
+                $stats['weak_watch_only_total']++;
+                $stats['rejected']++;
+                $stats['rejects_total']++;
+                $diagCandidate = array_merge([
+                    'key'          => $candidateKey,
+                    'symbol'       => $symbol,
+                    'state'        => 'watch_only',
+                    'failed_stage' => 'daily_momentum',
+                    'decision'     => 'watch_only',
+                    'reason'       => $momentumResult['reason'],
+                    'updated_at'   => date('c', $now),
+                ], $diagFields);
+                $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
+                $this->recordReject($symbol, $momentumResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
+                continue;
+            }
+
+            // Momentum passed (daily >= min_daily)
+            $open24h       = (float)($momentumResult['open_24h'] ?? 0.0);
+            $high24h       = (float)($momentumResult['high_24h'] ?? 0.0);
+            $low24h        = (float)($momentumResult['low_24h']  ?? 0.0);
 
             $stats['candidates_found']++;
 
             // ── 3. anti_blowoff ───────────────────────────────────────────────
             $blowoffResult = $this->pipelineAntiBlowoff($candles, $dailyChangePct, $high24h, $config);
+            $diagFields = array_merge($diagFields, array_filter([
+                'max_1m_pump_pct'        => $blowoffResult['max_1m_pump_pct']        ?? null,
+                'max_5m_pump_pct'        => $blowoffResult['max_5m_pump_pct']        ?? null,
+                'max_candle_share_pct'   => $blowoffResult['max_candle_share_pct']   ?? null,
+                'drawdown_from_high_pct' => $blowoffResult['drawdown_from_high_pct'] ?? null,
+            ], fn($v) => $v !== null));
             if (!$blowoffResult['pass']) {
-                $this->recordReject($symbol, $blowoffResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now);
                 $stats['rejected']++;
+                $stats['rejects_total']++;
+                $diagCandidate = array_merge([
+                    'key'          => $candidateKey,
+                    'symbol'       => $symbol,
+                    'state'        => 'rejected',
+                    'failed_stage' => 'anti_blowoff',
+                    'decision'     => 'rejected',
+                    'reject_reasons' => [$blowoffResult['reason']],
+                    'updated_at'   => date('c', $now),
+                ], $diagFields);
+                $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
+                $this->recordReject($symbol, $blowoffResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
             }
 
             // ── 4. soft_turnover_ramp ─────────────────────────────────────────
             $turnoverResult = $this->pipelineSoftTurnoverRamp($candles, $config);
+            $diagFields = array_merge($diagFields, array_filter([
+                'turnover_1h_ratio' => $turnoverResult['turnover_1h_ratio'] ?? null,
+                'turnover_15m_ramp' => $turnoverResult['turnover_15m_ramp'] ?? null,
+                'persistence_bars'  => $turnoverResult['persistence_bars']  ?? null,
+                'cliff_ratio'       => $turnoverResult['cliff_ratio']       ?? null,
+            ], fn($v) => $v !== null));
             if (!$turnoverResult['pass']) {
-                $this->recordReject($symbol, $turnoverResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now);
                 $stats['rejected']++;
+                $stats['rejects_total']++;
+                $diagCandidate = array_merge([
+                    'key'          => $candidateKey,
+                    'symbol'       => $symbol,
+                    'state'        => 'rejected',
+                    'failed_stage' => 'soft_turnover_ramp',
+                    'decision'     => 'rejected',
+                    'reject_reasons' => [$turnoverResult['reason']],
+                    'updated_at'   => date('c', $now),
+                ], $diagFields);
+                $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
+                $this->recordReject($symbol, $turnoverResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
             }
 
             // ── 5. structure ──────────────────────────────────────────────────
             $structureResult = $this->pipelineStructure($candles, $config);
+            $diagFields = array_merge($diagFields, array_filter([
+                'higher_lows_count' => $structureResult['higher_lows_count'] ?? null,
+            ], fn($v) => $v !== null));
             if (!$structureResult['pass']) {
-                $this->recordReject($symbol, $structureResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now);
                 $stats['rejected']++;
+                $stats['rejects_total']++;
+                $diagCandidate = array_merge([
+                    'key'          => $candidateKey,
+                    'symbol'       => $symbol,
+                    'state'        => 'rejected',
+                    'failed_stage' => 'structure',
+                    'decision'     => 'rejected',
+                    'reject_reasons' => [$structureResult['reason']],
+                    'updated_at'   => date('c', $now),
+                ], $diagFields);
+                $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
+                $this->recordReject($symbol, $structureResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
             }
             $structureBreakRef = $structureResult['structure_break_reference_price'];
 
             // ── 6. pullback_reclaim ───────────────────────────────────────────
             $pullbackResult = $this->pipelinePullbackReclaim($candles, $high24h, $config);
+            $diagFields = array_merge($diagFields, array_filter([
+                'pullback_depth_pct' => $pullbackResult['pullback_depth_pct'] ?? null,
+                'reclaim_level'      => $pullbackResult['reclaim_level']      ?? null,
+                'pullback_low'       => $pullbackResult['pullback_low']       ?? null,
+            ], fn($v) => $v !== null));
             if (!$pullbackResult['pass']) {
-                $this->recordReject($symbol, $pullbackResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now);
                 $stats['rejected']++;
+                $stats['rejects_total']++;
+                $diagCandidate = array_merge([
+                    'key'          => $candidateKey,
+                    'symbol'       => $symbol,
+                    'state'        => 'rejected',
+                    'failed_stage' => 'pullback_reclaim',
+                    'decision'     => 'rejected',
+                    'reject_reasons' => [$pullbackResult['reason']],
+                    'updated_at'   => date('c', $now),
+                ], $diagFields);
+                $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
+                $this->recordReject($symbol, $pullbackResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
             }
             $impulseHigh   = $pullbackResult['impulse_high'];
@@ -234,23 +344,38 @@ final class ControlledDailyMomentumLongStrategy
                 $high24h,
                 $config
             );
+            $diagFields = array_merge($diagFields, array_filter([
+                'entry_distance_from_reclaim_pct'   => $controlResult['dist_from_reclaim_pct']   ?? null,
+                'entry_distance_from_structure_pct' => $controlResult['dist_from_structure_pct'] ?? null,
+            ], fn($v) => $v !== null));
             if (!$controlResult['pass']) {
-                $this->recordReject($symbol, $controlResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now);
                 $stats['rejected']++;
+                $stats['rejects_total']++;
+                $diagCandidate = array_merge([
+                    'key'          => $candidateKey,
+                    'symbol'       => $symbol,
+                    'state'        => 'rejected',
+                    'failed_stage' => 'control_check',
+                    'decision'     => 'rejected',
+                    'reject_reasons' => [$controlResult['reason']],
+                    'updated_at'   => date('c', $now),
+                ], $diagFields);
+                $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
+                $this->recordReject($symbol, $controlResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
             }
 
             // ── Per-run signal cap ────────────────────────────────────────────
             if ($signalsThisRun >= $maxSignalsPerRun) {
                 $stats['signals_blocked_by_max_signals_per_run']++;
-                // Keep candidate alive for next run
-                $candidateKey = strtolower($symbol) . '_' . self::STRATEGY_ID;
-                $candidates   = $this->upsertCandidate($candidates, $candidateKey, [
+                $diagCandidate = array_merge([
                     'key'        => $candidateKey,
                     'symbol'     => $symbol,
                     'state'      => 'cap_reached',
+                    'decision'   => 'cap_reached',
                     'updated_at' => date('c', $now),
-                ]);
+                ], $diagFields);
+                $candidates   = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
                 continue;
             }
 
@@ -288,7 +413,7 @@ final class ControlledDailyMomentumLongStrategy
                 'signal_id'       => $signalId,
                 'symbol'          => $symbol,
                 'side'            => 'long',
-                'mode'            => (string)($config['mode'] ?? 'demo'),
+                'mode'            => 'demo', // controlled_daily_momentum_long is demo-only
 
                 // Entry
                 'entry_type'      => 'controlled_reclaim',
@@ -334,16 +459,51 @@ final class ControlledDailyMomentumLongStrategy
             $signalsThisRun++;
             $stats['generated_signals_count']++;
             $stats['signals_generated_current_run']++;
+            $stats['signals_total']++;
 
-            // Remove from candidates (emitted)
-            $candidateKey = strtolower($symbol) . '_' . self::STRATEGY_ID;
-            $candidates   = $this->removeCandidate($candidates, $candidateKey);
+            // Write diagnostic candidate with state='signal' (keep in candidates.json)
+            $diagFields['candidate_quality_score']              = $candidateQualityScore;
+            $diagFields['entry_distance_from_reclaim_pct']      = $entryDistFromReclaimPct;
+            $diagFields['entry_distance_from_structure_pct']    = $entryDistFromStructurePct;
+            $diagCandidate = array_merge([
+                'key'        => $candidateKey,
+                'symbol'     => $symbol,
+                'state'      => 'signal',
+                'decision'   => 'emit',
+                'reason'     => 'all_stages_passed',
+                'updated_at' => date('c', $now),
+            ], $diagFields);
+            $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
         }
 
         // ── PART 3: Normalized reject counters ────────────────────────────────
         arsort($_rejectCounters);
         $stats['reject_reasons_normalized'] = (object)$_rejectCounters;
         $stats['reject_examples']           = array_slice($_rejectExamples, 0, 10);
+
+        // ── Build top_candidates for last_run.json ────────────────────────────
+        // Sort: signal first, then by candidate_quality_score desc, daily_change_pct desc, updated_at desc
+        $candidatesForSort = array_filter($candidates, fn($c) => ($c['key'] ?? '') !== '');
+        usort($candidatesForSort, function (array $a, array $b): int {
+            $stateOrder = ['signal' => 0, 'cap_reached' => 1, 'watch_only' => 2, 'rejected' => 3];
+            $sa = $stateOrder[$a['state'] ?? ''] ?? 9;
+            $sb = $stateOrder[$b['state'] ?? ''] ?? 9;
+            if ($sa !== $sb) {
+                return $sa <=> $sb;
+            }
+            $qa = (float)($a['candidate_quality_score'] ?? 0.0);
+            $qb = (float)($b['candidate_quality_score'] ?? 0.0);
+            if (abs($qa - $qb) > 0.001) {
+                return $qb <=> $qa;
+            }
+            $da = (float)($a['daily_change_pct'] ?? 0.0);
+            $db = (float)($b['daily_change_pct'] ?? 0.0);
+            if (abs($da - $db) > 0.001) {
+                return $db <=> $da;
+            }
+            return strcmp((string)($b['updated_at'] ?? ''), (string)($a['updated_at'] ?? ''));
+        });
+        $stats['top_candidates'] = array_values(array_slice($candidatesForSort, 0, 10));
 
         // ── Persist state ─────────────────────────────────────────────────────
         $this->initStorage();
@@ -996,18 +1156,33 @@ final class ControlledDailyMomentumLongStrategy
         array &$rejectCounters,
         array &$rejectExamples,
         array &$rejects,
-        int $now
+        int $now,
+        array $diagMetrics = []
     ): void {
         $rejectCounters[$reason] = ($rejectCounters[$reason] ?? 0) + 1;
         if (count($rejectExamples) < 10) {
             $rejectExamples[] = ['symbol' => $symbol, 'reason' => $reason];
         }
-        // Rolling rejects log (keep last 200)
-        $rejects[] = [
-            'symbol'     => $symbol,
-            'reason'     => $reason,
-            'rejected_at'=> date('c', $now),
+        // Rolling rejects log (keep last 200) — enriched with available diagnostic metrics
+        $record = [
+            'symbol'      => $symbol,
+            'reason'      => $reason,
+            'rejected_at' => date('c', $now),
         ];
+        foreach ([
+            'daily_change_pct', 'momentum_class',
+            'max_1m_pump_pct', 'max_5m_pump_pct', 'max_candle_share_pct', 'drawdown_from_high_pct',
+            'turnover_1h_ratio', 'turnover_15m_ramp', 'persistence_bars', 'cliff_ratio',
+            'higher_lows_count',
+            'pullback_depth_pct', 'reclaim_level', 'pullback_low',
+            'entry_distance_from_reclaim_pct', 'entry_distance_from_structure_pct',
+            'candidate_quality_score',
+        ] as $field) {
+            if (array_key_exists($field, $diagMetrics)) {
+                $record[$field] = $diagMetrics[$field];
+            }
+        }
+        $rejects[] = $record;
         if (count($rejects) > 200) {
             $rejects = array_slice($rejects, -200);
         }

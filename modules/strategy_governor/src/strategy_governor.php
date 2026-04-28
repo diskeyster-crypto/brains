@@ -918,7 +918,9 @@ final class StrategyGovernor
         // ── Mode normalisation with safe demo inference ───────────────────────
         // Valid execution modes Governor may write into a pending entry.
         static $validExecutionModes = ['demo', 'paper'];
-        // Strategy operational/lifecycle modes — never used as execution mode.
+        // Strategy operational/lifecycle modes — these describe how a strategy runs
+        // (e.g. passive = no new positions, active = normal) but are NOT bot execution
+        // modes.  Governor must never use them as the 'mode' field of a signal.
         static $operationalModes = ['passive', 'active', 'disabled', 'smoke_demo'];
 
         $rawMode             = (string)($raw['mode'] ?? $raw['execution_mode'] ?? '');
@@ -959,7 +961,7 @@ final class StrategyGovernor
                     }
                     $mode             = 'demo';
                     $modeInferred     = true;
-                    $modeInferredFrom = 'handoff_context';
+                    $modeInferredFrom = 'config_operational_mode';
                 } elseif (in_array($stratConfigMode, $validExecutionModes, true)) {
                     $mode             = $stratConfigMode;
                     $modeInferred     = true;

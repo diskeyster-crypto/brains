@@ -67,13 +67,17 @@ return [
     // Hard/soft thresholds (adaptive entry diagnostics)
     'min_turnover_1h_vs_avg_24h_hard'  => 0.8,  // below this: hard reject (turnover_too_low)
     'min_turnover_1h_vs_avg_24h_soft'  => 1.3,  // below this but >= hard: warning (turnover_soft_below_target)
-    'hard_volume_cliff_ratio'          => 0.15, // below this: hard reject (volume_cliff_after_pump)
+    'max_turnover_1h_vs_avg_24h_soft'  => 4.0,  // above this but <= hard max: warning (turnover_spike_warning)
+    'max_turnover_1h_vs_avg_24h_hard'  => 7.0,  // above this: hard reject (turnover_spike_too_large)
+    'hard_volume_cliff_ratio'          => 0.12, // below this: hard reject (volume_cliff_after_pump)
     'warning_volume_cliff_ratio'       => 0.45, // below this but >= hard: warning (volume_cliff_warning)
     'min_persistence_candles_hard'     => 1,    // below this: hard reject (turnover_not_persistent)
     'min_persistence_candles_soft'     => 3,    // below soft but >= hard: warning (turnover_persistence_marginal)
     // Strong-signal adaptive overrides
     'strong_ramp_override_ratio'       => 1.5,  // ramp >= this triggers adaptive persistence relaxation
     'strong_turnover_override_ratio'   => 2.0,  // turnover >= this (+ ramp >= strong_ramp) allows persistence >= 2
+    // Recovery drift turnover tolerance
+    'recovery_drift_turnover_warning_allowed' => true, // if true, recovery_drift=true bypasses soft turnover hard rejects
 
     // ── Structure ─────────────────────────────────────────────────────────────
     'min_higher_lows_count'     => 2,     // minimum number of consecutive higher lows

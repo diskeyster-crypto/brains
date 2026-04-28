@@ -106,6 +106,9 @@ final class StrategyGovernor
         $queueSkippedStale           = 0;
         $queueDeduped                = 0;
         $queueLimited                = 0;
+        // Legacy missing_mode retry counters
+        $legacyMissingModeRetried    = 0;
+        $legacyMissingModeRecovered  = 0;
         // Learning quality counters (populated after buildStrategyStats)
         $lqEnabled              = false;
         $lqSeenTotal            = 0;
@@ -282,6 +285,106 @@ final class StrategyGovernor
             foreach ($normalizedSignals as $govKey => $norm) {
                 $stratId  = $norm['strategy_id'];
                 $existing = $pendingSignals[$govKey] ?? null;
+
+                // ── Legacy migration: missing_mode reject → retry with inferred mode ──
+                // Before the normal final-state guard, check whether this entry is a
+                // legacy reject_shadow/missing_mode that was rejected before mode inference
+                // was added to normalizeSignal().  Only reopen this specific combination:
+                //   state = reject_shadow  +  reason = missing_mode  +  mode is empty
+                // AND the current normalised signal now carries a valid (non-empty) mode.
+                // All other final states are left untouched.
+                if (
+                    $existing !== null
+                    && ($existing['state']  ?? '') === self::STATE_REJECT_SHADOW
+                    && ($existing['reason'] ?? '') === 'missing_mode'
+                    && (string)($existing['mode'] ?? '') === ''
+                    && (string)($norm['mode'] ?? '') !== ''
+                ) {
+                    $legacyMissingModeRetried++;
+                    $nowStr = date('Y-m-d H:i:s');
+
+                    // Age check: do not recover stale signals
+                    $detectedTsLeg = $this->parseTimestamp((string)($norm['detected_at'] ?? ''));
+                    $signalAgeLeg  = ($detectedTsLeg > 0) ? ($now - $detectedTsLeg) : PHP_INT_MAX;
+                    if ($signalAgeLeg > $maxSignalAge) {
+                        $existing['state']        = self::STATE_REJECT_SHADOW;
+                        $existing['reason']       = 'signal_too_old';
+                        $existing['updated_at']   = $nowStr;
+                        $existing['last_seen_at'] = $nowStr;
+                        $staleTotal++;
+                        $rejectedShadow++;
+                        $decisionsTotal++;
+                        $decisionsBatch[] = $this->buildDecisionRecord(
+                            $govKey, $norm,
+                            self::STATE_REJECT_SHADOW, self::STATE_REJECT_SHADOW,
+                            self::STATE_REJECT_SHADOW, self::ROUTE_NONE, 'signal_too_old',
+                            (int)($existing['tick_count'] ?? 0), 0, $mode
+                        );
+                        $decisionsWritten++;
+                        $newPending[$govKey] = $existing;
+                        continue;
+                    }
+
+                    // Resolve per-strategy policy for the retry
+                    $legPol          = $this->resolvePolicy($stratId, $stratPolicies, $globalMaxTicks);
+                    $legConfirmReq   = $legPol['confirmation_required'];
+                    $legMaxTicks     = $legPol['pending_confirmation_ticks'];
+
+                    if ($legConfirmReq) {
+                        // Corridor-like strategy: restart confirmation lifecycle
+                        $newLegState  = self::STATE_WAIT_CONFIRM;
+                        $newLegRoute  = self::ROUTE_NONE;
+                        $newLegReason = 'mode_inferred_retry';
+                    } else {
+                        // Immediate shadow decision using updated norm (mode now valid)
+                        [$newLegState, $newLegRoute, $newLegReason] = $this->decideImmediate(
+                            $norm, $stratStats[$stratId] ?? [],
+                            $minClosed, $minWinrate, $minAvgRoi, $maxConsecLosses,
+                            $lqEnabled
+                        );
+                    }
+
+                    // Journal the recovery transition exactly once (state changes after this
+                    // run, so the condition is never re-triggered for the same entry).
+                    $decisionsBatch[] = $this->buildDecisionRecord(
+                        $govKey, $norm,
+                        self::STATE_REJECT_SHADOW, $newLegState,
+                        $newLegState, $newLegRoute, 'mode_inferred_retry',
+                        0, $legConfirmReq ? $legMaxTicks : 0, $mode
+                    );
+                    $decisionsWritten++;
+                    $decisionsTotal++;
+
+                    // Build updated pending entry
+                    $pLeg                       = $existing;
+                    $pLeg['mode']               = $norm['mode'];
+                    $pLeg['state']              = $newLegState;
+                    $pLeg['reason']             = $newLegReason;
+                    $pLeg['recommended_route']  = $newLegRoute;
+                    $pLeg['max_ticks']          = $legConfirmReq ? $legMaxTicks : 0;
+                    $pLeg['tick_count']         = $legConfirmReq ? 1 : 0;
+                    $pLeg['updated_at']         = $nowStr;
+                    $pLeg['last_seen_at']       = $nowStr;
+                    if (!empty($norm['mode_inferred'])) {
+                        $pLeg['mode_inferred']      = true;
+                        $pLeg['mode_inferred_from'] = $norm['mode_inferred_from'] ?? null;
+                    }
+
+                    // Tally per-run counters
+                    match ($newLegState) {
+                        self::STATE_APPROVE_DEMO_SHADOW => $approvedDemoShadow++,
+                        self::STATE_APPROVE_LIVE_SHADOW => $approvedLiveShadow++,
+                        self::STATE_REJECT_SHADOW       => $rejectedShadow++,
+                        self::STATE_WAIT_CONFIRM        => $waitingConfirmation++,
+                        default                         => null,
+                    };
+                    if (in_array($newLegState, [self::STATE_APPROVE_DEMO_SHADOW, self::STATE_WAIT_CONFIRM], true)) {
+                        $legacyMissingModeRecovered++;
+                    }
+
+                    $newPending[$govKey] = $pLeg;
+                    continue;
+                }
 
                 // Already reached a terminal state — keep as-is, no re-processing
                 if ($existing !== null && in_array($existing['state'] ?? '', self::FINAL_STATES, true)) {
@@ -712,6 +815,9 @@ final class StrategyGovernor
             'approved_demo_queue_skipped_stale' => $queueSkippedStale,
             'approved_demo_queue_deduped'       => $queueDeduped,
             'approved_demo_queue_limited'       => $queueLimited,
+            // ── Legacy missing_mode retry ─────────────────────────────────────
+            'governor_legacy_missing_mode_retried_total'   => $legacyMissingModeRetried,
+            'governor_legacy_missing_mode_recovered_total' => $legacyMissingModeRecovered,
             // ── Learning data quality ─────────────────────────────────────────
             'learning_quality_enabled'                    => $lqEnabled,
             'closed_trades_seen_total'                    => $lqSeenTotal,

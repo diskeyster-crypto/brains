@@ -2420,6 +2420,10 @@ GOV;
             $gCurrExpired     = $e((string)(int)($govLastRun['current_expired_shadow_total']       ?? 0));
             $gCurrFinal       = $e((string)(int)($govLastRun['current_final_decisions_total']      ?? 0));
 
+            // ── Legacy missing_mode retry counters ────────────────────────────
+            $gLegacyRetried   = $e((string)(int)($govLastRun['governor_legacy_missing_mode_retried_total']   ?? 0));
+            $gLegacyRecovered = $e((string)(int)($govLastRun['governor_legacy_missing_mode_recovered_total'] ?? 0));
+
             // ── Phase 3A: approved demo queue counters ────────────────────────
             $gQueueEnabled  = ($govLastRun['approved_demo_queue_enabled']  ?? $govCfg['approved_demo_queue_enabled']  ?? true) ? 'да' : 'нет';
             $gQueueMode     = $e((string)($govLastRun['approved_demo_queue_mode'] ?? $govCfg['approved_demo_queue_mode'] ?? 'shadow_bridge'));
@@ -2745,6 +2749,8 @@ GOV;
       <div><span style="color:var(--ui-text-muted);">Rejected shadow</span><br><strong style="color:#f85149;">{$gRejected}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Expired shadow</span><br><strong style="color:#8b949e;">{$gExpired}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Ошибки</span><br>{$gErrorsHtml}</div>
+      <div><span style="color:var(--ui-text-muted);">Legacy mode retry</span><br><strong style="color:#f0883e;">{$gLegacyRetried}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Legacy recovered</span><br><strong style="color:#3fb950;">{$gLegacyRecovered}</strong></div>
     </div>
 
     <!-- Текущее состояние -->

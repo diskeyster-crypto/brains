@@ -760,6 +760,34 @@ final class BotService
         $activePositions = $execResult['active_positions'];
         $closedPositions = $execResult['closed_positions'];
 
+        // ── 5b. Post-execution reconciliation ────────────────────────────────
+        // If positions were closed during execution (e.g. by Profit Manager),
+        // recordClosedTrade() has already written the updated closed_trades.json
+        // to disk.  Run a second reconcile pass so matching submitted queue items
+        // are immediately moved to closed_reconciled in the same tick instead of
+        // waiting until the next tick.
+        if ($execResult['positions_closed'] > 0) {
+            $reconResult2 = $this->reconcileSubmittedQueue(
+                $orderQueue, $activeOrders, $activePositions, $tickAt, $config
+            );
+            $orderQueue = $reconResult2['order_queue'];
+
+            // Aggregate counts: accumulate matched/reconciled totals from both
+            // passes; use the final pass values for the "still blocking" counters
+            // so last_run reflects the true state after all closes this tick.
+            $reconResult['order_queue']              = $reconResult2['order_queue'];
+            $reconResult['submitted_total']         += $reconResult2['submitted_total'];
+            $reconResult['active_position_matched'] += $reconResult2['active_position_matched'];
+            $reconResult['active_order_matched']    += $reconResult2['active_order_matched'];
+            $reconResult['closed_trade_matched']    += $reconResult2['closed_trade_matched'];
+            $reconResult['reconciled_closed']       += $reconResult2['reconciled_closed'];
+            $reconResult['reconciled_expired']      += $reconResult2['reconciled_expired'];
+            // Final-state snapshot: must reflect state after all closes this tick
+            $reconResult['waiting_match']            = $reconResult2['waiting_match'];
+            $reconResult['stale_unmatched']          = $reconResult2['stale_unmatched'];
+            $reconResult['still_blocking']           = $reconResult2['still_blocking'];
+        }
+
         // ── 6. Update stats ───────────────────────────────────────────────────
         $stats['ticks_total']               += 1;
         // Discovery counters are current-state snapshots, not cumulative

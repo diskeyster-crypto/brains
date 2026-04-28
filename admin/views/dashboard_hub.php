@@ -2478,10 +2478,17 @@ GOV;
                         $pWindow = '<span style="color:var(--ui-text-muted);font-style:italic;">финально</span>';
                     }
                     $govPendByStrat[$pStrat] = ($govPendByStrat[$pStrat] ?? 0) + 1;
+                    $pRawMode    = (string)($pk['mode'] ?? '');
+                    $pModeInf    = !empty($pk['mode_inferred']);
+                    $pModeFrom   = (string)($pk['mode_inferred_from'] ?? '');
+                    $pModeDisp   = $pRawMode !== ''
+                        ? $e($pRawMode) . ($pModeInf ? ' <span style="color:#f0883e;font-size:10px;" title="Режим выведен автоматически (inferred from: ' . $e($pModeFrom) . ')">(inferred)</span>' : '')
+                        : '<span style="color:var(--ui-text-muted);">—</span>';
                     $govPendingRows .= '<tr>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $pSig . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pStrat . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pSym . '</td>'
+                        . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pModeDisp . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pStateDisp . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;text-align:right;">' . $pTicks . '/' . $pMaxT . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pWindow . '</td>'
@@ -2497,7 +2504,7 @@ GOV;
                 $govPendByStratHtml .= '<span style="margin-right:12px;">' . $e($ps) . ': <strong>' . $e((string)$pc) . '</strong></span>';
             }
             if ($govPendingRows === '') {
-                $govPendingRows = '<tr><td colspan="9" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Pending сигналов нет</td></tr>';
+                $govPendingRows = '<tr><td colspan="10" style="color:var(--ui-text-muted);padding:8px 0;font-style:italic;">Pending сигналов нет</td></tr>';
             }
 
             // ── Decision journal rows ────────────────────────────────────────
@@ -2826,6 +2833,7 @@ GOV;
             <th style="padding:3px 8px 3px 0;text-align:left;">signal_id</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">strategy</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">symbol</th>
+            <th style="padding:3px 8px 3px 0;text-align:left;">mode</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">state / решение</th>
             <th style="padding:3px 8px 3px 0;text-align:right;">tick/max</th>
             <th style="padding:3px 8px 3px 0;text-align:left;">окно</th>

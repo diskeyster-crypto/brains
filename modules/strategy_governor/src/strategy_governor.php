@@ -752,13 +752,48 @@ final class StrategyGovernor
         $govKey     = $stratId . ':' . $signalId;
         $sourceFile = (string)($raw['_source_file'] ?? '');
 
+        // ── Mode normalisation with safe demo inference ───────────────────────
+        // Prefer explicit signal fields; never infer live.
+        $mode         = (string)($raw['mode'] ?? $raw['execution_mode'] ?? '');
+        $modeInferred = false;
+        $modeInferredFrom = null;
+
+        if ($mode === '') {
+            // 1. Signal carries execution_mode (already covered above) — no match here.
+            // 2. Source file is a bot_handoff_queue → infer demo (handoff context)
+            if ($sourceFile !== '' && str_contains($sourceFile, 'bot_handoff_queue')) {
+                $mode             = 'demo';
+                $modeInferred     = true;
+                $modeInferredFrom = 'handoff_context';
+            }
+
+            // 3. Try strategy active/base config for the mode key
+            if ($mode === '') {
+                $stratConfigMode = $this->readStrategyConfigMode($stratId);
+                if ($stratConfigMode !== '' && $stratConfigMode !== 'live') {
+                    $mode             = $stratConfigMode;
+                    $modeInferred     = true;
+                    $modeInferredFrom = 'strategy_config';
+                }
+            }
+
+            // 4. Default to demo for any known strategy handoff signal — never live.
+            if ($mode === '') {
+                $mode             = 'demo';
+                $modeInferred     = true;
+                $modeInferredFrom = 'default_demo';
+            }
+        }
+
         return [
             'governor_signal_key' => $govKey,
             'signal_id'           => $signalId,
             'strategy_id'         => $stratId,
             'symbol'              => (string)($raw['symbol']      ?? ''),
             'side'                => (string)($raw['side']         ?? ''),
-            'mode'                => (string)($raw['mode']         ?? $raw['execution_mode'] ?? ''),
+            'mode'                => $mode,
+            'mode_inferred'       => $modeInferred,
+            'mode_inferred_from'  => $modeInferredFrom,
             'entry_price'         => $raw['entry_price'] ?? $raw['price'] ?? null,
             'detected_at'         => (string)($raw['detected_at']  ?? $raw['created_at'] ?? ''),
             'created_at'          => (string)($raw['created_at']   ?? $raw['detected_at'] ?? ''),
@@ -766,6 +801,35 @@ final class StrategyGovernor
             'source_file'         => $sourceFile,
             'handoff_valid'       => $raw['handoff_valid'] ?? null,
         ];
+    }
+
+    /**
+     * Read the 'mode' key from a strategy's active.php or base.php config.
+     *
+     * Returns '' if the config cannot be loaded or produces no mode value.
+     * Never returns 'live' — callers must not infer live from this helper.
+     */
+    private function readStrategyConfigMode(string $stratId): string
+    {
+        $configDir = $this->repoRoot . '/modules/strategy/pattern/' . $stratId . '/config';
+        foreach (['active.php', 'base.php'] as $file) {
+            $path = $configDir . '/' . $file;
+            if (!is_file($path)) {
+                continue;
+            }
+            try {
+                $cfg = @include $path;
+                if (is_array($cfg)) {
+                    $cfgMode = (string)($cfg['mode'] ?? $cfg['execution_mode'] ?? '');
+                    if ($cfgMode !== '' && $cfgMode !== 'live') {
+                        return $cfgMode;
+                    }
+                }
+            } catch (\Throwable) {
+                // Ignore config read failures — never crash over missing config
+            }
+        }
+        return '';
     }
 
     // =========================================================================
@@ -801,7 +865,7 @@ final class StrategyGovernor
     private function initPendingEntry(array $norm): array
     {
         $now = date('Y-m-d H:i:s');
-        return [
+        $entry = [
             'governor_signal_key' => $norm['governor_signal_key'],
             'signal_id'           => $norm['signal_id'],
             'strategy_id'         => $norm['strategy_id'],
@@ -819,6 +883,12 @@ final class StrategyGovernor
             'last_seen_at'        => $now,
             'updated_at'          => $now,
         ];
+        // Propagate mode inference diagnostics when mode was inferred
+        if (!empty($norm['mode_inferred'])) {
+            $entry['mode_inferred']      = true;
+            $entry['mode_inferred_from'] = $norm['mode_inferred_from'] ?? null;
+        }
+        return $entry;
     }
 
     // =========================================================================

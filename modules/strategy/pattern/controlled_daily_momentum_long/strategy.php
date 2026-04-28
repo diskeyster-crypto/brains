@@ -128,6 +128,14 @@ final class ControlledDailyMomentumLongStrategy
             'candidates_total'               => 0,
             'signals_total'                  => 0,
             'rejects_total'                  => 0,
+            // Stage pass counters
+            'daily_momentum_pass_total'      => 0,
+            'anti_blowoff_pass_total'        => 0,
+            'soft_turnover_pass_total'       => 0,
+            'soft_turnover_warning_total'    => 0,
+            'structure_pass_total'           => 0,
+            'pullback_reclaim_pass_total'    => 0,
+            'control_check_pass_total'       => 0,
             // Backwards-compatible existing counters
             'symbols_checked'         => 0,
             'no_candle_data'          => 0,
@@ -165,7 +173,8 @@ final class ControlledDailyMomentumLongStrategy
         $signals    = $this->readJson('storage/signals.json',    []);
         $rejects    = $this->readJson('storage/rejects.json',    []);
 
-        $currentRunSignals = [];
+        $currentRunSignals       = [];
+        $currentRunCandidateKeys = [];
 
         foreach ($symbols as $symbol) {
             $stats['scanned_total']++;
@@ -202,6 +211,7 @@ final class ControlledDailyMomentumLongStrategy
             // All symbols >= hard_min are diagnostic candidates — write to candidates.json
             $candidateKey = strtolower($symbol) . '_' . self::STRATEGY_ID;
             $stats['candidates_total']++;
+            $currentRunCandidateKeys[$candidateKey] = true; // track for top_current_candidates
 
             // Accumulate diagnostic fields as the symbol progresses through stages
             $diagFields = [
@@ -234,6 +244,7 @@ final class ControlledDailyMomentumLongStrategy
             $low24h        = (float)($momentumResult['low_24h']  ?? 0.0);
 
             $stats['candidates_found']++;
+            $stats['daily_momentum_pass_total']++;
 
             // ── 3. anti_blowoff ───────────────────────────────────────────────
             $blowoffResult = $this->pipelineAntiBlowoff($candles, $dailyChangePct, $high24h, $config);
@@ -259,14 +270,17 @@ final class ControlledDailyMomentumLongStrategy
                 $this->recordReject($symbol, $blowoffResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
             }
+            $stats['anti_blowoff_pass_total']++;
 
             // ── 4. soft_turnover_ramp ─────────────────────────────────────────
             $turnoverResult = $this->pipelineSoftTurnoverRamp($candles, $config);
             $diagFields = array_merge($diagFields, array_filter([
-                'turnover_1h_ratio' => $turnoverResult['turnover_1h_ratio'] ?? null,
-                'turnover_15m_ramp' => $turnoverResult['turnover_15m_ramp'] ?? null,
-                'persistence_bars'  => $turnoverResult['persistence_bars']  ?? null,
-                'cliff_ratio'       => $turnoverResult['cliff_ratio']       ?? null,
+                'turnover_1h_ratio'    => $turnoverResult['turnover_1h_ratio']    ?? null,
+                'turnover_15m_ramp'    => $turnoverResult['turnover_15m_ramp']    ?? null,
+                'persistence_bars'     => $turnoverResult['persistence_bars']     ?? null,
+                'cliff_ratio'          => $turnoverResult['cliff_ratio']          ?? null,
+                'soft_turnover_status' => $turnoverResult['soft_turnover_status'] ?? null,
+                'turnover_warnings'    => !empty($turnoverResult['warnings']) ? $turnoverResult['warnings'] : null,
             ], fn($v) => $v !== null));
             if (!$turnoverResult['pass']) {
                 $stats['rejected']++;
@@ -283,6 +297,10 @@ final class ControlledDailyMomentumLongStrategy
                 $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
                 $this->recordReject($symbol, $turnoverResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
+            }
+            $stats['soft_turnover_pass_total']++;
+            if (!empty($turnoverResult['warnings'])) {
+                $stats['soft_turnover_warning_total']++;
             }
 
             // ── 5. structure ──────────────────────────────────────────────────
@@ -306,6 +324,7 @@ final class ControlledDailyMomentumLongStrategy
                 $this->recordReject($symbol, $structureResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
             }
+            $stats['structure_pass_total']++;
             $structureBreakRef = $structureResult['structure_break_reference_price'];
 
             // ── 6. pullback_reclaim ───────────────────────────────────────────
@@ -331,6 +350,7 @@ final class ControlledDailyMomentumLongStrategy
                 $this->recordReject($symbol, $pullbackResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
             }
+            $stats['pullback_reclaim_pass_total']++;
             $impulseHigh   = $pullbackResult['impulse_high'];
             $pullbackLow   = $pullbackResult['pullback_low'];
             $reclaimLevel  = $pullbackResult['reclaim_level'];
@@ -364,6 +384,7 @@ final class ControlledDailyMomentumLongStrategy
                 $this->recordReject($symbol, $controlResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
             }
+            $stats['control_check_pass_total']++;
 
             // ── Per-run signal cap ────────────────────────────────────────────
             if ($signalsThisRun >= $maxSignalsPerRun) {
@@ -447,8 +468,10 @@ final class ControlledDailyMomentumLongStrategy
                 'candidate_quality_score'  => $candidateQualityScore,
 
                 // Reason codes
-                'reason_codes'   => $this->collectReasonCodes($momentumResult, $blowoffResult, $turnoverResult, $structureResult, $pullbackResult, $controlResult),
-                'reject_reasons' => [],
+                'reason_codes'         => $this->collectReasonCodes($momentumResult, $blowoffResult, $turnoverResult, $structureResult, $pullbackResult, $controlResult),
+                'reject_reasons'       => [],
+                'turnover_warnings'    => $turnoverResult['warnings']    ?? [],
+                'soft_turnover_status' => $turnoverResult['soft_turnover_status'] ?? 'ok',
 
                 // Momentum class
                 'momentum_class' => $momentumClass,
@@ -483,8 +506,7 @@ final class ControlledDailyMomentumLongStrategy
 
         // ── Build top_candidates for last_run.json ────────────────────────────
         // Sort: signal first, then by candidate_quality_score desc, daily_change_pct desc, updated_at desc
-        $candidatesForSort = array_filter($candidates, fn($c) => ($c['key'] ?? '') !== '');
-        usort($candidatesForSort, function (array $a, array $b): int {
+        $sortComparator = function (array $a, array $b): int {
             $stateOrder = ['signal' => 0, 'cap_reached' => 1, 'watch_only' => 2, 'rejected' => 3];
             $sa = $stateOrder[$a['state'] ?? ''] ?? 9;
             $sb = $stateOrder[$b['state'] ?? ''] ?? 9;
@@ -502,8 +524,20 @@ final class ControlledDailyMomentumLongStrategy
                 return $db <=> $da;
             }
             return strcmp((string)($b['updated_at'] ?? ''), (string)($a['updated_at'] ?? ''));
-        });
+        };
+
+        $candidatesForSort = array_filter($candidates, fn($c) => ($c['key'] ?? '') !== '');
+        usort($candidatesForSort, $sortComparator);
         $stats['top_candidates'] = array_values(array_slice($candidatesForSort, 0, 10));
+
+        // ── Build top_current_candidates (only candidates touched this run) ───
+        $currentRunCandidates = array_filter(
+            $candidates,
+            fn($c) => isset($currentRunCandidateKeys[$c['key'] ?? ''])
+        );
+        usort($currentRunCandidates, $sortComparator);
+        $stats['current_run_candidates_total'] = count($currentRunCandidates);
+        $stats['top_current_candidates']       = array_values(array_slice($currentRunCandidates, 0, 10));
 
         // ── Persist state ─────────────────────────────────────────────────────
         $this->initStorage();
@@ -744,21 +778,37 @@ final class ControlledDailyMomentumLongStrategy
      */
     private function pipelineSoftTurnoverRamp(array $candles, array $config): array
     {
-        $minRatio1h  = (float)($config['min_turnover_1h_vs_avg_24h']     ?? 1.3);
-        $maxRatio1h  = (float)($config['max_turnover_1h_vs_avg_24h']     ?? 4.0);
-        $minRamp15m  = (float)($config['min_turnover_ramp_15m_ratio']    ?? 1.15);
-        $persWindow  = (int)($config['volume_persistence_window']        ?? 4);
-        $persMinBars = (int)($config['min_volume_persistence_candles']   ?? 3);
-        $cliffRatio  = (float)($config['max_volume_cliff_ratio']         ?? 0.45);
+        // Hard/soft thresholds — new keys; fall back to legacy keys for backward compat
+        $hardMinRatio1h    = (float)($config['min_turnover_1h_vs_avg_24h_hard']  ?? 0.8);
+        $softMinRatio1h    = (float)($config['min_turnover_1h_vs_avg_24h_soft']
+                              ?? $config['min_turnover_1h_vs_avg_24h']            ?? 1.3);
+        $maxRatio1h        = (float)($config['max_turnover_1h_vs_avg_24h']        ?? 4.0);
+        $minRamp15m        = (float)($config['min_turnover_ramp_15m_ratio']       ?? 1.15);
+        $persWindow        = (int)($config['volume_persistence_window']           ?? 4);
+        $persHard          = (int)($config['min_persistence_candles_hard']        ?? 1);
+        $persSoft          = (int)($config['min_persistence_candles_soft']
+                              ?? $config['min_volume_persistence_candles']        ?? 3);
+        $hardCliff         = (float)($config['hard_volume_cliff_ratio']           ?? 0.15);
+        $warnCliff         = (float)($config['warning_volume_cliff_ratio']
+                              ?? $config['max_volume_cliff_ratio']                ?? 0.45);
+        $strongRamp        = (float)($config['strong_ramp_override_ratio']        ?? 1.5);
+        $strongTurnover    = (float)($config['strong_turnover_override_ratio']    ?? 2.0);
 
         $count     = count($candles);
         $volumes   = array_column($candles, 'volume');
         $avgVol24h = count($volumes) > 0 ? array_sum($volumes) / count($volumes) : 0.0;
 
         if ($avgVol24h <= 0.0) {
-            return ['pass' => false, 'reason' => 'turnover_too_low',
-                'turnover_1h_ratio' => 0.0, 'turnover_15m_ramp' => 0.0,
-                'persistence_bars' => 0, 'cliff_ratio' => 0.0];
+            return [
+                'pass'               => false,
+                'reason'             => 'turnover_too_low',
+                'warnings'           => [],
+                'soft_turnover_status' => 'reject',
+                'turnover_1h_ratio'  => 0.0,
+                'turnover_15m_ramp'  => 0.0,
+                'persistence_bars'   => 0,
+                'cliff_ratio'        => 0.0,
+            ];
         }
 
         // 1h turnover (last 60 bars)
@@ -767,16 +817,41 @@ final class ControlledDailyMomentumLongStrategy
         $avg1hBase = $avgVol24h * 60;
         $ratio1h   = ($avg1hBase > 0) ? $vol1h / $avg1hBase : 0.0;
 
-        if ($ratio1h < $minRatio1h) {
-            return ['pass' => false, 'reason' => 'turnover_too_low',
-                'turnover_1h_ratio' => round($ratio1h, 4), 'turnover_15m_ramp' => 0.0,
-                'persistence_bars' => 0, 'cliff_ratio' => 0.0];
+        // Hard reject: turnover below hard minimum
+        if ($ratio1h < $hardMinRatio1h) {
+            return [
+                'pass'               => false,
+                'reason'             => 'turnover_too_low',
+                'warnings'           => [],
+                'soft_turnover_status' => 'reject',
+                'turnover_1h_ratio'  => round($ratio1h, 4),
+                'turnover_15m_ramp'  => 0.0,
+                'persistence_bars'   => 0,
+                'cliff_ratio'        => 0.0,
+            ];
         }
 
+        // Hard reject: turnover spike too large
         if ($ratio1h > $maxRatio1h) {
-            return ['pass' => false, 'reason' => 'turnover_spike_too_large',
-                'turnover_1h_ratio' => round($ratio1h, 4), 'turnover_15m_ramp' => 0.0,
-                'persistence_bars' => 0, 'cliff_ratio' => 0.0];
+            return [
+                'pass'               => false,
+                'reason'             => 'turnover_spike_too_large',
+                'warnings'           => [],
+                'soft_turnover_status' => 'reject',
+                'turnover_1h_ratio'  => round($ratio1h, 4),
+                'turnover_15m_ramp'  => 0.0,
+                'persistence_bars'   => 0,
+                'cliff_ratio'        => 0.0,
+            ];
+        }
+
+        $warnings = [];
+        $softTurnoverStatus = 'ok';
+
+        // Soft warning: turnover between hard and soft thresholds
+        if ($ratio1h < $softMinRatio1h) {
+            $warnings[]         = 'turnover_soft_below_target';
+            $softTurnoverStatus = 'warning';
         }
 
         // 15m turnover ramp (last 15 vs prior 15)
@@ -785,12 +860,6 @@ final class ControlledDailyMomentumLongStrategy
         $volL15 = array_sum(array_column($last15, 'volume'));
         $volP15 = array_sum(array_column($prev15, 'volume'));
         $ramp15 = ($volP15 > 0) ? $volL15 / $volP15 : 1.0;
-
-        if ($ramp15 < $minRamp15m) {
-            return ['pass' => false, 'reason' => 'turnover_not_persistent',
-                'turnover_1h_ratio' => round($ratio1h, 4), 'turnover_15m_ramp' => round($ramp15, 4),
-                'persistence_bars' => 0, 'cliff_ratio' => 0.0];
-        }
 
         // Volume persistence
         $persSlice    = array_slice($candles, max(0, $count - $persWindow));
@@ -806,29 +875,127 @@ final class ControlledDailyMomentumLongStrategy
             }
         }
 
-        if ($persAboveAvg < $persMinBars) {
-            return ['pass' => false, 'reason' => 'turnover_not_persistent',
-                'turnover_1h_ratio' => round($ratio1h, 4), 'turnover_15m_ramp' => round($ramp15, 4),
-                'persistence_bars' => $persAboveAvg, 'cliff_ratio' => 0.0];
-        }
-
         // Volume cliff check: last bar vs peak
-        $lastVol    = (float)(end($candles)['volume'] ?? 0.0);
+        $lastVol          = (float)(end($candles)['volume'] ?? 0.0);
         $cliffRatioActual = ($peakVol > 0) ? $lastVol / $peakVol : 1.0;
 
-        if ($cliffRatioActual < $cliffRatio) {
-            return ['pass' => false, 'reason' => 'volume_cliff_after_pump',
-                'turnover_1h_ratio' => round($ratio1h, 4), 'turnover_15m_ramp' => round($ramp15, 4),
-                'persistence_bars' => $persAboveAvg, 'cliff_ratio' => round($cliffRatioActual, 4)];
+        // ── Adaptive override: strong turnover + strong ramp ──────────────────
+        // If both turnover and ramp are strong, persistence requirement relaxes to >= 2
+        $isStrongSignal = ($ratio1h >= $strongTurnover && $ramp15 >= $strongRamp);
+
+        // ── Hard reject: ramp below minimum (no override for ramp) ────────────
+        if ($ramp15 < $minRamp15m) {
+            // Not a hard reject — soft warning only; strong turnover can carry this
+            $warnings[] = 'turnover_ramp_soft_low';
+            if ($softTurnoverStatus === 'ok') {
+                $softTurnoverStatus = 'warning';
+            }
+            // Only hard-reject the ramp if turnover is also NOT strong
+            if (!$isStrongSignal) {
+                return [
+                    'pass'               => false,
+                    'reason'             => 'turnover_not_persistent',
+                    'warnings'           => $warnings,
+                    'soft_turnover_status' => 'reject',
+                    'turnover_1h_ratio'  => round($ratio1h, 4),
+                    'turnover_15m_ramp'  => round($ramp15, 4),
+                    'persistence_bars'   => $persAboveAvg,
+                    'cliff_ratio'        => round($cliffRatioActual, 4),
+                ];
+            }
+        }
+
+        // ── Persistence checks ────────────────────────────────────────────────
+        $minPersistence = $persHard; // default hard minimum
+        if ($isStrongSignal) {
+            // Strong signal: allow persistence >= 2 even if below soft target
+            $minPersistence = 2;
+        }
+
+        if ($persAboveAvg < $persHard) {
+            // Always a hard reject: below absolute minimum
+            return [
+                'pass'               => false,
+                'reason'             => 'turnover_not_persistent',
+                'warnings'           => $warnings,
+                'soft_turnover_status' => 'reject',
+                'turnover_1h_ratio'  => round($ratio1h, 4),
+                'turnover_15m_ramp'  => round($ramp15, 4),
+                'persistence_bars'   => $persAboveAvg,
+                'cliff_ratio'        => round($cliffRatioActual, 4),
+            ];
+        }
+
+        if ($persAboveAvg < $minPersistence) {
+            // Below adaptive minimum (only possible when isStrongSignal and minPersistence=2)
+            return [
+                'pass'               => false,
+                'reason'             => 'turnover_not_persistent',
+                'warnings'           => $warnings,
+                'soft_turnover_status' => 'reject',
+                'turnover_1h_ratio'  => round($ratio1h, 4),
+                'turnover_15m_ramp'  => round($ramp15, 4),
+                'persistence_bars'   => $persAboveAvg,
+                'cliff_ratio'        => round($cliffRatioActual, 4),
+            ];
+        }
+
+        if ($persAboveAvg < $persSoft) {
+            // Below soft target but >= hard minimum: warning only
+            $warnings[] = 'turnover_persistence_marginal';
+            if ($softTurnoverStatus === 'ok') {
+                $softTurnoverStatus = 'warning';
+            }
+        }
+
+        // ── Cliff checks ──────────────────────────────────────────────────────
+        if ($cliffRatioActual < $hardCliff) {
+            // Hard reject: cliff ratio below hard minimum
+            return [
+                'pass'               => false,
+                'reason'             => 'volume_cliff_after_pump',
+                'warnings'           => $warnings,
+                'soft_turnover_status' => 'reject',
+                'turnover_1h_ratio'  => round($ratio1h, 4),
+                'turnover_15m_ramp'  => round($ramp15, 4),
+                'persistence_bars'   => $persAboveAvg,
+                'cliff_ratio'        => round($cliffRatioActual, 4),
+            ];
+        }
+
+        if ($cliffRatioActual < $warnCliff) {
+            // Warning-level cliff
+            $cliffWarning = true;
+            $warnings[]   = 'volume_cliff_warning';
+            if ($softTurnoverStatus === 'ok') {
+                $softTurnoverStatus = 'warning';
+            }
+
+            // Adaptive pass: if persistence >= soft target AND ramp >= min, allow through with warning
+            $canOverrideCliff = ($persAboveAvg >= $persSoft && $ramp15 >= $minRamp15m);
+            if (!$canOverrideCliff) {
+                return [
+                    'pass'               => false,
+                    'reason'             => 'volume_cliff_after_pump',
+                    'warnings'           => $warnings,
+                    'soft_turnover_status' => 'reject',
+                    'turnover_1h_ratio'  => round($ratio1h, 4),
+                    'turnover_15m_ramp'  => round($ramp15, 4),
+                    'persistence_bars'   => $persAboveAvg,
+                    'cliff_ratio'        => round($cliffRatioActual, 4),
+                ];
+            }
         }
 
         return [
-            'pass'              => true,
-            'reason'            => 'turnover_ramp_ok',
-            'turnover_1h_ratio' => round($ratio1h, 4),
-            'turnover_15m_ramp' => round($ramp15, 4),
-            'persistence_bars'  => $persAboveAvg,
-            'cliff_ratio'       => round($cliffRatioActual, 4),
+            'pass'               => true,
+            'reason'             => 'turnover_ramp_ok',
+            'warnings'           => $warnings,
+            'soft_turnover_status' => $softTurnoverStatus,
+            'turnover_1h_ratio'  => round($ratio1h, 4),
+            'turnover_15m_ramp'  => round($ramp15, 4),
+            'persistence_bars'   => $persAboveAvg,
+            'cliff_ratio'        => round($cliffRatioActual, 4),
         ];
     }
 
@@ -1145,6 +1312,12 @@ final class ControlledDailyMomentumLongStrategy
                 $codes[] = $r['reason'];
             }
         }
+        // Include any soft turnover warnings as additional reason codes
+        foreach ($turnover['warnings'] ?? [] as $w) {
+            if (!in_array($w, $codes, true)) {
+                $codes[] = $w;
+            }
+        }
         return $codes;
     }
 
@@ -1173,6 +1346,7 @@ final class ControlledDailyMomentumLongStrategy
             'daily_change_pct', 'momentum_class',
             'max_1m_pump_pct', 'max_5m_pump_pct', 'max_candle_share_pct', 'drawdown_from_high_pct',
             'turnover_1h_ratio', 'turnover_15m_ramp', 'persistence_bars', 'cliff_ratio',
+            'soft_turnover_status', 'turnover_warnings',
             'higher_lows_count',
             'pullback_depth_pct', 'reclaim_level', 'pullback_low',
             'entry_distance_from_reclaim_pct', 'entry_distance_from_structure_pct',

@@ -1,0 +1,15 @@
+{
+    "name": "controlled_daily_momentum_long",
+    "title": "Controlled Daily Momentum Long · Контролируемый дневной моментум лонг",
+    "version": "0.1.0",
+    "description": "Detects narrow controlled daily momentum continuation longs. Pipeline: daily_momentum → anti_blowoff → soft_turnover_ramp → structure → pullback_reclaim → control_check → signal.",
+    "author": "Tredercopis",
+    "category": "strategy",
+    "enabled_by_default": true,
+    "mode": "demo",
+    "cron_connected": true,
+    "paths": {
+        "storage": "storage",
+        "config":  "config/base.php"
+    }
+}

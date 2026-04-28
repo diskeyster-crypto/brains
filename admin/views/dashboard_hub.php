@@ -536,13 +536,12 @@ function renderDashboardHub(): string
             $slrHasData      = $stratLastRun !== [];
 
             // ── corridor_bottom_long: remap top-card fields from its own last_run keys ──
-            if ($stratId === 'corridor_bottom_long' && $slrHasData) {
-                // candidates = how many symbols entered the candidate zone
+            if (in_array($stratId, ['corridor_bottom_long', 'controlled_daily_momentum_long'], true) && $slrHasData) {
+                // candidates = how many symbols passed the first momentum/zone check
                 $slrCandidates   = (int)($stratLastRun['candidates_found']   ?? 0);
-                // pool = candidates currently waiting for validation
+                // pool = candidates currently waiting (for corridor: waiting_validation)
                 $slrPoolTotal    = (int)($stratLastRun['candidates_waiting'] ?? 0);
-                // Runtime line: corridor has no run_state.json; derive from last_run
-                // Derive status: prefer explicit last_run.status; fallback to completed/idle
+                // Runtime line: derive from last_run (no run_state.json in these strategies)
                 $_cblRawStatus = $stratLastRun['status'] ?? null;
                 if ($_cblRawStatus !== null && $_cblRawStatus !== '') {
                     $rsStatus = $e((string)$_cblRawStatus);
@@ -568,6 +567,13 @@ function renderDashboardHub(): string
                     . ' · валидировано <code>' . $_cblValidated . '</code>'
                     . ' · сигналов <code>' . $slrGeneratedSig . '</code>'
                     . ' · handoff-ready <code>' . $_cblHandoffReady . '</code>';
+            } elseif ($stratId === 'controlled_daily_momentum_long') {
+                $_cdmlHandoffReady = (int)($stratLastRun['handoff_ready'] ?? $slrHandoffReady);
+                $cycleLineHtml = 'статус <code>' . $e($rsStatus) . '</code>'
+                    . ' · проверено <code>' . (int)($stratLastRun['symbols_checked'] ?? 0) . '</code>'
+                    . ' · кандидатов <code>' . $slrCandidates . '</code>'
+                    . ' · сигналов <code>' . $slrGeneratedSig . '</code>'
+                    . ' · handoff-ready <code>' . $_cdmlHandoffReady . '</code>';
             } else {
                 $cycleLineHtml = 'статус <code>' . $slrStatus . '</code>'
                     . ' · кандидатов <code>' . $slrCandidates . '</code>'
@@ -664,6 +670,37 @@ BTN;
         title="{$_cblDisabledReason}">Запуск цикла</button>
       <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
         title="{$_cblDisabledReason}">Тик батча</button>
+BTN;
+                }
+            } elseif ($stratId === 'controlled_daily_momentum_long') {
+                // Buttons enabled only when strategy is enabled=true and mode=demo
+                $_cdmlRunAvailable = $opEnabled && $opMode === 'demo';
+                if ($_cdmlRunAvailable) {
+                    $actionButtonsHtml = <<<BTN
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="queue_run">
+        <input type="hidden" name="active_tab" value="dh-strat">
+        <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;">
+          Запуск цикла
+        </button>
+      </form>
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="refresh">
+        <input type="hidden" name="active_tab" value="dh-strat">
+        <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;">
+          Обновить runtime
+        </button>
+      </form>
+BTN;
+                } else {
+                    $_cdmlDisabledReason = !$opEnabled ? 'Стратегия отключена — нажмите Включить' : 'Требуется mode=demo';
+                    $actionButtonsHtml = <<<BTN
+      <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
+        title="{$_cdmlDisabledReason}">Запуск цикла</button>
 BTN;
                 }
             } else {
@@ -1230,6 +1267,31 @@ ROWS;
         'duplicate_signal'              => 'Дубликат сигнала',
         'stale_signal'                  => 'Сигнал устарел',
         'confirm_bar_failed'            => 'Подтверждающая свеча не прошла проверку',
+        // controlled_daily_momentum_long
+        'ignore_low_momentum_below_5pct'  => 'Моментум < 5% — пропуск',
+        'watch_only_weak_momentum'        => 'Слабый моментум 5–8% — только наблюдение',
+        'daily_change_too_high'           => 'Дневное движение > лимита — нет сигнала',
+        'blowoff_1m_pump'                 => 'Блоу-офф: 1m-памп',
+        'blowoff_5m_pump'                 => 'Блоу-офф: 5m-памп',
+        'single_candle_move_too_large'    => 'Одна свеча > max доли от движения',
+        'deep_drawdown_from_high'         => 'Глубокая просадка от 24h-high',
+        'turnover_too_low'                => 'Оборот 1h слишком низкий',
+        'turnover_spike_too_large'        => 'Скачок оборота слишком большой',
+        'turnover_not_persistent'         => 'Оборот не устойчивый',
+        'volume_cliff_after_pump'         => 'Обрыв объёма после памп',
+        'no_higher_low_structure'         => 'Нет структуры Higher Lows',
+        'pullback_too_shallow'            => 'Откат слишком мал',
+        'pullback_too_deep'               => 'Откат слишком глубок',
+        'reclaim_not_confirmed'           => 'Возврат не подтверждён свечами',
+        'entry_too_late_after_reclaim'    => 'Вход слишком далеко от reclaim-уровня',
+        'entry_too_far_from_structure'    => 'Вход слишком далеко от структуры',
+        'entry_at_local_high'             => 'Вход на локальном/дневном хае',
+        'momentum_ok'                     => 'Моментум в норме',
+        'anti_blowoff_ok'                 => 'Anti-blowoff пройден',
+        'turnover_ramp_ok'                => 'Turnover ramp пройден',
+        'structure_ok'                    => 'Структура Higher Lows подтверждена',
+        'pullback_reclaim_ok'             => 'Pullback/Reclaim подтверждён',
+        'control_check_ok'               => 'Control check пройден',
     ];
     $formatStrategyReasonLabel = static function (string $reason) use ($stratReasonLabels): string {
         // Handle SYMBOL:reason format (e.g. "PENDLEUSDT:candidate_too_stale")
@@ -5007,6 +5069,25 @@ function handleDashboardOverridesSave(): void
         @file_put_contents($_cblActivePath, $_cblActiveContent);
     }
 
+    // For controlled_daily_momentum_long, also sync enabled+mode+handoff_enabled into the strategy's own active.php
+    if ($stratId === 'controlled_daily_momentum_long') {
+        $_cdmlActivePath = System::path('root') . '/modules/strategy/pattern/controlled_daily_momentum_long/config/active.php';
+        $_cdmlSafeMode   = ($mode === 'live') ? 'live' : 'demo';
+        $_cdmlHandoff    = ($handoffEnabledPost >= 0)
+            ? ($handoffEnabledPost > 0 ? 'true' : 'false')
+            : ((bool)($overrides[$stratId]['handoff_enabled'] ?? false) ? 'true' : 'false');
+        $_cdmlActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
+            . "/**\n * Controlled Daily Momentum Long — Active Config Overrides\n"
+            . " *\n * Written by the admin UI or manually.\n"
+            . " * Merged on top of base.php at runtime.\n */\n\n"
+            . "return [\n"
+            . "    'enabled'         => " . ((bool)$enabled ? 'true' : 'false') . ",\n"
+            . "    'mode'            => '" . $_cdmlSafeMode . "',\n"
+            . "    'handoff_enabled' => " . $_cdmlHandoff . ",\n"
+            . "];\n";
+        @file_put_contents($_cdmlActivePath, $_cdmlActiveContent);
+    }
+
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Настройки стратегии «{$stratId}» сохранены"];
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-strat'));
     $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
@@ -5264,6 +5345,34 @@ function handleDashboardStrategyAction(): void
         }
     }
 
+    // ── controlled_daily_momentum_long — demo simulation only, no bot handoff ──
+    if ($stratId === 'controlled_daily_momentum_long') {
+        $cdmlModuleDir = System::path('root') . '/modules/strategy/pattern/controlled_daily_momentum_long';
+        if ($action === 'queue_run') {
+            try {
+                require_once $cdmlModuleDir . '/strategy.php';
+                $cdmlStrategy = new \Modules\Strategy\ControlledDailyMomentumLong\ControlledDailyMomentumLongStrategy($cdmlModuleDir);
+                $cdmlResult   = $cdmlStrategy->runSimulation();
+                $cdmlStats    = $cdmlResult['stats'] ?? [];
+                $cdmlMsg = $cdmlResult['ok']
+                    ? 'Цикл выполнен · символов: ' . ($cdmlStats['symbols_checked'] ?? 0)
+                        . ' · кандидатов: ' . ($cdmlStats['candidates_found'] ?? 0)
+                        . ' · сигналов: ' . ($cdmlStats['generated_signals_count'] ?? 0)
+                    : 'Ошибка: ' . ($cdmlResult['error'] ?? 'Неизвестная');
+                $_SESSION['dashboard_flash'] = ['type' => $cdmlResult['ok'] ? 'success' : 'error', 'msg' => $cdmlMsg];
+            } catch (\Throwable $cdmlEx) {
+                $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка controlled_daily_momentum_long: ' . $cdmlEx->getMessage()];
+            }
+            header('Location: ' . $dashUrl);
+            exit;
+        }
+        if ($action === 'refresh') {
+            $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Runtime обновлён'];
+            header('Location: ' . $dashUrl);
+            exit;
+        }
+    }
+
     $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => "Неизвестная стратегия или действие: {$stratId}/{$action}"];
     header('Location: ' . $dashUrl);
     exit;
@@ -5434,6 +5543,22 @@ function handleDashboardStrategyToggle(): void
         @file_put_contents($_cblActivePath, $_cblActiveContent);
     }
 
+    // For controlled_daily_momentum_long, also sync enabled state into the strategy's own active.php
+    if ($stratId === 'controlled_daily_momentum_long') {
+        $_cdmlActivePath  = System::path('root') . '/modules/strategy/pattern/controlled_daily_momentum_long/config/active.php';
+        $_cdmlHandoffVal  = (bool)($overrides[$stratId]['handoff_enabled'] ?? false);
+        $_cdmlActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
+            . "/**\n * Controlled Daily Momentum Long — Active Config Overrides\n"
+            . " *\n * Written by the admin UI or manually.\n"
+            . " * Merged on top of base.php at runtime.\n */\n\n"
+            . "return [\n"
+            . "    'enabled'         => " . ($enabled ? 'true' : 'false') . ",\n"
+            . "    'mode'            => 'demo',\n"
+            . "    'handoff_enabled' => " . ($_cdmlHandoffVal ? 'true' : 'false') . ",\n"
+            . "];\n";
+        @file_put_contents($_cdmlActivePath, $_cdmlActiveContent);
+    }
+
     $label = $enabled ? 'включена' : 'выключена';
     $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Стратегия «{$stratId}» {$label}"];
     header('Location: ' . $dashUrl);
@@ -5511,6 +5636,24 @@ function handleDashboardHandoffToggle(): void
             . "    'handoff_enabled' => " . ($handoffEnabled ? 'true' : 'false') . ",\n"
             . "];\n";
         @file_put_contents($_cblActivePath, $_cblActiveContent);
+    }
+
+    // For controlled_daily_momentum_long: sync handoff_enabled to the strategy's own active.php
+    if ($stratId === 'controlled_daily_momentum_long') {
+        $_cdmlActivePath  = System::path('root') . '/modules/strategy/pattern/controlled_daily_momentum_long/config/active.php';
+        $_cdmlEnabledVal  = (bool)($overrides[$stratId]['enabled'] ?? true);
+        $_cdmlModeVal     = (string)($overrides[$stratId]['mode']  ?? 'demo');
+        $_cdmlSafeMode    = ($_cdmlModeVal === 'live') ? 'live' : 'demo';
+        $_cdmlActiveContent = "<?php\n\ndeclare(strict_types=1);\n\n"
+            . "/**\n * Controlled Daily Momentum Long — Active Config Overrides\n"
+            . " *\n * Written by the admin UI or manually.\n"
+            . " * Merged on top of base.php at runtime.\n */\n\n"
+            . "return [\n"
+            . "    'enabled'         => " . ($_cdmlEnabledVal ? 'true' : 'false') . ",\n"
+            . "    'mode'            => '" . $_cdmlSafeMode . "',\n"
+            . "    'handoff_enabled' => " . ($handoffEnabled ? 'true' : 'false') . ",\n"
+            . "];\n";
+        @file_put_contents($_cdmlActivePath, $_cdmlActiveContent);
     }
 
     $label = $handoffEnabled ? 'включён' : 'выключен';

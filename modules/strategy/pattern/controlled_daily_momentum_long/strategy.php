@@ -345,19 +345,8 @@ final class ControlledDailyMomentumLongStrategy
                 'late_momentum_warning'         => $lateMomentumWarning,
             ]);
 
-            // Potential context diagnostics (informational only, not a hard gate)
-            $diagFields = array_merge($diagFields, [
-                'upside_room_to_18pct' => max(0.0, round(18.0 - $dailyChangePct, 2)),
-                'upside_room_to_25pct' => max(0.0, round(25.0 - $dailyChangePct, 2)),
-                'upside_room_to_35pct' => max(0.0, round(35.0 - $dailyChangePct, 2)),
-                'entry_risk_context'   => match (true) {
-                    $dailyChangePct < 8.0  => 'early_watch',
-                    $dailyChangePct <= 18.0 => 'ok',
-                    $dailyChangePct <= 25.0 => 'caution',
-                    $dailyChangePct <= 35.0 => 'late',
-                    default                => 'overextended',
-                },
-            ]);
+            // Potential context diagnostics are computed after recovery drift
+            // (block moved below so we have current_extension_score available)
 
             // ── Recovery drift detection (diagnostic, does not gate pipeline) ─
             $recoveryDriftResult = $this->pipelineRecoveryDrift($candles, $dailyChangePct, $config);
@@ -376,6 +365,16 @@ final class ControlledDailyMomentumLongStrategy
             if ($recoveryDriftResult['dump_risk_warning']) {
                 $stats['dump_risk_warning_total']++;
             }
+
+            // ── Improved potential context diagnostics (informational only, not a hard gate)
+            $diagFields = array_merge($diagFields, $this->computePotentialContext(
+                $dailyChangePct,
+                $candidateFirstSeenTooLate,
+                $lateMomentumWarning,
+                (bool)($recoveryDriftResult['recovery_drift_detected'] ?? false),
+                (float)($recoveryDriftResult['current_extension_score'] ?? 0.0),
+                (float)($diagFields['daily_change_delta_from_first'] ?? 0.0)
+            ));
 
             // ── 3. anti_blowoff ───────────────────────────────────────────────
             $blowoffResult = $this->pipelineAntiBlowoff($candles, $dailyChangePct, $high24h, $config);
@@ -508,6 +507,10 @@ final class ControlledDailyMomentumLongStrategy
                     $stats['recovery_drift_watch_only_total']++;
                     $diagFields['recovery_drift_reason'] = 'recovery_drift_watch_only';
                 }
+                $diagFields['pullback_reclaim_status'] = 'reject';
+                $diagFields['pullback_reclaim_reason'] = $pullbackRejectReason;
+                $diagFields['pullback_score']          = 0;
+                $diagFields['reclaim_score']           = 0;
                 $this->markSignalStale($signals, $symbol, 'pullback_reclaim', $pullbackRejectReason, 'rejected', $now);
                 $diagCandidate = array_merge([
                     'key'          => $candidateKey,
@@ -526,6 +529,9 @@ final class ControlledDailyMomentumLongStrategy
             $impulseHigh   = $pullbackResult['impulse_high'];
             $pullbackLow   = $pullbackResult['pullback_low'];
             $reclaimLevel  = $pullbackResult['reclaim_level'];
+            $diagFields['pullback_reclaim_status'] = 'pass';
+            $diagFields['pullback_reclaim_reason'] = 'pullback_reclaim_ok';
+            $diagFields['pullback_score']          = $this->scorePullback($pullbackResult, $config);
 
             // ── 7. control_check ──────────────────────────────────────────────
             $controlResult = $this->pipelineControlCheck(
@@ -543,6 +549,7 @@ final class ControlledDailyMomentumLongStrategy
             if (!$controlResult['pass']) {
                 $stats['rejected']++;
                 $stats['rejects_total']++;
+                $diagFields['reclaim_score'] = 0;
                 $this->markSignalStale($signals, $symbol, 'control_check', $controlResult['reason'], 'rejected', $now);
                 $diagCandidate = array_merge([
                     'key'          => $candidateKey,
@@ -558,6 +565,7 @@ final class ControlledDailyMomentumLongStrategy
                 continue;
             }
             $stats['control_check_pass_total']++;
+            $diagFields['reclaim_score'] = $this->scoreReclaim($controlResult);
 
             // ── Per-run signal cap ────────────────────────────────────────────
             if ($signalsThisRun >= $maxSignalsPerRun) {
@@ -590,16 +598,40 @@ final class ControlledDailyMomentumLongStrategy
             $softTurnoverRampScore = $this->scoreSoftTurnoverRamp($turnoverResult);
             $volumePersistenceScore= $this->scoreVolumePersistence($turnoverResult);
             $structureScore        = $this->scoreStructure($structureResult);
-            $pullbackScore         = $this->scorePullback($pullbackResult, $config);
-            $reclaimScore          = $this->scoreReclaim($controlResult);
+            $pullbackScore         = (int)round((float)($diagFields['pullback_score'] ?? $this->scorePullback($pullbackResult, $config)));
+            $reclaimScore          = (int)round((float)($diagFields['reclaim_score']  ?? $this->scoreReclaim($controlResult)));
             $entryPrecisionScore   = $this->scoreEntryPrecision($entryDistFromReclaimPct, $entryDistFromStructurePct);
-            $lateEntryScore        = max(0, 10 - (int)round(abs($entryDistFromReclaimPct) * 2));
 
             $candidateQualityScore = round((
                 $dailyMomentumScore + $controlledMoveScore + $softTurnoverRampScore
                 + $volumePersistenceScore + $structureScore + $pullbackScore
                 + $reclaimScore + $entryPrecisionScore
             ) / 8, 2);
+
+            // Signal quality class
+            $signalWarningReasons = [];
+            if (($turnoverResult['soft_turnover_status'] ?? 'ok') === 'warning') {
+                $signalWarningReasons[] = 'soft_turnover_warning';
+            }
+            if (($structureResult['structure_status'] ?? 'pass') === 'warning') {
+                $signalWarningReasons[] = 'structure_status_warning';
+            }
+            foreach ($structureResult['structure_warnings'] ?? [] as $_sw) {
+                if (!in_array($_sw, $signalWarningReasons, true)) {
+                    $signalWarningReasons[] = $_sw;
+                }
+            }
+            if (($structureResult['structure_type'] ?? 'higher_low') !== 'higher_low') {
+                $signalWarningReasons[] = 'structure_type_' . ($structureResult['structure_type'] ?? 'other');
+            }
+            if ($candidateFirstSeenTooLate) {
+                $signalWarningReasons[] = 'candidate_first_seen_too_late';
+            }
+            $_erc = $diagFields['entry_risk_context'] ?? 'ok';
+            if (in_array($_erc, ['caution', 'late', 'overextended'], true)) {
+                $signalWarningReasons[] = 'entry_risk_context_' . $_erc;
+            }
+            $signalQualityClass = empty($signalWarningReasons) ? 'clean_signal' : 'warning_signal';
 
             $signal = [
                 // Identity
@@ -630,7 +662,7 @@ final class ControlledDailyMomentumLongStrategy
 
                 // Scores
                 'entry_precision_score'    => $entryPrecisionScore,
-                'late_entry_score'         => $lateEntryScore,
+                'late_entry_score'         => $diagFields['late_entry_score'] ?? 0.0,
                 'daily_momentum_score'     => $dailyMomentumScore,
                 'controlled_move_score'    => $controlledMoveScore,
                 'soft_turnover_ramp_score' => $softTurnoverRampScore,
@@ -655,8 +687,23 @@ final class ControlledDailyMomentumLongStrategy
                 'recovery_structure_score' => $structureResult['recovery_structure_score'] ?? 0.0,
                 'structure_warnings'       => $structureResult['structure_warnings']       ?? [],
 
-                // Signal status
+                // Pullback/reclaim diagnostics
+                'pullback_depth_pct'       => $pullbackResult['pullback_depth_pct']   ?? 0.0,
+                'pullback_reclaim_status'  => 'pass',
+                'pullback_reclaim_reason'  => 'pullback_reclaim_ok',
+
+                // Signal quality
+                'signal_quality_class'   => $signalQualityClass,
+                'signal_warning_reasons' => $signalWarningReasons,
+
+                // Signal status (updated post-loop, initial values set here)
                 'stale'                   => false,
+                'signal_status'           => 'current_run_valid',
+                'current_run_valid'       => true,
+                'historical_valid'        => false,
+                'stale_invalidated'       => false,
+                'last_seen_in_current_run'=> true,
+                'last_status_checked_at'  => date('c', $now),
 
                 // Momentum class
                 'momentum_class' => $momentumClass,
@@ -672,6 +719,16 @@ final class ControlledDailyMomentumLongStrategy
                 // Late-entry diagnostics
                 'candidate_first_seen_too_late' => $candidateFirstSeenTooLate,
                 'late_momentum_warning'         => $lateMomentumWarning,
+
+                // Potential context diagnostics (informational)
+                'upside_room_to_18pct'   => $diagFields['upside_room_to_18pct']   ?? 0.0,
+                'upside_room_to_25pct'   => $diagFields['upside_room_to_25pct']   ?? 0.0,
+                'upside_room_to_35pct'   => $diagFields['upside_room_to_35pct']   ?? 0.0,
+                'potential_near_pct'     => $diagFields['potential_near_pct']     ?? 0.0,
+                'potential_working_pct'  => $diagFields['potential_working_pct']  ?? 0.0,
+                'potential_stretch_pct'  => $diagFields['potential_stretch_pct']  ?? 0.0,
+                'entry_risk_context'     => $diagFields['entry_risk_context']     ?? 'ok',
+                'potential_reason'       => $diagFields['potential_reason']       ?? [],
 
                 // Recovery drift diagnostics
                 'recovery_drift_detected'        => $recoveryDriftResult['recovery_drift_detected'],
@@ -726,6 +783,34 @@ final class ControlledDailyMomentumLongStrategy
         $stats['signals_current_valid_total']    = $sigCurrentValid;
         $stats['signals_historical_valid_total'] = $sigHistoricalValid;
         $stats['signals_stale_invalidated_total']= $sigStaleInvalidated;
+
+        // ── Update status fields on all signal records ────────────────────────
+        $checkedAt = date('c', $now);
+        foreach ($signals as &$_sig) {
+            $isStale      = (bool)($_sig['stale'] ?? false);
+            $isCurrentRun = in_array($_sig['symbol'] ?? '', $currentRunSignalSymbols, true);
+            if ($isStale) {
+                $_sig['signal_status']            = 'stale_invalidated';
+                $_sig['current_run_valid']        = false;
+                $_sig['historical_valid']         = false;
+                $_sig['stale_invalidated']        = true;
+                $_sig['last_seen_in_current_run'] = $isCurrentRun;
+            } elseif ($isCurrentRun) {
+                $_sig['signal_status']            = 'current_run_valid';
+                $_sig['current_run_valid']        = true;
+                $_sig['historical_valid']         = false;
+                $_sig['stale_invalidated']        = false;
+                $_sig['last_seen_in_current_run'] = true;
+            } else {
+                $_sig['signal_status']            = 'historical_valid';
+                $_sig['current_run_valid']        = false;
+                $_sig['historical_valid']         = true;
+                $_sig['stale_invalidated']        = false;
+                $_sig['last_seen_in_current_run'] = false;
+            }
+            $_sig['last_status_checked_at'] = $checkedAt;
+        }
+        unset($_sig);
 
         // ── Build top_candidates for last_run.json ────────────────────────────
         // Sort priority: signal > candidate with daily >= min > recovery_drift >
@@ -1859,6 +1944,7 @@ final class ControlledDailyMomentumLongStrategy
             'higher_lows_count', 'structure_status', 'structure_type', 'structure_score',
             'range_hold_score', 'base_hold_score', 'recovery_structure_score', 'structure_warnings', 'structure_reason',
             'pullback_depth_pct', 'reclaim_level', 'pullback_low',
+            'pullback_reclaim_status', 'pullback_reclaim_reason', 'pullback_score', 'reclaim_score',
             'entry_distance_from_reclaim_pct', 'entry_distance_from_structure_pct',
             'candidate_quality_score',
             // Watchlist & acceleration
@@ -1867,6 +1953,10 @@ final class ControlledDailyMomentumLongStrategy
             'time_from_first_seen_sec', 'momentum_acceleration_score',
             // Late-entry
             'candidate_first_seen_too_late', 'late_momentum_warning',
+            // Potential context
+            'upside_room_to_18pct', 'upside_room_to_25pct', 'upside_room_to_35pct',
+            'potential_near_pct', 'potential_working_pct', 'potential_stretch_pct',
+            'late_entry_score', 'entry_risk_context', 'potential_reason',
             // Recovery drift
             'recovery_drift_detected', 'recovery_drift_duration_minutes', 'recovery_drift_score',
             'recovery_after_dump_score', 'current_extension_score',
@@ -2096,6 +2186,97 @@ final class ControlledDailyMomentumLongStrategy
             'current_extension_score'        => round($extensionScore, 2),
             'dump_risk_warning'              => $dumpRiskWarning,
             'recovery_drift_reason'          => $isRecoveryDrift ? 'recovery_drift_ok' : 'no_recovery_drift',
+        ];
+    }
+
+    /**
+     * Compute potential/entry-risk context diagnostics.
+     * Informational only — not a pipeline gate.
+     *
+     * Returns:
+     *   upside_room_to_18pct, upside_room_to_25pct, upside_room_to_35pct
+     *   potential_near_pct, potential_working_pct, potential_stretch_pct
+     *   current_extension_score, late_entry_score (0–10, higher = later in move)
+     *   entry_risk_context, potential_reason[]
+     */
+    private function computePotentialContext(
+        float $dailyChangePct,
+        bool  $candidateFirstSeenTooLate,
+        bool  $lateMomentumWarning,
+        bool  $recoveryDriftDetected,
+        float $currentExtensionScore,
+        float $deltaFromFirst
+    ): array {
+        $upside18 = max(0.0, round(18.0 - $dailyChangePct, 2));
+        $upside25 = max(0.0, round(25.0 - $dailyChangePct, 2));
+        $upside35 = max(0.0, round(35.0 - $dailyChangePct, 2));
+
+        // Fractional progress toward price ceilings (0.0–1.0, clamped)
+        $potentialNear    = max(0.0, round(min(1.0, $dailyChangePct / 18.0), 4));
+        $potentialWorking = max(0.0, round(min(1.0, $dailyChangePct / 25.0), 4));
+        $potentialStretch = max(0.0, round(min(1.0, $dailyChangePct / 35.0), 4));
+
+        // late_entry_score: how far along in the 35% daily ceiling (0=early, 10=overextended)
+        $lateEntryScore = min(10.0, round(($dailyChangePct / 35.0) * 10.0, 2));
+
+        $reasons = [];
+
+        // Base context classification
+        if ($dailyChangePct >= 35.0) {
+            $context = 'overextended';
+            $reasons[] = 'daily_change_at_or_above_35pct';
+        } elseif ($dailyChangePct >= 25.0 || $lateMomentumWarning) {
+            $context = 'late';
+            if ($dailyChangePct >= 25.0) {
+                $reasons[] = 'daily_change_above_25pct';
+            }
+        } elseif ($upside18 < 1.0) {
+            $context = 'late';
+            $reasons[] = 'upside_room_to_18pct_below_1pct';
+        } elseif ($upside18 < 3.0) {
+            $context = 'caution';
+            $reasons[] = 'upside_room_to_18pct_below_3pct';
+            if ($upside25 < 5.0) {
+                $reasons[] = 'upside_room_to_25pct_below_5pct';
+            }
+        } elseif ($dailyChangePct >= 8.0) {
+            $context = 'ok';
+        } else {
+            $context = 'early_watch';
+        }
+
+        // first_seen_too_late adjustment
+        if ($candidateFirstSeenTooLate) {
+            $reasons[] = 'candidate_first_seen_too_late';
+            if (in_array($context, ['ok', 'early_watch'], true)) {
+                $context = 'caution';
+            }
+        }
+
+        // Declining daily since first seen while still elevated
+        if ($deltaFromFirst < 0.0 && $dailyChangePct >= 15.0) {
+            $reasons[] = 'daily_change_declining_from_first_seen';
+            if ($context === 'ok') {
+                $context = 'caution';
+            }
+        }
+
+        // Recovery drift note (informational)
+        if ($recoveryDriftDetected) {
+            $reasons[] = 'recovery_drift_detected';
+        }
+
+        return [
+            'upside_room_to_18pct'   => $upside18,
+            'upside_room_to_25pct'   => $upside25,
+            'upside_room_to_35pct'   => $upside35,
+            'potential_near_pct'     => $potentialNear,
+            'potential_working_pct'  => $potentialWorking,
+            'potential_stretch_pct'  => $potentialStretch,
+            'current_extension_score'=> $currentExtensionScore,
+            'late_entry_score'       => $lateEntryScore,
+            'entry_risk_context'     => $context,
+            'potential_reason'       => $reasons,
         ];
     }
 

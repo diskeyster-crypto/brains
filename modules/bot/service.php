@@ -789,6 +789,9 @@ final class BotService
             $reconResult['still_blocking']           = $reconResult2['still_blocking'];
         }
 
+        // ── 5c. PM close registry diagnostics ────────────────────────────────
+        $pmRegDiag = $this->computePmRegistryDiagnostics();
+
         // ── 6. Update stats ───────────────────────────────────────────────────
         $stats['ticks_total']               += 1;
         // Discovery counters are current-state snapshots, not cumulative
@@ -908,6 +911,12 @@ final class BotService
             'handoff_signals_ignored_recent_pm_close_total' => (int)($result['ignored_recent_pm_close_total'] ?? 0),
             'pm_close_reentry_suppressed_total'           => $stats['pm_close_reentry_suppressed_total'] ?? 0,
             'pm_close_reentry_suppressed_examples'        => $result['pm_close_reentry_suppressed_examples'] ?? [],
+
+            // PM close registry state diagnostics (current snapshot)
+            'pm_close_registry_entries_total'             => $pmRegDiag['entries_total'],
+            'pm_close_registry_active_suppression_total'  => $pmRegDiag['active_suppression_total'],
+            'pm_close_registry_consumed_retained_total'   => $pmRegDiag['consumed_retained_total'],
+            'pm_close_registry_expired_removed_total'     => $pmRegDiag['expired_removed_total'],
 
             // Queue changes this tick
             'order_queue_new_total'       => $result['new_total'],
@@ -1412,15 +1421,17 @@ final class BotService
             if ($symbol !== '' && isset($pmCloseRegistry[$pmRegKey])) {
                 $pmEntry         = $pmCloseRegistry[$pmRegKey];
                 $suppressUntil   = (int)($pmEntry['suppress_reentry_until'] ?? 0);
+                $pmEntryTs       = (int)($pmEntry['ts'] ?? 0);
+                // Legacy compatibility: derive suppress_until from ts + default TTL when field absent.
+                if ($suppressUntil === 0 && $pmEntryTs > 0) {
+                    $suppressUntil = $pmEntryTs + 3600;
+                }
                 $pmEntryMode     = (string)($pmEntry['mode'] ?? '');
                 $pmEntrySignalId = (string)($pmEntry['signal_id'] ?? '');
                 $modeMatches     = $pmEntryMode === '' || $queueMode === '' || $pmEntryMode === $queueMode;
                 $sigIdMatches    = $pmEntrySignalId === '' || $signalId === '' || $pmEntrySignalId === $signalId;
 
-                // Accept if suppress_reentry_until is still in future, or fall back to ts+300
-                $pmEntryTs       = (int)($pmEntry['ts'] ?? 0);
-                $pmStillActive   = ($suppressUntil > $now)
-                    || ($suppressUntil === 0 && $pmEntryTs > 0 && ($now - $pmEntryTs) <= 300);
+                $pmStillActive   = $suppressUntil > $now;
 
                 if ($pmStillActive && $modeMatches && $sigIdMatches) {
                     $qItem['queue_status']          = 'pm_close_reconciled';
@@ -1633,6 +1644,11 @@ final class BotService
             if ($sigSymbol !== '' && $sigSide !== '' && isset($pmCloseRegistry[$pmRegKey])) {
                 $pmEntry          = $pmCloseRegistry[$pmRegKey];
                 $suppressUntil    = (int)($pmEntry['suppress_reentry_until'] ?? 0);
+                $pmEntryTs        = (int)($pmEntry['ts'] ?? 0);
+                // Legacy compatibility: if suppress_reentry_until absent, derive from ts + default TTL.
+                if ($suppressUntil === 0 && $pmEntryTs > 0) {
+                    $suppressUntil = $pmEntryTs + 3600;
+                }
                 $pmEntryMode      = (string)($pmEntry['mode'] ?? '');
                 $pmEntrySignalId  = (string)($pmEntry['signal_id'] ?? '');
                 $modeMatches      = $pmEntryMode === '' || $pmEntryMode === $sigMode;
@@ -4072,6 +4088,79 @@ final class BotService
     }
 
     /**
+     * Compute current-state diagnostics for the PM close registry.
+     *
+     * Also performs lazy cleanup: removes entries whose effective suppress_until
+     * has expired so the file does not grow unbounded.
+     *
+     * @return array{
+     *   entries_total: int,
+     *   active_suppression_total: int,
+     *   consumed_retained_total: int,
+     *   expired_removed_total: int
+     * }
+     */
+    private function computePmRegistryDiagnostics(): array
+    {
+        $result = [
+            'entries_total'            => 0,
+            'active_suppression_total' => 0,
+            'consumed_retained_total'  => 0,
+            'expired_removed_total'    => 0,
+        ];
+
+        $pmRegistryPath = $this->moduleDir . '/storage/runtime/pm_close_registry.json';
+        try {
+            if (!is_file($pmRegistryPath)) {
+                return $result;
+            }
+            $raw = @file_get_contents($pmRegistryPath);
+            if ($raw === false || $raw === '') {
+                return $result;
+            }
+            $registry = @json_decode($raw, true);
+            if (!is_array($registry)) {
+                return $result;
+            }
+
+            $now     = time();
+            $changed = false;
+            foreach ($registry as $key => $entry) {
+                $entryTs       = (int)($entry['ts'] ?? 0);
+                $suppressUntil = (int)($entry['suppress_reentry_until'] ?? 0);
+                if ($suppressUntil === 0 && $entryTs > 0) {
+                    $suppressUntil = $entryTs + 3600;
+                }
+
+                if ($suppressUntil > $now) {
+                    $result['entries_total']++;
+                    $result['active_suppression_total']++;
+                    if (!empty($entry['close_attribution_consumed'])) {
+                        $result['consumed_retained_total']++;
+                    }
+                } else {
+                    // Expired — remove
+                    unset($registry[$key]);
+                    $result['expired_removed_total']++;
+                    $changed = true;
+                }
+            }
+
+            if ($changed) {
+                @file_put_contents(
+                    $pmRegistryPath,
+                    json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+                    LOCK_EX
+                );
+            }
+        } catch (\Throwable) {
+            // Never crash over diagnostics
+        }
+
+        return $result;
+    }
+
+    /**
      * Record a real closed position into the unified closed trades journal.
      *
      * Writes to:
@@ -4177,12 +4266,15 @@ final class BotService
 
             // ── PM close registry lookup ──────────────────────────────────────
             // If Profit Manager closed this position it will have left an entry
-            // in the registry file.  Consume it once, then remove it.
+            // in the registry file. Consume it for attribution, but ONLY remove it
+            // once suppress_reentry_until has expired so re-entry suppression stays
+            // intact for the full TTL window.
             $closeOrderId   = null;
             $executionType  = 'inferred_close';
             $pmRegistryPath = $this->moduleDir . '/storage/runtime/pm_close_registry.json';
             $pmRegistryKey  = $symbol . '_' . $side;
-            $pmRegistryTtl  = 300; // seconds
+            // Default suppression TTL mirrors PM config default (1 hour).
+            $pmRegistryDefaultTtl = 3600;
 
             try {
                 if (is_file($pmRegistryPath)) {
@@ -4190,9 +4282,20 @@ final class BotService
                     if ($regRaw !== false && $regRaw !== '') {
                         $registry = @json_decode($regRaw, true);
                         if (is_array($registry) && isset($registry[$pmRegistryKey])) {
-                            $entry = $registry[$pmRegistryKey];
+                            $entry   = $registry[$pmRegistryKey];
                             $entryTs = (int)($entry['ts'] ?? 0);
-                            if ($entryTs > 0 && (time() - $entryTs) <= $pmRegistryTtl) {
+                            $nowTs   = time();
+
+                            // Derive effective suppress_until: explicit field or ts + default TTL.
+                            $suppressUntil = (int)($entry['suppress_reentry_until'] ?? 0);
+                            if ($suppressUntil === 0 && $entryTs > 0) {
+                                $suppressUntil = $entryTs + $pmRegistryDefaultTtl;
+                            }
+
+                            // Attribution window: entry must be recent enough to be credible.
+                            // Use suppress_until as the outer bound (the entry is "alive").
+                            $alreadyConsumed = (bool)($entry['close_attribution_consumed'] ?? false);
+                            if (!$alreadyConsumed && $entryTs > 0 && $suppressUntil >= $nowTs) {
                                 // Registry hit — override close attribution
                                 $closeSource           = (string)($entry['close_source']   ?? 'profit_manager');
                                 $closeReason           = (string)($entry['close_reason']   ?? $closeReason);
@@ -4204,8 +4307,19 @@ final class BotService
                                 $closedAtIsEstimated   = false;
                                 $closedAtSource        = 'pm_registry';
                             }
-                            // Remove entry (consumed or stale)
-                            unset($registry[$pmRegistryKey]);
+
+                            if ($suppressUntil > $nowTs) {
+                                // Suppression still active — keep the entry but mark it consumed
+                                // so a second position-gone event does not re-attribute it.
+                                if (!$alreadyConsumed) {
+                                    $registry[$pmRegistryKey]['close_attribution_consumed']    = true;
+                                    $registry[$pmRegistryKey]['close_attribution_consumed_at'] = $tickAt;
+                                }
+                            } else {
+                                // Suppression expired — safe to remove.
+                                unset($registry[$pmRegistryKey]);
+                            }
+
                             @file_put_contents(
                                 $pmRegistryPath,
                                 json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",

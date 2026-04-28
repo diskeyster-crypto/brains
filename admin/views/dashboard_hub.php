@@ -1028,6 +1028,10 @@ HTML;
     $trIgnPmClose  = (int)($lastRun['handoff_signals_ignored_recent_pm_close_total']?? 0);
     $trPmCloseSupp = (int)($lastRun['pm_close_reentry_suppressed_total']            ?? 0);
     $trPmCloseExamples = (array)($lastRun['pm_close_reentry_suppressed_examples']   ?? []);
+    $trPmRegEntries    = (int)($lastRun['pm_close_registry_entries_total']           ?? 0);
+    $trPmRegActive     = (int)($lastRun['pm_close_registry_active_suppression_total']?? 0);
+    $trPmRegConsumed   = (int)($lastRun['pm_close_registry_consumed_retained_total'] ?? 0);
+    $trPmRegExpired    = (int)($lastRun['pm_close_registry_expired_removed_total']   ?? 0);
 
     // ── Bot tab: signal source selector status ────────────────────────────
     $lrSignalSourceMode           = (string)($lastRun['signal_source_mode']                         ?? ($botConfig['signal_source_mode'] ?? 'direct_strategy_handoff'));
@@ -1156,6 +1160,14 @@ HTML;
           . $pmCloseExamplesHtml
         : '';
 
+    // PM registry state rows (shown only when data present)
+    $pmRegStateRows = ($trPmRegEntries > 0 || $trPmRegExpired > 0)
+        ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:5px;">PM registry: записей</td><td style="border-top:1px solid var(--ui-border);padding-top:5px;">' . $e($trPmRegEntries) . '</td></tr>'
+          . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">PM registry: active suppr.</td><td style="color:' . ($trPmRegActive > 0 ? '#f0883e' : '#8b949e') . ';">' . $e($trPmRegActive) . '</td></tr>'
+          . ($trPmRegConsumed > 0 ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">PM registry: consumed/retained</td><td style="color:#58a6ff;">' . $e($trPmRegConsumed) . '</td></tr>' : '')
+          . ($trPmRegExpired > 0  ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">PM registry: истекло/удалено</td><td style="color:#8b949e;">' . $e($trPmRegExpired) . '</td></tr>' : '')
+        : '';
+
     $tickTraceRows = <<<ROWS
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;">Сигналов получено</td><td><strong>{$e($trSeenTotal)}</strong></td></tr>
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">→ новых в очереди</td><td style="color:#3fb950;"><strong>{$e($trNew)}</strong></td></tr>
@@ -1165,7 +1177,7 @@ HTML;
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: стратегия выкл.</td><td style="color:#8b949e;">{$e($trIgnDis)}</td></tr>
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: невалид. payload</td><td style="color:#8b949e;">{$e($trIgnPay)}</td></tr>
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: режим входа</td><td style="color:#8b949e;">{$e($trIgnMode)}</td></tr>
-{$pmCloseRows}<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Очередь всего (после тика)</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;"><strong style="color:#f0883e;">{$e($trQueueTotal)}</strong></td></tr>
+{$pmCloseRows}{$pmRegStateRows}<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Очередь всего (после тика)</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;"><strong style="color:#f0883e;">{$e($trQueueTotal)}</strong></td></tr>
 ROWS;
 
     // ── Bot tab: stats rows ───────────────────────────────────────────────

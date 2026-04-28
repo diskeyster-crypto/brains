@@ -223,6 +223,16 @@ final class ProfManagerService
                 $pmAction       = $profileResult['action'] ?? 'skip';
                 $closeAttemptResult = null;
 
+                // Extract position mode info for cross-gateway diagnostics (always computed)
+                $posRawMode = '';
+                foreach (['execution_mode', 'mode'] as $_mf) {
+                    $_mv = (string)($pos[$_mf] ?? '');
+                    if ($_mv === 'live' || $_mv === 'demo') {
+                        $posRawMode = $_mv;
+                        break;
+                    }
+                }
+
                 if (in_array($pmAction, $pmCloseActions, true)) {
                     $posExecMode  = $this->resolveCloseMode($pos, $moduleMode);
                     $posSymbol    = (string)($pos['symbol'] ?? '');
@@ -232,7 +242,21 @@ final class ProfManagerService
                         ? 'hybrid_confirmed'
                         : 'lock_touch';
 
-                    if ($posExecMode === 'demo') {
+                    if ($posExecMode === 'mode_mismatch') {
+                        // Cross-gateway safety: position mode differs from PM module mode.
+                        // Do not attempt the close; record mismatch details only.
+                        $closeAttemptResult = [
+                            'close_attempted'    => false,
+                            'close_ok'           => false,
+                            'close_ret_code'     => null,
+                            'close_ret_msg'      => null,
+                            'close_reason'       => $closeReasonValue,
+                            'close_source'       => 'profit_manager',
+                            'close_order_id'     => null,
+                            'close_error_reason' => 'position_mode_mismatch',
+                        ];
+                        $profileResult['action'] = 'close_skipped_mode_mismatch';
+                    } elseif ($posExecMode === 'demo') {
                         $closeAttemptResult = $this->closeDemoPosition($posSymbol, $posSide, $posSize, $pos);
                         $closeAttemptResult['close_reason'] = $closeReasonValue;
                         $profileResult['action'] = $closeAttemptResult['close_ok']
@@ -245,7 +269,8 @@ final class ProfManagerService
                                 $posSide,
                                 $closeReasonValue,
                                 $closeAttemptResult['close_order_id'] ?? null,
-                                'demo'
+                                'demo',
+                                $pos
                             );
                         }
                     } elseif ($posExecMode === 'live') {
@@ -261,7 +286,8 @@ final class ProfManagerService
                                 $posSide,
                                 $closeReasonValue,
                                 $closeAttemptResult['close_order_id'] ?? null,
-                                'live'
+                                'live',
+                                $pos
                             );
                         }
                     } else {
@@ -338,6 +364,13 @@ final class ProfManagerService
                     'close_source'               => $closeAttemptResult['close_source']       ?? null,
                     'close_order_id'             => $closeAttemptResult['close_order_id']     ?? null,
                     'close_error_reason'         => $closeAttemptResult['close_error_reason'] ?? null,
+                    // Close mode resolution diagnostics
+                    'module_mode'                => $moduleMode,
+                    'position_mode'              => $posRawMode !== '' ? $posRawMode : null,
+                    'effective_close_mode'       => ($closeAttemptResult !== null && isset($posExecMode) && $posExecMode !== 'mode_mismatch') ? $posExecMode : null,
+                    'close_mode_resolution'      => $closeAttemptResult !== null
+                        ? ($posRawMode === '' ? 'module_fallback' : (($closeAttemptResult['close_error_reason'] ?? '') === 'position_mode_mismatch' ? 'mode_mismatch' : 'explicit_match'))
+                        : null,
                 ];
             }
 
@@ -554,9 +587,14 @@ final class ProfManagerService
      * Determine the effective close mode for a specific position.
      *
      * Prefer explicit position mode/execution_mode when present and valid.
-     * Otherwise fall back to moduleMode.
-     * Never close a live position through demo gateway.
-     * Never close a demo position through live gateway.
+     * Otherwise fall back to moduleMode (when position has no explicit mode).
+     *
+     * Cross-gateway safety rules:
+     *   - If position has an explicit mode that differs from moduleMode → return 'mode_mismatch'.
+     *     The caller must NOT close, must record close_attempted=false.
+     *   - Never close a live position through demo gateway.
+     *   - Never close a demo position through live gateway.
+     *   - If position has no explicit mode → fallback to moduleMode is allowed.
      */
     private function resolveCloseMode(array $pos, string $moduleMode): string
     {
@@ -570,14 +608,14 @@ final class ProfManagerService
         }
 
         if ($posMode === '') {
-            // No valid mode in position — use module config mode
+            // No valid explicit mode in position — use module config mode (safe fallback)
             return $moduleMode;
         }
 
-        // Cross-gateway safety: position mode must match module mode
+        // Cross-gateway safety: position mode must match module mode.
+        // Return a sentinel so the caller can record the mismatch and skip the close.
         if ($posMode !== $moduleMode) {
-            // Mode mismatch — fall back to moduleMode to avoid cross-gateway close
-            return $moduleMode;
+            return 'mode_mismatch';
         }
 
         return $posMode;
@@ -1112,20 +1150,33 @@ final class ProfManagerService
 
     /**
      * Write an entry to the PM close registry so the bot journal can attribute
-     * the close to Profit Manager when the position disappears from Bybit.
+     * the close to Profit Manager when the position disappears from Bybit,
+     * and so the bot can suppress re-entry for the same signal within the TTL.
      *
      * File: modules/bot/storage/runtime/pm_close_registry.json
      * Key:  {symbol}_{side}
+     *
+     * @param string      $symbol
+     * @param string      $side
+     * @param string      $closeReason
+     * @param string|null $closeOrderId
+     * @param string      $mode          'demo' or 'live'
+     * @param array       $posContext    Original position record (for signal_id, strategy_id, etc.)
      */
     private function writePmCloseRegistry(
         string  $symbol,
         string  $side,
         string  $closeReason,
         ?string $closeOrderId,
-        string  $mode = 'demo'
+        string  $mode = 'demo',
+        array   $posContext = []
     ): void {
         $registryPath = $this->repoRoot . '/modules/bot/storage/runtime/pm_close_registry.json';
         $dir          = dirname($registryPath);
+
+        // Configurable suppression TTL (default 3600 seconds = 1 hour)
+        $suppressionTtl = (int)($this->config['pm_close_reentry_suppression_sec'] ?? 3600);
+        $suppressionTtl = max(60, $suppressionTtl); // at least 60 seconds
 
         try {
             if (!is_dir($dir)) {
@@ -1143,15 +1194,22 @@ final class ProfManagerService
                 }
             }
 
+            $now = time();
             $key = $symbol . '_' . $side;
             $registry[$key] = [
-                'mode'           => $mode,
-                'symbol'         => $symbol,
-                'side'           => $side,
-                'close_source'   => 'profit_manager',
-                'close_reason'   => $closeReason,
-                'close_order_id' => $closeOrderId,
-                'ts'             => time(),
+                'mode'                   => $mode,
+                'symbol'                 => $symbol,
+                'side'                   => $side,
+                'signal_id'              => (string)($posContext['signal_id']       ?? ''),
+                'strategy_id'            => (string)($posContext['strategy_id']     ?? ''),
+                'owner_strategy'         => (string)($posContext['owner_strategy']  ?? $posContext['strategy_id'] ?? ''),
+                'close_source'           => 'profit_manager',
+                'close_reason'           => $closeReason,
+                'close_order_id'         => $closeOrderId,
+                'position_opened_at'     => $posContext['opened_at']      ?? $posContext['created_at']    ?? null,
+                'bot_submitted_at'       => $posContext['bot_submitted_at']  ?? $posContext['submitted_at'] ?? null,
+                'ts'                     => $now,
+                'suppress_reentry_until' => $now + $suppressionTtl,
             ];
 
             file_put_contents(

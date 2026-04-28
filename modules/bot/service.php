@@ -782,6 +782,7 @@ final class BotService
             $reconResult['closed_trade_matched']    += $reconResult2['closed_trade_matched'];
             $reconResult['reconciled_closed']       += $reconResult2['reconciled_closed'];
             $reconResult['reconciled_expired']      += $reconResult2['reconciled_expired'];
+            $reconResult['pm_close_reconciled']      = ($reconResult['pm_close_reconciled'] ?? 0) + ($reconResult2['pm_close_reconciled'] ?? 0);
             // Final-state snapshot: must reflect state after all closes this tick
             $reconResult['waiting_match']            = $reconResult2['waiting_match'];
             $reconResult['stale_unmatched']          = $reconResult2['stale_unmatched'];
@@ -802,6 +803,10 @@ final class BotService
         $stats['order_queue_refreshed_total'] += $result['refreshed_total'];
         $stats['order_queue_expired_total']   += $result['expired_total'];
         $stats['order_queue_withdrawn_total'] += $result['withdrawn_total'];
+        $stats['handoff_signals_ignored_recent_pm_close_total'] = ($stats['handoff_signals_ignored_recent_pm_close_total'] ?? 0)
+            + (int)($result['ignored_recent_pm_close_total'] ?? 0);
+        $stats['pm_close_reentry_suppressed_total'] = ($stats['pm_close_reentry_suppressed_total'] ?? 0)
+            + (int)($result['pm_close_reentry_suppressed_total'] ?? 0);
         // Execution counters are cumulative
         $stats['orders_created_total']                    += $execResult['orders_created'];
         $stats['orders_submitted_paper_total']            += $execResult['orders_submitted_paper'];
@@ -896,10 +901,13 @@ final class BotService
             'shadow_compare_overlap_examples'         => $shadowOverlapEx,
 
             // Signals this tick
-            'handoff_signals_processed'                  => $result['signals_seen'],
-            'handoff_signals_ignored_disabled_strategy'  => $ignoredSignalsCount,
-            'handoff_signals_ignored_invalid_payload'    => $result['ignored_invalid_signal_payload'],
-            'handoff_signals_ignored_invalid_entry_mode' => $result['ignored_invalid_entry_mode'],
+            'handoff_signals_processed'                   => $result['signals_seen'],
+            'handoff_signals_ignored_disabled_strategy'   => $ignoredSignalsCount,
+            'handoff_signals_ignored_invalid_payload'     => $result['ignored_invalid_signal_payload'],
+            'handoff_signals_ignored_invalid_entry_mode'  => $result['ignored_invalid_entry_mode'],
+            'handoff_signals_ignored_recent_pm_close_total' => (int)($result['ignored_recent_pm_close_total'] ?? 0),
+            'pm_close_reentry_suppressed_total'           => $stats['pm_close_reentry_suppressed_total'] ?? 0,
+            'pm_close_reentry_suppressed_examples'        => $result['pm_close_reentry_suppressed_examples'] ?? [],
 
             // Queue changes this tick
             'order_queue_new_total'       => $result['new_total'],
@@ -957,6 +965,7 @@ final class BotService
             'submitted_closed_trade_matched_total'     => $reconResult['closed_trade_matched'],
             'submitted_reconciled_closed_total'        => $reconResult['reconciled_closed'],
             'submitted_reconciled_expired_total'       => $reconResult['reconciled_expired'],
+            'submitted_pm_close_reconciled_total'      => $reconResult['pm_close_reconciled'] ?? 0,
             'submitted_waiting_match_total'            => $reconResult['waiting_match'],
             'submitted_stale_unmatched_total'          => $reconResult['stale_unmatched'],
             'submitted_still_blocking_total'           => $reconResult['still_blocking'],
@@ -1252,6 +1261,7 @@ final class BotService
         $closedTradeMatched      = 0;
         $reconciledClosed        = 0;
         $reconciledExpired       = 0;
+        $pmCloseReconciledTotal  = 0;
         $waitingMatch            = 0;
         $staleUnmatched          = 0;
         $stillBlocking           = 0;
@@ -1265,23 +1275,41 @@ final class BotService
                 }
             }
             return [
-                'order_queue'             => $orderQueue,
-                'reconcile_enabled'       => false,
-                'submitted_total'         => $submittedTotal,
-                'active_position_matched' => 0,
-                'active_order_matched'    => 0,
-                'closed_trade_matched'    => 0,
-                'reconciled_closed'       => 0,
-                'reconciled_expired'      => 0,
-                'waiting_match'           => 0,
-                'stale_unmatched'         => 0,
-                'still_blocking'          => $stillBlocking,
+                'order_queue'              => $orderQueue,
+                'reconcile_enabled'        => false,
+                'submitted_total'          => $submittedTotal,
+                'active_position_matched'  => 0,
+                'active_order_matched'     => 0,
+                'closed_trade_matched'     => 0,
+                'reconciled_closed'        => 0,
+                'reconciled_expired'       => 0,
+                'pm_close_reconciled'      => 0,
+                'waiting_match'            => 0,
+                'stale_unmatched'          => 0,
+                'still_blocking'           => $stillBlocking,
             ];
         }
 
         // Config TTL
         $ttlWithoutPosMins = (int)($config['submitted_without_position_ttl_minutes'] ?? 30);
         $ttlWithoutPosSecs = max(1, $ttlWithoutPosMins) * 60;
+
+        // ── Load PM close registry for submitted-item reconciliation ──────────
+        $pmCloseRegistry = [];
+        try {
+            $pmRegPath = $this->moduleDir . '/storage/runtime/pm_close_registry.json';
+            if (is_file($pmRegPath)) {
+                $pmRegRaw = @file_get_contents($pmRegPath);
+                if ($pmRegRaw !== false && $pmRegRaw !== '') {
+                    $pmRegDec = @json_decode($pmRegRaw, true);
+                    if (is_array($pmRegDec)) {
+                        $pmCloseRegistry = $pmRegDec;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // Never fail over registry load
+        }
 
         // ── Build fast-lookup sets ────────────────────────────────────────────
         // Active orders: keyed by "strategy_id:signal_id"
@@ -1377,6 +1405,37 @@ final class BotService
                 continue;
             }
 
+            // ── No active order/position — check PM close registry ─────────
+            $pmRegKey  = $symbol . '_' . (string)($qItem['side'] ?? '');
+            $queueMode = (string)($qItem['execution_mode'] ?? '');
+
+            if ($symbol !== '' && isset($pmCloseRegistry[$pmRegKey])) {
+                $pmEntry         = $pmCloseRegistry[$pmRegKey];
+                $suppressUntil   = (int)($pmEntry['suppress_reentry_until'] ?? 0);
+                $pmEntryMode     = (string)($pmEntry['mode'] ?? '');
+                $pmEntrySignalId = (string)($pmEntry['signal_id'] ?? '');
+                $modeMatches     = $pmEntryMode === '' || $queueMode === '' || $pmEntryMode === $queueMode;
+                $sigIdMatches    = $pmEntrySignalId === '' || $signalId === '' || $pmEntrySignalId === $signalId;
+
+                // Accept if suppress_reentry_until is still in future, or fall back to ts+300
+                $pmEntryTs       = (int)($pmEntry['ts'] ?? 0);
+                $pmStillActive   = ($suppressUntil > $now)
+                    || ($suppressUntil === 0 && $pmEntryTs > 0 && ($now - $pmEntryTs) <= 300);
+
+                if ($pmStillActive && $modeMatches && $sigIdMatches) {
+                    $qItem['queue_status']          = 'pm_close_reconciled';
+                    $qItem['previous_queue_status'] = 'submitted';
+                    $qItem['reconciled_at']         = $tickAt;
+                    $qItem['last_change_reason']    = 'pm_close_registry_matched';
+                    $qItem['close_order_id']        = (string)($pmEntry['close_order_id'] ?? '');
+                    $qItem['close_reason']          = (string)($pmEntry['close_reason']   ?? '');
+                    $qItem['close_source']          = 'profit_manager';
+                    $qItem['lifecycle_note']        = 'Matched PM close registry; terminal — does not block new signals.';
+                    $pmCloseReconciledTotal++;
+                    continue;
+                }
+            }
+
             // ── No active order/position — check if closed ──────────────────
             $matchedClosedTrade = false;
             $submittedTs        = $ageRefTs; // reuse for closed_at >= submitted_at check
@@ -1450,6 +1509,7 @@ final class BotService
             'closed_trade_matched'    => $closedTradeMatched,
             'reconciled_closed'       => $reconciledClosed,
             'reconciled_expired'      => $reconciledExpired,
+            'pm_close_reconciled'     => $pmCloseReconciledTotal,
             'waiting_match'           => $waitingMatch,
             'stale_unmatched'         => $staleUnmatched,
             'still_blocking'          => $stillBlocking,
@@ -1502,14 +1562,34 @@ final class BotService
             }
         }
 
-        $newTotal                  = 0;
-        $refreshedTotal            = 0;
-        $expiredTotal              = 0;
-        $withdrawnTotal            = 0;
-        $ignoredInvalidPayload     = 0;
-        $ignoredInvalidMode        = 0;
-        $result                    = [];
-        $activeKeys                = [];
+        // ── Load PM close registry for re-entry suppression ───────────────────
+        $pmCloseRegistry = [];
+        try {
+            $pmRegPath = $this->moduleDir . '/storage/runtime/pm_close_registry.json';
+            if (is_file($pmRegPath)) {
+                $pmRegRaw = @file_get_contents($pmRegPath);
+                if ($pmRegRaw !== false && $pmRegRaw !== '') {
+                    $pmRegDec = @json_decode($pmRegRaw, true);
+                    if (is_array($pmRegDec)) {
+                        $pmCloseRegistry = $pmRegDec;
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // Never fail over registry load
+        }
+
+        $newTotal                           = 0;
+        $refreshedTotal                     = 0;
+        $expiredTotal                       = 0;
+        $withdrawnTotal                     = 0;
+        $ignoredInvalidPayload              = 0;
+        $ignoredInvalidMode                 = 0;
+        $ignoredRecentPmCloseTotal          = 0;
+        $pmCloseReentrySuppressedTotal      = 0;
+        $pmCloseReentrySuppressedExamples   = [];
+        $result                             = [];
+        $activeKeys                         = [];
 
         foreach ($handoffSignals as $signal) {
             $signalId = (string)($signal['signal_id'] ?? '');
@@ -1542,6 +1622,39 @@ final class BotService
                 }
             }
 
+            // ── PM close re-entry suppression ─────────────────────────────────
+            // If a recent PM close registry entry matches this handoff signal by
+            // symbol + side + mode + signal_id (when available), suppress it until TTL expires.
+            $sigSymbol = (string)($signal['symbol'] ?? '');
+            $sigSide   = (string)($signal['side']   ?? '');
+            $sigMode   = (string)($signal['execution_mode'] ?? $signal['mode'] ?? $botMode);
+            $pmRegKey  = $sigSymbol . '_' . $sigSide;
+
+            if ($sigSymbol !== '' && $sigSide !== '' && isset($pmCloseRegistry[$pmRegKey])) {
+                $pmEntry          = $pmCloseRegistry[$pmRegKey];
+                $suppressUntil    = (int)($pmEntry['suppress_reentry_until'] ?? 0);
+                $pmEntryMode      = (string)($pmEntry['mode'] ?? '');
+                $pmEntrySignalId  = (string)($pmEntry['signal_id'] ?? '');
+                $modeMatches      = $pmEntryMode === '' || $pmEntryMode === $sigMode;
+                $signalIdMatches  = $pmEntrySignalId === '' || $signalId === '' || $pmEntrySignalId === $signalId;
+
+                if ($suppressUntil > time() && $modeMatches && $signalIdMatches) {
+                    $ignoredRecentPmCloseTotal++;
+                    $pmCloseReentrySuppressedTotal++;
+                    if (count($pmCloseReentrySuppressedExamples) < 5) {
+                        $pmCloseReentrySuppressedExamples[] = [
+                            'symbol'                 => $sigSymbol,
+                            'side'                   => $sigSide,
+                            'signal_id'              => $signalId,
+                            'close_order_id'         => (string)($pmEntry['close_order_id'] ?? ''),
+                            'suppress_reentry_until' => date('c', $suppressUntil),
+                        ];
+                    }
+                    // Do not add to activeKeys so existing queued/ready items will be withdrawn
+                    continue;
+                }
+            }
+
             $activeKeys[$key] = true;
 
             if (isset($queueMap[$key])) {
@@ -1558,7 +1671,7 @@ final class BotService
                 // closed_reconciled and submitted_expired are lifecycle-terminal; if the signal
                 // is still present in the handoff queue on the next tick, treat it as new.
                 $isLifecycleTerminal = in_array($prevStatus, [
-                    'closed_reconciled', 'submitted_expired',
+                    'closed_reconciled', 'pm_close_reconciled', 'submitted_expired',
                     'expired', 'withdrawn', 'rejected', 'failed', 'skipped', 'cancelled', 'closed',
                 ], true);
 
@@ -1613,8 +1726,8 @@ final class BotService
             }
             $prevStatus = (string)($prev['queue_status'] ?? 'queued');
             if (in_array($prevStatus, [
-                'expired', 'withdrawn', 'submitted', 'closed_reconciled', 'submitted_expired',
-                'active_order', 'active_position', 'rejected',
+                'expired', 'withdrawn', 'submitted', 'closed_reconciled', 'pm_close_reconciled',
+                'submitted_expired', 'active_order', 'active_position', 'rejected',
             ], true)) {
                 $result[$key] = $prev;
                 continue;
@@ -1635,14 +1748,17 @@ final class BotService
         }
 
         return [
-            'order_queue'                    => array_values($result),
-            'signals_seen'                   => count($handoffSignals),
-            'new_total'                      => $newTotal,
-            'refreshed_total'                => $refreshedTotal,
-            'expired_total'                  => $expiredTotal,
-            'withdrawn_total'                => $withdrawnTotal,
-            'ignored_invalid_signal_payload' => $ignoredInvalidPayload,
-            'ignored_invalid_entry_mode'     => $ignoredInvalidMode,
+            'order_queue'                          => array_values($result),
+            'signals_seen'                         => count($handoffSignals),
+            'new_total'                            => $newTotal,
+            'refreshed_total'                      => $refreshedTotal,
+            'expired_total'                        => $expiredTotal,
+            'withdrawn_total'                      => $withdrawnTotal,
+            'ignored_invalid_signal_payload'       => $ignoredInvalidPayload,
+            'ignored_invalid_entry_mode'           => $ignoredInvalidMode,
+            'ignored_recent_pm_close_total'        => $ignoredRecentPmCloseTotal,
+            'pm_close_reentry_suppressed_total'    => $pmCloseReentrySuppressedTotal,
+            'pm_close_reentry_suppressed_examples' => $pmCloseReentrySuppressedExamples,
         ];
     }
 

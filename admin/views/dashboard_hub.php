@@ -1025,6 +1025,9 @@ HTML;
     $trIgnPay      = (int)($lastRun['handoff_signals_ignored_invalid_payload']      ?? 0);
     $trIgnMode     = (int)($lastRun['handoff_signals_ignored_invalid_entry_mode']   ?? 0);
     $trQueueTotal  = (int)($lastRun['order_queue_total']                            ?? 0);
+    $trIgnPmClose  = (int)($lastRun['handoff_signals_ignored_recent_pm_close_total']?? 0);
+    $trPmCloseSupp = (int)($lastRun['pm_close_reentry_suppressed_total']            ?? 0);
+    $trPmCloseExamples = (array)($lastRun['pm_close_reentry_suppressed_examples']   ?? []);
 
     // ── Bot tab: signal source selector status ────────────────────────────
     $lrSignalSourceMode           = (string)($lastRun['signal_source_mode']                         ?? ($botConfig['signal_source_mode'] ?? 'direct_strategy_handoff'));
@@ -1136,6 +1139,23 @@ HTML;
     // $govApprovedQueueTotal will be set after $govDemoQueueRaw is loaded (further below)
     $govApprovedQueueTotal = 0;
 
+    // Build PM close suppression rows for tick trace (shown only when > 0)
+    $pmCloseExamplesHtml = '';
+    if ($trPmCloseSupp > 0 && !empty($trPmCloseExamples)) {
+        $exParts = [];
+        foreach ($trPmCloseExamples as $ex) {
+            $exParts[] = $e((string)($ex['symbol'] ?? '')) . ' ' . $e((string)($ex['side'] ?? ''))
+                . ' (signal: ' . $e((string)($ex['signal_id'] ?? '')) . ', until: ' . $e((string)($ex['suppress_reentry_until'] ?? '')) . ')';
+        }
+        $pmCloseExamplesHtml = '<tr><td style="color:var(--ui-text-muted);padding:2px 12px 2px 16px;font-size:11px;" colspan="2">'
+            . implode('<br>', $exParts) . '</td></tr>';
+    }
+    $pmCloseRows = ($trIgnPmClose > 0 || $trPmCloseSupp > 0)
+        ? '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: PM close suppr.</td><td style="color:#f0883e;">' . $e($trIgnPmClose) . '</td></tr>'
+          . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">PM re-entry suppr. (всего)</td><td style="color:#f0883e;font-weight:600;">' . $e($trPmCloseSupp) . '</td></tr>'
+          . $pmCloseExamplesHtml
+        : '';
+
     $tickTraceRows = <<<ROWS
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;white-space:nowrap;">Сигналов получено</td><td><strong>{$e($trSeenTotal)}</strong></td></tr>
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">→ новых в очереди</td><td style="color:#3fb950;"><strong>{$e($trNew)}</strong></td></tr>
@@ -1145,7 +1165,7 @@ HTML;
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: стратегия выкл.</td><td style="color:#8b949e;">{$e($trIgnDis)}</td></tr>
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: невалид. payload</td><td style="color:#8b949e;">{$e($trIgnPay)}</td></tr>
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: режим входа</td><td style="color:#8b949e;">{$e($trIgnMode)}</td></tr>
-<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Очередь всего (после тика)</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;"><strong style="color:#f0883e;">{$e($trQueueTotal)}</strong></td></tr>
+{$pmCloseRows}<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Очередь всего (после тика)</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;"><strong style="color:#f0883e;">{$e($trQueueTotal)}</strong></td></tr>
 ROWS;
 
     // ── Bot tab: stats rows ───────────────────────────────────────────────
@@ -1297,7 +1317,7 @@ ROWS;
         ? $pmRawLastRun['enrichment_summary'] : [];
     $pmDiagPriceProvErr    = (string)($pmRawLastRun['price_provider_error']  ?? '');
     $pmDiagPriceProvSource = (string)($pmRawLastRun['price_provider_source'] ?? '');
-    $pmDiagSourceAuthority = (string)($pmRawLastRun['diagnostics']['source_authority'] ?? 'bot_active_positions_demo_cache');
+    $pmDiagSourceAuthority = (string)($pmRawLastRun['source_authority'] ?? $pmRawLastRun['diagnostics']['source_authority'] ?? '');
 
     // ── PM per-position runtime rows (new diagnostics) ────────────────────
     $pmPositionsRuntime   = is_array($pmRawLastRun['positions_runtime']    ?? null)

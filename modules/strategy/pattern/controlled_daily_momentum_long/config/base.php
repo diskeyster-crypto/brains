@@ -40,11 +40,15 @@ return [
     'batch_size'        => 200,
 
     // ── Daily momentum gate ────────────────────────────────────────────────────
-    'hard_min_daily_change_pct'  => 5.0,   // below this: ignore (ignore_low_momentum_below_5pct)
-    'min_daily_change_pct'       => 8.0,   // below this but ≥ hard_min: watch_only_weak_momentum
-    'ideal_min_daily_change_pct' => 10.0,  // ideal range lower bound
-    'ideal_max_daily_change_pct' => 25.0,  // ideal range upper bound
-    'hard_max_daily_change_pct'  => 35.0,  // above this: daily_change_too_high (no valid signal)
+    'early_watch_min_daily_change_pct'  => 3.0,   // below this: ignore (ignore_low_momentum_below_3pct)
+    'hard_min_daily_change_pct'         => 3.0,   // alias for early_watch_min (backward compat; was 5.0)
+    'active_watch_min_daily_change_pct' => 5.0,   // 3–5 %: early_watch; 5–8 %: active_watch
+    'min_daily_change_pct'              => 8.0,   // below this but ≥ active_watch_min: no signal
+    'ideal_min_daily_change_pct'        => 10.0,  // ideal range lower bound
+    'ideal_max_daily_change_pct'        => 18.0,  // ideal range upper bound (was 25.0)
+    'caution_daily_change_pct'          => 18.0,  // ≥ this: caution_late_momentum class
+    'late_momentum_warning_pct'         => 25.0,  // ≥ this: late_momentum_warning class
+    'hard_max_daily_change_pct'         => 35.0,  // above this: daily_change_too_high (no valid signal)
 
     // ── Anti-blowoff gates ────────────────────────────────────────────────────
     'max_1m_pump_pct'                   => 3.0,  // max single 1m candle move (blowoff_1m_pump)
@@ -84,4 +88,12 @@ return [
     // ── Entry quality gates ───────────────────────────────────────────────────
     'max_entry_distance_from_reclaim_pct'   => 2.5, // entry_too_late_after_reclaim
     'max_entry_distance_from_structure_pct' => 5.0, // entry_too_far_from_structure
+
+    // ── Recovery drift detection ──────────────────────────────────────────────
+    'recovery_drift_min_duration_minutes'                   => 720,  // ≥ 12 h of controlled rise
+    'recovery_drift_max_slope_spike_pct'                    => 4.0,  // max single candle spike in drift window
+    'recovery_drift_min_daily_change_pct'                   => 8.0,  // only evaluate in valid range
+    'recovery_drift_max_daily_change_pct'                   => 25.0, // skip if daily move is extreme
+    'max_entry_extension_from_recent_pullback_pct'          => 3.0,  // extension that triggers dump_risk_warning
+    'max_entry_distance_from_24h_high_pct_for_late_warning' => 8.0,  // how far below 24 h high entry may be
 ];

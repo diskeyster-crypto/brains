@@ -124,7 +124,17 @@ final class ControlledDailyMomentumLongStrategy
             'batch_end_index'                => $batchEndIndex,
             'next_cursor'                    => $nextCursor,
             'ignored_low_momentum_total'     => 0,
+            'early_watch_total'              => 0,
+            'active_watch_total'             => 0,
             'weak_watch_only_total'          => 0,
+            'watchlist_total'                => 0,
+            'watchlist_new_total'            => 0,
+            'watchlist_promoted_total'       => 0,
+            'late_momentum_warning_total'    => 0,
+            'candidate_first_seen_too_late_total' => 0,
+            'recovery_drift_detected_total'  => 0,
+            'recovery_drift_watch_only_total'=> 0,
+            'dump_risk_warning_total'        => 0,
             'candidates_total'               => 0,
             'signals_total'                  => 0,
             'rejects_total'                  => 0,
@@ -166,12 +176,12 @@ final class ControlledDailyMomentumLongStrategy
 
         $maxSignalsPerRun = max(1, (int)($config['max_signals_per_run'] ?? 10));
         $signalsThisRun   = 0;
-        $hardMinPct       = (float)($config['hard_min_daily_change_pct'] ?? 5.0);
 
         // Load persisted state
         $candidates = $this->readJson('storage/candidates.json', []);
         $signals    = $this->readJson('storage/signals.json',    []);
         $rejects    = $this->readJson('storage/rejects.json',    []);
+        $watchlist  = $this->readJson('storage/watchlist.json',  []);
 
         $currentRunSignals       = [];
         $currentRunCandidateKeys = [];
@@ -198,8 +208,8 @@ final class ControlledDailyMomentumLongStrategy
             $dailyChangePct = (float)($momentumResult['daily_change_pct'] ?? 0.0);
             $momentumClass  = (string)($momentumResult['class'] ?? 'ignore');
 
-            // Symbols below hard_min: silently ignore (no candidate record)
-            if ($momentumResult['reason'] === 'ignore_low_momentum_below_5pct' || $dailyChangePct < $hardMinPct) {
+            // Symbols below early-watch min (<3%): silently ignore (no candidate record)
+            if ($momentumClass === 'ignore') {
                 $stats['ignored_low_momentum_total']++;
                 $stats['rejected']++;
                 $this->recordReject($symbol, $momentumResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, [
@@ -208,20 +218,33 @@ final class ControlledDailyMomentumLongStrategy
                 continue;
             }
 
-            // All symbols >= hard_min are diagnostic candidates — write to candidates.json
+            // ── All symbols >= 3%: update watchlist ───────────────────────────
+            $prevWatchState   = $watchlist[$symbol]['watch_state'] ?? null;
+            $watchlistEntry   = $this->updateWatchlistEntry($watchlist, $symbol, $dailyChangePct, $momentumClass, $now);
+            $isNewEntry       = ($prevWatchState === null);
+            if ($isNewEntry) {
+                $stats['watchlist_new_total']++;
+            }
+            $stats['watchlist_total']++;
+            $accelDiag = $this->computeAccelerationDiagnostics($watchlistEntry, $dailyChangePct, $now);
+
+            // Candidate key + tracking
             $candidateKey = strtolower($symbol) . '_' . self::STRATEGY_ID;
             $stats['candidates_total']++;
-            $currentRunCandidateKeys[$candidateKey] = true; // track for top_current_candidates
+            $currentRunCandidateKeys[$candidateKey] = true;
 
-            // Accumulate diagnostic fields as the symbol progresses through stages
-            $diagFields = [
-                'daily_change_pct' => $dailyChangePct,
-                'momentum_class'   => $momentumClass,
-            ];
+            // Base diagnostic fields (shared across all branches)
+            $diagFields = array_merge([
+                'daily_change_pct'            => $dailyChangePct,
+                'momentum_class'              => $momentumClass,
+                'watch_state'                 => $watchlistEntry['watch_state'],
+                'first_seen_daily_change_pct' => (float)($watchlistEntry['first_seen_daily_change_pct'] ?? $dailyChangePct),
+                'last_seen_daily_change_pct'  => $dailyChangePct,
+            ], $accelDiag);
 
-            // Weak watch_only (daily >= hard_min but < min_daily): record and skip
-            if (!$momentumResult['pass']) {
-                $stats['weak_watch_only_total']++;
+            // ── Early watch (3–5 %): record to watchlist, no signal ───────────
+            if ($momentumClass === 'early_watch') {
+                $stats['early_watch_total']++;
                 $stats['rejected']++;
                 $stats['rejects_total']++;
                 $diagCandidate = array_merge([
@@ -238,13 +261,93 @@ final class ControlledDailyMomentumLongStrategy
                 continue;
             }
 
-            // Momentum passed (daily >= min_daily)
-            $open24h       = (float)($momentumResult['open_24h'] ?? 0.0);
-            $high24h       = (float)($momentumResult['high_24h'] ?? 0.0);
-            $low24h        = (float)($momentumResult['low_24h']  ?? 0.0);
+            // ── Active watch (5–8 %): record to watchlist, no signal ──────────
+            if ($momentumClass === 'active_watch') {
+                $stats['active_watch_total']++;
+                $stats['weak_watch_only_total']++;
+                $stats['rejected']++;
+                $stats['rejects_total']++;
+                if ($prevWatchState === 'early_watch') {
+                    $stats['watchlist_promoted_total']++;
+                }
+                $diagCandidate = array_merge([
+                    'key'          => $candidateKey,
+                    'symbol'       => $symbol,
+                    'state'        => 'watch_only',
+                    'failed_stage' => 'daily_momentum',
+                    'decision'     => 'watch_only',
+                    'reason'       => $momentumResult['reason'],
+                    'updated_at'   => date('c', $now),
+                ], $diagFields);
+                $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
+                $this->recordReject($symbol, $momentumResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
+                continue;
+            }
+
+            // ── Observation (>35 %): hard reject ─────────────────────────────
+            if (!$momentumResult['pass']) {
+                $stats['rejected']++;
+                $stats['rejects_total']++;
+                $diagCandidate = array_merge([
+                    'key'          => $candidateKey,
+                    'symbol'       => $symbol,
+                    'state'        => 'rejected',
+                    'failed_stage' => 'daily_momentum',
+                    'decision'     => 'rejected',
+                    'reason'       => $momentumResult['reason'],
+                    'updated_at'   => date('c', $now),
+                ], $diagFields);
+                $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
+                $this->recordReject($symbol, $momentumResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
+                continue;
+            }
+
+            // ── Momentum passed (daily >= min_daily and <= hard_max) ──────────
+            $open24h = (float)($momentumResult['open_24h'] ?? 0.0);
+            $high24h = (float)($momentumResult['high_24h'] ?? 0.0);
+            $low24h  = (float)($momentumResult['low_24h']  ?? 0.0);
 
             $stats['candidates_found']++;
             $stats['daily_momentum_pass_total']++;
+
+            // Track watchlist promotions (entry was previously at a lower watch tier)
+            if (in_array($prevWatchState, ['early_watch', 'active_watch'], true)) {
+                $stats['watchlist_promoted_total']++;
+            }
+
+            // Late-entry diagnostics
+            $cautionPct               = (float)($config['caution_daily_change_pct'] ?? 18.0);
+            $firstSeenPct             = (float)($watchlistEntry['first_seen_daily_change_pct'] ?? $dailyChangePct);
+            $candidateFirstSeenTooLate = $firstSeenPct >= $cautionPct;
+            $lateMomentumWarning       = ($momentumClass === 'late_momentum_warning');
+            if ($candidateFirstSeenTooLate) {
+                $stats['candidate_first_seen_too_late_total']++;
+            }
+            if ($lateMomentumWarning) {
+                $stats['late_momentum_warning_total']++;
+            }
+            $diagFields = array_merge($diagFields, [
+                'candidate_first_seen_too_late' => $candidateFirstSeenTooLate,
+                'late_momentum_warning'         => $lateMomentumWarning,
+            ]);
+
+            // ── Recovery drift detection (diagnostic, does not gate pipeline) ─
+            $recoveryDriftResult = $this->pipelineRecoveryDrift($candles, $dailyChangePct, $config);
+            $diagFields = array_merge($diagFields, [
+                'recovery_drift_detected'        => $recoveryDriftResult['recovery_drift_detected'],
+                'recovery_drift_duration_minutes'=> $recoveryDriftResult['recovery_drift_duration_minutes'],
+                'recovery_drift_score'           => $recoveryDriftResult['recovery_drift_score'],
+                'recovery_after_dump_score'      => $recoveryDriftResult['recovery_after_dump_score'],
+                'current_extension_score'        => $recoveryDriftResult['current_extension_score'],
+                'dump_risk_warning'              => $recoveryDriftResult['dump_risk_warning'],
+                'recovery_drift_reason'          => $recoveryDriftResult['recovery_drift_reason'],
+            ]);
+            if ($recoveryDriftResult['recovery_drift_detected']) {
+                $stats['recovery_drift_detected_total']++;
+            }
+            if ($recoveryDriftResult['dump_risk_warning']) {
+                $stats['dump_risk_warning_total']++;
+            }
 
             // ── 3. anti_blowoff ───────────────────────────────────────────────
             $blowoffResult = $this->pipelineAntiBlowoff($candles, $dailyChangePct, $high24h, $config);
@@ -337,17 +440,24 @@ final class ControlledDailyMomentumLongStrategy
             if (!$pullbackResult['pass']) {
                 $stats['rejected']++;
                 $stats['rejects_total']++;
+                // If recovery drift detected, annotate with recovery-drift-specific reason
+                $pullbackRejectReason = $pullbackResult['reason'];
+                if ($recoveryDriftResult['recovery_drift_detected']) {
+                    $pullbackRejectReason = 'no_fresh_pullback_after_recovery_drift';
+                    $stats['recovery_drift_watch_only_total']++;
+                    $diagFields['recovery_drift_reason'] = 'recovery_drift_watch_only';
+                }
                 $diagCandidate = array_merge([
                     'key'          => $candidateKey,
                     'symbol'       => $symbol,
                     'state'        => 'rejected',
                     'failed_stage' => 'pullback_reclaim',
                     'decision'     => 'rejected',
-                    'reject_reasons' => [$pullbackResult['reason']],
+                    'reject_reasons' => [$pullbackRejectReason],
                     'updated_at'   => date('c', $now),
                 ], $diagFields);
                 $candidates = $this->upsertCandidate($candidates, $candidateKey, $diagCandidate);
-                $this->recordReject($symbol, $pullbackResult['reason'], $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
+                $this->recordReject($symbol, $pullbackRejectReason, $_rejectCounters, $_rejectExamples, $rejects, $now, $diagFields);
                 continue;
             }
             $stats['pullback_reclaim_pass_total']++;
@@ -475,6 +585,26 @@ final class ControlledDailyMomentumLongStrategy
 
                 // Momentum class
                 'momentum_class' => $momentumClass,
+
+                // Watchlist & acceleration diagnostics
+                'watch_state'                 => $watchlistEntry['watch_state'],
+                'first_seen_daily_change_pct' => (float)($watchlistEntry['first_seen_daily_change_pct'] ?? $dailyChangePct),
+                'daily_change_delta_from_first' => $accelDiag['daily_change_delta_from_first'],
+                'daily_change_delta_since_last' => $accelDiag['daily_change_delta_since_last'],
+                'time_from_first_seen_sec'      => $accelDiag['time_from_first_seen_sec'],
+                'momentum_acceleration_score'   => $accelDiag['momentum_acceleration_score'],
+
+                // Late-entry diagnostics
+                'candidate_first_seen_too_late' => $candidateFirstSeenTooLate,
+                'late_momentum_warning'         => $lateMomentumWarning,
+
+                // Recovery drift diagnostics
+                'recovery_drift_detected'        => $recoveryDriftResult['recovery_drift_detected'],
+                'recovery_drift_score'           => $recoveryDriftResult['recovery_drift_score'],
+                'recovery_after_dump_score'      => $recoveryDriftResult['recovery_after_dump_score'],
+                'current_extension_score'        => $recoveryDriftResult['current_extension_score'],
+                'dump_risk_warning'              => $recoveryDriftResult['dump_risk_warning'],
+                'recovery_drift_reason'          => $recoveryDriftResult['recovery_drift_reason'],
             ];
 
             $signals           = $this->upsertSignal($signals, $symbol, $signal);
@@ -544,6 +674,7 @@ final class ControlledDailyMomentumLongStrategy
         $this->writeJson('storage/candidates.json',      $candidates);
         $this->writeJson('storage/signals.json',         $signals);
         $this->writeJson('storage/rejects.json',         $rejects);
+        $this->writeJson('storage/watchlist.json',       $watchlist);
 
         // Universe cursor
         $runtime['universe_cursor']   = $nextCursor;
@@ -628,11 +759,13 @@ final class ControlledDailyMomentumLongStrategy
      */
     private function pipelineDailyMomentum(array $candles, array $config): array
     {
-        $hardMin  = (float)($config['hard_min_daily_change_pct']  ?? 5.0);
-        $minValid = (float)($config['min_daily_change_pct']       ?? 8.0);
-        $idealMin = (float)($config['ideal_min_daily_change_pct'] ?? 10.0);
-        $idealMax = (float)($config['ideal_max_daily_change_pct'] ?? 25.0);
-        $hardMax  = (float)($config['hard_max_daily_change_pct']  ?? 35.0);
+        $earlyWatchMin  = (float)($config['early_watch_min_daily_change_pct']  ?? 3.0);
+        $activeWatchMin = (float)($config['active_watch_min_daily_change_pct'] ?? 5.0);
+        $minValid       = (float)($config['min_daily_change_pct']              ?? 8.0);
+        $idealMin       = (float)($config['ideal_min_daily_change_pct']        ?? 10.0);
+        $cautionPct     = (float)($config['caution_daily_change_pct']          ?? 18.0);
+        $lateWarnPct    = (float)($config['late_momentum_warning_pct']         ?? 25.0);
+        $hardMax        = (float)($config['hard_max_daily_change_pct']         ?? 35.0);
 
         $count = count($candles);
         $lookback = min(1440, $count);
@@ -651,18 +784,25 @@ final class ControlledDailyMomentumLongStrategy
 
         $dailyChangePct = (($close - $open24h) / $open24h) * 100;
 
-        if ($dailyChangePct < $hardMin) {
-            return ['pass' => false, 'reason' => 'ignore_low_momentum_below_5pct',
+        if ($dailyChangePct < $earlyWatchMin) {
+            return ['pass' => false, 'reason' => 'ignore_low_momentum_below_3pct',
                 'daily_change_pct' => round($dailyChangePct, 4),
                 'open_24h' => $open24h, 'high_24h' => $high24h, 'low_24h' => $low24h,
                 'class' => 'ignore'];
         }
 
-        if ($dailyChangePct >= $hardMin && $dailyChangePct < $minValid) {
-            return ['pass' => false, 'reason' => 'watch_only_weak_momentum',
+        if ($dailyChangePct < $activeWatchMin) {
+            return ['pass' => false, 'reason' => 'early_watch_momentum',
                 'daily_change_pct' => round($dailyChangePct, 4),
                 'open_24h' => $open24h, 'high_24h' => $high24h, 'low_24h' => $low24h,
-                'class' => 'watch_only'];
+                'class' => 'early_watch'];
+        }
+
+        if ($dailyChangePct < $minValid) {
+            return ['pass' => false, 'reason' => 'active_watch_momentum',
+                'daily_change_pct' => round($dailyChangePct, 4),
+                'open_24h' => $open24h, 'high_24h' => $high24h, 'low_24h' => $low24h,
+                'class' => 'active_watch'];
         }
 
         if ($dailyChangePct > $hardMax) {
@@ -672,7 +812,16 @@ final class ControlledDailyMomentumLongStrategy
                 'class' => 'observation'];
         }
 
-        $class = ($dailyChangePct >= $idealMin && $dailyChangePct <= $idealMax) ? 'ideal' : 'valid';
+        // Determine class for passing symbols (>= min_valid and <= hard_max)
+        if ($dailyChangePct > $lateWarnPct) {
+            $class = 'late_momentum_warning';
+        } elseif ($dailyChangePct >= $cautionPct) {
+            $class = 'caution_late_momentum';
+        } elseif ($dailyChangePct >= $idealMin) {
+            $class = 'ideal';
+        } else {
+            $class = 'valid';
+        }
 
         return [
             'pass'            => true,
@@ -1351,6 +1500,16 @@ final class ControlledDailyMomentumLongStrategy
             'pullback_depth_pct', 'reclaim_level', 'pullback_low',
             'entry_distance_from_reclaim_pct', 'entry_distance_from_structure_pct',
             'candidate_quality_score',
+            // Watchlist & acceleration
+            'watch_state', 'first_seen_daily_change_pct', 'last_seen_daily_change_pct',
+            'daily_change_delta_from_first', 'daily_change_delta_since_last',
+            'time_from_first_seen_sec', 'momentum_acceleration_score',
+            // Late-entry
+            'candidate_first_seen_too_late', 'late_momentum_warning',
+            // Recovery drift
+            'recovery_drift_detected', 'recovery_drift_duration_minutes', 'recovery_drift_score',
+            'recovery_after_dump_score', 'current_extension_score',
+            'dump_risk_warning', 'recovery_drift_reason',
         ] as $field) {
             if (array_key_exists($field, $diagMetrics)) {
                 $record[$field] = $diagMetrics[$field];
@@ -1360,6 +1519,223 @@ final class ControlledDailyMomentumLongStrategy
         if (count($rejects) > 200) {
             $rejects = array_slice($rejects, -200);
         }
+    }
+
+    // ── Watchlist helpers ─────────────────────────────────────────────────────
+
+    /**
+     * Update (or create) a watchlist entry for a symbol and return it.
+     * $watchlist is passed by reference so the caller's copy is updated in place.
+     */
+    private function updateWatchlistEntry(
+        array &$watchlist,
+        string $symbol,
+        float $dailyChangePct,
+        string $momentumClass,
+        int $now
+    ): array {
+        $watchState = match ($momentumClass) {
+            'early_watch'  => 'early_watch',
+            'active_watch' => 'active_watch',
+            'observation'  => 'rejected_late',
+            default        => 'candidate',
+        };
+
+        $existing = $watchlist[$symbol] ?? null;
+
+        if ($existing === null) {
+            $entry = [
+                'symbol'                    => $symbol,
+                'first_seen_at'             => date('c', $now),
+                'first_seen_daily_change_pct' => $dailyChangePct,
+                'last_seen_at'              => date('c', $now),
+                'last_seen_daily_change_pct'=> $dailyChangePct,
+                'prev_daily_change_pct'     => null,
+                'max_seen_daily_change_pct' => $dailyChangePct,
+                'daily_change_delta_from_first' => 0.0,
+                'watch_state'               => $watchState,
+                'watch_reason'              => $momentumClass,
+                'observations_count'        => 1,
+            ];
+        } else {
+            $prevDailyChange = (float)($existing['last_seen_daily_change_pct'] ?? $dailyChangePct);
+            $entry = array_merge($existing, [
+                'prev_daily_change_pct'     => $prevDailyChange,
+                'last_seen_at'              => date('c', $now),
+                'last_seen_daily_change_pct'=> $dailyChangePct,
+                'max_seen_daily_change_pct' => max((float)($existing['max_seen_daily_change_pct'] ?? 0.0), $dailyChangePct),
+                'daily_change_delta_from_first' => $dailyChangePct - (float)($existing['first_seen_daily_change_pct'] ?? $dailyChangePct),
+                'watch_state'               => $watchState,
+                'watch_reason'              => $momentumClass,
+                'observations_count'        => (int)($existing['observations_count'] ?? 0) + 1,
+            ]);
+        }
+
+        $watchlist[$symbol] = $entry;
+        return $entry;
+    }
+
+    /**
+     * Compute momentum acceleration diagnostics from a watchlist entry.
+     */
+    private function computeAccelerationDiagnostics(array $watchlistEntry, float $currentDailyChangePct, int $now): array
+    {
+        $firstSeenPct   = (float)($watchlistEntry['first_seen_daily_change_pct'] ?? $currentDailyChangePct);
+        $prevPct        = (float)($watchlistEntry['prev_daily_change_pct']        ?? $currentDailyChangePct);
+        $firstSeenAt    = $watchlistEntry['first_seen_at'] ?? null;
+
+        $deltaFromFirst = round($currentDailyChangePct - $firstSeenPct, 4);
+        $deltaSinceLast = round($currentDailyChangePct - $prevPct,       4);
+
+        $timeFromFirstSec = 0;
+        if ($firstSeenAt !== null) {
+            $firstTs = strtotime((string)$firstSeenAt);
+            if ($firstTs > 0) {
+                $timeFromFirstSec = max(0, $now - $firstTs);
+            }
+        }
+
+        // Acceleration score: how fast did the move develop after first seen?
+        $accelerationScore = 0.0;
+        if ($deltaFromFirst > 0 && $timeFromFirstSec > 0) {
+            $ratePerHour       = ($deltaFromFirst / $timeFromFirstSec) * 3600.0;
+            $accelerationScore = min(10.0, round($ratePerHour * 2.0, 2));
+        }
+
+        return [
+            'daily_change_delta_from_first' => $deltaFromFirst,
+            'daily_change_delta_since_last' => $deltaSinceLast,
+            'time_from_first_seen_sec'      => $timeFromFirstSec,
+            'momentum_acceleration_score'   => $accelerationScore,
+        ];
+    }
+
+    /**
+     * Recovery drift detection.
+     * Determines whether the symbol has been rising in a controlled, sustained way
+     * for at least recovery_drift_min_duration_minutes without a single dominant spike.
+     * Does NOT gate the pipeline — returns a diagnostic payload only.
+     */
+    private function pipelineRecoveryDrift(array $candles, float $dailyChangePct, array $config): array
+    {
+        $minDriftMinutes  = (int)($config['recovery_drift_min_duration_minutes']          ?? 720);
+        $maxSlopeSpike    = (float)($config['recovery_drift_max_slope_spike_pct']         ?? 4.0);
+        $minDriftDailyPct = (float)($config['recovery_drift_min_daily_change_pct']        ?? 8.0);
+        $maxDriftDailyPct = (float)($config['recovery_drift_max_daily_change_pct']        ?? 25.0);
+        $maxExtension     = (float)($config['max_entry_extension_from_recent_pullback_pct'] ?? 3.0);
+
+        $base = [
+            'recovery_drift_detected'        => false,
+            'recovery_drift_duration_minutes'=> 0,
+            'recovery_drift_score'           => 0.0,
+            'recovery_after_dump_score'      => 0.0,
+            'current_extension_score'        => 0.0,
+            'dump_risk_warning'              => false,
+            'recovery_drift_reason'          => 'not_evaluated',
+        ];
+
+        if ($dailyChangePct < $minDriftDailyPct || $dailyChangePct > $maxDriftDailyPct) {
+            return $base;
+        }
+
+        $count       = count($candles);
+        $driftWindow = min($minDriftMinutes, $count);
+        $driftSlice  = array_slice($candles, max(0, $count - $driftWindow));
+
+        if (count($driftSlice) < 60) {
+            return array_merge($base, ['recovery_drift_reason' => 'insufficient_candles']);
+        }
+
+        $startPrice = (float)(($driftSlice[0]['open'] ?? $driftSlice[0]['close']) ?: 0.0);
+        $endPrice   = (float)(end($driftSlice)['close'] ?? 0.0);
+
+        if ($startPrice <= 0.0 || $endPrice <= 0.0) {
+            return $base;
+        }
+
+        $periodChangePct = (($endPrice - $startPrice) / $startPrice) * 100.0;
+        if ($periodChangePct < 3.0) {
+            return array_merge($base, ['recovery_drift_reason' => 'insufficient_drift_movement']);
+        }
+
+        // Check for single-candle spike within drift window
+        $hasSpikeCandle = false;
+        foreach ($driftSlice as $bar) {
+            $o = (float)($bar['open']  ?? 0.0);
+            $c = (float)($bar['close'] ?? 0.0);
+            if ($o > 0.0 && (($c - $o) / $o * 100.0) > $maxSlopeSpike) {
+                $hasSpikeCandle = true;
+                break;
+            }
+        }
+
+        // Compute max drawdown from period high
+        $periodHigh = 0.0;
+        $periodLow  = PHP_FLOAT_MAX;
+        foreach ($driftSlice as $bar) {
+            $h = (float)($bar['high']  ?? 0.0);
+            $l = (float)($bar['low']   ?? PHP_FLOAT_MAX);
+            if ($h > $periodHigh) { $periodHigh = $h; }
+            if ($l > 0.0 && $l < $periodLow) { $periodLow = $l; }
+        }
+        $maxDrawdownFromHigh = ($periodHigh > 0.0 && $periodLow < PHP_FLOAT_MAX)
+            ? (($periodHigh - $periodLow) / $periodHigh) * 100.0
+            : 0.0;
+
+        // Recovery-after-dump score: check if start of drift window was recovering from a prior drop
+        $preDriftOffset = max(0, $count - $driftWindow - 60);
+        $preDriftSlice  = array_slice($candles, $preDriftOffset, 60);
+        $preDriftHigh   = 0.0;
+        foreach ($preDriftSlice as $bar) {
+            $h = (float)($bar['high'] ?? 0.0);
+            if ($h > $preDriftHigh) { $preDriftHigh = $h; }
+        }
+        $dumpScore = 0.0;
+        if ($preDriftHigh > 0.0 && $startPrice > 0.0 && $startPrice < $preDriftHigh) {
+            $dumpFromHigh = (($preDriftHigh - $startPrice) / $preDriftHigh) * 100.0;
+            $dumpScore    = min(10.0, round($dumpFromHigh / 3.0, 2));
+        }
+
+        // Drift score
+        $driftScore = 0.0;
+        if ($periodChangePct >= 3.0) {
+            $driftScore += $hasSpikeCandle ? 2.0 : 5.0;
+        }
+        if ($maxDrawdownFromHigh < 15.0) {
+            $driftScore += 3.0;
+        } elseif ($maxDrawdownFromHigh < 25.0) {
+            $driftScore += 1.5;
+        }
+        if (count($driftSlice) >= $minDriftMinutes) {
+            $driftScore += 2.0;
+        }
+
+        $isRecoveryDrift = ($driftScore >= 5.0 && !$hasSpikeCandle && $maxDrawdownFromHigh < 20.0);
+
+        // Current extension score: how far above the recent 30-bar low is the close?
+        $last30    = array_slice($candles, max(0, $count - 30));
+        $recentLow = PHP_FLOAT_MAX;
+        foreach ($last30 as $bar) {
+            $l = (float)($bar['low'] ?? PHP_FLOAT_MAX);
+            if ($l > 0.0 && $l < $recentLow) { $recentLow = $l; }
+        }
+        $extensionScore = 0.0;
+        if ($recentLow < PHP_FLOAT_MAX && $recentLow > 0.0) {
+            $extensionPct   = (($endPrice - $recentLow) / $recentLow) * 100.0;
+            $extensionScore = min(10.0, round($extensionPct / ($maxExtension * 2.0) * 10.0, 2));
+        }
+
+        $dumpRiskWarning = ($isRecoveryDrift && $extensionScore >= 7.0);
+
+        return [
+            'recovery_drift_detected'        => $isRecoveryDrift,
+            'recovery_drift_duration_minutes'=> count($driftSlice),
+            'recovery_drift_score'           => round($driftScore, 2),
+            'recovery_after_dump_score'      => round($dumpScore, 2),
+            'current_extension_score'        => round($extensionScore, 2),
+            'dump_risk_warning'              => $dumpRiskWarning,
+            'recovery_drift_reason'          => $isRecoveryDrift ? 'recovery_drift_ok' : 'no_recovery_drift',
+        ];
     }
 
     // ── Config ────────────────────────────────────────────────────────────────
@@ -1528,6 +1904,7 @@ final class ControlledDailyMomentumLongStrategy
             'storage/signals.json'           => [],
             'storage/candidates.json'        => [],
             'storage/rejects.json'           => [],
+            'storage/watchlist.json'         => (object)[],
             'storage/runtime.json'           => (object)[],
             'storage/last_run.json'          => (object)[],
             'storage/stats.json'             => (object)[],

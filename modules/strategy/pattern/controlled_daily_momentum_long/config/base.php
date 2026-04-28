@@ -79,8 +79,26 @@ return [
     // Recovery drift turnover tolerance
     'recovery_drift_turnover_warning_allowed' => true, // if true, recovery_drift=true bypasses soft turnover hard rejects
 
-    // ── Structure ─────────────────────────────────────────────────────────────
+    // ── Structure (adaptive) ──────────────────────────────────────────────────
+    'structure_mode'            => 'adaptive', // adaptive | classic
+    'structure_lookback_candles'=> 90,    // bars to look back for higher-low detection
     'min_higher_lows_count'     => 2,     // minimum number of consecutive higher lows
+
+    // Range/base hold structure
+    'range_hold_lookback_candles'  => 60,  // lookback for range hold detection
+    'max_range_hold_break_pct'     => 1.2, // max % close can be below range low to still qualify
+    'min_range_hold_recovery_pct'  => 0.4, // min % close must be above range low
+
+    // Base reclaim structure
+    'base_hold_lookback_candles'   => 120, // lookback for base reclaim detection
+    'max_base_break_pct'           => 1.5, // max % close can be below base low during dip
+    'min_base_reclaim_pct'         => 0.5, // min % close must be above base low after reclaim
+
+    // Recovery drift hold structure
+    'recovery_structure_min_duration_minutes'              => 360,  // min drift window to evaluate
+    'recovery_structure_max_recent_dump_pct'               => 5.0,  // max recent dump allowed
+    'recovery_structure_min_hold_score'                    => 0.55, // min score to pass recovery structure
+    'recovery_structure_allow_without_classic_higher_lows' => true, // allow pass even if no higher lows
 
     // ── Pullback reclaim ──────────────────────────────────────────────────────
     'min_pullback_depth_pct'    => 1.5,   // min pullback from impulse high (pullback_too_shallow)

@@ -148,6 +148,18 @@ final class ControlledDailyMomentumLongStrategy
             'pullback_reclaim_pass_total'             => 0,
             'control_check_pass_total'                => 0,
             'recovery_drift_passed_to_structure_total'=> 0,
+            // Structure type counters
+            'structure_reject_total'                         => 0,
+            'structure_warning_total'                        => 0,
+            'structure_type_higher_low_total'                => 0,
+            'structure_type_range_hold_total'                => 0,
+            'structure_type_base_reclaim_total'              => 0,
+            'structure_type_recovery_drift_hold_total'       => 0,
+            'recovery_drift_structure_pass_total'            => 0,
+            // Signal status counts
+            'signals_current_valid_total'                    => 0,
+            'signals_historical_valid_total'                 => 0,
+            'signals_stale_invalidated_total'                => 0,
             // Backwards-compatible existing counters
             'symbols_checked'         => 0,
             'no_candle_data'          => 0,
@@ -376,6 +388,7 @@ final class ControlledDailyMomentumLongStrategy
             if (!$blowoffResult['pass']) {
                 $stats['rejected']++;
                 $stats['rejects_total']++;
+                $this->markSignalStale($signals, $symbol, 'anti_blowoff', $blowoffResult['reason'], 'rejected', $now);
                 $diagCandidate = array_merge([
                     'key'          => $candidateKey,
                     'symbol'       => $symbol,
@@ -407,6 +420,7 @@ final class ControlledDailyMomentumLongStrategy
                 if ($turnoverResult['hard_reject'] ?? true) {
                     $stats['soft_turnover_hard_reject_total']++;
                 }
+                $this->markSignalStale($signals, $symbol, 'soft_turnover_ramp', $turnoverResult['reason'], 'rejected', $now);
                 $diagCandidate = array_merge([
                     'key'          => $candidateKey,
                     'symbol'       => $symbol,
@@ -429,13 +443,23 @@ final class ControlledDailyMomentumLongStrategy
             }
 
             // ── 5. structure ──────────────────────────────────────────────────
-            $structureResult = $this->pipelineStructure($candles, $config);
+            $structureResult = $this->pipelineStructure($candles, $config, (bool)($recoveryDriftResult['recovery_drift_detected'] ?? false));
             $diagFields = array_merge($diagFields, array_filter([
-                'higher_lows_count' => $structureResult['higher_lows_count'] ?? null,
+                'higher_lows_count'        => $structureResult['higher_lows_count']        ?? null,
+                'structure_status'         => $structureResult['structure_status']         ?? null,
+                'structure_type'           => $structureResult['structure_type']           ?? null,
+                'structure_score'          => $structureResult['structure_score']          ?? null,
+                'range_hold_score'         => $structureResult['range_hold_score']         ?? null,
+                'base_hold_score'          => $structureResult['base_hold_score']          ?? null,
+                'recovery_structure_score' => $structureResult['recovery_structure_score'] ?? null,
+                'structure_warnings'       => !empty($structureResult['structure_warnings']) ? $structureResult['structure_warnings'] : null,
+                'structure_reason'         => $structureResult['reason']                   ?? null,
             ], fn($v) => $v !== null));
             if (!$structureResult['pass']) {
                 $stats['rejected']++;
                 $stats['rejects_total']++;
+                $stats['structure_reject_total']++;
+                $this->markSignalStale($signals, $symbol, 'structure', $structureResult['reason'], 'rejected', $now);
                 $diagCandidate = array_merge([
                     'key'          => $candidateKey,
                     'symbol'       => $symbol,
@@ -450,6 +474,21 @@ final class ControlledDailyMomentumLongStrategy
                 continue;
             }
             $stats['structure_pass_total']++;
+            // Increment structure-type specific counters
+            $structureType = (string)($structureResult['structure_type'] ?? 'none');
+            match ($structureType) {
+                'higher_low'          => $stats['structure_type_higher_low_total']++,
+                'range_hold'          => $stats['structure_type_range_hold_total']++,
+                'base_reclaim'        => $stats['structure_type_base_reclaim_total']++,
+                'recovery_drift_hold' => $stats['structure_type_recovery_drift_hold_total']++,
+                default               => null,
+            };
+            if (!empty($structureResult['structure_warnings'])) {
+                $stats['structure_warning_total']++;
+            }
+            if ($structureType === 'recovery_drift_hold' && ($recoveryDriftResult['recovery_drift_detected'] ?? false)) {
+                $stats['recovery_drift_structure_pass_total']++;
+            }
             $structureBreakRef = $structureResult['structure_break_reference_price'];
 
             // ── 6. pullback_reclaim ───────────────────────────────────────────
@@ -469,6 +508,7 @@ final class ControlledDailyMomentumLongStrategy
                     $stats['recovery_drift_watch_only_total']++;
                     $diagFields['recovery_drift_reason'] = 'recovery_drift_watch_only';
                 }
+                $this->markSignalStale($signals, $symbol, 'pullback_reclaim', $pullbackRejectReason, 'rejected', $now);
                 $diagCandidate = array_merge([
                     'key'          => $candidateKey,
                     'symbol'       => $symbol,
@@ -503,6 +543,7 @@ final class ControlledDailyMomentumLongStrategy
             if (!$controlResult['pass']) {
                 $stats['rejected']++;
                 $stats['rejects_total']++;
+                $this->markSignalStale($signals, $symbol, 'control_check', $controlResult['reason'], 'rejected', $now);
                 $diagCandidate = array_merge([
                     'key'          => $candidateKey,
                     'symbol'       => $symbol,
@@ -605,6 +646,18 @@ final class ControlledDailyMomentumLongStrategy
                 'turnover_warnings'    => $turnoverResult['warnings']    ?? [],
                 'soft_turnover_status' => $turnoverResult['soft_turnover_status'] ?? 'ok',
 
+                // Structure diagnostics
+                'structure_status'         => $structureResult['structure_status']         ?? 'pass',
+                'structure_type'           => $structureResult['structure_type']           ?? 'higher_low',
+                'higher_lows_count'        => $structureResult['higher_lows_count']        ?? 0,
+                'range_hold_score'         => $structureResult['range_hold_score']         ?? 0.0,
+                'base_hold_score'          => $structureResult['base_hold_score']          ?? 0.0,
+                'recovery_structure_score' => $structureResult['recovery_structure_score'] ?? 0.0,
+                'structure_warnings'       => $structureResult['structure_warnings']       ?? [],
+
+                // Signal status
+                'stale'                   => false,
+
                 // Momentum class
                 'momentum_class' => $momentumClass,
 
@@ -655,6 +708,24 @@ final class ControlledDailyMomentumLongStrategy
         arsort($_rejectCounters);
         $stats['reject_reasons_normalized'] = (object)$_rejectCounters;
         $stats['reject_examples']           = array_slice($_rejectExamples, 0, 10);
+
+        // ── Signal status counts ──────────────────────────────────────────────
+        $currentRunSignalSymbols = array_column($currentRunSignals, 'symbol');
+        $sigCurrentValid         = 0;
+        $sigHistoricalValid      = 0;
+        $sigStaleInvalidated     = 0;
+        foreach ($signals as $s) {
+            if ($s['stale'] ?? false) {
+                $sigStaleInvalidated++;
+            } elseif (in_array($s['symbol'] ?? '', $currentRunSignalSymbols, true)) {
+                $sigCurrentValid++;
+            } else {
+                $sigHistoricalValid++;
+            }
+        }
+        $stats['signals_current_valid_total']    = $sigCurrentValid;
+        $stats['signals_historical_valid_total'] = $sigHistoricalValid;
+        $stats['signals_stale_invalidated_total']= $sigStaleInvalidated;
 
         // ── Build top_candidates for last_run.json ────────────────────────────
         // Sort priority: signal > candidate with daily >= min > recovery_drift >
@@ -1194,20 +1265,51 @@ final class ControlledDailyMomentumLongStrategy
     }
 
     /**
-     * Step 4: structure
-     * Detect higher-low structure in recent candles.
+     * Step 4: structure (adaptive)
+     *
+     * Detection order:
+     *   1. Classic higher-low structure (always tried first)
+     *   2. Range/base hold structure (adaptive mode only)
+     *   3. Base reclaim structure (adaptive mode only)
+     *   4. Recovery drift hold structure (adaptive mode + recovery_drift_detected only)
+     *
+     * Returns a structured payload:
+     *   pass, structure_status, structure_type, structure_score,
+     *   higher_lows_count, range_hold_score, base_hold_score,
+     *   recovery_structure_score, structure_warnings, reason,
+     *   structure_break_reference_price
      */
-    private function pipelineStructure(array $candles, array $config): array
+    private function pipelineStructure(array $candles, array $config, bool $recoveryDriftDetected = false): array
     {
-        $minHigherLows = (int)($config['min_higher_lows_count'] ?? 2);
-        $count         = count($candles);
+        $mode     = (string)($config['structure_mode']             ?? 'adaptive');
+        $lookback = (int)($config['structure_lookback_candles']    ?? 90);
+        $minHL    = (int)($config['min_higher_lows_count']         ?? 2);
 
-        // Check last 60 bars for consecutive higher lows
-        $slice        = array_slice($candles, max(0, $count - 60));
+        // Range hold
+        $rangeHoldLookback = (int)($config['range_hold_lookback_candles']   ?? 60);
+        $maxRangeBreak     = (float)($config['max_range_hold_break_pct']    ?? 1.2);
+        $minRangeRecovery  = (float)($config['min_range_hold_recovery_pct'] ?? 0.4);
+
+        // Base reclaim
+        $baseHoldLookback = (int)($config['base_hold_lookback_candles']  ?? 120);
+        $maxBaseBreak     = (float)($config['max_base_break_pct']        ?? 1.5);
+        $minBaseReclaim   = (float)($config['min_base_reclaim_pct']      ?? 0.5);
+
+        // Recovery drift structure
+        $recoveryMinDuration  = (int)($config['recovery_structure_min_duration_minutes']              ?? 360);
+        $recoveryMaxDump      = (float)($config['recovery_structure_max_recent_dump_pct']             ?? 5.0);
+        $recoveryMinScore     = (float)($config['recovery_structure_min_hold_score']                  ?? 0.55);
+        $recoveryAllowWithout = (bool)($config['recovery_structure_allow_without_classic_higher_lows']?? true);
+
+        $count     = count($candles);
+        $lastClose = (float)(end($candles)['close'] ?? 0.0);
+
+        // ── 1. Classic higher-low detection ──────────────────────────────────
         $higherLows   = 0;
-        $prevLow      = PHP_FLOAT_MAX;
         $structureRef = 0.0;
+        $prevLow      = PHP_FLOAT_MAX;
 
+        $slice = array_slice($candles, max(0, $count - $lookback));
         foreach ($slice as $bar) {
             $low = (float)($bar['low'] ?? 0);
             if ($low <= 0) {
@@ -1217,33 +1319,236 @@ final class ControlledDailyMomentumLongStrategy
                 if ($low > $prevLow) {
                     $higherLows++;
                     if ($higherLows === 1) {
-                        // First higher low — use previous low as structure reference
                         $structureRef = $prevLow;
                     }
                 } else {
-                    $higherLows = 0;
+                    $higherLows   = 0;
                     $structureRef = 0.0;
                 }
             }
             $prevLow = $low;
         }
 
-        if ($higherLows < $minHigherLows) {
-            return ['pass' => false, 'reason' => 'no_higher_low_structure',
-                'higher_lows_count' => $higherLows,
-                'structure_break_reference_price' => 0.0];
+        if ($higherLows >= $minHL) {
+            if ($structureRef <= 0.0) {
+                $structureRef = $lastClose;
+            }
+            return [
+                'pass'                            => true,
+                'structure_status'                => 'pass',
+                'structure_type'                  => 'higher_low',
+                'structure_score'                 => min(10, $higherLows * 3 + 4),
+                'higher_lows_count'               => $higherLows,
+                'range_hold_score'                => 0.0,
+                'base_hold_score'                 => 0.0,
+                'recovery_structure_score'        => 0.0,
+                'structure_warnings'              => [],
+                'reason'                          => 'structure_ok',
+                'structure_break_reference_price' => round($structureRef, 6),
+            ];
         }
 
-        // Use the close of the last bar as a fallback structure reference
-        if ($structureRef <= 0.0) {
-            $structureRef = (float)(end($candles)['close'] ?? 0.0);
+        $structureWarnings = ['structure_warning_no_classic_higher_lows'];
+
+        // Non-adaptive mode: hard reject after classic check
+        if ($mode !== 'adaptive') {
+            return [
+                'pass'                            => false,
+                'structure_status'                => 'reject',
+                'structure_type'                  => 'none',
+                'structure_score'                 => 0.0,
+                'higher_lows_count'               => $higherLows,
+                'range_hold_score'                => 0.0,
+                'base_hold_score'                 => 0.0,
+                'recovery_structure_score'        => 0.0,
+                'structure_warnings'              => $structureWarnings,
+                'reason'                          => 'no_higher_low_structure',
+                'structure_break_reference_price' => 0.0,
+            ];
         }
+
+        // ── 2. Range/base hold structure ──────────────────────────────────────
+        $rangeSlice = array_slice($candles, max(0, $count - $rangeHoldLookback));
+        $rangeLow   = PHP_FLOAT_MAX;
+        $rangeHigh  = 0.0;
+        foreach ($rangeSlice as $bar) {
+            $l = (float)($bar['low']  ?? PHP_FLOAT_MAX);
+            $h = (float)($bar['high'] ?? 0.0);
+            if ($l > 0 && $l < $rangeLow) {
+                $rangeLow = $l;
+            }
+            if ($h > $rangeHigh) {
+                $rangeHigh = $h;
+            }
+        }
+
+        $rangeHoldScore = 0.0;
+        if ($rangeLow < PHP_FLOAT_MAX && $rangeLow > 0 && $rangeHigh > 0) {
+            $rangeBroken   = ($lastClose < $rangeLow * (1 - $maxRangeBreak / 100));
+            $recovPct      = (($lastClose - $rangeLow) / $rangeLow) * 100;
+            $rangeRecovered = ($recovPct >= $minRangeRecovery);
+
+            if (!$rangeBroken && $rangeRecovered) {
+                $rangeHoldScore = min(10.0, round(($recovPct / max($minRangeRecovery * 2, 0.001)) * 6 + 3, 2));
+            }
+        }
+
+        if ($rangeHoldScore >= 3.0) {
+            // Check there is no recent sharp dump
+            $last60Slice   = array_slice($candles, max(0, $count - 60));
+            $recentMaxDump = 0.0;
+            $prevC         = 0.0;
+            foreach ($last60Slice as $bar) {
+                $c = (float)($bar['close'] ?? 0.0);
+                if ($prevC > 0 && $c > 0 && $c < $prevC) {
+                    $dumpPct = (($prevC - $c) / $prevC) * 100;
+                    if ($dumpPct > $recentMaxDump) {
+                        $recentMaxDump = $dumpPct;
+                    }
+                }
+                if ($c > 0) {
+                    $prevC = $c;
+                }
+            }
+
+            if ($recentMaxDump <= $recoveryMaxDump) {
+                $finalRef = ($rangeLow < PHP_FLOAT_MAX && $rangeLow > 0) ? $rangeLow : $lastClose;
+                return [
+                    'pass'                            => true,
+                    'structure_status'                => 'pass',
+                    'structure_type'                  => 'range_hold',
+                    'structure_score'                 => (int)round($rangeHoldScore),
+                    'higher_lows_count'               => $higherLows,
+                    'range_hold_score'                => round($rangeHoldScore, 2),
+                    'base_hold_score'                 => 0.0,
+                    'recovery_structure_score'        => 0.0,
+                    'structure_warnings'              => $structureWarnings,
+                    'reason'                          => 'structure_ok',
+                    'structure_break_reference_price' => round($finalRef, 6),
+                ];
+            }
+        }
+
+        // ── 3. Base reclaim structure ─────────────────────────────────────────
+        $baseSlice     = array_slice($candles, max(0, $count - $baseHoldLookback));
+        $baseHoldScore = 0.0;
+        $baseRef       = 0.0;
+
+        if (count($baseSlice) >= 20) {
+            $halfLen    = (int)floor(count($baseSlice) / 2);
+            $firstHalf  = array_slice($baseSlice, 0, $halfLen);
+            $secondHalf = array_slice($baseSlice, $halfLen);
+
+            $baseLow = PHP_FLOAT_MAX;
+            foreach ($firstHalf as $bar) {
+                $l = (float)($bar['low'] ?? PHP_FLOAT_MAX);
+                if ($l > 0 && $l < $baseLow) {
+                    $baseLow = $l;
+                }
+            }
+
+            if ($baseLow < PHP_FLOAT_MAX && $baseLow > 0) {
+                $secondLow = PHP_FLOAT_MAX;
+                foreach ($secondHalf as $bar) {
+                    $l = (float)($bar['low'] ?? PHP_FLOAT_MAX);
+                    if ($l > 0 && $l < $secondLow) {
+                        $secondLow = $l;
+                    }
+                }
+
+                $dippedToBase  = ($secondLow < PHP_FLOAT_MAX && $secondLow <= $baseLow * (1 + $maxBaseBreak / 100));
+                $reclaimedBase = ($lastClose > $baseLow * (1 + $minBaseReclaim / 100));
+
+                if ($dippedToBase && $reclaimedBase) {
+                    $reclaimPct    = (($lastClose - $baseLow) / $baseLow) * 100;
+                    $baseHoldScore = min(10.0, round($reclaimPct / max($minBaseReclaim * 2, 0.001) * 6 + 2, 2));
+                    $baseRef       = $baseLow;
+                }
+            }
+        }
+
+        if ($baseHoldScore >= 3.0) {
+            return [
+                'pass'                            => true,
+                'structure_status'                => 'pass',
+                'structure_type'                  => 'base_reclaim',
+                'structure_score'                 => (int)round($baseHoldScore),
+                'higher_lows_count'               => $higherLows,
+                'range_hold_score'                => 0.0,
+                'base_hold_score'                 => round($baseHoldScore, 2),
+                'recovery_structure_score'        => 0.0,
+                'structure_warnings'              => $structureWarnings,
+                'reason'                          => 'structure_ok',
+                'structure_break_reference_price' => round($baseRef > 0 ? $baseRef : $lastClose, 6),
+            ];
+        }
+
+        // ── 4. Recovery drift hold structure ──────────────────────────────────
+        if ($recoveryDriftDetected && $recoveryAllowWithout) {
+            $driftSlice   = array_slice($candles, max(0, $count - $recoveryMinDuration));
+            $recoveryScore = 0.0;
+
+            if (count($driftSlice) >= 60) {
+                $startPrice = (float)(($driftSlice[0]['open'] ?? $driftSlice[0]['close']) ?: 0.0);
+
+                $last30Slice = array_slice($candles, max(0, $count - 30));
+                $recentHigh  = 0.0;
+                $recentLow30 = PHP_FLOAT_MAX;
+                foreach ($last30Slice as $bar) {
+                    $h = (float)($bar['high'] ?? 0.0);
+                    $l = (float)($bar['low']  ?? PHP_FLOAT_MAX);
+                    if ($h > $recentHigh) {
+                        $recentHigh = $h;
+                    }
+                    if ($l > 0 && $l < $recentLow30) {
+                        $recentLow30 = $l;
+                    }
+                }
+                $recentDumpPct = ($recentHigh > 0 && $recentLow30 < PHP_FLOAT_MAX)
+                    ? (($recentHigh - $recentLow30) / $recentHigh) * 100
+                    : 0.0;
+
+                $aboveDriftStart = ($startPrice > 0 && $lastClose > $startPrice * 0.95);
+
+                if ($aboveDriftStart && $recentDumpPct <= $recoveryMaxDump) {
+                    $recoveryScore = $recentDumpPct < $recoveryMaxDump * 0.5 ? 0.85 : 0.70;
+                }
+            }
+
+            if ($recoveryScore >= $recoveryMinScore) {
+                $structureWarnings[] = 'recovery_drift_structure_without_classic_higher_lows';
+                return [
+                    'pass'                            => true,
+                    'structure_status'                => 'warning',
+                    'structure_type'                  => 'recovery_drift_hold',
+                    'structure_score'                 => (int)round($recoveryScore * 10),
+                    'higher_lows_count'               => $higherLows,
+                    'range_hold_score'                => 0.0,
+                    'base_hold_score'                 => 0.0,
+                    'recovery_structure_score'        => round($recoveryScore, 2),
+                    'structure_warnings'              => $structureWarnings,
+                    'reason'                          => 'structure_ok',
+                    'structure_break_reference_price' => round($lastClose, 6),
+                ];
+            }
+        }
+
+        // ── All structure types failed — hard reject ───────────────────────────
+        // Keep no_higher_low_structure for backward compat when count is 0; otherwise no_valid_structure
+        $rejectReason = ($higherLows === 0) ? 'no_higher_low_structure' : 'no_valid_structure';
 
         return [
-            'pass'                           => true,
-            'reason'                         => 'structure_ok',
-            'higher_lows_count'              => $higherLows,
-            'structure_break_reference_price'=> round($structureRef, 6),
+            'pass'                            => false,
+            'structure_status'                => 'reject',
+            'structure_type'                  => 'none',
+            'structure_score'                 => 0.0,
+            'higher_lows_count'               => $higherLows,
+            'range_hold_score'                => 0.0,
+            'base_hold_score'                 => 0.0,
+            'recovery_structure_score'        => 0.0,
+            'structure_warnings'              => $structureWarnings,
+            'reason'                          => $rejectReason,
+            'structure_break_reference_price' => 0.0,
         ];
     }
 
@@ -1465,6 +1770,10 @@ final class ControlledDailyMomentumLongStrategy
         if (!$r['pass']) {
             return 0;
         }
+        // Use pre-computed structure_score when available (adaptive structure types)
+        if (isset($r['structure_score']) && (float)$r['structure_score'] > 0) {
+            return min(10, (int)round((float)$r['structure_score']));
+        }
         return min(10, ((int)($r['higher_lows_count'] ?? 0)) * 3 + 4);
     }
 
@@ -1512,6 +1821,12 @@ final class ControlledDailyMomentumLongStrategy
                 $codes[] = $w;
             }
         }
+        // Include structure warnings
+        foreach ($structure['structure_warnings'] ?? [] as $w) {
+            if (!in_array($w, $codes, true)) {
+                $codes[] = $w;
+            }
+        }
         return $codes;
     }
 
@@ -1541,7 +1856,8 @@ final class ControlledDailyMomentumLongStrategy
             'max_1m_pump_pct', 'max_5m_pump_pct', 'max_candle_share_pct', 'drawdown_from_high_pct',
             'turnover_1h_ratio', 'turnover_15m_ramp', 'persistence_bars', 'cliff_ratio',
             'soft_turnover_status', 'turnover_warnings',
-            'higher_lows_count',
+            'higher_lows_count', 'structure_status', 'structure_type', 'structure_score',
+            'range_hold_score', 'base_hold_score', 'recovery_structure_score', 'structure_warnings', 'structure_reason',
             'pullback_depth_pct', 'reclaim_level', 'pullback_low',
             'entry_distance_from_reclaim_pct', 'entry_distance_from_structure_pct',
             'candidate_quality_score',
@@ -1919,6 +2235,35 @@ final class ControlledDailyMomentumLongStrategy
         unset($s);
         $signals[] = $signal;
         return $signals;
+    }
+
+    /**
+     * Mark a non-stale signal for the given symbol as stale/invalidated.
+     * Returns true if a signal was found and marked, false otherwise.
+     */
+    private function markSignalStale(
+        array &$signals,
+        string $symbol,
+        string $stage,
+        string $reason,
+        string $decision,
+        int $now
+    ): bool {
+        foreach ($signals as &$s) {
+            if (($s['symbol'] ?? '') === $symbol
+                && ($s['strategy_id'] ?? '') === self::STRATEGY_ID
+                && !($s['stale'] ?? false)
+            ) {
+                $s['stale']                     = true;
+                $s['invalidated_at']            = date('c', $now);
+                $s['invalidated_reason']        = $reason;
+                $s['invalidated_stage']         = $stage;
+                $s['last_current_run_decision'] = $decision;
+                return true;
+            }
+        }
+        unset($s);
+        return false;
     }
 
     private function makeSignalId(string $symbol, int $ts): string

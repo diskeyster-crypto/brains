@@ -7,13 +7,16 @@ namespace Modules\ProfManager\Lib;
 /**
  * PositionReader
  *
- * Reads active/open positions from the bot module's demo cache.
+ * Reads active/open positions from the bot module's positions cache.
  * Primary (and only) source: modules/bot/storage/active_positions.json
- * This file is written by the bot after syncing with Bybit Demo.
+ * This file is written by the bot after syncing with Bybit (demo or live).
  *
  * Normalizes all common field variants into PM canonical format.
  * Enriches missing fields: leverage default, budget default, calculated size,
  * current_price via PriceProvider (gateway or public REST fallback), and PnL calculation.
+ *
+ * Preserves each position's mode/execution_mode field as-is; does NOT force demo.
+ * ProfManagerService uses moduleMode() as the fallback when position has no mode.
  *
  * Does NOT invent fake positions and does NOT call any authenticated or
  * trading API endpoints.
@@ -38,7 +41,7 @@ class PositionReader
      * Read and normalize active positions.
      *
      * Source of truth: modules/bot/storage/active_positions.json
-     * (written by the bot after syncing with Bybit Demo).
+     * (written by the bot after syncing with Bybit — demo or live).
      *
      * @return array{
      *   positions: list<array>,
@@ -82,6 +85,18 @@ class PositionReader
 
         $positions = $this->normalizePositions($rawPositions, $enrichmentStats);
 
+        // Count positions by mode
+        $positionsDemo = 0;
+        $positionsLive = 0;
+        foreach ($positions as $pos) {
+            $m = (string)($pos['mode'] ?? $pos['execution_mode'] ?? '');
+            if ($m === 'live') {
+                $positionsLive++;
+            } else {
+                $positionsDemo++;
+            }
+        }
+
         $provider = $this->priceProvider();
 
         return [
@@ -93,7 +108,9 @@ class PositionReader
             'diagnostics'          => [
                 'path'             => $absPath,
                 'count'            => count($positions),
-                'source_authority' => 'bot_active_positions_demo_cache',
+                'source_authority' => 'bot_active_positions_cache',
+                'positions_demo'   => $positionsDemo,
+                'positions_live'   => $positionsLive,
             ],
         ];
     }
@@ -110,7 +127,7 @@ class PositionReader
             'diagnostics'        => [
                 'path'             => $absPath,
                 'reason'           => $reason,
-                'source_authority' => 'bot_active_positions_demo_cache',
+                'source_authority' => 'bot_active_positions_cache',
             ],
         ];
     }

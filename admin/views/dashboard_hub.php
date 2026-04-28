@@ -121,11 +121,38 @@ function renderDashboardHub(): string
     $pmCronStatusText = $pmCronConfigured ? 'Настроен ✓' : 'Токен не задан';
     $pmCronPath      = 'public/cron/prof_manager.php';
 
+    // ── PM close execution capability ────────────────────────────────────
+    $pmLiveCloseEnabled  = (bool) ($pmStatus['live_close_execution_enabled'] ?? false);
+    $pmDemoCloseEnabled  = (bool) ($pmStatus['demo_close_execution_enabled'] ?? ($pmMode === 'demo'));
+    $pmLiveGwAvailable   = (bool) ($pmStatus['live_gateway_available'] ?? false);
+    if ($pmMode === 'live') {
+        if ($pmLiveCloseEnabled) {
+            $pmCloseExecHtml = '<span style="color:#3fb950;">LIVE — ENABLED</span>';
+        } else {
+            $pmCloseExecHtml = '<span style="color:#f85149;">LIVE — credentials missing or gateway unavailable</span>';
+        }
+    } else {
+        $pmCloseExecHtml = $pmDemoCloseEnabled
+            ? '<span style="color:#58a6ff;">DEMO — ENABLED</span>'
+            : '<span style="color:#8b949e;">DEMO</span>';
+    }
+
     // ── PM historical error log presence check ────────────────────────────
     $pmHasHistoricalErrors = false;
     $pmErrLogPath = $pmModuleDir . '/storage/logs/error.log';
     if (is_file($pmErrLogPath) && @filesize($pmErrLogPath) > 0) {
         $pmHasHistoricalErrors = true;
+    }
+
+    // ── PM mode note for manual management card ───────────────────────────
+    if ($pmMode === 'live') {
+        if ($pmLiveCloseEnabled) {
+            $pmModeNote = 'Live close execution: <strong style="color:#3fb950;">ENABLED</strong>';
+        } else {
+            $pmModeNote = '<strong style="color:#f85149;">LIVE mode enabled, but live close execution is not available: live credentials missing or gateway unavailable.</strong>';
+        }
+    } else {
+        $pmModeNote = 'PM планирует profit-lock и закрывает позиции на Bybit Demo.';
     }
 
     $pmToggleTarget  = $pmEnabledBool ? '0' : '1';
@@ -4463,8 +4490,9 @@ BLCK;
       <div class="card-body">
         <table style="width:100%;font-size:13px;border-collapse:collapse;">
           <tr><td style="color:var(--ui-text-muted);width:180px;padding:3px 12px 3px 0;">Включён</td><td>{$pmEnabled}</td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>demo</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Режим</td><td><code>{$e($pmMode)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Аккаунт</td><td><code>{$e($pmAccount)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Close execution</td><td>{$pmCloseExecHtml}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Профиль</td><td><code>AUTO</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Long профиль</td><td><code style="color:#3fb950;">{$e($pmLongProfile)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Short профиль</td><td><code style="color:#8b949e;">{$e($pmShortProfile)}</code></td></tr>
@@ -4520,7 +4548,8 @@ BLCK;
         </form>
       </div>
       <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
-        Режим demo. PM планирует profit-lock только — биржевые ордера не размещаются.
+        Profit Manager mode: <strong>{$e(strtoupper($pmMode))}</strong>.
+        {$pmModeNote}
       </div>
     </div>
   </div>
@@ -4530,7 +4559,7 @@ BLCK;
   <div class="card" style="margin-top:16px;">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
       <span><i class="bi bi-graph-up-arrow" style="margin-right:6px;"></i>Profit Manager — Быстрые настройки</span>
-      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало config/active.php · demo profit-lock (без биржевых ордеров)</small>
+      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало config/active.php · profit-lock</small>
     </div>
     <div class="card-body">
       <form method="post" action="{$pmConfigSaveUrl}">

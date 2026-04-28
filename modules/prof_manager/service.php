@@ -20,8 +20,12 @@ namespace Modules\ProfManager;
  *   setEnabled(bool)  — toggle enabled flag and persist to active.php
  *   saveConfig(array) — persist arbitrary config keys to active.php
  *
- * No exchange calls are ever made from this module.
- * Mode: demo only (this stage).
+ * Mode:
+ *   demo — close positions on Bybit Demo via closeDemoPosition()
+ *   live — close positions on Bybit Live via closeLivePosition() (reduceOnly market close)
+ *
+ * The effective close mode is determined by moduleMode() which reads config['mode']
+ * (only 'demo' and 'live' are valid; anything else falls back to 'demo').
  */
 final class ProfManagerService
 {
@@ -99,8 +103,11 @@ final class ProfManagerService
      */
     public function tick(): array
     {
-        $nowTs = time();
-        $ts    = date('c', $nowTs);
+        $nowTs      = time();
+        $ts         = date('c', $nowTs);
+        $moduleMode = $this->moduleMode();
+        $account    = ($moduleMode === 'live') ? 'bybit_live' : 'bybit_demo';
+        $sourceLabel= ($moduleMode === 'live') ? 'bybit_live_positions_cache' : 'bybit_demo_positions_cache';
 
         try {
             // ── Module enabled? ───────────────────────────────────────────────
@@ -109,7 +116,8 @@ final class ProfManagerService
                     'ok'             => true,
                     'ts'             => $ts,
                     'enabled'        => false,
-                    'mode'           => 'demo',
+                    'mode'           => $moduleMode,
+                    'account'        => $account,
                     'active_profile' => 'auto',
                     'long_profile'   => 'legacy_safe_long',
                     'short_profile'  => 'unavailable',
@@ -136,7 +144,8 @@ final class ProfManagerService
                     'ok'             => true,
                     'ts'             => $ts,
                     'enabled'        => true,
-                    'mode'           => 'demo',
+                    'mode'           => $moduleMode,
+                    'account'        => $account,
                     'active_profile' => 'auto',
                     'long_profile'   => 'legacy_safe_long',
                     'short_profile'  => 'unavailable',
@@ -151,7 +160,8 @@ final class ProfManagerService
                     'skip_reasons_summary' => [],
                     'skip_reason'       => $skipReason,
                     'validation_errors' => [],
-                    'source'            => 'bybit_demo_positions_cache',
+                    'source'            => $sourceLabel,
+                    'source_authority'  => 'bot_active_positions_cache',
                     'executed_count'    => 0,
                     'skipped_count'     => 0,
                     'locks_active'      => $this->longProfile->getLockCount(),
@@ -214,32 +224,47 @@ final class ProfManagerService
                 $closeAttemptResult = null;
 
                 if (in_array($pmAction, $pmCloseActions, true)) {
-                    $posMode   = (string)($pos['mode'] ?? $pos['execution_mode'] ?? 'demo');
-                    $posSymbol = (string)($pos['symbol'] ?? '');
-                    $posSide   = (string)($pos['side']   ?? '');
-                    $posSize   = (float)($pos['size']    ?? 0.0);
+                    $posExecMode  = $this->resolveCloseMode($pos, $moduleMode);
+                    $posSymbol    = (string)($pos['symbol'] ?? '');
+                    $posSide      = (string)($pos['side']   ?? '');
+                    $posSize      = (float)($pos['size']    ?? 0.0);
                     $closeReasonValue = ($pmAction === 'hybrid_close_confirmed')
                         ? 'hybrid_confirmed'
                         : 'lock_touch';
 
-                    if ($posMode === 'demo') {
-                        $closeAttemptResult = $this->closeDemoPosition($posSymbol, $posSide, $posSize);
+                    if ($posExecMode === 'demo') {
+                        $closeAttemptResult = $this->closeDemoPosition($posSymbol, $posSide, $posSize, $pos);
                         $closeAttemptResult['close_reason'] = $closeReasonValue;
                         $profileResult['action'] = $closeAttemptResult['close_ok']
                             ? 'demo_close_submitted'
                             : 'demo_close_failed';
 
-                        // Write PM close registry so bot journal can attribute the close
                         if ($closeAttemptResult['close_ok']) {
                             $this->writePmCloseRegistry(
                                 $posSymbol,
                                 $posSide,
                                 $closeReasonValue,
-                                $closeAttemptResult['close_order_id'] ?? null
+                                $closeAttemptResult['close_order_id'] ?? null,
+                                'demo'
+                            );
+                        }
+                    } elseif ($posExecMode === 'live') {
+                        $closeAttemptResult = $this->closeLivePosition($posSymbol, $posSide, $posSize, $pos);
+                        $closeAttemptResult['close_reason'] = $closeReasonValue;
+                        $profileResult['action'] = $closeAttemptResult['close_ok']
+                            ? 'live_close_submitted'
+                            : 'live_close_failed';
+
+                        if ($closeAttemptResult['close_ok']) {
+                            $this->writePmCloseRegistry(
+                                $posSymbol,
+                                $posSide,
+                                $closeReasonValue,
+                                $closeAttemptResult['close_order_id'] ?? null,
+                                'live'
                             );
                         }
                     } else {
-                        // live mode — do NOT close; safety guard
                         $closeAttemptResult = [
                             'close_attempted'    => false,
                             'close_ok'           => false,
@@ -248,9 +273,9 @@ final class ProfManagerService
                             'close_reason'       => $closeReasonValue,
                             'close_source'       => 'profit_manager',
                             'close_order_id'     => null,
-                            'close_error_reason' => 'live_close_disabled_for_safety',
+                            'close_error_reason' => 'close_failed invalid_execution_mode',
                         ];
-                        $profileResult['action'] = 'live_close_pending';
+                        $profileResult['action'] = 'close_failed';
                     }
                 }
 
@@ -323,7 +348,8 @@ final class ProfManagerService
 
             $executedCount = ($actionsSummary['would_set_profit_lock']  ?? 0)
                            + ($actionsSummary['would_move_profit_lock'] ?? 0)
-                           + ($actionsSummary['demo_close_submitted']   ?? 0);
+                           + ($actionsSummary['demo_close_submitted']   ?? 0)
+                           + ($actionsSummary['live_close_submitted']   ?? 0);
             $skippedCount  = array_sum($skipSummary);
 
             // ── Clean stale long profile state/locks ──────────────────────────
@@ -340,7 +366,8 @@ final class ProfManagerService
                 'ok'                   => true,
                 'ts'                   => $ts,
                 'enabled'              => true,
-                'mode'                 => 'demo',
+                'mode'                 => $moduleMode,
+                'account'              => $account,
                 'active_profile'       => 'auto',
                 'long_profile'         => 'legacy_safe_long',
                 'short_profile'        => 'unavailable',
@@ -355,7 +382,8 @@ final class ProfManagerService
                 'skip_reasons_summary' => $skipSummary,
                 'positions_runtime'    => $positionsRuntime,
                 'validation_errors'    => $validationErrors,
-                'source'               => 'bybit_demo_positions_cache',
+                'source'               => $sourceLabel,
+                'source_authority'     => 'bot_active_positions_cache',
                 'executed_count'       => $executedCount,
                 'skipped_count'        => $skippedCount,
                 'locks_active'         => $this->longProfile->getLockCount(),
@@ -393,7 +421,9 @@ final class ProfManagerService
      */
     public function getStatus(): array
     {
-        $lastRun = $this->store->readLastRun();
+        $lastRun    = $this->store->readLastRun();
+        $moduleMode = $this->moduleMode();
+        $account    = ($moduleMode === 'live') ? 'bybit_live' : 'bybit_demo';
 
         $lastError = null;
         if (($lastRun['ok'] ?? null) !== true) {
@@ -412,23 +442,39 @@ final class ProfManagerService
             }
         }
 
+        // Check live gateway availability when in live mode
+        $liveCloseExecutionEnabled = false;
+        $liveGatewayAvailable      = false;
+        if ($moduleMode === 'live') {
+            $botConfig = $this->loadBotConfig();
+            $gw        = $this->getLiveGateway($botConfig);
+            $liveGatewayAvailable = ($gw !== null);
+            $liveCloseExecutionEnabled = $liveGatewayAvailable;
+        }
+
         $cronToken = (string) ($this->config['cron_token'] ?? '');
 
         return [
-            'enabled'           => $this->runtimeEnabled,
-            'mode'              => 'demo',
-            'account'           => 'bybit_demo',
-            'active_profile'    => 'auto',
-            'long_profile'      => 'legacy_safe_long',
-            'short_profile'     => 'unavailable',
-            'last_tick'         => $lastRun['ts'] ?? null,
-            'positions_tracked' => (int) ($lastRun['valid_positions'] ?? $lastRun['positions'] ?? 0),
-            'locks_active'      => (int) ($lastRun['locks_active'] ?? $this->longProfile->getLockCount()),
-            'planned_updates'   => (int) ($lastRun['executed_count'] ?? 0),
-            'skipped'           => (int) ($lastRun['skipped_count']  ?? 0),
-            'last_error'        => $lastError,
-            'cron_interval_sec' => 60,
-            'cron_configured'   => ($cronToken !== ''),
+            'enabled'                       => $this->runtimeEnabled,
+            'mode'                          => $moduleMode,
+            'account'                       => $account,
+            'active_profile'                => 'auto',
+            'long_profile'                  => 'legacy_safe_long',
+            'short_profile'                 => 'unavailable',
+            'last_tick'                     => $lastRun['ts'] ?? null,
+            'positions_tracked'             => (int) ($lastRun['valid_positions'] ?? $lastRun['positions'] ?? 0),
+            'locks_active'                  => (int) ($lastRun['locks_active'] ?? $this->longProfile->getLockCount()),
+            'planned_updates'               => (int) ($lastRun['executed_count'] ?? 0),
+            'skipped'                       => (int) ($lastRun['skipped_count']  ?? 0),
+            'last_error'                    => $lastError,
+            'cron_interval_sec'             => 60,
+            'cron_configured'               => ($cronToken !== ''),
+            // Close execution capability
+            'close_execution_mode'          => $moduleMode,
+            'live_close_supported'          => true,
+            'live_close_execution_enabled'  => $liveCloseExecutionEnabled,
+            'demo_close_execution_enabled'  => ($moduleMode === 'demo'),
+            'live_gateway_available'        => $liveGatewayAvailable,
         ];
     }
 
@@ -490,6 +536,53 @@ final class ProfManagerService
     // Helpers
     // =========================================================================
 
+    /**
+     * Resolve the canonical module mode from config.
+     * Only 'demo' and 'live' are valid. All other values fall back to 'demo'.
+     */
+    private function moduleMode(): string
+    {
+        $raw = (string)($this->config['mode'] ?? 'demo');
+        return match ($raw) {
+            'live'  => 'live',
+            'demo'  => 'demo',
+            default => 'demo',
+        };
+    }
+
+    /**
+     * Determine the effective close mode for a specific position.
+     *
+     * Prefer explicit position mode/execution_mode when present and valid.
+     * Otherwise fall back to moduleMode.
+     * Never close a live position through demo gateway.
+     * Never close a demo position through live gateway.
+     */
+    private function resolveCloseMode(array $pos, string $moduleMode): string
+    {
+        $posMode = '';
+        foreach (['execution_mode', 'mode'] as $field) {
+            $v = (string)($pos[$field] ?? '');
+            if ($v === 'live' || $v === 'demo') {
+                $posMode = $v;
+                break;
+            }
+        }
+
+        if ($posMode === '') {
+            // No valid mode in position — use module config mode
+            return $moduleMode;
+        }
+
+        // Cross-gateway safety: position mode must match module mode
+        if ($posMode !== $moduleMode) {
+            // Mode mismatch — fall back to moduleMode to avoid cross-gateway close
+            return $moduleMode;
+        }
+
+        return $posMode;
+    }
+
     private function loadConfig(): array
     {
         $configPath = $this->moduleDir . '/config/config.php';
@@ -520,7 +613,7 @@ final class ProfManagerService
 
     /**
      * Load bot module config (base + active overrides).
-     * Used to obtain Bybit Demo credentials for PM-initiated close orders.
+     * Used to obtain Bybit credentials for PM-initiated close orders.
      */
     private function loadBotConfig(): array
     {
@@ -574,8 +667,60 @@ final class ProfManagerService
      * Check whether a specific symbol+side position still has non-zero size on Bybit Demo.
      * Returns false on API error (fail-safe: prevents spurious closes).
      */
-    private function fetchDemoPositionExists(\Core\Gateway\Bybit $gw, string $symbol, string $side): bool
+    private function fetchDemoPositionExists(
+        \Core\Gateway\Bybit $gw,
+        string $symbol,
+        string $side,
+        ?float &$exchangeSize = null,
+        ?int &$positionIdx = null
+    ): bool {
+        return $this->fetchPositionExists($gw, $symbol, $side, $exchangeSize, $positionIdx);
+    }
+
+    /**
+     * Get a Bybit Live gateway client via KeyCenter.
+     *
+     * Uses account_id from the bot config (single source of truth for live credentials).
+     * Never uses demo credentials, never falls back.
+     * Returns null when account_id is not configured or client creation fails.
+     */
+    private function getLiveGateway(array $botConfig): ?\Core\Gateway\Bybit
     {
+        $accountId = trim((string)($botConfig['account_id'] ?? ''));
+        if ($accountId === '') {
+            return null;
+        }
+
+        try {
+            return \Core\Gateway\Bybit::client($accountId);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Shared position existence check for both demo and live gateways.
+     *
+     * Verifies the position still exists on the exchange with non-zero size.
+     * Passes back exchange size and positionIdx if available.
+     *
+     * @param  \Core\Gateway\Bybit $gw
+     * @param  string              $symbol
+     * @param  string              $side           canonical: 'long' or 'short'
+     * @param  float|null          $exchangeSize   output: exchange-reported position size
+     * @param  int|null            $positionIdx    output: positionIdx from exchange record
+     * @return bool
+     */
+    private function fetchPositionExists(
+        \Core\Gateway\Bybit $gw,
+        string $symbol,
+        string $side,
+        ?float &$exchangeSize = null,
+        ?int &$positionIdx = null
+    ): bool {
+        $exchangeSize = null;
+        $positionIdx  = null;
+
         try {
             $resp = $gw->request('/v5/position/list', [
                 'category' => 'linear',
@@ -593,6 +738,8 @@ final class ProfManagerService
                     (string)($pos['side']   ?? '') === $bybitSideCheck &&
                     (float)($pos['size']    ?? 0)  > 0
                 ) {
+                    $exchangeSize = (float)($pos['size'] ?? 0);
+                    $positionIdx  = isset($pos['positionIdx']) ? (int)$pos['positionIdx'] : null;
                     return true;
                 }
             }
@@ -603,20 +750,118 @@ final class ProfManagerService
     }
 
     /**
-     * Submit a demo-only reduce-only Market close order on Bybit Demo.
+     * Check whether a specific symbol+side live position still exists.
+     * Wraps fetchPositionExists() for live gateway.
+     */
+    private function fetchLivePositionExists(
+        \Core\Gateway\Bybit $gw,
+        string $symbol,
+        string $side,
+        ?float &$exchangeSize = null,
+        ?int &$positionIdx = null
+    ): bool {
+        return $this->fetchPositionExists($gw, $symbol, $side, $exchangeSize, $positionIdx);
+    }
+
+    /**
+     * Read the duplicate close guard registry.
+     * Returns the registry array (keyed by symbol_side_mode).
+     */
+    private function readCloseAttempts(): array
+    {
+        $path = $this->moduleDir . '/storage/runtime/close_attempts.json';
+        if (!is_file($path)) {
+            return [];
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            return [];
+        }
+        $dec = @json_decode($raw, true);
+        return is_array($dec) ? $dec : [];
+    }
+
+    /**
+     * Write the duplicate close guard registry.
+     */
+    private function writeCloseAttempts(array $registry): void
+    {
+        $path = $this->moduleDir . '/storage/runtime/close_attempts.json';
+        $dir  = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        @file_put_contents(
+            $path,
+            json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+            LOCK_EX
+        );
+    }
+
+    /**
+     * Check for a recent duplicate close attempt.
+     *
+     * @param  string $symbol
+     * @param  string $side
+     * @param  string $mode    'demo' or 'live'
+     * @param  int    $ttl     TTL in seconds (default 60)
+     * @return bool  true = duplicate detected (skip), false = proceed
+     */
+    private function duplicateCloseGuardCheck(string $symbol, string $side, string $mode, int $ttl = 60): bool
+    {
+        $registry = $this->readCloseAttempts();
+        $key      = strtolower($symbol) . '_' . $side . '_' . $mode;
+        if (!isset($registry[$key])) {
+            return false;
+        }
+        $lastTs = (int)($registry[$key]['ts'] ?? 0);
+        return (time() - $lastTs) < $ttl;
+    }
+
+    /**
+     * Record a successful close attempt to prevent duplicates.
+     */
+    private function duplicateCloseGuardSet(string $symbol, string $side, string $mode): void
+    {
+        $registry = $this->readCloseAttempts();
+        $key      = strtolower($symbol) . '_' . $side . '_' . $mode;
+
+        // Prune expired entries (older than 5 minutes) before writing
+        $now = time();
+        foreach (array_keys($registry) as $k) {
+            if (($now - (int)($registry[$k]['ts'] ?? 0)) > 300) {
+                unset($registry[$k]);
+            }
+        }
+
+        $registry[$key] = [
+            'symbol' => $symbol,
+            'side'   => $side,
+            'mode'   => $mode,
+            'ts'     => $now,
+        ];
+
+        $this->writeCloseAttempts($registry);
+    }
+
+
+    /**
+     * Submit a demo reduce-only Market close order on Bybit Demo.
      *
      * Safety checks (performed before order submission):
      *   - symbol must be non-empty
      *   - side must be 'long' or 'short'
      *   - size must be > 0
+     *   - no recent duplicate close for same symbol+side+mode
      *   - position must still exist on Bybit Demo (fetched live)
      *
      * For long positions: Bybit side = Sell
      * For short positions: Bybit side = Buy
      *
-     * @param string $symbol Position symbol (e.g. 'BTCUSDT')
-     * @param string $side   Canonical side: 'long' or 'short'
-     * @param float  $size   Position size in base currency (contracts)
+     * @param string $symbol    Position symbol (e.g. 'BTCUSDT')
+     * @param string $side      Canonical side: 'long' or 'short'
+     * @param float  $size      Position size in base currency (contracts)
+     * @param array  $position  Original position record (for positionIdx, etc.)
      * @return array{
      *   close_attempted: bool,
      *   close_ok: bool,
@@ -627,7 +872,7 @@ final class ProfManagerService
      *   close_error_reason: string|null
      * }
      */
-    private function closeDemoPosition(string $symbol, string $side, float $size): array
+    private function closeDemoPosition(string $symbol, string $side, float $size, array $position = []): array
     {
         $result = [
             'close_attempted'    => false,
@@ -657,6 +902,12 @@ final class ProfManagerService
             return $result;
         }
 
+        // Duplicate close guard
+        if ($this->duplicateCloseGuardCheck($symbol, $side, 'demo')) {
+            $result['close_error_reason'] = 'duplicate_close_guard';
+            return $result;
+        }
+
         // Obtain gateway
         $botConfig = $this->loadBotConfig();
         $gw        = $this->getDemoGateway($botConfig);
@@ -666,14 +917,26 @@ final class ProfManagerService
         }
 
         // Safety: verify position still exists before sending close order
-        if (!$this->fetchDemoPositionExists($gw, $symbol, $side)) {
+        $exchangeSize = null;
+        $exchangeIdx  = null;
+        if (!$this->fetchDemoPositionExists($gw, $symbol, $side, $exchangeSize, $exchangeIdx)) {
             $result['close_error_reason'] = 'position_already_gone';
             return $result;
         }
 
+        // Prefer exchange size if available (safer for reduceOnly)
+        $closeSize = ($exchangeSize !== null && $exchangeSize > 0.0) ? $exchangeSize : $size;
+        if ($exchangeSize !== null && $exchangeSize > 0.0 && $exchangeSize !== $size) {
+            $result['close_size_source'] = 'exchange_position_size';
+        }
+
+        // positionIdx: prefer position record, then exchange, then default 0
+        $posIdx = isset($position['positionIdx']) ? (int)$position['positionIdx']
+                : ($exchangeIdx ?? 0);
+
         // Build close order
         $bybitSide = ($side === 'long') ? 'Sell' : 'Buy';
-        $qtyStr    = rtrim(rtrim(number_format($size, 8, '.', ''), '0'), '.');
+        $qtyStr    = rtrim(rtrim(number_format($closeSize, 8, '.', ''), '0'), '.');
 
         $result['close_attempted'] = true;
 
@@ -685,7 +948,7 @@ final class ProfManagerService
                 'orderType'   => 'Market',
                 'qty'         => $qtyStr,
                 'reduceOnly'  => true,
-                'positionIdx' => 0,
+                'positionIdx' => $posIdx,
             ], true);
         } catch (\Throwable $ex) {
             $result['close_error_reason'] = 'order_submit_exception';
@@ -701,6 +964,145 @@ final class ProfManagerService
         if (($orderResp['success'] ?? false) && $retCode === 0) {
             $result['close_ok']       = true;
             $result['close_order_id'] = $orderResp['result']['orderId'] ?? null;
+            $this->duplicateCloseGuardSet($symbol, $side, 'demo');
+        } else {
+            $result['close_error_reason'] = 'order_rejected';
+        }
+
+        return $result;
+    }
+
+    /**
+     * Submit a live reduce-only Market close order on Bybit Live.
+     *
+     * Mirrors closeDemoPosition() but uses live credentials via KeyCenter.
+     *
+     * Safety requirements:
+     *   - symbol must be non-empty
+     *   - side must be 'long' or 'short'
+     *   - size must be > 0
+     *   - no recent duplicate close for same symbol+side+mode
+     *   - position must still exist on Bybit Live (fetched live)
+     *   - position side must match expected side
+     *   - uses Market order, reduceOnly=true, category=linear
+     *   - does NOT create a reverse position
+     *
+     * For long positions: Bybit side = Sell
+     * For short positions: Bybit side = Buy
+     *
+     * @param string $symbol    Position symbol (e.g. 'BTCUSDT')
+     * @param string $side      Canonical side: 'long' or 'short'
+     * @param float  $size      Position size in base currency (contracts)
+     * @param array  $position  Original position record (for positionIdx, etc.)
+     * @return array{
+     *   close_attempted: bool,
+     *   close_ok: bool,
+     *   close_ret_code: int|null,
+     *   close_ret_msg: string|null,
+     *   close_source: string,
+     *   close_order_id: string|null,
+     *   close_error_reason: string|null
+     * }
+     */
+    private function closeLivePosition(string $symbol, string $side, float $size, array $position = []): array
+    {
+        $result = [
+            'close_attempted'    => false,
+            'close_ok'           => false,
+            'close_ret_code'     => null,
+            'close_ret_msg'      => null,
+            'close_source'       => 'profit_manager',
+            'close_order_id'     => null,
+            'close_error_reason' => null,
+        ];
+
+        // Safety: symbol
+        if ($symbol === '') {
+            $result['close_error_reason'] = 'symbol_missing';
+            return $result;
+        }
+
+        // Safety: side
+        if (!in_array($side, ['long', 'short'], true)) {
+            $result['close_error_reason'] = 'side_invalid';
+            return $result;
+        }
+
+        // Safety: size
+        if ($size <= 0.0) {
+            $result['close_error_reason'] = 'size_zero_or_negative';
+            return $result;
+        }
+
+        // Duplicate close guard
+        if ($this->duplicateCloseGuardCheck($symbol, $side, 'live')) {
+            $result['close_error_reason'] = 'duplicate_close_guard';
+            return $result;
+        }
+
+        // Obtain live gateway via KeyCenter
+        $botConfig = $this->loadBotConfig();
+        $gw        = $this->getLiveGateway($botConfig);
+        if ($gw === null) {
+            $result['close_error_reason'] = 'live_credentials_missing';
+            return $result;
+        }
+
+        // Safety: verify live position still exists before sending close order
+        $exchangeSize = null;
+        $exchangeIdx  = null;
+        if (!$this->fetchLivePositionExists($gw, $symbol, $side, $exchangeSize, $exchangeIdx)) {
+            $result['close_error_reason'] = 'position_already_gone';
+            return $result;
+        }
+
+        // Exchange size check: do not submit if exchange size is zero
+        if ($exchangeSize !== null && $exchangeSize <= 0.0) {
+            $result['close_error_reason'] = 'exchange_size_zero';
+            return $result;
+        }
+
+        // Prefer exchange size if available (safer for reduceOnly)
+        $closeSize = ($exchangeSize !== null && $exchangeSize > 0.0) ? $exchangeSize : $size;
+        if ($exchangeSize !== null && $exchangeSize > 0.0 && $exchangeSize !== $size) {
+            $result['close_size_source'] = 'exchange_position_size';
+        }
+
+        // positionIdx: prefer position record, then exchange, then default 0
+        $posIdx = isset($position['positionIdx']) ? (int)$position['positionIdx']
+                : ($exchangeIdx ?? 0);
+
+        // Build close order — reduceOnly prevents reverse position
+        $bybitSide = ($side === 'long') ? 'Sell' : 'Buy';
+        $qtyStr    = rtrim(rtrim(number_format($closeSize, 8, '.', ''), '0'), '.');
+
+        $result['close_attempted'] = true;
+
+        try {
+            $orderResp = $gw->request('/v5/order/create', [
+                'category'    => 'linear',
+                'symbol'      => $symbol,
+                'side'        => $bybitSide,
+                'orderType'   => 'Market',
+                'qty'         => $qtyStr,
+                'reduceOnly'  => true,
+                'positionIdx' => $posIdx,
+            ], true);
+        } catch (\Throwable $ex) {
+            $result['close_error_reason'] = 'order_submit_exception';
+            $result['close_ret_msg']      = $ex->getMessage();
+            return $result;
+        }
+
+        $retCode = (int)($orderResp['ret_code'] ?? -1);
+        $retMsg  = (string)($orderResp['ret_msg'] ?? '');
+        $result['close_ret_code'] = $retCode;
+        $result['close_ret_msg']  = $retMsg;
+
+        if (($orderResp['success'] ?? false) && $retCode === 0) {
+            $result['close_ok']       = true;
+            $result['close_order_id'] = $orderResp['result']['orderId'] ?? null;
+            $this->duplicateCloseGuardSet($symbol, $side, 'live');
         } else {
             $result['close_error_reason'] = 'order_rejected';
         }
@@ -710,7 +1112,7 @@ final class ProfManagerService
 
     /**
      * Write an entry to the PM close registry so the bot journal can attribute
-     * the close to Profit Manager when the position disappears from Bybit Demo.
+     * the close to Profit Manager when the position disappears from Bybit.
      *
      * File: modules/bot/storage/runtime/pm_close_registry.json
      * Key:  {symbol}_{side}
@@ -719,7 +1121,8 @@ final class ProfManagerService
         string  $symbol,
         string  $side,
         string  $closeReason,
-        ?string $closeOrderId
+        ?string $closeOrderId,
+        string  $mode = 'demo'
     ): void {
         $registryPath = $this->repoRoot . '/modules/bot/storage/runtime/pm_close_registry.json';
         $dir          = dirname($registryPath);
@@ -742,12 +1145,13 @@ final class ProfManagerService
 
             $key = $symbol . '_' . $side;
             $registry[$key] = [
-                'symbol'        => $symbol,
-                'side'          => $side,
-                'close_source'  => 'profit_manager',
-                'close_reason'  => $closeReason,
-                'close_order_id'=> $closeOrderId,
-                'ts'            => time(),
+                'mode'           => $mode,
+                'symbol'         => $symbol,
+                'side'           => $side,
+                'close_source'   => 'profit_manager',
+                'close_reason'   => $closeReason,
+                'close_order_id' => $closeOrderId,
+                'ts'             => time(),
             ];
 
             file_put_contents(

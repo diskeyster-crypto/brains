@@ -118,4 +118,21 @@ return [
     'recovery_drift_max_daily_change_pct'                   => 25.0, // skip if daily move is extreme
     'max_entry_extension_from_recent_pullback_pct'          => 3.0,  // extension that triggers dump_risk_warning
     'max_entry_distance_from_24h_high_pct_for_late_warning' => 8.0,  // how far below 24 h high entry may be
+
+    // ── Handoff readiness ─────────────────────────────────────────────────────
+    // Diagnostic gate: determines whether a signal is eligible for future demo
+    // handoff. Does NOT enable live trading. handoff_enabled must remain false.
+    'handoff_readiness_enabled'           => true,
+    'handoff_allow_warning_signals'       => false,
+    'handoff_allow_late_entry'            => false,
+    'handoff_min_upside_room_to_18pct'    => 3.0,
+    'handoff_min_upside_room_to_25pct'    => 7.0,
+    'handoff_allowed_entry_risk_contexts' => ['ok', 'caution'],
+    'handoff_block_late_contexts'         => ['late', 'overextended'],
+    'handoff_prefer_structure_types'      => ['higher_low'],
+    'handoff_allow_structure_types'       => ['higher_low', 'range_hold', 'base_reclaim', 'recovery_drift_hold'],
+    'handoff_require_fresh_reclaim'       => true,
+    'handoff_min_pullback_score'          => 7.0,
+    'handoff_min_reclaim_score'           => 8.0,
+    'handoff_min_candidate_quality_score' => 7.0,
 ];

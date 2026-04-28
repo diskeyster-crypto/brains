@@ -22,7 +22,12 @@ return [
     'side'            => 'long',
 
     // ── Runtime caps ──────────────────────────────────────────────────────────
-    'max_handoff_per_run'  => 0,
+    // NOTE: max_handoff_per_run is IGNORED for bot_handoff_queue building.
+    // Handoff quantity limits are global (bot/Governor settings), not per-strategy.
+    // Configure handoff quantity limits in bot config (max_orders_per_cycle,
+    // max_active_positions, slot limits). This key is kept only for backward
+    // compatibility; it does NOT gate handoff output.
+    'max_handoff_per_run'  => 0,  // deprecated — quantity limits are global_bot_settings
     'max_signals_per_run'  => 10,
     'max_signals_per_day'  => 10,
 

@@ -69,6 +69,11 @@ return [
     'max_signals_per_run' => 3,  // max signals generated (emitted) in one execute() run
 
     // ── Handoff flood protection ──────────────────────────────────────────────
-    'max_handoff_per_run' => 1,  // max new signals written to bot_handoff_queue per run
+    // NOTE: max_handoff_per_run is IGNORED for bot_handoff_queue building.
+    // Handoff quantity limits are global (bot/Governor settings), not per-strategy.
+    // Configure handoff quantity limits in bot config (max_orders_per_cycle,
+    // max_active_positions, slot limits). This key is kept only for backward
+    // compatibility; it does NOT gate handoff output.
+    'max_handoff_per_run' => 1,  // deprecated — quantity limits are global_bot_settings
     'max_active_signals'  => 10, // diagnostic only — not used for handoff gating
 ];

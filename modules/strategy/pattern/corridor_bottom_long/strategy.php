@@ -477,21 +477,36 @@ final class CorridorBottomLongStrategy
         $handoffEnabled = (bool)($config['handoff_enabled'] ?? false);
         $stats['handoff_enabled'] = $handoffEnabled;
 
-        // Flood-protection limits
-        $maxHandoffPerRun = max(1, (int)($config['max_handoff_per_run'] ?? 1));
-
-        // Handoff counters
-        $handoffCandidatesTotal    = 0;
-        $handoffReady              = 0;
-        $handoffRejectedInvalid    = 0;
-        $handoffRejectReasons      = [];
-        $handoffLimitedByMaxPerRun = 0;
+        // max_handoff_per_run is deprecated and NOT used here.
+        // Quantity limits are the responsibility of global bot settings.
+        $handoffCandidatesTotal         = 0;
+        $handoffWrittenTotal            = 0;
+        $handoffBlockedNotEligibleTotal = 0;
+        $handoffBlockedStaleTotal       = 0;
+        $handoffBlockedHistoricalTotal  = 0;
+        $handoffRejectedInvalid         = 0;
+        $handoffRejectReasons           = [];
 
         if ($handoffEnabled) {
             $handoffQueue = [];
 
             foreach ($currentRunSignals as $sig) {
                 $handoffCandidatesTotal++;
+
+                // Block stale or invalidated signals
+                if ((bool)($sig['stale'] ?? false) || (bool)($sig['stale_invalidated'] ?? false)) {
+                    $handoffBlockedStaleTotal++;
+                    $handoffRejectReasons[] = ($sig['symbol'] ?? '?') . ':stale_or_invalidated';
+                    continue;
+                }
+
+                // Block historical signals — only current-run signals may enter the queue
+                if ((bool)($sig['historical_valid'] ?? false)
+                    || ($sig['signal_status'] ?? '') === 'historical_valid') {
+                    $handoffBlockedHistoricalTotal++;
+                    $handoffRejectReasons[] = ($sig['symbol'] ?? '?') . ':historical_signal';
+                    continue;
+                }
 
                 // Validate required bot-ready fields
                 $validationError = $this->validateSignalForHandoff($sig);
@@ -501,32 +516,30 @@ final class CorridorBottomLongStrategy
                     continue;
                 }
 
-                // Per-run limit
-                if ($handoffReady >= $maxHandoffPerRun) {
-                    $handoffLimitedByMaxPerRun++;
-                    continue;
-                }
-
                 $handoffQueue[] = array_merge($sig, [
                     'handoff_status'    => 'new',
                     'first_seen_at'     => date('c', $now),
                     'last_refreshed_at' => date('c', $now),
                     'seen_count'        => 1,
                 ]);
-                $handoffReady++;
+                $handoffWrittenTotal++;
             }
 
             $this->writeJson('storage/bot_handoff_queue.json', $handoffQueue);
         } else {
-            // Ensure no stale handoff records survive when handoff is disabled.
+            // handoff_enabled=false: always keep queue empty
             $this->writeJson('storage/bot_handoff_queue.json', []);
         }
 
-        $stats['handoff_candidates_total']       = $handoffCandidatesTotal;
-        $stats['handoff_ready']                  = $handoffReady;
-        $stats['handoff_rejected_invalid']       = $handoffRejectedInvalid;
-        $stats['handoff_reject_reasons']         = $handoffRejectReasons;
-        $stats['handoff_limited_by_max_per_run'] = $handoffLimitedByMaxPerRun;
+        $stats['handoff_candidates_total']          = $handoffCandidatesTotal;
+        $stats['handoff_written_total']             = $handoffWrittenTotal;
+        $stats['handoff_blocked_not_eligible_total']= $handoffBlockedNotEligibleTotal;
+        $stats['handoff_blocked_stale_total']       = $handoffBlockedStaleTotal;
+        $stats['handoff_blocked_historical_total']  = $handoffBlockedHistoricalTotal;
+        $stats['handoff_rejected_invalid']          = $handoffRejectedInvalid;
+        $stats['handoff_reject_reasons']            = $handoffRejectReasons;
+        $stats['local_handoff_cap_removed']         = true;
+        $stats['handoff_limit_authority']           = 'global_bot_settings';
 
         // ── 8. Last-run diagnostics ───────────────────────────────────────────
         $stats['finished_at'] = date('c');

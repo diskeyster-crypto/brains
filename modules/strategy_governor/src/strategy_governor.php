@@ -109,6 +109,9 @@ final class StrategyGovernor
         // Legacy missing_mode retry counters
         $legacyMissingModeRetried    = 0;
         $legacyMissingModeRecovered  = 0;
+        // Strategy operational mode → execution mode mapping counters
+        $strategyModeMappedToDemo    = 0;
+        $invalidExecutionMode        = 0;
         // Learning quality counters (populated after buildStrategyStats)
         $lqEnabled              = false;
         $lqSeenTotal            = 0;
@@ -386,6 +389,48 @@ final class StrategyGovernor
                     continue;
                 }
 
+                // ── Legacy migration: strategy operational mode → execution mode demo ──
+                // Pending entries created before operational-mode filtering was added may
+                // carry mode = 'passive' (or 'active'/'disabled'/'smoke_demo') even though
+                // the decision already points to demo shadow.  Remap them once and journal
+                // a single transition so the UI and shadow_compare see a clean 'demo' mode.
+                static $legacyOperationalModes = ['passive', 'active', 'disabled', 'smoke_demo'];
+                if (
+                    $existing !== null
+                    && in_array($existing['mode'] ?? '', $legacyOperationalModes, true)
+                    && in_array($existing['state'] ?? '', [self::STATE_APPROVE_DEMO_SHADOW, self::STATE_WAIT_CONFIRM], true)
+                    && ($norm['mode'] ?? '') === 'demo'
+                ) {
+                    $strategyModeMappedToDemo++;
+                    $nowStr  = date('Y-m-d H:i:s');
+                    $oldMode = (string)($existing['mode']);
+
+                    $pPassive                     = $existing;
+                    $pPassive['mode']             = 'demo';
+                    $pPassive['mode_inferred']    = true;
+                    $pPassive['mode_inferred_from'] = 'strategy_mode_mapped_to_demo';
+                    $pPassive['updated_at']       = $nowStr;
+                    $pPassive['last_seen_at']     = $nowStr;
+                    if (($pPassive['strategy_runtime_mode'] ?? '') === '') {
+                        $pPassive['strategy_runtime_mode'] = $oldMode;
+                    }
+
+                    // Journal this remap exactly once — mode changes so it won't re-trigger
+                    $decisionsBatch[] = $this->buildDecisionRecord(
+                        $govKey, $norm,
+                        ($existing['state'] ?? ''), ($existing['state'] ?? ''),
+                        ($existing['state'] ?? ''), ($existing['recommended_route'] ?? self::ROUTE_NONE),
+                        'strategy_mode_mapped_to_demo',
+                        (int)($existing['tick_count'] ?? 0),
+                        (int)($existing['max_ticks']  ?? 0),
+                        $mode
+                    );
+                    $decisionsWritten++;
+
+                    $newPending[$govKey] = $pPassive;
+                    continue;
+                }
+
                 // Already reached a terminal state — keep as-is, no re-processing
                 if ($existing !== null && in_array($existing['state'] ?? '', self::FINAL_STATES, true)) {
                     $newPending[$govKey] = $existing;
@@ -461,6 +506,9 @@ final class StrategyGovernor
                         self::STATE_REJECT_SHADOW       => $rejectedShadow++,
                         default                         => null,
                     };
+                    if ($reason === 'invalid_execution_mode') {
+                        $invalidExecutionMode++;
+                    }
                     $newPending[$govKey] = $pEntry;
 
                 } else {
@@ -481,6 +529,9 @@ final class StrategyGovernor
                             $pEntry['state']  = self::STATE_REJECT_SHADOW;
                             $pEntry['reason'] = $hardRejectReason;
                             $rejectedShadow++;
+                            if ($hardRejectReason === 'invalid_execution_mode') {
+                                $invalidExecutionMode++;
+                            }
                             $decisionsTotal++;
                             $decisionsBatch[] = $this->buildDecisionRecord(
                                 $govKey, $norm, $currentState,
@@ -534,6 +585,9 @@ final class StrategyGovernor
                                 self::STATE_REJECT_SHADOW       => $rejectedShadow++,
                                 default                         => null,
                             };
+                            if ($reason === 'invalid_execution_mode') {
+                                $invalidExecutionMode++;
+                            }
                         }
                     }
                     $newPending[$govKey] = $pEntry;
@@ -818,6 +872,9 @@ final class StrategyGovernor
             // ── Legacy missing_mode retry ─────────────────────────────────────
             'governor_legacy_missing_mode_retried_total'   => $legacyMissingModeRetried,
             'governor_legacy_missing_mode_recovered_total' => $legacyMissingModeRecovered,
+            // ── Strategy operational mode → execution mode mapping ────────────
+            'governor_strategy_mode_mapped_to_demo_total'  => $strategyModeMappedToDemo,
+            'governor_invalid_execution_mode_total'        => $invalidExecutionMode,
             // ── Learning data quality ─────────────────────────────────────────
             'learning_quality_enabled'                    => $lqEnabled,
             'closed_trades_seen_total'                    => $lqSeenTotal,
@@ -859,31 +916,58 @@ final class StrategyGovernor
         $sourceFile = (string)($raw['_source_file'] ?? '');
 
         // ── Mode normalisation with safe demo inference ───────────────────────
-        // Prefer explicit signal fields; never infer live.
-        $mode         = (string)($raw['mode'] ?? $raw['execution_mode'] ?? '');
-        $modeInferred = false;
-        $modeInferredFrom = null;
+        // Valid execution modes Governor may write into a pending entry.
+        static $validExecutionModes = ['demo', 'paper'];
+        // Strategy operational/lifecycle modes — never used as execution mode.
+        static $operationalModes = ['passive', 'active', 'disabled', 'smoke_demo'];
+
+        $rawMode             = (string)($raw['mode'] ?? $raw['execution_mode'] ?? '');
+        $strategyRuntimeMode = null;
+        $mode                = '';
+        $modeInferred        = false;
+        $modeInferredFrom    = null;
+
+        // Classify the raw mode field from the incoming signal.
+        if (in_array($rawMode, $operationalModes, true)) {
+            // Operational mode (e.g. "passive") — store as strategy_runtime_mode;
+            // execution mode must still be inferred below.
+            $strategyRuntimeMode = $rawMode;
+        } elseif ($rawMode === 'live') {
+            // Never infer live from a signal field — treat as missing/unsafe.
+        } elseif (in_array($rawMode, $validExecutionModes, true)) {
+            // Valid execution mode supplied directly by the signal.
+            $mode = $rawMode;
+        }
+        // else: unrecognised or empty value — fall through to inference.
 
         if ($mode === '') {
-            // 1. Signal carries execution_mode (already covered above) — no match here.
-            // 2. Source file is a bot_handoff_queue → infer demo (handoff context)
+            // 1. Source file is a bot_handoff_queue → infer demo (handoff context)
             if ($sourceFile !== '' && str_contains($sourceFile, 'bot_handoff_queue')) {
                 $mode             = 'demo';
                 $modeInferred     = true;
                 $modeInferredFrom = 'handoff_context';
             }
 
-            // 3. Try strategy active/base config for the mode key
+            // 2. Try strategy active/base config for the mode key
             if ($mode === '') {
                 $stratConfigMode = $this->readStrategyConfigMode($stratId);
-                if ($stratConfigMode !== '' && $stratConfigMode !== 'live') {
+                if (in_array($stratConfigMode, $operationalModes, true)) {
+                    // Config has an operational mode (e.g. "passive") — record it as
+                    // strategy_runtime_mode and safely infer demo for execution.
+                    if ($strategyRuntimeMode === null) {
+                        $strategyRuntimeMode = $stratConfigMode;
+                    }
+                    $mode             = 'demo';
+                    $modeInferred     = true;
+                    $modeInferredFrom = 'handoff_context';
+                } elseif (in_array($stratConfigMode, $validExecutionModes, true)) {
                     $mode             = $stratConfigMode;
                     $modeInferred     = true;
                     $modeInferredFrom = 'strategy_config';
                 }
             }
 
-            // 4. Default to demo for any known strategy handoff signal — never live.
+            // 3. Default to demo for any known strategy handoff signal — never live.
             if ($mode === '') {
                 $mode             = 'demo';
                 $modeInferred     = true;
@@ -892,20 +976,21 @@ final class StrategyGovernor
         }
 
         return [
-            'governor_signal_key' => $govKey,
-            'signal_id'           => $signalId,
-            'strategy_id'         => $stratId,
-            'symbol'              => (string)($raw['symbol']      ?? ''),
-            'side'                => (string)($raw['side']         ?? ''),
-            'mode'                => $mode,
-            'mode_inferred'       => $modeInferred,
-            'mode_inferred_from'  => $modeInferredFrom,
-            'entry_price'         => $raw['entry_price'] ?? $raw['price'] ?? null,
-            'detected_at'         => (string)($raw['detected_at']  ?? $raw['created_at'] ?? ''),
-            'created_at'          => (string)($raw['created_at']   ?? $raw['detected_at'] ?? ''),
-            'source'              => $sourceFile !== '' ? basename($sourceFile) : '',
-            'source_file'         => $sourceFile,
-            'handoff_valid'       => $raw['handoff_valid'] ?? null,
+            'governor_signal_key'  => $govKey,
+            'signal_id'            => $signalId,
+            'strategy_id'          => $stratId,
+            'symbol'               => (string)($raw['symbol']      ?? ''),
+            'side'                 => (string)($raw['side']         ?? ''),
+            'mode'                 => $mode,
+            'strategy_runtime_mode'=> $strategyRuntimeMode,
+            'mode_inferred'        => $modeInferred,
+            'mode_inferred_from'   => $modeInferredFrom,
+            'entry_price'          => $raw['entry_price'] ?? $raw['price'] ?? null,
+            'detected_at'          => (string)($raw['detected_at']  ?? $raw['created_at'] ?? ''),
+            'created_at'           => (string)($raw['created_at']   ?? $raw['detected_at'] ?? ''),
+            'source'               => $sourceFile !== '' ? basename($sourceFile) : '',
+            'source_file'          => $sourceFile,
+            'handoff_valid'        => $raw['handoff_valid'] ?? null,
         ];
     }
 
@@ -994,6 +1079,10 @@ final class StrategyGovernor
             $entry['mode_inferred']      = true;
             $entry['mode_inferred_from'] = $norm['mode_inferred_from'] ?? null;
         }
+        // Propagate strategy operational/runtime mode when present
+        if (($norm['strategy_runtime_mode'] ?? null) !== null) {
+            $entry['strategy_runtime_mode'] = $norm['strategy_runtime_mode'];
+        }
         return $entry;
     }
 
@@ -1027,6 +1116,11 @@ final class StrategyGovernor
         }
         if ((string)($norm['mode'] ?? '') === '') {
             return 'missing_mode';
+        }
+        // Only demo and paper are valid execution modes for Governor.
+        static $validExecModes = ['demo', 'paper'];
+        if (!in_array((string)($norm['mode'] ?? ''), $validExecModes, true)) {
+            return 'invalid_execution_mode';
         }
         if (isset($norm['handoff_valid']) && $norm['handoff_valid'] === false) {
             return 'handoff_signal_invalid';

@@ -2423,6 +2423,9 @@ GOV;
             // ── Legacy missing_mode retry counters ────────────────────────────
             $gLegacyRetried   = $e((string)(int)($govLastRun['governor_legacy_missing_mode_retried_total']   ?? 0));
             $gLegacyRecovered = $e((string)(int)($govLastRun['governor_legacy_missing_mode_recovered_total'] ?? 0));
+            // ── Strategy operational mode mapping counters ────────────────────
+            $gStratMappedToDemo = $e((string)(int)($govLastRun['governor_strategy_mode_mapped_to_demo_total'] ?? 0));
+            $gInvalidExecMode   = $e((string)(int)($govLastRun['governor_invalid_execution_mode_total']       ?? 0));
 
             // ── Phase 3A: approved demo queue counters ────────────────────────
             $gQueueEnabled  = ($govLastRun['approved_demo_queue_enabled']  ?? $govCfg['approved_demo_queue_enabled']  ?? true) ? 'да' : 'нет';
@@ -2520,9 +2523,13 @@ GOV;
                     $pRawMode    = (string)($pk['mode'] ?? '');
                     $pModeInf    = !empty($pk['mode_inferred']);
                     $pModeFrom   = (string)($pk['mode_inferred_from'] ?? '');
+                    $pStratMode  = (string)($pk['strategy_runtime_mode'] ?? '');
                     $pModeDisp   = $pRawMode !== ''
                         ? $e($pRawMode) . ($pModeInf ? ' <span style="color:#f0883e;font-size:10px;" title="Режим выведен автоматически (inferred from: ' . $e($pModeFrom) . ')">(inferred)</span>' : '')
                         : '<span style="color:var(--ui-text-muted);">—</span>';
+                    if ($pStratMode !== '') {
+                        $pModeDisp .= '<br><span style="color:var(--ui-text-muted);font-size:9px;" title="Strategy operational mode">strat: ' . $e($pStratMode) . '</span>';
+                    }
                     $govPendingRows .= '<tr>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;color:var(--ui-text-muted);">' . $pSig . '</td>'
                         . '<td style="padding:3px 8px 3px 0;font-size:11px;">' . $pStrat . '</td>'
@@ -2751,6 +2758,8 @@ GOV;
       <div><span style="color:var(--ui-text-muted);">Ошибки</span><br>{$gErrorsHtml}</div>
       <div><span style="color:var(--ui-text-muted);">Legacy mode retry</span><br><strong style="color:#f0883e;">{$gLegacyRetried}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Legacy recovered</span><br><strong style="color:#3fb950;">{$gLegacyRecovered}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Strategy mode→demo</span><br><strong style="color:#f0883e;">{$gStratMappedToDemo}</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Invalid exec mode</span><br><strong style="color:#f85149;">{$gInvalidExecMode}</strong></div>
     </div>
 
     <!-- Текущее состояние -->

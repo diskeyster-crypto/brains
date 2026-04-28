@@ -933,6 +933,20 @@ HTML;
         ? '<tr><td style="color:#f85149;padding:3px 12px 3px 0;" colspan="2">⚠ Неверное значение signal_source_mode — применён fallback на direct_strategy_handoff</td></tr>'
         : '';
 
+    // ── Governor control panel config variables ───────────────────────────
+    // Read from bot config (what's currently saved); fallback to safe default.
+    $govCfgSignalSource  = (string)($botConfig['signal_source_mode']    ?? 'direct_strategy_handoff');
+    $govCfgShadowCompare = (bool)($botConfig['shadow_compare_enabled']  ?? false);
+    $govCfgSaveUrl       = System::web('admin/dashboard');
+    // Select option helpers for signal_source_mode
+    $govOptDirect        = ($govCfgSignalSource === 'direct_strategy_handoff')  ? ' selected' : '';
+    $govOptDemo          = ($govCfgSignalSource === 'governor_approved_demo')    ? ' selected' : '';
+    $govOptShadow        = ($govCfgSignalSource === 'shadow_compare')            ? ' selected' : '';
+    // Checkbox checked attr for shadow_compare_enabled
+    $govChkShadow        = $govCfgShadowCompare ? ' checked' : '';
+    // Approved demo queue size set after governor data is loaded (further below)
+    $govApprovedDemoQueueSize = null;
+
     // ── Safety warnings for signal source mode ────────────────────────────
     $signalSourceWarningHtml = '';
     if ($lrSignalSourceMode === 'shadow_compare') {
@@ -2189,6 +2203,8 @@ QUAL;
         $govDemoQueueRaw  = is_array($govDemoQueueRaw) ? $govDemoQueueRaw : [];
         // Update the bot-section counter now that we have the actual data
         $govApprovedQueueTotal = count($govDemoQueueRaw);
+        // Update governor control panel queue size variable
+        $govApprovedDemoQueueSize = $govApprovedQueueTotal;
 
         // Last 50 lines of decisions.ndjson — tail reader (no full file load)
         $govDecisionsRaw = [];
@@ -4447,6 +4463,99 @@ BLCK;
     </div>
   </div>
   {$pmPositionsTable}
+
+  <!-- Profit Manager quick settings -->
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <span><i class="bi bi-graph-up-arrow" style="margin-right:6px;"></i>Profit Manager — Быстрые настройки</span>
+      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало config/active.php · demo profit-lock (без биржевых ордеров)</small>
+    </div>
+    <div class="card-body">
+      <form method="post" action="{$pmConfigSaveUrl}">
+        <input type="hidden" name="dashboard_action" value="profit_manager_config_save">
+        <input type="hidden" name="active_tab" value="dh-pm">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:12px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включён</label>
+            <select name="enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgEnYes}>Да</option>
+              <option value="0"{$pmCfgEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
+            <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="demo"{$pmCfgModeDemoSel}>demo</option>
+              <option value="live"{$pmCfgModeLiveSel}>live</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Профиль</label>
+            <div style="height:32px;font-size:13px;padding:4px 8px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;color:#58a6ff;">AUTO (long: legacy_safe_long · short: unavailable)</div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Init ROI%</label>
+            <input type="number" step="0.1" min="0" name="init_roi"
+              value="{$pmCfgInitRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Activation ROI%</label>
+            <input type="number" step="0.1" min="0" name="activation_roi"
+              value="{$pmCfgActivRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Step ROI%</label>
+            <input type="number" step="0.1" min="0" name="step_roi"
+              value="{$pmCfgStepRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Lock buffer ROI%</label>
+            <input type="number" step="0.1" min="0" name="lock_buffer_roi"
+              value="{$pmCfgLockBuf}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Lock floor ROI%</label>
+            <input type="number" step="0.1" min="0" name="lock_floor_roi"
+              value="{$pmCfgLockFloor}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min update interval (сек)</label>
+            <input type="number" step="1" min="1" name="min_update_interval_sec"
+              value="{$pmCfgMinInterval}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min price distance %</label>
+            <input type="number" step="0.01" min="0" name="min_price_distance_pct"
+              value="{$pmCfgMinPriceDist}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min ROI step%</label>
+            <input type="number" step="0.1" min="0" name="min_roi_step"
+              value="{$pmCfgMinRoiStep}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Max updates per run</label>
+            <input type="number" step="1" min="1" name="max_updates_per_run"
+              value="{$pmCfgMaxUpdates}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Default tick size</label>
+            <input type="number" step="0.00001" min="0.00001" name="default_tick_size"
+              value="{$pmCfgTickSize}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
+      </form>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
+        <table style="font-size:12px;width:100%;border-collapse:collapse;">
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:200px;">Cron-обработчик</td><td><code>{$pmCronPath}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Интервал крона</td><td>{$pmCronInterval} сек</td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус токена</td><td>{$pmCronStatusText}</td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний тик</td><td>{$pmLastTick}</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ── Control pane ──────────────────────────────────────────────────── -->
@@ -4647,97 +4756,6 @@ BLCK;
     </div>
   </div>
 
-  <!-- Profit Manager quick settings -->
-  <div class="card" style="margin-top:16px;">
-    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
-      <span><i class="bi bi-graph-up-arrow" style="margin-right:6px;"></i>Profit Manager — Быстрые настройки</span>
-      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало config/active.php · demo profit-lock (без биржевых ордеров)</small>
-    </div>
-    <div class="card-body">
-      <form method="post" action="{$pmConfigSaveUrl}">
-        <input type="hidden" name="dashboard_action" value="profit_manager_config_save">
-        <input type="hidden" name="active_tab" value="dh-ctrl">
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включён</label>
-            <select name="enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="1"{$pmCfgEnYes}>Да</option>
-              <option value="0"{$pmCfgEnNo}>Нет</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
-            <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="demo"{$pmCfgModeDemoSel}>demo</option>
-              <option value="live"{$pmCfgModeLiveSel}>live</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Профиль</label>
-            <div style="height:32px;font-size:13px;padding:4px 8px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;color:#58a6ff;">AUTO (long: legacy_safe_long · short: unavailable)</div>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Init ROI%</label>
-            <input type="number" step="0.1" min="0" name="init_roi"
-              value="{$pmCfgInitRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Activation ROI%</label>
-            <input type="number" step="0.1" min="0" name="activation_roi"
-              value="{$pmCfgActivRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Step ROI%</label>
-            <input type="number" step="0.1" min="0" name="step_roi"
-              value="{$pmCfgStepRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Lock buffer ROI%</label>
-            <input type="number" step="0.1" min="0" name="lock_buffer_roi"
-              value="{$pmCfgLockBuf}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Lock floor ROI%</label>
-            <input type="number" step="0.1" min="0" name="lock_floor_roi"
-              value="{$pmCfgLockFloor}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min update interval (сек)</label>
-            <input type="number" step="1" min="1" name="min_update_interval_sec"
-              value="{$pmCfgMinInterval}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min price distance %</label>
-            <input type="number" step="0.01" min="0" name="min_price_distance_pct"
-              value="{$pmCfgMinPriceDist}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min ROI step%</label>
-            <input type="number" step="0.1" min="0" name="min_roi_step"
-              value="{$pmCfgMinRoiStep}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Max updates per run</label>
-            <input type="number" step="1" min="1" name="max_updates_per_run"
-              value="{$pmCfgMaxUpdates}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Default tick size</label>
-            <input type="number" step="0.00001" min="0.00001" name="default_tick_size"
-              value="{$pmCfgTickSize}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-        </div>
-        <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
-      </form>
-      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
-        <table style="font-size:12px;width:100%;border-collapse:collapse;">
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:200px;">Cron-обработчик</td><td><code>{$pmCronPath}</code></td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Интервал крона</td><td>{$pmCronInterval} сек</td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Статус токена</td><td>{$pmCronStatusText}</td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний тик</td><td>{$pmLastTick}</td></tr>
-        </table>
-      </div>
-    </div>
-  </div>
 </div>
 
 </div><!-- /max-width -->
@@ -4749,6 +4767,133 @@ BLCK;
     <h2 style="margin:0 0 2px;font-size:18px;font-weight:700;"><i class="bi bi-shield-check" style="color:#a78bfa;margin-right:8px;"></i>Губернатор стратегий <span style="font-size:13px;font-weight:400;color:var(--ui-text-muted);">/ Strategy Governor</span></h2>
     <p style="margin:0;font-size:11px;color:var(--ui-text-muted);">shadow-only · read-only · Governor не блокирует торговлю</p>
   </div>
+
+  <!-- ── Governor: режим / управление ───────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+    <div class="card-header"><i class="bi bi-sliders" style="margin-right:6px;color:#a78bfa;"></i>Strategy Governor — Управление</div>
+    <div class="card-body" style="padding:14px 16px;">
+
+      <!-- Status row -->
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+        <span style="font-size:13px;"><span style="color:var(--ui-text-muted);">Режим:</span>
+          <strong style="color:#a78bfa;margin-left:4px;">shadow-only</strong>
+          <span style="background:rgba(167,139,250,.15);color:#a78bfa;font-size:10px;border-radius:3px;padding:1px 6px;margin-left:6px;">read-only</span>
+        </span>
+        <span style="font-size:13px;"><span style="color:var(--ui-text-muted);">Текущий signal_source_mode:</span>
+          <code style="color:#58a6ff;margin-left:4px;">{$e($lrSignalSourceMode)}</code>
+        </span>
+        <span style="font-size:13px;"><span style="color:var(--ui-text-muted);">shadow_compare_enabled:</span>
+          <code style="color:#f0883e;margin-left:4px;">{$e($lrShadowCompareEnabled ? 'true' : 'false')}</code>
+        </span>
+      </div>
+
+      <!-- Read-only warning -->
+      <div style="background:rgba(88,166,255,.08);border:1px solid #58a6ff44;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#58a6ff;">
+        <i class="bi bi-info-circle" style="margin-right:6px;"></i>
+        <strong>Governor не управляет live-торговлей.</strong>
+        Direct handoff остаётся режимом по умолчанию.
+        Смена режима не включает Governor в live-ордера автоматически.
+      </div>
+
+      <!-- Controls form -->
+      <form method="post" action="{$govCfgSaveUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="governor_config_save">
+        <input type="hidden" name="active_tab" value="dh-governor">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px 20px;margin-bottom:14px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:5px;">
+              Источник сигналов бота (signal_source_mode)
+            </label>
+            <select name="signal_source_mode" class="form-control" style="height:34px;font-size:13px;padding:2px 8px;">
+              <option value="direct_strategy_handoff"{$govOptDirect}>direct_strategy_handoff (по умолчанию)</option>
+              <option value="shadow_compare"{$govOptShadow}>shadow_compare (теневое сравнение)</option>
+              <option value="governor_approved_demo"{$govOptDemo}>governor_approved_demo ⚠ Экспериментально — не рекомендуется</option>
+            </select>
+            <div style="font-size:11px;color:var(--ui-text-muted);margin-top:4px;">
+              <strong>direct_strategy_handoff</strong>: бот использует сигналы стратегий напрямую.
+              <strong>shadow_compare</strong>: бот продолжает direct handoff, Governor сравнивается параллельно.
+              <span style="color:#f85149;"><strong>governor_approved_demo</strong>: бот читает очередь Governor — экспериментально, не рекомендуется.</span>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:5px;">
+              Shadow compare включён (shadow_compare_enabled)
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+              <input type="checkbox" name="shadow_compare_enabled" value="1"{$govChkShadow}
+                style="width:16px;height:16px;cursor:pointer;">
+              Включить shadow compare
+            </label>
+            <div style="font-size:11px;color:var(--ui-text-muted);margin-top:4px;">
+              При signal_source_mode=direct_strategy_handoff + shadow_compare_enabled=true бот
+              продолжает прямой handoff — governor влияния на ордера не оказывает.
+            </div>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-sm" style="background:rgba(167,139,250,.12);color:#a78bfa;border:1px solid #a78bfa55;padding:6px 20px;font-weight:600;">
+          <i class="bi bi-floppy" style="margin-right:4px;"></i>Сохранить настройки Governor
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Governor: diagnostics ───────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:16px;border-color:#a78bfa44;">
+    <div class="card-header"><i class="bi bi-bar-chart-line" style="margin-right:6px;color:#a78bfa;"></i>Диагностика — источник сигналов</div>
+    <div class="card-body" style="padding:12px 16px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px 20px;font-size:12px;">
+        <div>
+          <span style="color:var(--ui-text-muted);">signal_source_mode</span><br>
+          <strong style="color:#58a6ff;">{$e($lrSignalSourceMode)}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">signal_source_effective_execution</span><br>
+          <strong style="color:#58a6ff;">{$e($lrSignalSourceEffectiveExec)}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">shadow_compare_enabled</span><br>
+          <strong style="color:#f0883e;">{$e($lrShadowCompareEnabled ? 'true' : 'false')}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">governor_queue_seen_total</span><br>
+          <strong>{$e((string)$lrGovQueueSeen)}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">governor_queue_valid_total</span><br>
+          <strong style="color:#3fb950;">{$e((string)$lrGovQueueValid)}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">governor_queue_used_for_orders_total</span><br>
+          <strong style="color:#3fb950;">{$e((string)$lrGovQueueUsed)}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">direct_handoff_seen_total</span><br>
+          <strong>{$e((string)$lrDirectHandoffSeen)}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">direct_handoff_used_total</span><br>
+          <strong style="color:#3fb950;">{$e((string)$lrDirectHandoffUsed)}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">shadow_compare_overlap_total</span><br>
+          <strong style="color:#a78bfa;">{$e((string)$lrShadowOverlap)}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">shadow_compare_direct_only_total</span><br>
+          <strong style="color:#f0883e;">{$e((string)$lrShadowDirectOnly)}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">shadow_compare_governor_only_total</span><br>
+          <strong style="color:#58a6ff;">{$e((string)$lrShadowGovOnly)}</strong>
+        </div>
+        <div>
+          <span style="color:var(--ui-text-muted);">approved_demo_queue size</span><br>
+          <strong style="color:#3fb950;">{$e($govApprovedDemoQueueSize !== null ? (string)$govApprovedDemoQueueSize : '—')}</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
   {$governorFullHtml}
 </div>
 
@@ -4959,6 +5104,66 @@ function handleDashboardGlobalSave(): void
     exit;
 }
 } // end if (!function_exists('handleDashboardGlobalSave'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: save Governor signal-source settings
+// Writes signal_source_mode and shadow_compare_enabled to modules/bot/config/active.php
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleDashboardGovernorSave')) {
+function handleDashboardGovernorSave(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        exit;
+    }
+
+    $root       = System::path('root');
+    $activeFile = $root . '/modules/bot/config/active.php';
+
+    // Read current active overrides so we don't clobber keys we don't manage
+    $current = [];
+    if (file_exists($activeFile)) {
+        $loaded = @include $activeFile;
+        if (is_array($loaded)) {
+            $current = $loaded;
+        }
+    }
+
+    $validModes = ['direct_strategy_handoff', 'governor_approved_demo', 'shadow_compare'];
+    $signalSourceMode  = trim((string)($_POST['signal_source_mode'] ?? 'direct_strategy_handoff'));
+    $shadowCompare     = isset($_POST['shadow_compare_enabled']) && $_POST['shadow_compare_enabled'] === '1';
+
+    // Enforce safe defaults: unknown value falls back to direct_strategy_handoff
+    if (!in_array($signalSourceMode, $validModes, true)) {
+        $signalSourceMode = 'direct_strategy_handoff';
+    }
+    // governor_approved_demo must be explicitly submitted — no auto-enable
+    // (this is already enforced by the select: user must explicitly choose it)
+
+    $current['signal_source_mode']    = $signalSourceMode;
+    $current['shadow_compare_enabled'] = $shadowCompare;
+
+    $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Bot Module — Active Config Overrides\n * Written by the admin UI. Edit via the config page.\n */\n\nreturn ";
+    $php .= var_export($current, true);
+    $php .= ";\n";
+
+    if (!is_dir(dirname($activeFile))) {
+        mkdir(dirname($activeFile), 0755, true);
+    }
+    file_put_contents($activeFile, $php);
+
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Настройки Governor сохранены'];
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-governor'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-governor'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
+    exit;
+}
+} // end if (!function_exists('handleDashboardGovernorSave'))
 
 // ──────────────────────────────────────────────────────────────────────────────
 // POST handler: manual strategy actions (queue_run / tick_batch / refresh)
@@ -6104,6 +6309,9 @@ function dispatchDashboardPost(): void
             break;
         case 'profit_manager_config_save':
             handleDashboardPmConfigSave();
+            break;
+        case 'governor_config_save':
+            handleDashboardGovernorSave();
             break;
         default:
             $_SESSION['dashboard_flash'] = [

@@ -831,6 +831,15 @@ final class BotService
         // ── 7b. Update position runtime age tracker ───────────────────────────
         $this->updatePositionRuntimeAge($activePositions, $tickAt, $config);
 
+        // ── 7c. Compute test reality metrics ─────────────────────────────────
+        $testReality = $this->computeTestRealityMetrics($activePositions);
+
+        // ── 7d. Compute slot utilization ──────────────────────────────────────
+        $slotLimit       = $this->resolveMaxActivePositions($config);
+        $slotUsed        = count($activePositions);
+        $slotFree        = max(0, $slotLimit - $slotUsed);
+        $slotUtilizationPct = $slotLimit > 0 ? round($slotUsed / $slotLimit * 100.0, 1) : null;
+
         $elapsed = round(microtime(true) - $tStart, 4);
 
         $lastRun = [
@@ -951,6 +960,42 @@ final class BotService
             'submitted_waiting_match_total'            => $reconResult['waiting_match'],
             'submitted_stale_unmatched_total'          => $reconResult['stale_unmatched'],
             'submitted_still_blocking_total'           => $reconResult['still_blocking'],
+
+            // Funnel: signal → order (per-tick view)
+            'funnel_handoff_seen_total'               => $result['signals_seen'],
+            'funnel_handoff_processed_total'          => $result['signals_seen'] - (int)($result['ignored_invalid_signal_payload'] ?? 0) - (int)($result['ignored_invalid_entry_mode'] ?? 0),
+            'funnel_order_queue_new_total'            => $result['new_total'],
+            'funnel_order_queue_refreshed_total'      => $result['refreshed_total'],
+            'funnel_orders_created_total'             => $execResult['orders_created'],
+            'funnel_orders_submitted_demo_total'      => $execResult['orders_submitted_demo'],
+            'funnel_orders_confirmed_demo_total'      => $execResult['orders_confirmed_demo'],
+            'funnel_blocked_by_active_position_total' => $execResult['funnel_blocked_by_active_position'] ?? 0,
+            'funnel_blocked_by_submitted_queue_total' => $reconResult['still_blocking'],
+            'funnel_blocked_by_max_slots_total'       => $execResult['funnel_blocked_by_max_slots'] ?? 0,
+            'funnel_duplicate_signal_total'           => $govQueueDupSkipped,
+            'funnel_stale_signal_total'               => $result['expired_total'],
+
+            // Slot utilization
+            'slot_limit_total'       => $slotLimit,
+            'slot_used_total'        => $slotUsed,
+            'slot_free_total'        => $slotFree,
+            'slot_utilization_pct'   => $slotUtilizationPct,
+
+            // Test reality metrics
+            'test_reality_closed_trades_total'            => $testReality['test_reality_closed_trades_total'],
+            'test_reality_open_positions_total'           => $testReality['test_reality_open_positions_total'],
+            'test_reality_realized_pnl_total'             => $testReality['test_reality_realized_pnl_total'],
+            'test_reality_unrealized_pnl_total'           => $testReality['test_reality_unrealized_pnl_total'],
+            'test_reality_net_pnl_if_closed_now'          => $testReality['test_reality_net_pnl_if_closed_now'],
+            'test_reality_closed_winrate'                 => $testReality['test_reality_closed_winrate'],
+            'test_reality_avg_closed_roi'                 => $testReality['test_reality_avg_closed_roi'],
+            'test_reality_avg_open_roi'                   => $testReality['test_reality_avg_open_roi'],
+            'test_reality_worst_open_roi'                 => $testReality['test_reality_worst_open_roi'],
+            'test_reality_best_open_roi'                  => $testReality['test_reality_best_open_roi'],
+            'test_reality_open_positions_in_loss_total'   => $testReality['test_reality_open_positions_in_loss_total'],
+            'test_reality_open_positions_in_profit_total' => $testReality['test_reality_open_positions_in_profit_total'],
+            'test_reality_open_unrealized_unknown_total'  => $testReality['test_reality_open_unrealized_unknown_total'],
+            'test_reality_by_strategy'                    => $testReality['test_reality_by_strategy'],
 
             // Cumulative
             'ticks_total'                => (int)($stats['ticks_total'] ?? 0),
@@ -2202,6 +2247,198 @@ final class BotService
     }
 
     /**
+     * Compute "test reality" diagnostics from closed_trades.json and active_positions.
+     *
+     * Reads closed trades (realized) and current active positions (unrealized).
+     * Never modifies any storage. Returns all test reality metrics as an array.
+     *
+     * @param array $activePositions Current in-memory active positions
+     * @return array
+     */
+    private function computeTestRealityMetrics(array $activePositions): array
+    {
+        $closedTrades = $this->readJson('storage/trades/closed_trades.json', []);
+
+        // ── Closed trade stats ────────────────────────────────────────────────
+        $closedTotal       = 0;
+        $closedWins        = 0;
+        $closedLosses      = 0;
+        $realizedPnlTotal  = 0.0;
+        $closedRoiSum      = 0.0;
+        $closedRoiCount    = 0;
+        $byStrategy        = [];
+
+        foreach ($closedTrades as $trade) {
+            $closedTotal++;
+            $roi  = isset($trade['roi'])  ? (float)$trade['roi']  : null;
+            $pnl  = isset($trade['pnl'])  ? (float)$trade['pnl']  : null;
+            $sid  = (string)($trade['strategy_id'] ?? $trade['owner_strategy'] ?? 'unknown');
+
+            if ($pnl !== null) {
+                $realizedPnlTotal += $pnl;
+            }
+            if ($roi !== null) {
+                $closedRoiSum += $roi;
+                $closedRoiCount++;
+                if ($roi >= 0.0) {
+                    $closedWins++;
+                } else {
+                    $closedLosses++;
+                }
+            }
+
+            if (!isset($byStrategy[$sid])) {
+                $byStrategy[$sid] = [
+                    'closed_trades_total'  => 0,
+                    'open_positions_total' => 0,
+                    'realized_pnl_total'   => 0.0,
+                    'unrealized_pnl_total' => 0.0,
+                    'closed_roi_sum'       => 0.0,
+                    'closed_roi_count'     => 0,
+                    'closed_wins'          => 0,
+                    'open_roi_sum'         => 0.0,
+                    'open_roi_count'       => 0,
+                ];
+            }
+            $byStrategy[$sid]['closed_trades_total']++;
+            if ($pnl !== null) {
+                $byStrategy[$sid]['realized_pnl_total'] += $pnl;
+            }
+            if ($roi !== null) {
+                $byStrategy[$sid]['closed_roi_sum']   += $roi;
+                $byStrategy[$sid]['closed_roi_count']++;
+                if ($roi >= 0.0) {
+                    $byStrategy[$sid]['closed_wins']++;
+                }
+            }
+        }
+
+        $closedWinrate  = ($closedTotal > 0 && $closedRoiCount > 0) ? round($closedWins / $closedRoiCount, 4) : null;
+        $avgClosedRoi   = ($closedRoiCount > 0) ? round($closedRoiSum / $closedRoiCount, 4) : null;
+
+        // ── Active position (open/unrealized) stats ───────────────────────────
+        $openTotal            = count($activePositions);
+        $unrealizedPnlTotal   = 0.0;
+        $openInLoss           = 0;
+        $openInProfit         = 0;
+        $unknownUnrealized    = 0;
+        $openRoiSum           = 0.0;
+        $openRoiCount         = 0;
+        $worstOpenRoi         = null;
+        $bestOpenRoi          = null;
+
+        foreach ($activePositions as $pos) {
+            $sid         = (string)($pos['strategy_id'] ?? $pos['owner_strategy'] ?? 'unknown');
+            $upnl        = isset($pos['unrealised_pnl']) ? (float)$pos['unrealised_pnl'] : null;
+            $entryPrice  = (float)($pos['entry_price']  ?? 0.0);
+            $markPrice   = (float)($pos['mark_price']   ?? $pos['current_price'] ?? 0.0);
+            $leverage    = max(1, (int)($pos['bot_leverage'] ?? $pos['leverage'] ?? 1));
+            $side        = (string)($pos['side'] ?? 'long');
+
+            // Compute open ROI if we have entry/mark prices
+            $openRoi = null;
+            if ($entryPrice > 0.0 && $markPrice > 0.0) {
+                if ($side === 'short') {
+                    $openRoi = ($entryPrice - $markPrice) / $entryPrice * $leverage * 100.0;
+                } else {
+                    $openRoi = ($markPrice - $entryPrice) / $entryPrice * $leverage * 100.0;
+                }
+                $openRoi = round($openRoi, 4);
+            }
+
+            if ($upnl !== null) {
+                $unrealizedPnlTotal += $upnl;
+                if ($upnl < 0.0) {
+                    $openInLoss++;
+                } else {
+                    $openInProfit++;
+                }
+            } elseif ($openRoi !== null) {
+                // Can infer direction from ROI
+                if ($openRoi < 0.0) {
+                    $openInLoss++;
+                } else {
+                    $openInProfit++;
+                }
+            } else {
+                $unknownUnrealized++;
+            }
+
+            if ($openRoi !== null) {
+                $openRoiSum += $openRoi;
+                $openRoiCount++;
+                if ($worstOpenRoi === null || $openRoi < $worstOpenRoi) {
+                    $worstOpenRoi = $openRoi;
+                }
+                if ($bestOpenRoi === null || $openRoi > $bestOpenRoi) {
+                    $bestOpenRoi = $openRoi;
+                }
+            }
+
+            if (!isset($byStrategy[$sid])) {
+                $byStrategy[$sid] = [
+                    'closed_trades_total'  => 0,
+                    'open_positions_total' => 0,
+                    'realized_pnl_total'   => 0.0,
+                    'unrealized_pnl_total' => 0.0,
+                    'closed_roi_sum'       => 0.0,
+                    'closed_roi_count'     => 0,
+                    'closed_wins'          => 0,
+                    'open_roi_sum'         => 0.0,
+                    'open_roi_count'       => 0,
+                ];
+            }
+            $byStrategy[$sid]['open_positions_total']++;
+            if ($upnl !== null) {
+                $byStrategy[$sid]['unrealized_pnl_total'] += $upnl;
+            }
+            if ($openRoi !== null) {
+                $byStrategy[$sid]['open_roi_sum']   += $openRoi;
+                $byStrategy[$sid]['open_roi_count']++;
+            }
+        }
+
+        $avgOpenRoi       = ($openRoiCount > 0)  ? round($openRoiSum / $openRoiCount, 4)    : null;
+        $netPnlIfClosed   = round($realizedPnlTotal + $unrealizedPnlTotal, 6);
+
+        // ── Build per-strategy summary ────────────────────────────────────────
+        $testRealityByStrategy = [];
+        foreach ($byStrategy as $sid => $s) {
+            $sClosed   = (int)$s['closed_trades_total'];
+            $sWr       = ($s['closed_roi_count'] > 0) ? round($s['closed_wins'] / $s['closed_roi_count'], 4) : null;
+            $sAvgClosed= ($s['closed_roi_count'] > 0) ? round($s['closed_roi_sum'] / $s['closed_roi_count'], 4) : null;
+            $sAvgOpen  = ($s['open_roi_count']   > 0) ? round($s['open_roi_sum']   / $s['open_roi_count'],   4) : null;
+            $testRealityByStrategy[$sid] = [
+                'closed_trades_total'  => $sClosed,
+                'open_positions_total' => (int)$s['open_positions_total'],
+                'realized_pnl_total'   => round($s['realized_pnl_total'],   6),
+                'unrealized_pnl_total' => round($s['unrealized_pnl_total'],  6),
+                'net_pnl_if_closed_now'=> round($s['realized_pnl_total'] + $s['unrealized_pnl_total'], 6),
+                'closed_winrate'       => $sWr,
+                'avg_closed_roi'       => $sAvgClosed,
+                'avg_open_roi'         => $sAvgOpen,
+            ];
+        }
+
+        return [
+            'test_reality_closed_trades_total'          => $closedTotal,
+            'test_reality_open_positions_total'         => $openTotal,
+            'test_reality_realized_pnl_total'           => round($realizedPnlTotal,  6),
+            'test_reality_unrealized_pnl_total'         => round($unrealizedPnlTotal, 6),
+            'test_reality_net_pnl_if_closed_now'        => $netPnlIfClosed,
+            'test_reality_closed_winrate'               => $closedWinrate,
+            'test_reality_avg_closed_roi'               => $avgClosedRoi,
+            'test_reality_avg_open_roi'                 => $avgOpenRoi,
+            'test_reality_worst_open_roi'               => $worstOpenRoi,
+            'test_reality_best_open_roi'                => $bestOpenRoi,
+            'test_reality_open_positions_in_loss_total' => $openInLoss,
+            'test_reality_open_positions_in_profit_total' => $openInProfit,
+            'test_reality_open_unrealized_unknown_total'=> $unknownUnrealized,
+            'test_reality_by_strategy'                  => $testRealityByStrategy,
+        ];
+    }
+
+    /**
      * Get a Bybit gateway client configured for Bybit Demo account.
      *
      * Uses demo_api_key / demo_api_secret / demo_api_base_url from bot config.
@@ -2312,6 +2549,9 @@ final class BotService
         // Demo execution diagnostics
         $demoOrdersPrepared       = 0;
         $demoOrdersRejected       = 0;
+        // Funnel blocking counters
+        $blockedByActivePosition  = 0;
+        $blockedByMaxSlots        = 0;
         $demoLeverageClampedCount = 0;
         $demoSetLevFailedCount    = 0;
         $demoQtyInvalidCount      = 0;
@@ -2355,6 +2595,8 @@ final class BotService
                 'positions_closed_expired'   => 0,
                 'positions_closed_withdrawn' => 0,
                 'execution_log_events' => 0,
+                'funnel_blocked_by_active_position' => 0,
+                'funnel_blocked_by_max_slots'       => 0,
             ];
         }
 
@@ -2405,12 +2647,14 @@ final class BotService
             // Skip if symbol already open on Bybit Demo
             if (isset($symbolMap[$symbol])) {
                 $qItem['skip_reason'] = 'symbol_already_active_on_demo';
+                $blockedByActivePosition++;
                 continue;
             }
 
             // Skip if max positions reached
             if ($maxPos > 0 && count($symbolMap) >= $maxPos) {
                 $qItem['skip_reason'] = 'max_active_positions_reached';
+                $blockedByMaxSlots++;
                 continue;
             }
 
@@ -2719,6 +2963,9 @@ final class BotService
             'demo_last_set_lev_code'           => $demoLastSetLevCode,
             'demo_last_set_lev_msg'            => $demoLastSetLevMsg,
             'demo_leverage_mismatch_count'     => $demoLeverageMismatchCount,
+            // Funnel blocking counters
+            'funnel_blocked_by_active_position'=> $blockedByActivePosition,
+            'funnel_blocked_by_max_slots'      => $blockedByMaxSlots,
         ];
     }
 

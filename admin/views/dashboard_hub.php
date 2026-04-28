@@ -957,6 +957,41 @@ HTML;
     $lrReconStaleUnmatched   = (int)($lastRun['submitted_stale_unmatched_total']          ?? 0);
     $lrReconStillBlocking    = (int)($lastRun['submitted_still_blocking_total']           ?? 0);
 
+    // ── Test reality metrics ──────────────────────────────────────────────
+    $lrTrClosedTotal        = $lastRun['test_reality_closed_trades_total']            ?? null;
+    $lrTrOpenTotal          = $lastRun['test_reality_open_positions_total']           ?? null;
+    $lrTrRealizedPnl        = $lastRun['test_reality_realized_pnl_total']             ?? null;
+    $lrTrUnrealizedPnl      = $lastRun['test_reality_unrealized_pnl_total']           ?? null;
+    $lrTrNetPnl             = $lastRun['test_reality_net_pnl_if_closed_now']          ?? null;
+    $lrTrClosedWinrate      = $lastRun['test_reality_closed_winrate']                 ?? null;
+    $lrTrAvgClosedRoi       = $lastRun['test_reality_avg_closed_roi']                 ?? null;
+    $lrTrAvgOpenRoi         = $lastRun['test_reality_avg_open_roi']                   ?? null;
+    $lrTrWorstOpenRoi       = $lastRun['test_reality_worst_open_roi']                 ?? null;
+    $lrTrOpenInLoss         = $lastRun['test_reality_open_positions_in_loss_total']   ?? null;
+    $lrTrOpenInProfit       = $lastRun['test_reality_open_positions_in_profit_total'] ?? null;
+    $lrTrByStrategy         = is_array($lastRun['test_reality_by_strategy'] ?? null)
+                               ? $lastRun['test_reality_by_strategy'] : [];
+
+    // ── Funnel metrics ────────────────────────────────────────────────────
+    $lrFunnelSeen           = (int)($lastRun['funnel_handoff_seen_total']               ?? 0);
+    $lrFunnelProcessed      = (int)($lastRun['funnel_handoff_processed_total']          ?? 0);
+    $lrFunnelQueueNew       = (int)($lastRun['funnel_order_queue_new_total']            ?? 0);
+    $lrFunnelQueueRefreshed = (int)($lastRun['funnel_order_queue_refreshed_total']      ?? 0);
+    $lrFunnelOrdersCreated  = (int)($lastRun['funnel_orders_created_total']             ?? 0);
+    $lrFunnelSubmittedDemo  = (int)($lastRun['funnel_orders_submitted_demo_total']      ?? 0);
+    $lrFunnelConfirmedDemo  = (int)($lastRun['funnel_orders_confirmed_demo_total']      ?? 0);
+    $lrFunnelBlockedActive  = (int)($lastRun['funnel_blocked_by_active_position_total'] ?? 0);
+    $lrFunnelBlockedSubmit  = (int)($lastRun['funnel_blocked_by_submitted_queue_total'] ?? 0);
+    $lrFunnelBlockedSlots   = (int)($lastRun['funnel_blocked_by_max_slots_total']       ?? 0);
+    $lrFunnelDuplicates     = (int)($lastRun['funnel_duplicate_signal_total']           ?? 0);
+    $lrFunnelStale          = (int)($lastRun['funnel_stale_signal_total']               ?? 0);
+
+    // ── Slot metrics ──────────────────────────────────────────────────────
+    $lrSlotLimit            = $lastRun['slot_limit_total']    ?? null;
+    $lrSlotUsed             = $lastRun['slot_used_total']     ?? null;
+    $lrSlotFree             = $lastRun['slot_free_total']     ?? null;
+    $lrSlotUtilPct          = $lastRun['slot_utilization_pct']?? null;
+
     // $govApprovedQueueTotal will be set after $govDemoQueueRaw is loaded (further below)
     $govApprovedQueueTotal = 0;
 
@@ -3710,6 +3745,130 @@ HTML;
     // ── Submitted queue reconciliation card HTML ───────────────────────────
     $reconStillBlockingColor = $lrReconStillBlocking > 0 ? '#f0883e' : '#8b949e';
     $reconStaleColor         = $lrReconStaleUnmatched > 0 ? '#f0883e' : '#8b949e';
+    // ── Test Reality card ──────────────────────────────────────────────────
+    $trWinrateWarning = '';
+    if ($lrTrClosedWinrate !== null && $lrTrClosedWinrate >= 0.9 && (int)($lrTrOpenTotal ?? 0) > 0) {
+        $trWinrateWarning = '<div style="margin-top:10px;padding:8px 12px;background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.35);border-radius:6px;color:#f85149;font-size:12px;">'
+            . '⚠ Winrate по закрытым может быть завышен: часть риска ещё находится в открытых позициях.</div>';
+    }
+
+    $fmtPnl = static function ($v) use ($e): string {
+        if ($v === null) { return '<span style="color:#8b949e;">—</span>'; }
+        $vf = (float)$v;
+        $col = $vf >= 0.0 ? '#3fb950' : '#f85149';
+        return '<code style="color:' . $col . ';">' . $e(number_format($vf, 4)) . '</code>';
+    };
+    $fmtPct = static function ($v) use ($e): string {
+        if ($v === null) { return '<span style="color:#8b949e;">—</span>'; }
+        return '<code>' . $e(number_format((float)$v * 100.0, 1)) . '%</code>';
+    };
+    $fmtRoi = static function ($v) use ($e): string {
+        if ($v === null) { return '<span style="color:#8b949e;">—</span>'; }
+        $vf = (float)$v;
+        $col = $vf >= 0.0 ? '#3fb950' : '#f85149';
+        return '<code style="color:' . $col . ';">' . $e(number_format($vf, 2)) . '%</code>';
+    };
+    $fmtInt = static function ($v) use ($e): string {
+        return $v === null ? '<span style="color:#8b949e;">—</span>' : '<code>' . $e((string)(int)$v) . '</code>';
+    };
+
+    $testRealityCardHtml = '<div class="card" style="margin-bottom:16px;">'
+        . '<div class="card-header"><i class="bi bi-bar-chart-line" style="margin-right:6px;color:#58a6ff;"></i>Реальность demo-теста</div>'
+        . '<div class="card-body">'
+        . $trWinrateWarning
+        . '<table style="width:100%;font-size:13px;border-collapse:collapse;margin-top:8px;">'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:280px;">Закрытых сделок</td><td>' . $fmtInt($lrTrClosedTotal) . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Открытых позиций</td><td>' . $fmtInt($lrTrOpenTotal) . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Реализованный PnL</td><td>' . $fmtPnl($lrTrRealizedPnl) . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Плавающий PnL</td><td>' . $fmtPnl($lrTrUnrealizedPnl) . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Net PnL если закрыть сейчас</td><td>' . $fmtPnl($lrTrNetPnl) . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Winrate закрытых</td><td>' . $fmtPct($lrTrClosedWinrate) . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Avg ROI закрытых</td><td>' . $fmtRoi($lrTrAvgClosedRoi) . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Avg ROI открытых</td><td>' . $fmtRoi($lrTrAvgOpenRoi) . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Худший открытый ROI</td><td>' . $fmtRoi($lrTrWorstOpenRoi) . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Открытых в минусе</td><td>' . $fmtInt($lrTrOpenInLoss) . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Открытых в плюсе</td><td>' . $fmtInt($lrTrOpenInProfit) . '</td></tr>'
+        . '</table>'
+        . '</div></div>';
+
+    // ── Funnel card ───────────────────────────────────────────────────────
+    $slotLimitLabel  = $lrSlotLimit !== null ? '<code>' . $e((string)(int)$lrSlotLimit) . '</code>' : '<span style="color:#8b949e;">не настроено</span>';
+    $slotUsedLabel   = $lrSlotUsed  !== null ? '<code>' . $e((string)(int)$lrSlotUsed)  . '</code>' : '<span style="color:#8b949e;">—</span>';
+    $slotFreeLabel   = $lrSlotFree  !== null ? '<code>' . $e((string)(int)$lrSlotFree)  . '</code>' : '<span style="color:#8b949e;">—</span>';
+    $slotPctLabel    = $lrSlotUtilPct !== null ? '<code>' . $e(number_format((float)$lrSlotUtilPct, 1)) . '%</code>' : '<span style="color:#8b949e;">—</span>';
+
+    $funnelCardHtml = '<div class="card" style="margin-bottom:16px;">'
+        . '<div class="card-header"><i class="bi bi-funnel" style="margin-right:6px;color:#f0883e;"></i>Воронка сигнал → ордер</div>'
+        . '<div class="card-body">'
+        . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
+        . '<tr style="border-bottom:1px solid var(--ui-border);"><td colspan="2" style="padding:3px 0 6px 0;color:var(--ui-text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;">Слоты</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:280px;">Лимит слотов</td><td>' . $slotLimitLabel . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Использовано</td><td>' . $slotUsedLabel . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Свободно</td><td>' . $slotFreeLabel . '</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Заполненность</td><td>' . $slotPctLabel . '</td></tr>'
+        . '<tr style="border-bottom:1px solid var(--ui-border);"><td colspan="2" style="padding:6px 0 6px 0;color:var(--ui-text-muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;">Этот тик</td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Handoff увидено</td><td><code>' . $e($lrFunnelSeen) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Handoff обработано</td><td><code>' . $e($lrFunnelProcessed) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Новых в order_queue</td><td><code style="color:#3fb950;">' . $e($lrFunnelQueueNew) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Обновлено в order_queue</td><td><code style="color:#58a6ff;">' . $e($lrFunnelQueueRefreshed) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ордеров создано</td><td><code>' . $e($lrFunnelOrdersCreated) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Demo submitted</td><td><code style="color:#3fb950;">' . $e($lrFunnelSubmittedDemo) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Demo confirmed</td><td><code style="color:#3fb950;">' . $e($lrFunnelConfirmedDemo) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Заблокировано активной позицией</td><td><code style="color:' . ($lrFunnelBlockedActive > 0 ? '#e3b341' : '#8b949e') . ';">' . $e($lrFunnelBlockedActive) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Заблокировано submitted queue</td><td><code style="color:' . ($lrFunnelBlockedSubmit > 0 ? '#f0883e' : '#8b949e') . ';">' . $e($lrFunnelBlockedSubmit) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Заблокировано лимитом слотов</td><td><code style="color:' . ($lrFunnelBlockedSlots > 0 ? '#f0883e' : '#8b949e') . ';">' . $e($lrFunnelBlockedSlots) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Дубликаты</td><td><code style="color:#8b949e;">' . $e($lrFunnelDuplicates) . '</code></td></tr>'
+        . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Устаревшие сигналы (TTL)</td><td><code style="color:#8b949e;">' . $e($lrFunnelStale) . '</code></td></tr>'
+        . '</table>'
+        . '</div></div>';
+
+    // ── Per-strategy test reality card ─────────────────────────────────────
+    $testRealityByStrategyCardHtml = '';
+    if (!empty($lrTrByStrategy)) {
+        $stratRows = '';
+        foreach ($lrTrByStrategy as $sid => $s) {
+            $sClosed    = (int)($s['closed_trades_total']  ?? 0);
+            $sOpen      = (int)($s['open_positions_total'] ?? 0);
+            $sRealPnl   = isset($s['realized_pnl_total'])   ? number_format((float)$s['realized_pnl_total'],   4) : '—';
+            $sUnrPnl    = isset($s['unrealized_pnl_total'])  ? number_format((float)$s['unrealized_pnl_total'],  4) : '—';
+            $sNetPnl    = isset($s['net_pnl_if_closed_now']) ? number_format((float)$s['net_pnl_if_closed_now'], 4) : '—';
+            $sWr        = isset($s['closed_winrate'])        ? number_format((float)$s['closed_winrate'] * 100, 1) . '%' : '—';
+            $sAvgCl     = isset($s['avg_closed_roi'])        ? number_format((float)$s['avg_closed_roi'], 2) . '%' : '—';
+            $sAvgOp     = isset($s['avg_open_roi'])          ? number_format((float)$s['avg_open_roi'],   2) . '%' : '—';
+            $netPnlVal  = isset($s['net_pnl_if_closed_now']) ? (float)$s['net_pnl_if_closed_now'] : null;
+            $netCol     = ($netPnlVal !== null) ? ($netPnlVal >= 0 ? '#3fb950' : '#f85149') : '';
+            $stratRows .= '<tr>'
+                . '<td style="padding:4px 8px 4px 0;font-size:12px;white-space:nowrap;">' . $e($sid) . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $e((string)$sClosed) . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $e((string)$sOpen) . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;font-size:12px;">' . $e($sRealPnl) . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;font-size:12px;">' . $e($sUnrPnl) . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;font-size:12px;' . ($netCol ? 'color:' . $netCol . ';' : '') . '">' . $e($sNetPnl) . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $e($sWr) . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $e($sAvgCl) . '</td>'
+                . '<td style="padding:4px 8px;text-align:right;">' . $e($sAvgOp) . '</td>'
+                . '</tr>';
+        }
+        $testRealityByStrategyCardHtml = '<div class="card" style="margin-bottom:16px;">'
+            . '<div class="card-header"><i class="bi bi-table" style="margin-right:6px;color:#58a6ff;"></i>По стратегиям — реальность теста</div>'
+            . '<div class="card-body" style="overflow-x:auto;">'
+            . '<table style="width:100%;font-size:13px;border-collapse:collapse;min-width:680px;">'
+            . '<thead><tr style="color:var(--ui-text-muted);border-bottom:1px solid var(--ui-border);">'
+            . '<th style="padding:4px 8px 6px 0;text-align:left;white-space:nowrap;">Стратегия</th>'
+            . '<th style="padding:4px 8px 6px;text-align:right;white-space:nowrap;">Закрыто</th>'
+            . '<th style="padding:4px 8px 6px;text-align:right;white-space:nowrap;">Открыто</th>'
+            . '<th style="padding:4px 8px 6px;text-align:right;white-space:nowrap;">Realized PnL</th>'
+            . '<th style="padding:4px 8px 6px;text-align:right;white-space:nowrap;">Unrealized PnL</th>'
+            . '<th style="padding:4px 8px 6px;text-align:right;white-space:nowrap;">Net if closed</th>'
+            . '<th style="padding:4px 8px 6px;text-align:right;white-space:nowrap;">Winrate</th>'
+            . '<th style="padding:4px 8px 6px;text-align:right;white-space:nowrap;">Avg ROI cl.</th>'
+            . '<th style="padding:4px 8px 6px;text-align:right;white-space:nowrap;">Avg ROI op.</th>'
+            . '</tr></thead>'
+            . '<tbody>' . $stratRows . '</tbody>'
+            . '</table>'
+            . '</div></div>';
+    }
+
     $reconWaitingColor       = $lrReconWaitingMatch  > 0 ? '#e3b341' : '#8b949e';
     $reconEnabledLabel       = $lrReconEnabled ? '<code style="color:#3fb950;">true</code>' : '<code style="color:#f85149;">false</code>';
     $submittedReconCardHtml = '<div class="card" style="margin-bottom:16px;">'
@@ -4021,6 +4180,9 @@ BLCK;
   </div>
   {$demoExecDiagHtml}
   {$submittedReconCardHtml}
+  {$testRealityCardHtml}
+  {$funnelCardHtml}
+  {$testRealityByStrategyCardHtml}
   <div class="card">
     <div class="card-header">Ручное управление</div>
     <div class="card-body">

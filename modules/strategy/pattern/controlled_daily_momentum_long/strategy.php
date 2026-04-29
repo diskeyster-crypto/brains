@@ -883,9 +883,17 @@ final class ControlledDailyMomentumLongStrategy
                     array_unshift($_existingBlocks, 'stale_invalidated');
                 }
                 $_sig['handoff_block_reasons'] = array_values($_existingBlocks);
-                if (!isset($_sig['handoff_warning_reasons'])) {
+                // Ensure warning_reasons is always an array (never null)
+                if (!is_array($_sig['handoff_warning_reasons'] ?? null)) {
                     $_sig['handoff_warning_reasons'] = [];
                 }
+                // Force all exception/warning fields to safe blocked defaults so that old
+                // stale records that pre-date these fields are never left with null values.
+                $_sig['handoff_range_hold_exception_used']      = false;
+                $_sig['handoff_range_hold_exception_reason']    = null;
+                $_sig['handoff_range_hold_exception_attempted'] = false;
+                $_sig['handoff_allowed_warning_reasons']        = [];
+                $_sig['handoff_disallowed_warning_reasons']     = [];
             } elseif ($isCurrentRun) {
                 $_sig['signal_status']            = 'current_run_valid';
                 $_sig['current_run_valid']        = true;
@@ -909,13 +917,23 @@ final class ControlledDailyMomentumLongStrategy
                     array_unshift($_existingBlocks, 'signal_status_not_current_run_valid');
                 }
                 $_sig['handoff_block_reasons'] = array_values($_existingBlocks);
-                if (!isset($_sig['handoff_warning_reasons'])) {
+                // Ensure warning_reasons is always an array (never null)
+                if (!is_array($_sig['handoff_warning_reasons'] ?? null)) {
                     $_sig['handoff_warning_reasons'] = [];
                 }
+                // Force all exception/warning fields to safe blocked defaults so that old
+                // historical records that pre-date these fields are never left with null values.
+                $_sig['handoff_range_hold_exception_used']      = false;
+                $_sig['handoff_range_hold_exception_reason']    = null;
+                $_sig['handoff_range_hold_exception_attempted'] = false;
+                $_sig['handoff_allowed_warning_reasons']        = [];
+                $_sig['handoff_disallowed_warning_reasons']     = [];
             }
             $_sig['last_status_checked_at'] = $checkedAt;
             // Ensure all new handoff fields are present on every signal record
             // (fills gaps for old signals that pre-date this version).
+            // Note: this only fills keys that are entirely absent; the stale/historical
+            // branches above explicitly overwrite all required fields for those statuses.
             foreach ($_handoffFieldDefaults as $_hfk => $_hfv) {
                 if (!array_key_exists($_hfk, $_sig)) {
                     $_sig[$_hfk] = $_hfv;

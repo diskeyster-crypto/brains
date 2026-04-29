@@ -531,13 +531,9 @@ function renderDashboardHub(): string
                     $opBatchSize = (int)$_scanMerged['batch_size'];
                 }
             }
-            // operator_overrides.json values take priority (written by save handler)
-            if (array_key_exists('max_symbols_per_run', $op)) {
-                $opMaxSymbolsPerRun = (int)$op['max_symbols_per_run'];
-            }
-            if (array_key_exists('batch_size', $op)) {
-                $opBatchSize = (int)$op['batch_size'];
-            }
+            // Source of truth for max_symbols_per_run and batch_size is the strategy's
+            // own config files (base.php merged with active.php above). operator_overrides
+            // is NOT consulted for these fields — strategy config is authoritative.
             $opMaxSymbolsPerRunStr = $opMaxSymbolsPerRun !== null ? (string)$opMaxSymbolsPerRun : '';
             $opBatchSizeStr        = $opBatchSize        !== null ? (string)$opBatchSize        : '';
             // Human-readable scan summary line (shown in card body)
@@ -5172,19 +5168,13 @@ function handleDashboardOverridesSave(): void
     // Preserve all bot-owned execution fields from existing override; do not clobber
     // them — they are managed via the Bot/Control tab, not the strategy card form.
     $prev    = (array)($overrides[$stratId] ?? []);
-    // handoff_enabled is managed by the strategy's own config/active.php — not by
-    // operator_overrides.json. Remove any stale copy that may exist there.
-    unset($prev['handoff_enabled']);
+    // handoff_enabled, max_symbols_per_run, batch_size are managed by the strategy's
+    // own config/active.php — not by operator_overrides.json. Remove any stale copies.
+    unset($prev['handoff_enabled'], $prev['max_symbols_per_run'], $prev['batch_size']);
     $newData = [
         'enabled' => (bool)$enabled,
         'mode'    => $mode,
     ];
-    if ($saveMaxSymbols !== null) {
-        $newData['max_symbols_per_run'] = $saveMaxSymbols;
-    }
-    if ($saveBatchSize !== null) {
-        $newData['batch_size'] = $saveBatchSize;
-    }
     $overrides[$stratId] = array_merge($prev, $newData);
 
     if (!is_dir($storageDir)) {

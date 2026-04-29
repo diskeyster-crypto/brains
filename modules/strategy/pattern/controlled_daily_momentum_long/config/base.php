@@ -18,7 +18,10 @@ return [
     'strategy_id'     => 'controlled_daily_momentum_long',
     'enabled'         => true,
     'mode'            => 'demo',
-    'handoff_enabled' => false,
+    // handoff_enabled=true here declares this strategy is architecturally ready for
+    // demo handoff. The actual running value is controlled by config/active.php
+    // (which overrides this). Global quantity limits remain with the bot/Governor.
+    'handoff_enabled' => true,
     'side'            => 'long',
 
     // ── Runtime caps ──────────────────────────────────────────────────────────
@@ -125,8 +128,8 @@ return [
     'max_entry_distance_from_24h_high_pct_for_late_warning' => 8.0,  // how far below 24 h high entry may be
 
     // ── Handoff readiness ─────────────────────────────────────────────────────
-    // Diagnostic gate: determines whether a signal is eligible for future demo
-    // handoff. Does NOT enable live trading. handoff_enabled must remain false.
+    // Diagnostic gate: determines whether a signal is eligible for demo handoff.
+    // Does NOT enable live trading. mode=demo is enforced by the strategy at runtime.
     'handoff_readiness_enabled'           => true,
     'handoff_allow_warning_signals'       => false,
     'handoff_allow_late_entry'            => false,

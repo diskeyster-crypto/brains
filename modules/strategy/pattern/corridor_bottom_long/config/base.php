@@ -15,7 +15,7 @@ return [
     'strategy_id'     => 'corridor_bottom_long',
     'enabled'         => false,  // must remain false until fully wired
     'mode'            => 'demo', // mode = demo; enabled=false controls off state
-    'handoff_enabled' => false,  // set true when ready to send signals to Bot
+    'handoff_enabled' => false,  // base.php default; override in config/active.php to enable handoff
 
     // ── Universe ──────────────────────────────────────────────────────────────
     'universe_mode'       => 'all', // all | manual_list

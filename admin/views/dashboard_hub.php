@@ -481,30 +481,27 @@ function renderDashboardHub(): string
             $dirStr = $e(implode(' / ', $dir));
 
             // Handoff
-            // Read handoff_enabled from operator_overrides; fall back to strategy's own config.
+            // Source of truth for handoff_enabled is the strategy's own config files
+            // (active.php overrides base.php). operator_overrides.json is NOT consulted
+            // for this field — strategy-level controls live in the strategy module.
             // double_bottom_long always has handoff active (its service writes bot_handoff_queue natively).
             $opHandoffEnabled = null;
-            if (array_key_exists('handoff_enabled', $op)) {
-                $opHandoffEnabled = (bool)$op['handoff_enabled'];
-            } else {
-                // Try strategy's own active.php first, then base.php
-                if ($modulePath !== '') {
-                    $_hoModDir = System::path('root') . '/' . $modulePath;
-                    foreach (['config/active.php', 'config/base.php'] as $_hoCfg) {
-                        $_hoCfgPath = $_hoModDir . '/' . $_hoCfg;
-                        if (is_file($_hoCfgPath)) {
-                            $_hoCfgData = @include $_hoCfgPath;
-                            if (is_array($_hoCfgData) && array_key_exists('handoff_enabled', $_hoCfgData)) {
-                                $opHandoffEnabled = (bool)$_hoCfgData['handoff_enabled'];
-                                break;
-                            }
+            if ($modulePath !== '') {
+                $_hoModDir = System::path('root') . '/' . $modulePath;
+                foreach (['config/active.php', 'config/base.php'] as $_hoCfg) {
+                    $_hoCfgPath = $_hoModDir . '/' . $_hoCfg;
+                    if (is_file($_hoCfgPath)) {
+                        $_hoCfgData = @include $_hoCfgPath;
+                        if (is_array($_hoCfgData) && array_key_exists('handoff_enabled', $_hoCfgData)) {
+                            $opHandoffEnabled = (bool)$_hoCfgData['handoff_enabled'];
+                            break;
                         }
                     }
                 }
-                if ($opHandoffEnabled === null) {
-                    // double_bottom_long: handoff is always on in its service
-                    $opHandoffEnabled = ($stratId === 'double_bottom_long');
-                }
+            }
+            if ($opHandoffEnabled === null) {
+                // double_bottom_long: handoff is always on in its service
+                $opHandoffEnabled = ($stratId === 'double_bottom_long');
             }
             $handoffStr = $opHandoffEnabled
                 ? '<span style="color:#3fb950;">Да</span>'
@@ -5175,13 +5172,13 @@ function handleDashboardOverridesSave(): void
     // Preserve all bot-owned execution fields from existing override; do not clobber
     // them — they are managed via the Bot/Control tab, not the strategy card form.
     $prev    = (array)($overrides[$stratId] ?? []);
+    // handoff_enabled is managed by the strategy's own config/active.php — not by
+    // operator_overrides.json. Remove any stale copy that may exist there.
+    unset($prev['handoff_enabled']);
     $newData = [
         'enabled' => (bool)$enabled,
         'mode'    => $mode,
     ];
-    if ($handoffEnabledPost >= 0) {
-        $newData['handoff_enabled'] = (bool)$handoffEnabledPost;
-    }
     if ($saveMaxSymbols !== null) {
         $newData['max_symbols_per_run'] = $saveMaxSymbols;
     }
@@ -5242,11 +5239,9 @@ function handleDashboardOverridesSave(): void
             'enabled'         => (bool)$enabled,
             'mode'            => $mode,
         ]);
-        // handoff_enabled: only update if explicitly submitted
+        // handoff_enabled: only update if explicitly submitted via the form
         if ($handoffEnabledPost >= 0) {
             $_ovMerge['handoff_enabled'] = (bool)($handoffEnabledPost > 0);
-        } elseif (!array_key_exists('handoff_enabled', $_ovMerge)) {
-            $_ovMerge['handoff_enabled'] = false;
         }
         // Scan limits: update only if a valid value was submitted; keep existing otherwise
         if ($saveMaxSymbols !== null) {
@@ -5768,8 +5763,9 @@ function handleDashboardStrategyToggle(): void
 // ──────────────────────────────────────────────────────────────────────────────
 // POST handler: per-strategy handoff toggle
 // Registered as: POST /admin/dashboard (dashboard_action = strategy_handoff_toggle)
-// Only flips handoff_enabled in operator_overrides.json and syncs to active.php
-// for strategies that have their own config (e.g., corridor_bottom_long).
+// Writes handoff_enabled to the strategy's own config/active.php (source of truth).
+// Also removes any stale handoff_enabled entry from operator_overrides.json so that
+// the strategy config remains the sole authority for this field.
 // ──────────────────────────────────────────────────────────────────────────────
 if (!function_exists('handleDashboardHandoffToggle')) {
 function handleDashboardHandoffToggle(): void
@@ -5811,7 +5807,11 @@ function handleDashboardHandoffToggle(): void
     }
 
     $prev = (array)($overrides[$stratId] ?? []);
-    $overrides[$stratId] = array_merge($prev, ['handoff_enabled' => $handoffEnabled]);
+    // handoff_enabled is managed by the strategy's own config/active.php — not by
+    // operator_overrides.json. Remove any stale copy so the strategy config is the
+    // sole source of truth.
+    unset($prev['handoff_enabled']);
+    $overrides[$stratId] = $prev;
 
     if (!is_dir($storageDir)) {
         mkdir($storageDir, 0755, true);

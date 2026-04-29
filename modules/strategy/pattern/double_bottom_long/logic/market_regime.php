@@ -223,15 +223,15 @@ final class PatternMarketRegime
             return ['pass' => true, 'reason' => 'soft_gate_always_pass'];
         }
 
-        if ($side === 'long' && $regime === 'bullish') {
-            return ['pass' => true,  'reason' => 'regime_bullish_long_ok'];
+        // Hard gate:
+        // Long entries are allowed in bullish regime and in transition-from-bearish
+        // (the latter is exactly where double-bottom reversals are most meaningful).
+        if ($side === 'long' && in_array($regime, ['bullish', 'transition'], true)) {
+            return ['pass' => true,  'reason' => "regime_{$regime}_long_ok"];
         }
-        if ($side === 'short' && $regime === 'bearish') {
-            return ['pass' => true,  'reason' => 'regime_bearish_short_ok'];
+        if ($side === 'short' && in_array($regime, ['bearish', 'transition'], true)) {
+            return ['pass' => true,  'reason' => "regime_{$regime}_short_ok"];
         }
-        if (in_array($regime, ['mixed', 'transition', 'flat'], true)) {
-            return ['pass' => false, 'reason' => "regime_{$regime}_hard_block"];
-        }
-        return ['pass' => false, 'reason' => "regime_mismatch_{$regime}_{$side}"];
+        return ['pass' => false, 'reason' => "regime_{$regime}_{$side}_hard_block"];
     }
 }

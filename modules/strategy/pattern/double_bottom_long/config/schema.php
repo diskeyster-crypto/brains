@@ -28,9 +28,12 @@ return [
     'market_regime_dominance_ratio'           => 'float',
     'market_regime_flat_dominance_ratio'      => 'float',
     'market_regime_transition_flip_threshold' => 'float',
+    'regime_sample_size'                      => 'int',
+    'regime_sample_lookback_candles'          => 'int',
 
     // Trend gate
-    'trend_required' => 'bool',
+    'trend_required'             => 'bool',
+    'trend_long_require_bullish' => 'bool',
 
     // Corridor
     'corridor_required'       => 'bool',
@@ -48,6 +51,13 @@ return [
     'min_candidate_quality_score' => 'float',
     'min_neckline_score'          => 'float',
 
+    // Pattern detection tolerances
+    'pattern_similarity_tolerance'              => 'float',
+    'double_bottom_similarity_tolerance_pct'    => 'float',
+    'double_bottom_min_neckline_bounce_pct'     => 'float',
+    'neckline_distance_tolerance_pct'               => 'float',
+    'double_bottom_neckline_distance_tolerance_pct' => 'float',
+
     // Confirmation
     'confirm_required'  => 'bool',
     'confirm_mode'      => 'string',
@@ -61,6 +71,8 @@ return [
     'stop_mode'                     => 'string',
     'stop_from_liq_buffer_value'    => 'float',
     'stop_from_liq_buffer_type'     => 'string',
+    'stop_buffer_pct_below_lows'    => 'float',
+    'max_stop_loss_pct'             => 'float',
     'reverse_pattern_close_enabled' => 'bool',
     'tp_enabled'                    => 'bool',
     'tp_mode'                       => 'string',

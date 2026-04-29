@@ -1,10 +1,14 @@
 {
     "name": "double_bottom_long",
     "title": "Double Bottom Long · Лонг-модуль по двойному дну",
-    "version": "0.1.0",
-    "description": "Отдельный лонг-модуль. Паттерн: двойное дно. Только лонг. Пайплайн: market_regime → trend → corridor → bucket → wave → double_bottom → control_check → signal.",
+    "version": "0.2.0",
+    "description": "Отдельный лонг-модуль. Паттерн: двойное дно. Только лонг. Пайплайн: market_regime(hard) → trend(bullish-only) → corridor → bucket → wave → double_bottom → quality → control_check → signal. v0.2: усилены фильтры качества, добавлен жёсткий gate по рыночному режиму, исправлен баг вычисления режима, добавлены stop_loss_price и tp_price в сигнал.",
     "author": "Tredercopis",
     "category": "strategy",
+    "changelog": {
+        "0.2.0": "Hard market-regime gate (block non-bullish/non-transition). Fix regime sample-candle bug (20->30). Bullish-only early trend gate. Tighter quality: min_score 0.62->0.68, neckline 0.45->0.55, tolerance 7%->5%, min_bounce 0.5%->1.5%, buckets [1,2,3]->[1,2]. TP enabled (2.5R). Pattern-based stop_loss_price and tp_price added to signal and bot_handoff_queue. max_stop_loss_pct filter rejects signals with too-wide SL.",
+        "0.1.0": "Initial release"
+    },
     "paths": {
         "storage": "storage",
         "config":  "config/base.php",

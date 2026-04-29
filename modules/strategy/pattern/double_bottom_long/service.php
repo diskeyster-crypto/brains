@@ -649,14 +649,22 @@ final class DoubleBottomLongService
             'stop_mode'                  => $config['stop_mode']                    ?? 'fixed_from_liq_zone',
             'stop_from_liq_buffer_value' => $config['stop_from_liq_buffer_value']   ?? 0.002,
             'stop_from_liq_buffer_type'  => $config['stop_from_liq_buffer_type']    ?? 'percent',
+            'stop_buffer_pct_below_lows' => $config['stop_buffer_pct_below_lows']   ?? 0.005,
+            'max_stop_loss_pct'          => $config['max_stop_loss_pct']            ?? 0.05,
             'bot_budget'                 => $config['bot_budget']                   ?? 0.0,
             'bot_leverage'               => $config['bot_leverage']                 ?? 1,
             'entry_mode'                 => $config['entry_mode']                   ?? 'limit',
             // Exit (strategy-owned; no trailing in this module)
             'reverse_pattern_close_enabled' => $config['reverse_pattern_close_enabled'] ?? false,
-            'tp_enabled'                    => $config['tp_enabled']                    ?? false,
+            'tp_enabled'                    => $config['tp_enabled']                    ?? true,
             'tp_mode'                       => $config['tp_mode']                      ?? 'fixed_r',
-            'tp_value'                      => $config['tp_value']                     ?? 2.0,
+            'tp_value'                      => $config['tp_value']                     ?? 2.5,
+            // Quality gate parameters
+            'market_regime_gate_mode'         => $config['market_regime_gate_mode']         ?? 'hard',
+            'min_candidate_quality_score'     => $config['min_candidate_quality_score']     ?? 0.68,
+            'min_neckline_score'              => $config['min_neckline_score']              ?? 0.55,
+            'double_bottom_similarity_tolerance_pct' => $config['double_bottom_similarity_tolerance_pct'] ?? 0.05,
+            'allowed_long_buckets'            => $config['allowed_long_buckets']            ?? [1, 2],
             // Brain-compatible keys for discoverStrategyModules()
             'config_valid'     => true,
             'effective_config' => [
@@ -715,9 +723,13 @@ final class DoubleBottomLongService
         $sampleSize = min(count($symbols), (int)($config['regime_sample_size'] ?? 30));
         $sample     = array_slice($symbols, 0, $sampleSize);
 
+        // Use at least 30 candles so PatternTrend (SLOW_PERIOD = 21) can classify;
+        // fewer candles always yield 'unknown', collapsing the regime to 'unknown' too.
+        $regimeLookback = max(30, (int)($config['regime_sample_lookback_candles'] ?? 30));
+
         foreach ($sample as $sym) {
             try {
-                $candles = $this->fetchCandles($sym, array_merge($config, ['lookback_candles' => 20]));
+                $candles = $this->fetchCandles($sym, array_merge($config, ['lookback_candles' => $regimeLookback]));
                 if (count($candles) >= 5) {
                     $trendResult = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternTrend())->analyse($candles);
                     $summaries[] = ['symbol' => $sym, 'trend' => $trendResult['trend_direction']];
@@ -823,11 +835,37 @@ final class DoubleBottomLongService
     {
         $side = 'long';
 
+        // ── Market regime gate ────────────────────────────────────────────────
+        // Checked first: avoid expensive computation in hostile macro regimes.
+        if ((bool)($config['market_regime_enabled'] ?? true)) {
+            $regimeGateMode = (string)($config['market_regime_gate_mode'] ?? 'soft');
+            if ($regimeGateMode === 'hard') {
+                $this->requireLogic('market_regime');
+                $rGate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternMarketRegime())
+                    ->gate($regimeStr, $side, $regimeGateMode);
+                if (!$rGate['pass']) {
+                    return $this->reject($diagBase, $symbol, 'double_bottom', $rGate['reason']);
+                }
+            }
+        }
+
+        // ── Trend gate ────────────────────────────────────────────────────────
         if ((bool)($config['trend_required'] ?? true)) {
             $this->requireLogic('trend');
-            $tGate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternTrend())->gate($trendDir, $side);
-            if (!$tGate['pass']) {
-                return $this->reject($diagBase, $symbol, 'double_bottom', $tGate['reason']);
+            // When trend_long_require_bullish is true (default), only emit long signals
+            // when the short-term trend is already turning bullish.  This is the
+            // primary early filter that eliminates "catching a falling knife" setups.
+            $requireBullish = (bool)($config['trend_long_require_bullish'] ?? true);
+            if ($requireBullish) {
+                if ($trendDir !== 'bullish') {
+                    return $this->reject($diagBase, $symbol, 'double_bottom',
+                        "trend_{$trendDir}_side_long_mismatch");
+                }
+            } else {
+                $tGate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternTrend())->gate($trendDir, $side);
+                if (!$tGate['pass']) {
+                    return $this->reject($diagBase, $symbol, 'double_bottom', $tGate['reason']);
+                }
             }
         }
 
@@ -939,7 +977,8 @@ final class DoubleBottomLongService
                 'context_score'           => $quality['context_score'],
                 'candidate_quality_score' => $quality['candidate_quality_score'],
             ]),
-            date('c')
+            date('c'),
+            $config
         );
 
         return array_merge($diagBase, [
@@ -1034,7 +1073,8 @@ final class DoubleBottomLongService
         $trendRequired    = (bool)($config['trend_required']               ?? true);
         $corridorRequired = (bool)($config['corridor_required']            ?? true);
         $waveRequired     = (bool)($config['wave_required']                ?? true);
-        $allowedLong      = (array)($config['allowed_long_buckets']        ?? [1, 2, 3]);
+        $allowedLong      = (array)($config['allowed_long_buckets']        ?? [1, 2]);
+        $maxStopLossPct   = (float)($config['max_stop_loss_pct']           ?? 0.0);
         $finalRejectDist  = [];
 
         $merged = [];
@@ -1090,6 +1130,20 @@ final class DoubleBottomLongService
                 $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_low_neckline'];
                 $finalRejectDist['final_low_neckline'] = ($finalRejectDist['final_low_neckline'] ?? 0) + 1;
                 continue;
+            }
+
+            // 1b2. Stop-loss width guard: reject signals where the pattern-derived SL
+            //      is null (lows were missing) or exceeds max_stop_loss_pct of entry.
+            //      A null stop_loss means the SL was already computed to be > max inside
+            //      PatternSignal::computeStopLoss() — both cases are a risk rejection.
+            if ($maxStopLossPct > 0.0) {
+                $slPct = isset($s['stop_loss_pct']) ? (float)$s['stop_loss_pct'] : null;
+                if ($slPct === null || $slPct > $maxStopLossPct) {
+                    $rejectedFinalLowNeckline++;
+                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_stop_too_wide'];
+                    $finalRejectDist['final_stop_too_wide'] = ($finalRejectDist['final_stop_too_wide'] ?? 0) + 1;
+                    continue;
+                }
             }
 
             // 1c. Trend consistency — long requires bullish context
@@ -1928,11 +1982,18 @@ final class DoubleBottomLongService
             'stop_mode'                     => (string)($config['stop_mode']                     ?? 'fixed_from_liq_zone'),
             'stop_from_liq_buffer_value'    => (float)($config['stop_from_liq_buffer_value']    ?? 0.002),
             'stop_from_liq_buffer_type'     => (string)($config['stop_from_liq_buffer_type']    ?? 'percent'),
+            'stop_buffer_pct_below_lows'    => (float)($config['stop_buffer_pct_below_lows']    ?? 0.005),
+            'max_stop_loss_pct'             => (float)($config['max_stop_loss_pct']             ?? 0.05),
+            // Pattern-derived stop and take-profit (computed by PatternSignal::build)
+            'stop_loss_price'               => $signal['stop_loss_price']   ?? null,
+            'stop_loss_pct'                 => $signal['stop_loss_pct']     ?? null,
+            'stop_basis'                    => $signal['stop_basis']        ?? 'pattern_lows',
             'bot_budget'                    => (float)($config['bot_budget']                    ?? 0.0),
             'bot_leverage'                  => (int)($config['bot_leverage']                    ?? 1),
-            'tp_enabled'                    => (bool)($config['tp_enabled']                     ?? false),
+            'tp_enabled'                    => (bool)($config['tp_enabled']                     ?? true),
             'tp_mode'                       => (string)($config['tp_mode']                      ?? 'fixed_r'),
-            'tp_value'                      => (float)($config['tp_value']                      ?? 2.0),
+            'tp_value'                      => (float)($config['tp_value']                      ?? 2.5),
+            'tp_price'                      => $signal['tp_price']          ?? null,
             'reverse_pattern_close_enabled' => (bool)($config['reverse_pattern_close_enabled']  ?? false),
         ];
     }

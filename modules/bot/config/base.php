@@ -112,4 +112,29 @@ return [
     //
     // Default false preserves current behaviour and imposes no overhead.
     'shadow_compare_enabled' => false,
+
+    // ── Symbol freeze after close ─────────────────────────────────────────────
+    // Temporarily prevents new order_queue items for a symbol after a position closes.
+    'symbol_freeze_after_close_enabled'    => true,
+    'symbol_freeze_after_close_minutes'    => 10,
+    'symbol_freeze_modes'                  => ['demo', 'live'],
+    'symbol_freeze_apply_to_profit_close'  => true,
+    'symbol_freeze_apply_to_stop_close'    => true,
+    'symbol_freeze_apply_to_loss_close'    => true,
+    'symbol_freeze_apply_to_manual_close'  => true,
+
+    // ── Symbol blacklist ──────────────────────────────────────────────────────
+    // Blocks specific symbols from entering the order_queue.
+    'symbol_blacklist_enabled'             => true,
+    'manual_symbol_blacklist'              => [],
+
+    // ── Auto blacklist ────────────────────────────────────────────────────────
+    // Automatically blacklists symbols after repeated losing closed trades.
+    'auto_blacklist_enabled'               => true,
+    'auto_blacklist_loss_threshold'        => 3,
+    'auto_blacklist_window_hours'          => 24,
+    'auto_blacklist_duration_hours'        => 24,
+    'auto_blacklist_modes'                 => ['demo', 'live'],
+    'auto_blacklist_count_only_closed_losses' => true,
+    'auto_blacklist_reset_on_win'          => false,
 ];

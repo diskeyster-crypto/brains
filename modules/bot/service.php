@@ -749,6 +749,15 @@ final class BotService
         }
         // shadow_compare: governor queue used for orders must remain 0
 
+        // ── 4a. Apply freeze/blacklist cleanup to existing queued/ready items ──
+        $fbQueueResult            = $this->applyFreezeBlacklistToQueue($orderQueue, $config, $botMode, $tickAt);
+        $orderQueue               = $fbQueueResult['order_queue'];
+        $ordersBlockedByFreeze    = ((int)($result['blocked_by_freeze_total']          ?? 0)) + $fbQueueResult['blocked_by_freeze'];
+        $ordersBlockedByManualBl  = ((int)($result['blocked_by_manual_blacklist_total'] ?? 0)) + $fbQueueResult['blocked_by_manual_blacklist'];
+        $ordersBlockedByAutoBl    = ((int)($result['blocked_by_auto_blacklist_total']   ?? 0)) + $fbQueueResult['blocked_by_auto_blacklist'];
+        $freezeBlockExamples      = (array)($result['freeze_block_examples']    ?? []);
+        $blacklistBlockExamples   = (array)($result['blacklist_block_examples'] ?? []);
+
         // ── 4b. Reconcile stale submitted queue items ─────────────────────────
         $reconResult = $this->reconcileSubmittedQueue($orderQueue, $activeOrders, $activePositions, $tickAt, $config);
         $orderQueue  = $reconResult['order_queue'];
@@ -849,6 +858,9 @@ final class BotService
         $slotUtilizationPct = $slotLimit > 0 ? round($slotUsed / $slotLimit * 100.0, 1) : null;
 
         $elapsed = round(microtime(true) - $tStart, 4);
+
+        // ── 7e. Freeze/blacklist diagnostics ──────────────────────────────────
+        $fbDiag = $this->computeFreezeBlacklistDiagnostics($config);
 
         $lastRun = [
             'status'      => 'ok',
@@ -1018,6 +1030,23 @@ final class BotService
             // Cumulative
             'ticks_total'                => (int)($stats['ticks_total'] ?? 0),
             'handoff_signals_seen_total' => (int)($stats['handoff_signals_seen_total'] ?? 0),
+
+            // Freeze/blacklist diagnostics
+            'symbol_freeze_enabled'               => $fbDiag['symbol_freeze_enabled'],
+            'symbol_freeze_after_close_minutes'   => $fbDiag['symbol_freeze_after_close_minutes'],
+            'symbol_freeze_registry_entries_total'=> $fbDiag['symbol_freeze_registry_entries_total'],
+            'symbol_freeze_active_total'          => $fbDiag['symbol_freeze_active_total'],
+            'symbol_freeze_expired_removed_total' => $fbDiag['symbol_freeze_expired_removed_total'],
+            'symbol_blacklist_enabled'            => $fbDiag['symbol_blacklist_enabled'],
+            'manual_blacklist_total'              => $fbDiag['manual_blacklist_total'],
+            'auto_blacklist_total'                => $fbDiag['auto_blacklist_total'],
+            'auto_blacklist_active_total'         => $fbDiag['auto_blacklist_active_total'],
+            'auto_blacklist_expired_removed_total'=> $fbDiag['auto_blacklist_expired_removed_total'],
+            'orders_blocked_by_freeze_total'      => $ordersBlockedByFreeze,
+            'orders_blocked_by_manual_blacklist_total' => $ordersBlockedByManualBl,
+            'orders_blocked_by_auto_blacklist_total'   => $ordersBlockedByAutoBl,
+            'freeze_block_examples'               => $freezeBlockExamples,
+            'blacklist_block_examples'            => $blacklistBlockExamples,
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -1599,6 +1628,11 @@ final class BotService
         $ignoredRecentPmCloseTotal          = 0;
         $pmCloseReentrySuppressedTotal      = 0;
         $pmCloseReentrySuppressedExamples   = [];
+        $blockedByFreezeTotal               = 0;
+        $blockedByManualBlTotal             = 0;
+        $blockedByAutoBlTotal               = 0;
+        $freezeBlockExamples                = [];
+        $blacklistBlockExamples             = [];
         $result                             = [];
         $activeKeys                         = [];
 
@@ -1669,6 +1703,58 @@ final class BotService
                     // Do not add to activeKeys so existing queued/ready items will be withdrawn
                     continue;
                 }
+            }
+
+            // ── Freeze / blacklist gate ───────────────────────────────────────────
+            $fbGate = $this->checkFreezeBlacklistGate($sigSymbol, $sigMode, $sigSide, $tickAt, $config);
+            if ($fbGate['blocked']) {
+                $fbReason = $fbGate['reason'];
+                if ($fbReason === 'symbol_frozen_after_close') {
+                    $blockedByFreezeTotal++;
+                    if (count($freezeBlockExamples) < 5) {
+                        $freezeBlockExamples[] = [
+                            'symbol'       => $sigSymbol,
+                            'side'         => $sigSide,
+                            'mode'         => $sigMode,
+                            'signal_id'    => $signalId,
+                            'frozen_until' => $fbGate['frozen_until'],
+                        ];
+                    }
+                } else {
+                    if ($fbReason === 'symbol_blacklisted_manual') {
+                        $blockedByManualBlTotal++;
+                    } else {
+                        $blockedByAutoBlTotal++;
+                    }
+                    if (count($blacklistBlockExamples) < 5) {
+                        $blacklistBlockExamples[] = [
+                            'symbol'        => $sigSymbol,
+                            'side'          => $sigSide,
+                            'mode'          => $sigMode,
+                            'signal_id'     => $signalId,
+                            'reason'        => $fbReason,
+                            'blocked_until' => $fbGate['blocked_until'],
+                        ];
+                    }
+                }
+                // If existing queued/ready item — mark it skipped
+                if (isset($queueMap[$key])) {
+                    $prevBlocked    = $queueMap[$key];
+                    $prevStatusBl   = (string)($prevBlocked['queue_status'] ?? 'queued');
+                    if (in_array($prevStatusBl, ['queued', 'ready'], true)) {
+                        $prevBlocked['queue_status']       = 'skipped';
+                        $prevBlocked['exit_at']            = $tickAt;
+                        $prevBlocked['last_change_reason'] = $fbReason;
+                        if ($fbGate['frozen_until'] !== null) {
+                            $prevBlocked['frozen_until'] = $fbGate['frozen_until'];
+                        }
+                        if ($fbGate['blocked_until'] !== null) {
+                            $prevBlocked['blocked_until'] = $fbGate['blocked_until'];
+                        }
+                        $result[$key] = $prevBlocked;
+                    }
+                }
+                continue;
             }
 
             $activeKeys[$key] = true;
@@ -1775,6 +1861,11 @@ final class BotService
             'ignored_recent_pm_close_total'        => $ignoredRecentPmCloseTotal,
             'pm_close_reentry_suppressed_total'    => $pmCloseReentrySuppressedTotal,
             'pm_close_reentry_suppressed_examples' => $pmCloseReentrySuppressedExamples,
+            'blocked_by_freeze_total'              => $blockedByFreezeTotal,
+            'blocked_by_manual_blacklist_total'    => $blockedByManualBlTotal,
+            'blocked_by_auto_blacklist_total'      => $blockedByAutoBlTotal,
+            'freeze_block_examples'                => $freezeBlockExamples,
+            'blacklist_block_examples'             => $blacklistBlockExamples,
         ];
     }
 
@@ -4420,8 +4511,589 @@ final class BotService
 
             $this->writeJson($aggRelPath, $existing);
 
+            // ── Symbol freeze registration & auto blacklist ───────────────────
+            $tradeConfig = $this->getConfig();
+            $this->registerSymbolFreeze($trade, $tradeConfig, $tickAt);
+            $this->checkAndUpdateAutoBlacklist($trade, $tradeConfig, $tickAt);
+
         } catch (\Throwable) {
             // Never crash the bot tick over journal write failures
         }
+    }
+
+    // =========================================================================
+    // Symbol freeze & blacklist helpers
+    // =========================================================================
+
+    private function loadFreezeRegistry(): array
+    {
+        $path = $this->moduleDir . '/storage/runtime/symbol_freeze_registry.json';
+        try {
+            if (!is_file($path)) {
+                return [];
+            }
+            $raw = @file_get_contents($path);
+            if ($raw === false || $raw === '') {
+                return [];
+            }
+            $dec = @json_decode($raw, true);
+            return is_array($dec) ? $dec : [];
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    private function saveFreezeRegistry(array $registry): void
+    {
+        $path = $this->moduleDir . '/storage/runtime/symbol_freeze_registry.json';
+        try {
+            $dir = dirname($path);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            @file_put_contents(
+                $path,
+                json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+                LOCK_EX
+            );
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * Check if a symbol is currently frozen.
+     *
+     * @return array{frozen: bool, frozen_until: ?string}
+     */
+    private function isSymbolFrozen(string $symbol, string $mode, string $side, string $tickAt): array
+    {
+        if ($symbol === '' || $mode === '' || $side === '') {
+            return ['frozen' => false, 'frozen_until' => null];
+        }
+        try {
+            $registry = $this->loadFreezeRegistry();
+            $key      = $symbol . '_' . $mode . '_' . $side;
+            if (!isset($registry[$key])) {
+                return ['frozen' => false, 'frozen_until' => null];
+            }
+            $entry       = $registry[$key];
+            $frozenUntil = (string)($entry['frozen_until'] ?? '');
+            if ($frozenUntil === '') {
+                return ['frozen' => false, 'frozen_until' => null];
+            }
+            $frozenTs = @strtotime($frozenUntil);
+            $nowTs    = time();
+            if ($frozenTs !== false && $frozenTs > $nowTs) {
+                return ['frozen' => true, 'frozen_until' => $frozenUntil];
+            }
+        } catch (\Throwable) {
+        }
+        return ['frozen' => false, 'frozen_until' => null];
+    }
+
+    /**
+     * Register a symbol freeze after a position close.
+     */
+    private function registerSymbolFreeze(array $trade, array $config, string $tickAt): void
+    {
+        if (!(bool)($config['symbol_freeze_after_close_enabled'] ?? false)) {
+            return;
+        }
+        try {
+            $symbol      = (string)($trade['symbol']        ?? '');
+            $side        = (string)($trade['side']          ?? '');
+            $mode        = (string)($trade['mode']          ?? 'demo');
+            $closeSource = (string)($trade['close_source']  ?? 'unknown');
+            $closedAt    = (string)($trade['closed_at']     ?? $tickAt);
+
+            if ($symbol === '' || $side === '') {
+                return;
+            }
+
+            // Mode gate
+            $freezeModes = (array)($config['symbol_freeze_modes'] ?? ['demo', 'live']);
+            if (!in_array($mode, $freezeModes, true)) {
+                return;
+            }
+
+            // Source gate — apply based on config
+            $applyToProfit = (bool)($config['symbol_freeze_apply_to_profit_close'] ?? true);
+            $applyToStop   = (bool)($config['symbol_freeze_apply_to_stop_close']   ?? true);
+            $applyToLoss   = (bool)($config['symbol_freeze_apply_to_loss_close']   ?? true);
+            $applyToManual = (bool)($config['symbol_freeze_apply_to_manual_close'] ?? true);
+
+            $shouldFreeze = false;
+            if (in_array($closeSource, ['profit_manager', 'pm_market_close'], true) && $applyToProfit) {
+                $shouldFreeze = true;
+            } elseif (in_array($closeSource, ['stop_manager', 'stop_loss', 'stop_market_close'], true) && $applyToStop) {
+                $shouldFreeze = true;
+            } elseif (in_array($closeSource, ['manual', 'manual_close', 'operator'], true) && $applyToManual) {
+                $shouldFreeze = true;
+            } else {
+                // Check ROI for loss close
+                $roi = ($trade['roi'] ?? null);
+                $pnl = ($trade['pnl'] ?? null);
+                $isLoss = ($roi !== null && (float)$roi < 0.0) || ($pnl !== null && (float)$pnl < 0.0);
+                if ($isLoss && $applyToLoss) {
+                    $shouldFreeze = true;
+                } elseif ($applyToProfit || $applyToStop || $applyToManual) {
+                    // Unknown source — freeze by default when any freeze is enabled
+                    $shouldFreeze = true;
+                }
+            }
+
+            if (!$shouldFreeze) {
+                return;
+            }
+
+            $minutes   = max(1, (int)($config['symbol_freeze_after_close_minutes'] ?? 10));
+            $closedTs  = @strtotime($closedAt);
+            $baseTs    = ($closedTs !== false && $closedTs > 0) ? $closedTs : time();
+            $frozenUntilTs = $baseTs + ($minutes * 60);
+            $frozenUntil   = date('c', $frozenUntilTs);
+
+            $registry  = $this->loadFreezeRegistry();
+            $key       = $symbol . '_' . $mode . '_' . $side;
+            $registry[$key] = [
+                'symbol'       => $symbol,
+                'side'         => $side,
+                'mode'         => $mode,
+                'reason'       => 'position_closed',
+                'close_source' => $closeSource,
+                'closed_at'    => $closedAt,
+                'frozen_until' => $frozenUntil,
+            ];
+            $this->saveFreezeRegistry($registry);
+        } catch (\Throwable) {
+        }
+    }
+
+    private function loadSymbolBlacklist(): array
+    {
+        $path = $this->moduleDir . '/storage/runtime/symbol_blacklist.json';
+        try {
+            if (!is_file($path)) {
+                return [];
+            }
+            $raw = @file_get_contents($path);
+            if ($raw === false || $raw === '') {
+                return [];
+            }
+            $dec = @json_decode($raw, true);
+            return is_array($dec) ? $dec : [];
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    private function saveSymbolBlacklist(array $blacklist): void
+    {
+        $path = $this->moduleDir . '/storage/runtime/symbol_blacklist.json';
+        try {
+            $dir = dirname($path);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            @file_put_contents(
+                $path,
+                json_encode($blacklist, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+                LOCK_EX
+            );
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * Check if a symbol is currently blacklisted (manual or auto).
+     *
+     * @return array{blacklisted: bool, source: ?string, reason: ?string, blocked_until: ?string}
+     */
+    private function isSymbolBlacklisted(string $symbol, string $mode): array
+    {
+        $notBlacklisted = ['blacklisted' => false, 'source' => null, 'reason' => null, 'blocked_until' => null];
+        if ($symbol === '') {
+            return $notBlacklisted;
+        }
+        try {
+            $config  = $this->getConfig();
+            if (!(bool)($config['symbol_blacklist_enabled'] ?? false)) {
+                return $notBlacklisted;
+            }
+
+            // Check config manual_symbol_blacklist (always enforced when enabled)
+            $configList = (array)($config['manual_symbol_blacklist'] ?? []);
+            $normalised = array_map('strtoupper', $configList);
+            if (in_array(strtoupper($symbol), $normalised, true)) {
+                return [
+                    'blacklisted'  => true,
+                    'source'       => 'manual',
+                    'reason'       => 'manual_operator_block',
+                    'blocked_until'=> null,
+                ];
+            }
+
+            // Check runtime symbol_blacklist.json
+            $blacklist = $this->loadSymbolBlacklist();
+            $sym       = strtoupper($symbol);
+            $entry     = $blacklist[$sym] ?? ($blacklist[$symbol] ?? null);
+            if ($entry === null) {
+                return $notBlacklisted;
+            }
+
+            if (!(bool)($entry['enabled'] ?? true)) {
+                return $notBlacklisted;
+            }
+
+            $source      = (string)($entry['source']       ?? 'manual');
+            $reason      = (string)($entry['reason']       ?? 'manual_operator_block');
+            $blockedUntil= $entry['blocked_until'] ?? null;
+
+            // For auto entries, check blocked_until
+            if ($source === 'auto' && $blockedUntil !== null) {
+                $blockedTs = @strtotime((string)$blockedUntil);
+                if ($blockedTs !== false && $blockedTs <= time()) {
+                    // Expired
+                    return $notBlacklisted;
+                }
+            }
+
+            // For manual entries, blocked_until=null means permanent (no expiry check needed)
+            return [
+                'blacklisted'  => true,
+                'source'       => $source,
+                'reason'       => $reason,
+                'blocked_until'=> $blockedUntil !== null ? (string)$blockedUntil : null,
+            ];
+        } catch (\Throwable) {
+            return $notBlacklisted;
+        }
+    }
+
+    /**
+     * After a closed trade, check if auto-blacklist threshold is reached.
+     * If yes, write/update symbol_blacklist.json.
+     */
+    private function checkAndUpdateAutoBlacklist(array $trade, array $config, string $tickAt): void
+    {
+        if (!(bool)($config['auto_blacklist_enabled'] ?? false)) {
+            return;
+        }
+        try {
+            $symbol    = (string)($trade['symbol']  ?? '');
+            $mode      = (string)($trade['mode']    ?? 'demo');
+            $roi       = $trade['roi'] ?? null;
+            $pnl       = $trade['pnl'] ?? null;
+            $closedAt  = (string)($trade['closed_at'] ?? $tickAt);
+
+            if ($symbol === '') {
+                return;
+            }
+
+            // Mode gate
+            $autoModes = (array)($config['auto_blacklist_modes'] ?? ['demo', 'live']);
+            if (!in_array($mode, $autoModes, true)) {
+                return;
+            }
+
+            // Is this a loss?
+            $isLoss = ($roi !== null && (float)$roi < 0.0) || ($pnl !== null && (float)$pnl < 0.0);
+
+            $resetOnWin     = (bool)($config['auto_blacklist_reset_on_win'] ?? false);
+            $windowHours    = max(1, (int)($config['auto_blacklist_window_hours'] ?? 24));
+            $durationHours  = max(1, (int)($config['auto_blacklist_duration_hours'] ?? 24));
+            $threshold      = max(1, (int)($config['auto_blacklist_loss_threshold'] ?? 3));
+
+            // Load closed trades to count losses
+            $closedTrades = $this->readJson('storage/trades/closed_trades.json', []);
+            $windowSec    = $windowHours * 3600;
+            $nowTs        = time();
+            $sym          = strtoupper($symbol);
+
+            $lossCount = 0;
+            foreach ($closedTrades as $ct) {
+                $ctSym  = strtoupper((string)($ct['symbol'] ?? ''));
+                if ($ctSym !== $sym) {
+                    continue;
+                }
+                $ctMode = (string)($ct['mode'] ?? 'demo');
+                if (!in_array($ctMode, $autoModes, true)) {
+                    continue;
+                }
+                $ctClosedAt = (string)($ct['closed_at'] ?? '');
+                $ctTs       = ($ctClosedAt !== '') ? @strtotime($ctClosedAt) : false;
+                if ($ctTs === false || ($nowTs - $ctTs) > $windowSec) {
+                    continue;
+                }
+                $ctRoi = $ct['roi'] ?? null;
+                $ctPnl = $ct['pnl'] ?? null;
+                $ctLoss = ($ctRoi !== null && (float)$ctRoi < 0.0) || ($ctPnl !== null && (float)$ctPnl < 0.0);
+                if (!$ctLoss) {
+                    continue;
+                }
+                $lossCount++;
+            }
+
+            // Handle reset on win
+            if (!$isLoss && $resetOnWin) {
+                // Win: clear auto-blacklist entry if present
+                $blacklist = $this->loadSymbolBlacklist();
+                $key = strtoupper($symbol);
+                if (isset($blacklist[$key]) && ($blacklist[$key]['source'] ?? '') === 'auto') {
+                    unset($blacklist[$key]);
+                    $this->saveSymbolBlacklist($blacklist);
+                }
+                return;
+            }
+
+            if (!$isLoss) {
+                return;
+            }
+
+            if ($lossCount < $threshold) {
+                return;
+            }
+
+            // Threshold reached — add/update auto blacklist
+            $blockedUntilTs  = $nowTs + ($durationHours * 3600);
+            $blockedUntil    = date('c', $blockedUntilTs);
+
+            $blacklist = $this->loadSymbolBlacklist();
+            $key       = strtoupper($symbol);
+            $blacklist[$key] = [
+                'symbol'       => strtoupper($symbol),
+                'source'       => 'auto',
+                'reason'       => 'loss_streak_threshold',
+                'loss_count'   => $lossCount,
+                'window_hours' => $windowHours,
+                'created_at'   => $tickAt,
+                'blocked_until'=> $blockedUntil,
+                'enabled'      => true,
+            ];
+            $this->saveSymbolBlacklist($blacklist);
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * Check freeze and blacklist gates for a symbol before creating a queue item.
+     *
+     * @return array{blocked: bool, reason: string, frozen_until: ?string, blocked_until: ?string}
+     */
+    private function checkFreezeBlacklistGate(
+        string $symbol,
+        string $mode,
+        string $side,
+        string $tickAt,
+        array  $config
+    ): array {
+        $notBlocked = ['blocked' => false, 'reason' => '', 'frozen_until' => null, 'blocked_until' => null];
+
+        if ($symbol === '') {
+            return $notBlocked;
+        }
+
+        // ── Freeze check ──────────────────────────────────────────────────────
+        if ((bool)($config['symbol_freeze_after_close_enabled'] ?? false)) {
+            $freezeModes = (array)($config['symbol_freeze_modes'] ?? ['demo', 'live']);
+            if (in_array($mode, $freezeModes, true)) {
+                $freezeResult = $this->isSymbolFrozen($symbol, $mode, $side, $tickAt);
+                if ($freezeResult['frozen']) {
+                    return [
+                        'blocked'      => true,
+                        'reason'       => 'symbol_frozen_after_close',
+                        'frozen_until' => $freezeResult['frozen_until'],
+                        'blocked_until'=> null,
+                    ];
+                }
+            }
+        }
+
+        // ── Blacklist check ───────────────────────────────────────────────────
+        if ((bool)($config['symbol_blacklist_enabled'] ?? false)) {
+            $blResult = $this->isSymbolBlacklisted($symbol, $mode);
+            if ($blResult['blacklisted']) {
+                $reason = match ($blResult['source'] ?? '') {
+                    'manual' => 'symbol_blacklisted_manual',
+                    'auto'   => 'symbol_blacklisted_auto',
+                    default  => 'symbol_blacklisted_manual',
+                };
+                return [
+                    'blocked'      => true,
+                    'reason'       => $reason,
+                    'frozen_until' => null,
+                    'blocked_until'=> $blResult['blocked_until'],
+                ];
+            }
+        }
+
+        return $notBlocked;
+    }
+
+    /**
+     * Scan existing queued/ready order_queue items and mark them skipped if
+     * the symbol is now frozen or blacklisted.
+     *
+     * Only affects items in 'queued' or 'ready' status.
+     * Terminal/submitted items are never touched.
+     *
+     * @return array{order_queue: array, blocked_by_freeze: int, blocked_by_manual_blacklist: int, blocked_by_auto_blacklist: int}
+     */
+    private function applyFreezeBlacklistToQueue(
+        array  $orderQueue,
+        array  $config,
+        string $botMode,
+        string $tickAt
+    ): array {
+        $blockedByFreeze   = 0;
+        $blockedByManual   = 0;
+        $blockedByAuto     = 0;
+
+        $freezeEnabled     = (bool)($config['symbol_freeze_after_close_enabled'] ?? false);
+        $blacklistEnabled  = (bool)($config['symbol_blacklist_enabled'] ?? false);
+
+        if (!$freezeEnabled && !$blacklistEnabled) {
+            return [
+                'order_queue'                => $orderQueue,
+                'blocked_by_freeze'          => 0,
+                'blocked_by_manual_blacklist'=> 0,
+                'blocked_by_auto_blacklist'  => 0,
+            ];
+        }
+
+        foreach ($orderQueue as &$item) {
+            $status = (string)($item['queue_status'] ?? '');
+            if (!in_array($status, ['queued', 'ready'], true)) {
+                continue;
+            }
+            $symbol = (string)($item['symbol']         ?? '');
+            $side   = (string)($item['side']           ?? '');
+            $mode   = (string)($item['execution_mode'] ?? $botMode);
+
+            $gate = $this->checkFreezeBlacklistGate($symbol, $mode, $side, $tickAt, $config);
+            if (!$gate['blocked']) {
+                continue;
+            }
+
+            $item['queue_status']       = 'skipped';
+            $item['exit_at']            = $tickAt;
+            $item['last_change_reason'] = $gate['reason'];
+
+            if ($gate['reason'] === 'symbol_frozen_after_close') {
+                $item['frozen_until'] = $gate['frozen_until'];
+                $blockedByFreeze++;
+            } elseif ($gate['reason'] === 'symbol_blacklisted_manual') {
+                $item['blocked_until'] = $gate['blocked_until'];
+                $blockedByManual++;
+            } elseif ($gate['reason'] === 'symbol_blacklisted_auto') {
+                $item['blocked_until'] = $gate['blocked_until'];
+                $blockedByAuto++;
+            }
+        }
+        unset($item);
+
+        return [
+            'order_queue'                => $orderQueue,
+            'blocked_by_freeze'          => $blockedByFreeze,
+            'blocked_by_manual_blacklist'=> $blockedByManual,
+            'blocked_by_auto_blacklist'  => $blockedByAuto,
+        ];
+    }
+
+    /**
+     * Compute freeze/blacklist diagnostics for last_run.json.
+     *
+     * Performs lazy expiry cleanup of both registries.
+     *
+     * @return array{
+     *   symbol_freeze_enabled: bool,
+     *   symbol_freeze_after_close_minutes: int,
+     *   symbol_freeze_registry_entries_total: int,
+     *   symbol_freeze_active_total: int,
+     *   symbol_freeze_expired_removed_total: int,
+     *   symbol_blacklist_enabled: bool,
+     *   manual_blacklist_total: int,
+     *   auto_blacklist_total: int,
+     *   auto_blacklist_active_total: int,
+     *   auto_blacklist_expired_removed_total: int,
+     * }
+     */
+    private function computeFreezeBlacklistDiagnostics(array $config): array
+    {
+        $result = [
+            'symbol_freeze_enabled'               => (bool)($config['symbol_freeze_after_close_enabled'] ?? false),
+            'symbol_freeze_after_close_minutes'   => (int)($config['symbol_freeze_after_close_minutes'] ?? 10),
+            'symbol_freeze_registry_entries_total'=> 0,
+            'symbol_freeze_active_total'          => 0,
+            'symbol_freeze_expired_removed_total' => 0,
+            'symbol_blacklist_enabled'            => (bool)($config['symbol_blacklist_enabled'] ?? false),
+            'manual_blacklist_total'              => 0,
+            'auto_blacklist_total'                => 0,
+            'auto_blacklist_active_total'         => 0,
+            'auto_blacklist_expired_removed_total'=> 0,
+        ];
+
+        $now = time();
+
+        // ── Freeze registry ───────────────────────────────────────────────────
+        try {
+            $freezeRegistry = $this->loadFreezeRegistry();
+            $changed        = false;
+            foreach ($freezeRegistry as $key => $entry) {
+                $frozenUntil = (string)($entry['frozen_until'] ?? '');
+                $frozenTs    = ($frozenUntil !== '') ? @strtotime($frozenUntil) : false;
+                if ($frozenTs !== false && $frozenTs > $now) {
+                    $result['symbol_freeze_registry_entries_total']++;
+                    $result['symbol_freeze_active_total']++;
+                } else {
+                    unset($freezeRegistry[$key]);
+                    $result['symbol_freeze_expired_removed_total']++;
+                    $changed = true;
+                }
+            }
+            if ($changed) {
+                $this->saveFreezeRegistry($freezeRegistry);
+            }
+        } catch (\Throwable) {
+        }
+
+        // ── Blacklist ─────────────────────────────────────────────────────────
+        try {
+            // Config manual list
+            $configList = (array)($config['manual_symbol_blacklist'] ?? []);
+            $result['manual_blacklist_total'] = count($configList);
+
+            $blacklist   = $this->loadSymbolBlacklist();
+            $changed     = false;
+            foreach ($blacklist as $sym => $entry) {
+                $source       = (string)($entry['source'] ?? 'manual');
+                $blockedUntil = $entry['blocked_until'] ?? null;
+                $enabled      = (bool)($entry['enabled'] ?? true);
+
+                if ($source === 'auto') {
+                    $result['auto_blacklist_total']++;
+                    if ($enabled && $blockedUntil !== null) {
+                        $blockedTs = @strtotime((string)$blockedUntil);
+                        if ($blockedTs !== false && $blockedTs > $now) {
+                            $result['auto_blacklist_active_total']++;
+                        } else {
+                            unset($blacklist[$sym]);
+                            $result['auto_blacklist_expired_removed_total']++;
+                            $changed = true;
+                        }
+                    } elseif ($enabled && $blockedUntil === null) {
+                        $result['auto_blacklist_active_total']++;
+                    }
+                } else {
+                    // Manual runtime entries
+                    $result['manual_blacklist_total']++;
+                }
+            }
+            if ($changed) {
+                $this->saveSymbolBlacklist($blacklist);
+            }
+        } catch (\Throwable) {
+        }
+
+        return $result;
     }
 }

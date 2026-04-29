@@ -976,6 +976,81 @@ HTML;
     $cfgEntryModes  = $e(implode(', ', (array)($botConfig['allowed_entry_modes'] ?? [])));
     $cfgMaxAgeSec   = (int)($botConfig['max_signal_age_sec'] ?? 0);
     $cfgDedupWindow = (int)($botConfig['queue_dedup_ttl_sec'] ?? 0);
+
+    // ── Symbol freeze config ──────────────────────────────────────────────────
+    $cfgFreezeEnabled         = (bool)($botConfig['symbol_freeze_after_close_enabled'] ?? true);
+    $cfgFreezeMinutes         = (int)($botConfig['symbol_freeze_after_close_minutes']  ?? 10);
+    $cfgFreezeModes           = (array)($botConfig['symbol_freeze_modes']              ?? ['demo', 'live']);
+    $cfgFreezeProfit          = (bool)($botConfig['symbol_freeze_apply_to_profit_close'] ?? true);
+    $cfgFreezeStop            = (bool)($botConfig['symbol_freeze_apply_to_stop_close']   ?? true);
+    $cfgFreezeLoss            = (bool)($botConfig['symbol_freeze_apply_to_loss_close']   ?? true);
+    $cfgFreezeManual          = (bool)($botConfig['symbol_freeze_apply_to_manual_close'] ?? true);
+
+    // ── Symbol blacklist config ───────────────────────────────────────────────
+    $cfgBlacklistEnabled      = (bool)($botConfig['symbol_blacklist_enabled']             ?? true);
+    $cfgManualBlacklist       = (array)($botConfig['manual_symbol_blacklist']             ?? []);
+    $cfgAutoBlEnabled         = (bool)($botConfig['auto_blacklist_enabled']               ?? true);
+    $cfgAutoBlThreshold       = (int)($botConfig['auto_blacklist_loss_threshold']         ?? 3);
+    $cfgAutoBlWindowHours     = (int)($botConfig['auto_blacklist_window_hours']           ?? 24);
+    $cfgAutoBlDurationHours   = (int)($botConfig['auto_blacklist_duration_hours']         ?? 24);
+    $cfgAutoBlModes           = (array)($botConfig['auto_blacklist_modes']                ?? ['demo', 'live']);
+    $cfgAutoBlOnlyClosed      = (bool)($botConfig['auto_blacklist_count_only_closed_losses'] ?? true);
+    $cfgAutoBlResetOnWin      = (bool)($botConfig['auto_blacklist_reset_on_win']          ?? false);
+
+    // ── Read freeze registry ──────────────────────────────────────────────────
+    $botModuleDir     = System::path('root') . '/modules/bot';
+    $freezeRegPath    = $botModuleDir . '/storage/runtime/symbol_freeze_registry.json';
+    $freezeRegistry   = [];
+    if (is_file($freezeRegPath)) {
+        $raw = @file_get_contents($freezeRegPath);
+        if ($raw !== false && $raw !== '') {
+            $dec = @json_decode($raw, true);
+            if (is_array($dec)) { $freezeRegistry = $dec; }
+        }
+    }
+    $now = time();
+    $activeFreezeEntries = array_filter($freezeRegistry, function($entry) use ($now) {
+        $ft = @strtotime((string)($entry['frozen_until'] ?? ''));
+        return $ft !== false && $ft > $now;
+    });
+
+    // ── Read blacklist ────────────────────────────────────────────────────────
+    $blacklistPath    = $botModuleDir . '/storage/runtime/symbol_blacklist.json';
+    $runtimeBlacklist = [];
+    if (is_file($blacklistPath)) {
+        $raw = @file_get_contents($blacklistPath);
+        if ($raw !== false && $raw !== '') {
+            $dec = @json_decode($raw, true);
+            if (is_array($dec)) { $runtimeBlacklist = $dec; }
+        }
+    }
+    $autoBlacklistEntries = array_filter($runtimeBlacklist, function($entry) use ($now) {
+        if (($entry['source'] ?? '') !== 'auto') { return false; }
+        if (!(bool)($entry['enabled'] ?? true)) { return false; }
+        $bu = $entry['blocked_until'] ?? null;
+        if ($bu === null) { return true; }
+        $bt = @strtotime((string)$bu);
+        return $bt !== false && $bt > $now;
+    });
+
+    $cfgFreezeEnabledYes = $cfgFreezeEnabled  ? ' selected' : '';
+    $cfgFreezeEnabledNo  = !$cfgFreezeEnabled ? ' selected' : '';
+    $cfgBlEnabled1       = $cfgBlacklistEnabled  ? ' selected' : '';
+    $cfgBlEnabled0       = !$cfgBlacklistEnabled ? ' selected' : '';
+    $cfgAutoBlEnabled1   = $cfgAutoBlEnabled  ? ' selected' : '';
+    $cfgAutoBlEnabled0   = !$cfgAutoBlEnabled ? ' selected' : '';
+
+    $cfgFreezeChkProfit  = $cfgFreezeProfit  ? ' checked' : '';
+    $cfgFreezeChkStop    = $cfgFreezeStop    ? ' checked' : '';
+    $cfgFreezeChkLoss    = $cfgFreezeLoss    ? ' checked' : '';
+    $cfgFreezeChkManual  = $cfgFreezeManual  ? ' checked' : '';
+    $cfgAutoBlChkOnlyClosed = $cfgAutoBlOnlyClosed ? ' checked' : '';
+    $cfgAutoBlChkReset      = $cfgAutoBlResetOnWin ? ' checked' : '';
+
+    $manualBlacklistText  = implode("\n", $cfgManualBlacklist);
+
+    $freezeSaveUrl     = System::web('admin/dashboard');
+    $blacklistSaveUrl  = System::web('admin/dashboard');
     $cfgScanRoots   = $e(implode(', ', (array)($botConfig['strategy_scan_roots'] ?? [])));
 
     // Demo credentials status (never display actual secret value)
@@ -4224,8 +4299,94 @@ BLCK;
 BLCK;
     }
 
+    // ── Precompute freeze/blacklist HTML for heredoc ──────────────────────────
+    $activeFreezeCount    = count($activeFreezeEntries);
+    $freezeRegistryCount  = count($freezeRegistry);
+    $cfgFreezeModesStr    = $e(implode(', ', $cfgFreezeModes));
+    $cfgAutoBlModesStr    = $e(implode(', ', $cfgAutoBlModes));
+    $manualBlacklistHtml  = $e($manualBlacklistText);
+
+    $activeFreezeTableHtml = '';
+    if (!empty($activeFreezeEntries)) {
+        $fRows = '';
+        foreach ($activeFreezeEntries as $fKey => $fEntry) {
+            $fSym    = $e((string)($fEntry['symbol'] ?? $fKey));
+            $fSide   = $e((string)($fEntry['side'] ?? ''));
+            $fMode   = $e((string)($fEntry['mode'] ?? ''));
+            $fUntil  = $e((string)($fEntry['frozen_until'] ?? ''));
+            $fSource = $e((string)($fEntry['close_source'] ?? ''));
+            $fKeyE   = $e($fKey);
+            $fRows .= "<tr style=\"border-bottom:1px solid #21262d;\">"
+                . "<td style=\"padding:4px 8px;font-weight:600;\">{$fSym}</td>"
+                . "<td style=\"padding:4px 8px;\">{$fSide}</td>"
+                . "<td style=\"padding:4px 8px;\">{$fMode}</td>"
+                . "<td style=\"padding:4px 8px;color:#f0883e;\">{$fUntil}</td>"
+                . "<td style=\"padding:4px 8px;color:var(--ui-text-muted);\">{$fSource}</td>"
+                . "<td style=\"padding:4px 8px;\">"
+                . "<form method=\"post\" action=\"{$freezeSaveUrl}\" style=\"margin:0;display:inline;\">"
+                . "<input type=\"hidden\" name=\"dashboard_action\" value=\"unfreeze_symbol\">"
+                . "<input type=\"hidden\" name=\"active_tab\" value=\"dh-ctrl\">"
+                . "<input type=\"hidden\" name=\"freeze_key\" value=\"{$fKeyE}\">"
+                . "<button type=\"submit\" class=\"btn btn-sm\" style=\"padding:2px 8px;font-size:11px;background:rgba(248,81,73,.15);color:#f85149;border:1px solid #f8514944;\">Разморозить</button>"
+                . "</form></td></tr>";
+        }
+        $activeFreezeTableHtml = "<div style=\"margin-bottom:14px;overflow-x:auto;\">"
+            . "<table style=\"width:100%;border-collapse:collapse;font-size:12px;\">"
+            . "<thead><tr style=\"color:var(--ui-text-muted);\">"
+            . "<th style=\"text-align:left;padding:4px 8px;border-bottom:1px solid #30363d;\">Символ</th>"
+            . "<th style=\"text-align:left;padding:4px 8px;border-bottom:1px solid #30363d;\">Side</th>"
+            . "<th style=\"text-align:left;padding:4px 8px;border-bottom:1px solid #30363d;\">Mode</th>"
+            . "<th style=\"text-align:left;padding:4px 8px;border-bottom:1px solid #30363d;\">Заморожен до</th>"
+            . "<th style=\"text-align:left;padding:4px 8px;border-bottom:1px solid #30363d;\">Источник</th>"
+            . "<th style=\"padding:4px 8px;border-bottom:1px solid #30363d;\"></th>"
+            . "</tr></thead><tbody>{$fRows}</tbody></table></div>";
+    }
+
+    $clearFreezeFormHtml = '';
+    if (!empty($freezeRegistry)) {
+        $clearFreezeFormHtml = "<form method=\"post\" action=\"{$freezeSaveUrl}\" style=\"margin:8px 0 0;\">"
+            . "<input type=\"hidden\" name=\"dashboard_action\" value=\"clear_expired_freeze\">"
+            . "<input type=\"hidden\" name=\"active_tab\" value=\"dh-ctrl\">"
+            . "<button type=\"submit\" class=\"btn btn-sm\" style=\"background:rgba(248,81,73,.1);color:#f85149;border:1px solid #f8514944;padding:4px 12px;font-size:12px;\">"
+            . "<i class=\"bi bi-trash\" style=\"margin-right:4px;\"></i>Очистить истёкшие записи freeze</button></form>";
+    }
+
+    $autoBlTableHtml = '';
+    if (!empty($autoBlacklistEntries)) {
+        $blRows = '';
+        foreach ($autoBlacklistEntries as $blSym => $blEntry) {
+            $blSymE   = $e((string)($blEntry['symbol'] ?? $blSym));
+            $blReason = $e((string)($blEntry['reason'] ?? ''));
+            $blCount  = $e((string)($blEntry['loss_count'] ?? ''));
+            $blUntil  = $e((string)($blEntry['blocked_until'] ?? 'постоянно'));
+            $blSymKey = $e($blSym);
+            $blRows .= "<tr style=\"border-bottom:1px solid #21262d;\">"
+                . "<td style=\"padding:4px 8px;font-weight:600;\">{$blSymE}</td>"
+                . "<td style=\"padding:4px 8px;color:var(--ui-text-muted);\">{$blReason}</td>"
+                . "<td style=\"padding:4px 8px;\">{$blCount}</td>"
+                . "<td style=\"padding:4px 8px;color:#f85149;\">{$blUntil}</td>"
+                . "<td style=\"padding:4px 8px;\">"
+                . "<form method=\"post\" action=\"{$blacklistSaveUrl}\" style=\"margin:0;display:inline;\">"
+                . "<input type=\"hidden\" name=\"dashboard_action\" value=\"remove_blacklist_symbol\">"
+                . "<input type=\"hidden\" name=\"active_tab\" value=\"dh-ctrl\">"
+                . "<input type=\"hidden\" name=\"blacklist_symbol\" value=\"{$blSymKey}\">"
+                . "<button type=\"submit\" class=\"btn btn-sm\" style=\"padding:2px 8px;font-size:11px;background:rgba(248,81,73,.15);color:#f85149;border:1px solid #f8514944;\">Удалить</button>"
+                . "</form></td></tr>";
+        }
+        $autoBlTableHtml = "<div style=\"margin-bottom:14px;\">"
+            . "<div style=\"font-size:12px;color:var(--ui-text-muted);margin-bottom:6px;\">Авто-blacklist (активные)</div>"
+            . "<div style=\"overflow-x:auto;\">"
+            . "<table style=\"width:100%;border-collapse:collapse;font-size:12px;\">"
+            . "<thead><tr style=\"color:var(--ui-text-muted);\">"
+            . "<th style=\"text-align:left;padding:4px 8px;border-bottom:1px solid #30363d;\">Символ</th>"
+            . "<th style=\"text-align:left;padding:4px 8px;border-bottom:1px solid #30363d;\">Причина</th>"
+            . "<th style=\"text-align:left;padding:4px 8px;border-bottom:1px solid #30363d;\">Потери</th>"
+            . "<th style=\"text-align:left;padding:4px 8px;border-bottom:1px solid #30363d;\">Заблокирован до</th>"
+            . "<th style=\"padding:4px 8px;border-bottom:1px solid #30363d;\"></th>"
+            . "</tr></thead><tbody>{$blRows}</tbody></table></div></div>";
+    }
+
     return <<<HTML
-<style>
 .dh-tab-nav{display:flex;gap:0;border-bottom:1px solid var(--ui-border);margin-bottom:20px;}
 .dh-tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:10px 22px;color:var(--ui-text-muted);cursor:pointer;font-size:14px;transition:color .15s,border-color .15s;outline:none;}
 .dh-tab-btn:hover{color:var(--ui-text);border-bottom-color:var(--ui-border);}
@@ -4996,6 +5157,134 @@ BLCK;
     </div>
   </div>
 
+  <!-- ── Symbol Freeze & Blacklist ─────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:16px;border-color:#f0883e44;">
+    <div class="card-header"><i class="bi bi-snow2" style="margin-right:6px;color:#58a6ff;"></i>Symbol Freeze — заморозка символа после закрытия позиции</div>
+    <div class="card-body" style="padding:14px 16px;">
+      <!-- Status row -->
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;">
+        <span><span style="color:var(--ui-text-muted);">Активных заморозок:</span>
+          <strong style="color:#58a6ff;margin-left:4px;">{$activeFreezeCount}</strong></span>
+        <span><span style="color:var(--ui-text-muted);">Всего в реестре:</span>
+          <strong style="margin-left:4px;">{$freezeRegistryCount}</strong></span>
+      </div>
+      {$activeFreezeTableHtml}
+      <!-- Settings form -->
+      <form method="post" action="{$freezeSaveUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="freeze_blacklist_save">
+        <input type="hidden" name="active_tab" value="dh-ctrl">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px 16px;margin-bottom:12px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Freeze включён</label>
+            <select name="symbol_freeze_after_close_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$cfgFreezeEnabledYes}>Да</option>
+              <option value="0"{$cfgFreezeEnabledNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Длительность (мин)</label>
+            <input type="number" min="1" name="symbol_freeze_after_close_minutes"
+              value="{$cfgFreezeMinutes}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Применять к режимам</label>
+            <input type="text" name="symbol_freeze_modes"
+              value="{$cfgFreezeModesStr}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;"
+              placeholder="demo, live">
+          </div>
+        </div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px;font-size:13px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" name="symbol_freeze_apply_to_profit_close" value="1"{$cfgFreezeChkProfit}>
+            <span>Profit close</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" name="symbol_freeze_apply_to_stop_close" value="1"{$cfgFreezeChkStop}>
+            <span>Stop close</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" name="symbol_freeze_apply_to_loss_close" value="1"{$cfgFreezeChkLoss}>
+            <span>Loss close</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" name="symbol_freeze_apply_to_manual_close" value="1"{$cfgFreezeChkManual}>
+            <span>Manual close</span>
+          </label>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Сохранить настройки freeze</button>
+      </form>
+      {$clearFreezeFormHtml}
+    </div>
+  </div>
+
+  <!-- ── Symbol Blacklist ───────────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:16px;border-color:#f8514944;">
+    <div class="card-header"><i class="bi bi-slash-circle" style="margin-right:6px;color:#f85149;"></i>Symbol Blacklist — блокировка символов</div>
+    <div class="card-body" style="padding:14px 16px;">
+      {$autoBlTableHtml}
+      <!-- Settings form -->
+      <form method="post" action="{$blacklistSaveUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="freeze_blacklist_save">
+        <input type="hidden" name="active_tab" value="dh-ctrl">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px 16px;margin-bottom:12px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Blacklist включён</label>
+            <select name="symbol_blacklist_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$cfgBlEnabled1}>Да</option>
+              <option value="0"{$cfgBlEnabled0}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Авто-blacklist включён</label>
+            <select name="auto_blacklist_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$cfgAutoBlEnabled1}>Да</option>
+              <option value="0"{$cfgAutoBlEnabled0}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Порог потерь (штук)</label>
+            <input type="number" min="1" name="auto_blacklist_loss_threshold"
+              value="{$cfgAutoBlThreshold}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Окно подсчёта (ч)</label>
+            <input type="number" min="1" name="auto_blacklist_window_hours"
+              value="{$cfgAutoBlWindowHours}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Длительность бана (ч)</label>
+            <input type="number" min="1" name="auto_blacklist_duration_hours"
+              value="{$cfgAutoBlDurationHours}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режимы авто-blacklist</label>
+            <input type="text" name="auto_blacklist_modes"
+              value="{$cfgAutoBlModesStr}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;"
+              placeholder="demo, live">
+          </div>
+        </div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px;font-size:13px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" name="auto_blacklist_count_only_closed_losses" value="1"{$cfgAutoBlChkOnlyClosed}>
+            <span>Считать только закрытые убытки</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" name="auto_blacklist_reset_on_win" value="1"{$cfgAutoBlChkReset}>
+            <span>Сбросить при выигрыше</span>
+          </label>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">
+            Ручной blacklist символов (по одному на строку, uppercase)
+          </label>
+          <textarea name="manual_symbol_blacklist" rows="4" class="form-control" style="font-size:13px;font-family:monospace;resize:vertical;"
+            placeholder="BTCUSDT&#10;ETHUSDT">{$manualBlacklistHtml}</textarea>
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Сохранить настройки blacklist</button>
+      </form>
+    </div>
+  </div>
+
 </div>
 
 </div><!-- /max-width -->
@@ -5469,9 +5758,183 @@ function handleDashboardGovernorSave(): void
 } // end if (!function_exists('handleDashboardGovernorSave'))
 
 // ──────────────────────────────────────────────────────────────────────────────
-// POST handler: manual strategy actions (queue_run / tick_batch / refresh)
-// Registered as: POST /admin/dashboard/strategy/action
+// POST handler: save Symbol Freeze & Blacklist config
 // ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleFreezeBlacklistSave')) {
+function handleFreezeBlacklistSave(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    $root       = System::path('root');
+    $activeFile = $root . '/modules/bot/config/active.php';
+
+    $current = [];
+    if (file_exists($activeFile)) {
+        $loaded = @include $activeFile;
+        if (is_array($loaded)) {
+            $current = $loaded;
+        }
+    }
+
+    // ── Freeze settings ───────────────────────────────────────────────────────
+    $current['symbol_freeze_after_close_enabled']   = (bool)(int)($_POST['symbol_freeze_after_close_enabled'] ?? 0);
+    $current['symbol_freeze_after_close_minutes']   = max(1, (int)($_POST['symbol_freeze_after_close_minutes'] ?? 10));
+    $current['symbol_freeze_apply_to_profit_close'] = isset($_POST['symbol_freeze_apply_to_profit_close']);
+    $current['symbol_freeze_apply_to_stop_close']   = isset($_POST['symbol_freeze_apply_to_stop_close']);
+    $current['symbol_freeze_apply_to_loss_close']   = isset($_POST['symbol_freeze_apply_to_loss_close']);
+    $current['symbol_freeze_apply_to_manual_close'] = isset($_POST['symbol_freeze_apply_to_manual_close']);
+
+    $freezeModesRaw = trim((string)($_POST['symbol_freeze_modes'] ?? 'demo, live'));
+    $freezeModes = array_values(array_filter(array_map('trim', explode(',', $freezeModesRaw))));
+    if (empty($freezeModes)) { $freezeModes = ['demo', 'live']; }
+    $current['symbol_freeze_modes'] = $freezeModes;
+
+    // ── Blacklist settings ────────────────────────────────────────────────────
+    $current['symbol_blacklist_enabled']               = (bool)(int)($_POST['symbol_blacklist_enabled'] ?? 0);
+    $current['auto_blacklist_enabled']                 = (bool)(int)($_POST['auto_blacklist_enabled'] ?? 0);
+    $current['auto_blacklist_loss_threshold']          = max(1, (int)($_POST['auto_blacklist_loss_threshold'] ?? 3));
+    $current['auto_blacklist_window_hours']            = max(1, (int)($_POST['auto_blacklist_window_hours'] ?? 24));
+    $current['auto_blacklist_duration_hours']          = max(1, (int)($_POST['auto_blacklist_duration_hours'] ?? 24));
+    $current['auto_blacklist_count_only_closed_losses']= isset($_POST['auto_blacklist_count_only_closed_losses']);
+    $current['auto_blacklist_reset_on_win']            = isset($_POST['auto_blacklist_reset_on_win']);
+
+    $autoBlModesRaw = trim((string)($_POST['auto_blacklist_modes'] ?? 'demo, live'));
+    $autoBlModes = array_values(array_filter(array_map('trim', explode(',', $autoBlModesRaw))));
+    if (empty($autoBlModes)) { $autoBlModes = ['demo', 'live']; }
+    $current['auto_blacklist_modes'] = $autoBlModes;
+
+    // Manual blacklist: one symbol per line, uppercase
+    $manualRaw = (string)($_POST['manual_symbol_blacklist'] ?? '');
+    $manualList = array_values(array_filter(array_map(
+        fn($s) => strtoupper(trim($s)),
+        explode("\n", $manualRaw)
+    )));
+    $current['manual_symbol_blacklist'] = $manualList;
+
+    $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Bot Module — Active Config Overrides\n * Written by the admin UI.\n */\n\nreturn ";
+    $php .= var_export($current, true);
+    $php .= ";\n";
+
+    if (!is_dir(dirname($activeFile))) {
+        mkdir(dirname($activeFile), 0755, true);
+    }
+    file_put_contents($activeFile, $php);
+
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Настройки Freeze & Blacklist сохранены'];
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
+    exit;
+}
+} // end if (!function_exists('handleFreezeBlacklistSave'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: clear expired freeze entries
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleClearExpiredFreeze')) {
+function handleClearExpiredFreeze(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    $path = System::path('root') . '/modules/bot/storage/runtime/symbol_freeze_registry.json';
+    $removed = 0;
+    if (is_file($path)) {
+        $raw = @file_get_contents($path);
+        if ($raw !== false && $raw !== '') {
+            $reg = @json_decode($raw, true);
+            if (is_array($reg)) {
+                $now = time();
+                foreach ($reg as $key => $entry) {
+                    $ft = @strtotime((string)($entry['frozen_until'] ?? ''));
+                    if ($ft === false || $ft <= $now) {
+                        unset($reg[$key]);
+                        $removed++;
+                    }
+                }
+                @file_put_contents($path, json_encode($reg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n", LOCK_EX);
+            }
+        }
+    }
+
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Очищено истёкших записей freeze: {$removed}"];
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
+    exit;
+}
+} // end if (!function_exists('handleClearExpiredFreeze'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: unfreeze a single symbol
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleUnfreezeSymbol')) {
+function handleUnfreezeSymbol(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    $key  = trim((string)($_POST['freeze_key'] ?? ''));
+    $path = System::path('root') . '/modules/bot/storage/runtime/symbol_freeze_registry.json';
+
+    if ($key !== '' && is_file($path)) {
+        $raw = @file_get_contents($path);
+        if ($raw !== false && $raw !== '') {
+            $reg = @json_decode($raw, true);
+            if (is_array($reg) && isset($reg[$key])) {
+                unset($reg[$key]);
+                @file_put_contents($path, json_encode($reg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n", LOCK_EX);
+            }
+        }
+    }
+
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Символ разморожен: ' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8')];
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
+    exit;
+}
+} // end if (!function_exists('handleUnfreezeSymbol'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: remove a symbol from runtime blacklist
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleRemoveBlacklistSymbol')) {
+function handleRemoveBlacklistSymbol(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    $sym  = strtoupper(trim((string)($_POST['blacklist_symbol'] ?? '')));
+    $path = System::path('root') . '/modules/bot/storage/runtime/symbol_blacklist.json';
+
+    if ($sym !== '' && is_file($path)) {
+        $raw = @file_get_contents($path);
+        if ($raw !== false && $raw !== '') {
+            $bl = @json_decode($raw, true);
+            if (is_array($bl)) {
+                unset($bl[$sym]);
+                @file_put_contents($path, json_encode($bl, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n", LOCK_EX);
+            }
+        }
+    }
+
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Символ удалён из blacklist: ' . htmlspecialchars($sym, ENT_QUOTES, 'UTF-8')];
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
+    exit;
+}
+} // end if (!function_exists('handleRemoveBlacklistSymbol'))
 if (!function_exists('handleDashboardStrategyAction')) {
 function handleDashboardStrategyAction(): void
 {
@@ -6726,6 +7189,18 @@ function dispatchDashboardPost(): void
             break;
         case 'governor_config_save':
             handleDashboardGovernorSave();
+            break;
+        case 'freeze_blacklist_save':
+            handleFreezeBlacklistSave();
+            break;
+        case 'clear_expired_freeze':
+            handleClearExpiredFreeze();
+            break;
+        case 'unfreeze_symbol':
+            handleUnfreezeSymbol();
+            break;
+        case 'remove_blacklist_symbol':
+            handleRemoveBlacklistSymbol();
             break;
         default:
             $_SESSION['dashboard_flash'] = [

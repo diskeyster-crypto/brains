@@ -2719,6 +2719,7 @@ final class ControlledDailyMomentumLongStrategy
         $minReclaimScore        = (float)($config['handoff_min_reclaim_score']              ?? 8.0);
         $minCandidateQuality    = (float)($config['handoff_min_candidate_quality_score']    ?? 7.0);
         $hardMaxDaily           = (float)($config['hard_max_daily_change_pct']              ?? 35.0);
+        $rangeHoldBypassScore   = (float)($config['handoff_range_hold_strong_bypass_score'] ?? 99.0);
 
         $hardBlockReasons = [];
         $softBlockReasons = [];
@@ -2735,6 +2736,13 @@ final class ControlledDailyMomentumLongStrategy
         $upside25        = (float)($sig['upside_room_to_25pct'] ?? 0.0);
         $firstSeenLate   = (bool)($sig['candidate_first_seen_too_late'] ?? false);
         $qualityClass    = (string)($sig['signal_quality_class'] ?? 'clean_signal');
+        $rangeHoldScore  = (float)($sig['range_hold_score']   ?? 0.0);
+
+        // A range_hold signal is "strong" when its range_hold_score meets or exceeds
+        // the bypass threshold. Strong range_hold signals are treated as preferred-structure
+        // signals and bypass the hard block that would otherwise apply because range_hold
+        // is not in handoff_prefer_structure_types.
+        $isStrongRangeHold = ($structureType === 'range_hold' && $rangeHoldScore >= $rangeHoldBypassScore);
 
         // ── Hard blocks ───────────────────────────────────────────────────────
 
@@ -2795,8 +2803,10 @@ final class ControlledDailyMomentumLongStrategy
         if (!in_array($structureType, $allowStructureTypes, true)) {
             $hardBlockReasons[] = 'structure_type_not_allowed';
         }
-        // structure_type must be in preferred list when required
-        if ($requirePreferredStruct && !in_array($structureType, $preferStructTypes, true)) {
+        // structure_type must be in preferred list when required.
+        // Exception: strong range_hold signals (range_hold_score >= bypass threshold) are
+        // treated as preferred and skip this hard block.
+        if ($requirePreferredStruct && !in_array($structureType, $preferStructTypes, true) && !$isStrongRangeHold) {
             $hardBlockReasons[] = 'structure_type_not_preferred_required';
         }
 
@@ -2848,7 +2858,7 @@ final class ControlledDailyMomentumLongStrategy
 
         // ── Warnings (informational, do not block) ────────────────────────────
 
-        if (!in_array($structureType, $preferStructTypes, true) && in_array($structureType, $allowStructureTypes, true)) {
+        if (!in_array($structureType, $preferStructTypes, true) && in_array($structureType, $allowStructureTypes, true) && !$isStrongRangeHold) {
             $warnReasons[] = 'structure_type_not_preferred';
         }
         if ((string)($sig['soft_turnover_status'] ?? '') === 'warning') {

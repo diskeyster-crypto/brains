@@ -153,7 +153,6 @@ return [
         'entry_risk_context_late',
         'entry_risk_context_overextended',
         'candidate_first_seen_too_late',
-        'structure_type_range_hold',
         'structure_type_base_reclaim',
         'structure_type_recovery_drift_hold',
         'entry_too_far_from_structure',
@@ -181,4 +180,11 @@ return [
     'handoff_min_pullback_score'          => 8.0,
     'handoff_min_reclaim_score'           => 9.0,
     'handoff_min_candidate_quality_score' => 8.0,
+
+    // Minimum range_hold_score to bypass the preferred-structure requirement for
+    // range_hold signals. When range_hold_score >= this threshold the signal is
+    // treated as if structure_type were preferred, allowing it through handoff even
+    // though range_hold is not in handoff_prefer_structure_types.
+    // Set to a very high value (e.g., 99.0) to disable the bypass entirely.
+    'handoff_range_hold_strong_bypass_score' => 7.5,
 ];

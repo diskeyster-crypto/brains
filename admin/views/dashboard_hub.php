@@ -4366,7 +4366,7 @@ BLCK;
 <!-- ── Strategies pane ──────────────────────────────────────────────── -->
 <div id="dh-strat" class="dh-pane">
   <div style="font-size:12px;color:var(--ui-text-muted);margin-bottom:12px;">
-    Источник: <code>bot/storage/strategy_registry.json</code> · <code>modules/strategy/*/manifest.json</code> · <code>operator_overrides.json</code>
+    Источник: <code>bot/storage/strategy_registry.json</code> · <code>modules/strategy/*/manifest.json</code> · <code>modules/strategy/*/config/base.php + active.php</code>
   </div>
   {$stratCards}
 </div>
@@ -4918,7 +4918,7 @@ BLCK;
   <div class="card">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
       <span>Переопределения по стратегиям</span>
-      <small style="color:var(--ui-text-muted);font-size:11px;">Зеркало: operator_overrides.json · тот же источник истины что и карточки</small>
+      <small style="color:var(--ui-text-muted);font-size:11px;">Источник истины: <code>modules/strategy/*/config/base.php + active.php</code></small>
     </div>
     <div class="card-body" style="padding:0;">
       <table class="table" style="margin:0;font-size:13px;">
@@ -5229,14 +5229,11 @@ function handleDashboardOverridesSave(): void
     // Preserve all bot-owned execution fields from existing override; do not clobber
     // them — they are managed via the Bot/Control tab, not the strategy card form.
     $prev    = (array)($overrides[$stratId] ?? []);
-    // handoff_enabled, max_symbols_per_run, batch_size are managed by the strategy's
-    // own config/active.php — not by operator_overrides.json. Remove any stale copies.
-    unset($prev['handoff_enabled'], $prev['max_symbols_per_run'], $prev['batch_size']);
-    $newData = [
-        'enabled' => (bool)$enabled,
-        'mode'    => $mode,
-    ];
-    $overrides[$stratId] = array_merge($prev, $newData);
+    // enabled, mode, handoff_enabled, max_symbols_per_run, batch_size are managed by
+    // the strategy's own config/active.php — not by operator_overrides.json.
+    // Remove any stale copies so that strategy config remains the sole source of truth.
+    unset($prev['enabled'], $prev['mode'], $prev['handoff_enabled'], $prev['max_symbols_per_run'], $prev['batch_size']);
+    $overrides[$stratId] = $prev;
 
     if (!is_dir($storageDir)) {
         mkdir($storageDir, 0755, true);
@@ -5744,7 +5741,11 @@ function handleDashboardStrategyToggle(): void
     }
 
     $prev = (array)($overrides[$stratId] ?? []);
-    $overrides[$stratId] = array_merge($prev, ['enabled' => $enabled]);
+    // enabled is managed by the strategy's own config/active.php — not by
+    // operator_overrides.json. Remove any stale copy so strategy config is the
+    // sole source of truth.
+    unset($prev['enabled']);
+    $overrides[$stratId] = $prev;
 
     if (!is_dir($storageDir)) {
         mkdir($storageDir, 0755, true);

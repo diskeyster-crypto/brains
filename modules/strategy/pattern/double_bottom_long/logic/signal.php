@@ -164,7 +164,7 @@ final class PatternSignal
 
         // If the natural SL distance exceeds the configured max, return null
         // (the signal_filter in service.php will later use max_stop_loss_pct to reject)
-        if ($slPct > $maxSlPct) {
+        if ($maxSlPct > 0.0 && $slPct > $maxSlPct) {
             return [null, null];
         }
 

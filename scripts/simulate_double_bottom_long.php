@@ -169,7 +169,7 @@ foreach ($checks as [$key, $expected, $label]) {
 }
 
 $allowedBuckets = $config['allowed_long_buckets'] ?? [];
-if ($allowedBuckets === [1, 2] || $allowedBuckets === [1, 2]) {
+if ($allowedBuckets === [1, 2]) {
     ok('Allowed long buckets = [1, 2] (bottom 20% of range)');
 } else {
     warn('Allowed long buckets = ' . json_encode($allowedBuckets) . ' (expected [1, 2])');

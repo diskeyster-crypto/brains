@@ -5733,9 +5733,9 @@ function handleDashboardStrategyToggle(): void
         if (!array_key_exists('mode', $_togMerge)) {
             $_togMerge['mode'] = 'demo';
         }
-        if (!array_key_exists('handoff_enabled', $_togMerge)) {
-            $_togMerge['handoff_enabled'] = false;
-        }
+        // Do NOT create/overwrite handoff_enabled — the enable/disable toggle must not
+        // change handoff_enabled. Strategy config/active.php (written by the handoff toggle)
+        // is the sole authority for that field.
         $_togPhp  = "<?php\n\ndeclare(strict_types=1);\n\n";
         $_togPhp .= "/**\n * Strategy Active Config Overrides — {$stratId}\n";
         $_togPhp .= " * Written by the admin UI. Do not edit manually.\n */\n\n";

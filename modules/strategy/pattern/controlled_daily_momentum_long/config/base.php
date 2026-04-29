@@ -131,7 +131,45 @@ return [
     // Diagnostic gate: determines whether a signal is eligible for demo handoff.
     // Does NOT enable live trading. mode=demo is enforced by the strategy at runtime.
     'handoff_readiness_enabled'           => true,
-    'handoff_allow_warning_signals'       => false,
+
+    // Allow warning_signal quality class through the handoff gate (when true).
+    // Requires handoff_allow_only_soft_warnings=true to restrict to safe warnings only.
+    'handoff_allow_warning_signals'       => true,
+
+    // When true, only warning signals whose signal_warning_reasons are ALL in
+    // handoff_allowed_soft_warning_reasons pass. Any reason in handoff_block_warning_reasons
+    // is a hard block; any unrecognised reason is a soft block.
+    'handoff_allow_only_soft_warnings'    => true,
+
+    // Warning reasons that are safe to allow for demo handoff.
+    'handoff_allowed_soft_warning_reasons' => [
+        'soft_turnover_warning',
+        'turnover_soft_below_target',
+        'volume_cliff_warning',
+    ],
+
+    // Warning reasons that hard-block handoff even when allow_warning_signals=true.
+    'handoff_block_warning_reasons'       => [
+        'entry_risk_context_late',
+        'entry_risk_context_overextended',
+        'candidate_first_seen_too_late',
+        'structure_type_range_hold',
+        'structure_type_base_reclaim',
+        'structure_type_recovery_drift_hold',
+        'entry_too_far_from_structure',
+        'no_fresh_pullback_after_recovery_drift',
+        'reclaim_not_confirmed',
+    ],
+
+    // Tighter daily_change_pct cap for handoff (below caution threshold).
+    'handoff_max_daily_change_pct'        => 18.0,
+
+    // Require entry_risk_context=ok (not just non-late) for handoff eligibility.
+    'handoff_require_entry_risk_context_ok' => true,
+
+    // Require structure_type to be in handoff_prefer_structure_types.
+    'handoff_require_preferred_structure' => true,
+
     'handoff_allow_late_entry'            => false,
     'handoff_min_upside_room_to_18pct'    => 3.0,
     'handoff_min_upside_room_to_25pct'    => 7.0,
@@ -140,7 +178,7 @@ return [
     'handoff_prefer_structure_types'      => ['higher_low'],
     'handoff_allow_structure_types'       => ['higher_low', 'range_hold', 'base_reclaim', 'recovery_drift_hold'],
     'handoff_require_fresh_reclaim'       => true,
-    'handoff_min_pullback_score'          => 7.0,
-    'handoff_min_reclaim_score'           => 8.0,
-    'handoff_min_candidate_quality_score' => 7.0,
+    'handoff_min_pullback_score'          => 8.0,
+    'handoff_min_reclaim_score'           => 9.0,
+    'handoff_min_candidate_quality_score' => 8.0,
 ];

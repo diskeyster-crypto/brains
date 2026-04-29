@@ -195,6 +195,12 @@ final class ControlledDailyMomentumLongStrategy
             'handoff_block_reasons_count'     => (object)[],
             'handoff_ready_examples'          => [],
             'handoff_blocked_examples'        => [],
+            // Warning-signal handoff tracking
+            'handoff_soft_warning_allowed_total' => 0,
+            'handoff_soft_warning_blocked_total' => 0,
+            // Cooling watch diagnostics
+            'cooling_watch_total'                => 0,
+            'waiting_for_turnover_recovery_total'=> 0,
         ];
 
         $_rejectCounters = [];
@@ -430,6 +436,18 @@ final class ControlledDailyMomentumLongStrategy
                 $stats['rejects_total']++;
                 if ($turnoverResult['hard_reject'] ?? true) {
                     $stats['soft_turnover_hard_reject_total']++;
+                }
+                // ── Cooling watch: strong watchlist candidate with dead current turnover ──
+                // If this symbol has watchlist history (!$isNewEntry) and failed with a
+                // dead-turnover hard reject, tag it as a cooling candidate for diagnostics.
+                // Signal/handoff are still rejected; this is purely diagnostic.
+                $_turnoverRejectReason = $turnoverResult['reason'] ?? '';
+                if (!$isNewEntry && in_array($_turnoverRejectReason, ['turnover_too_low', 'turnover_not_persistent'], true)) {
+                    $diagFields['watch_cooling']                = true;
+                    $diagFields['cooling_reason']               = 'current_turnover_dead';
+                    $diagFields['waiting_for_turnover_recovery']= true;
+                    $stats['cooling_watch_total']++;
+                    $stats['waiting_for_turnover_recovery_total']++;
                 }
                 $this->markSignalStale($signals, $symbol, 'soft_turnover_ramp', $turnoverResult['reason'], 'rejected', $now);
                 $diagCandidate = array_merge([
@@ -862,9 +880,14 @@ final class ControlledDailyMomentumLongStrategy
         $_hrBlockedExamples   = [];
         foreach ($currentRunSignals as $_hrsig) {
             $stats['handoff_readiness_checked_total']++;
-            $_hrReadiness = (string)($_hrsig['handoff_readiness'] ?? 'blocked');
+            $_hrReadiness   = (string)($_hrsig['handoff_readiness']    ?? 'blocked');
+            $_hrQualClass   = (string)($_hrsig['signal_quality_class'] ?? 'clean_signal');
+            $_hrEligible    = (bool)($_hrsig['handoff_eligible']       ?? false);
             if ($_hrReadiness === 'ready') {
                 $stats['handoff_ready_total']++;
+                if ($_hrQualClass === 'warning_signal') {
+                    $stats['handoff_soft_warning_allowed_total']++;
+                }
                 if (count($_hrReadyExamples) < 5) {
                     $_hrReadyExamples[] = [
                         'symbol'                  => $_hrsig['symbol'] ?? '',
@@ -881,8 +904,14 @@ final class ControlledDailyMomentumLongStrategy
                 }
             } elseif ($_hrReadiness === 'diagnostic_only') {
                 $stats['handoff_diagnostic_only_total']++;
+                if ($_hrQualClass === 'warning_signal' && !$_hrEligible) {
+                    $stats['handoff_soft_warning_blocked_total']++;
+                }
             } else {
                 $stats['handoff_blocked_total']++;
+                if ($_hrQualClass === 'warning_signal') {
+                    $stats['handoff_soft_warning_blocked_total']++;
+                }
                 foreach ($_hrsig['handoff_block_reasons'] ?? [] as $_br) {
                     $_hrBlockReasonsCount[$_br] = ($_hrBlockReasonsCount[$_br] ?? 0) + 1;
                 }
@@ -2670,23 +2699,42 @@ final class ControlledDailyMomentumLongStrategy
      */
     private function classifyHandoffReadiness(array $sig, array $config): array
     {
-        // Config
-        $readinessEnabled    = (bool)($config['handoff_readiness_enabled']           ?? true);
-        $allowWarningSignals = (bool)($config['handoff_allow_warning_signals']        ?? false);
-        $minUpside18         = (float)($config['handoff_min_upside_room_to_18pct']    ?? 3.0);
-        $minUpside25         = (float)($config['handoff_min_upside_room_to_25pct']    ?? 7.0);
-        $blockLateContexts   = (array)($config['handoff_block_late_contexts']         ?? ['late', 'overextended']);
-        $allowStructureTypes = (array)($config['handoff_allow_structure_types']       ?? ['higher_low', 'range_hold', 'base_reclaim', 'recovery_drift_hold']);
-        $preferStructTypes   = (array)($config['handoff_prefer_structure_types']      ?? ['higher_low']);
-        $requireFreshReclaim = (bool)($config['handoff_require_fresh_reclaim']        ?? true);
-        $minPullbackScore    = (float)($config['handoff_min_pullback_score']          ?? 7.0);
-        $minReclaimScore     = (float)($config['handoff_min_reclaim_score']           ?? 8.0);
-        $minCandidateQuality = (float)($config['handoff_min_candidate_quality_score'] ?? 7.0);
-        $hardMaxDaily        = (float)($config['hard_max_daily_change_pct']           ?? 35.0);
+        // ── Config ────────────────────────────────────────────────────────────
+        $readinessEnabled       = (bool)($config['handoff_readiness_enabled']              ?? true);
+        $allowWarningSignals    = (bool)($config['handoff_allow_warning_signals']           ?? false);
+        $allowOnlySoftWarnings  = (bool)($config['handoff_allow_only_soft_warnings']        ?? false);
+        $allowedSoftWarnReasons = (array)($config['handoff_allowed_soft_warning_reasons']   ?? []);
+        $blockWarnReasons       = (array)($config['handoff_block_warning_reasons']          ?? []);
+        $handoffMaxDaily        = (float)($config['handoff_max_daily_change_pct']
+                                    ?? $config['hard_max_daily_change_pct'] ?? 35.0);
+        $requireErcOk           = (bool)($config['handoff_require_entry_risk_context_ok']   ?? false);
+        $requirePreferredStruct = (bool)($config['handoff_require_preferred_structure']      ?? false);
+        $minUpside18            = (float)($config['handoff_min_upside_room_to_18pct']       ?? 3.0);
+        $minUpside25            = (float)($config['handoff_min_upside_room_to_25pct']       ?? 7.0);
+        $blockLateContexts      = (array)($config['handoff_block_late_contexts']            ?? ['late', 'overextended']);
+        $allowStructureTypes    = (array)($config['handoff_allow_structure_types']          ?? ['higher_low', 'range_hold', 'base_reclaim', 'recovery_drift_hold']);
+        $preferStructTypes      = (array)($config['handoff_prefer_structure_types']         ?? ['higher_low']);
+        $requireFreshReclaim    = (bool)($config['handoff_require_fresh_reclaim']           ?? true);
+        $minPullbackScore       = (float)($config['handoff_min_pullback_score']             ?? 7.0);
+        $minReclaimScore        = (float)($config['handoff_min_reclaim_score']              ?? 8.0);
+        $minCandidateQuality    = (float)($config['handoff_min_candidate_quality_score']    ?? 7.0);
+        $hardMaxDaily           = (float)($config['hard_max_daily_change_pct']              ?? 35.0);
 
         $hardBlockReasons = [];
         $softBlockReasons = [];
         $warnReasons      = [];
+
+        // ── Signal metadata ───────────────────────────────────────────────────
+        $erc             = (string)($sig['entry_risk_context'] ?? 'ok');
+        $dailyChangePct  = (float)($sig['daily_change_pct']   ?? 0.0);
+        $structureType   = (string)($sig['structure_type']    ?? 'none');
+        $pullbackScore   = (float)($sig['pullback_score']     ?? 0.0);
+        $reclaimScore    = (float)($sig['reclaim_score']      ?? 0.0);
+        $cqs             = (float)($sig['candidate_quality_score'] ?? 0.0);
+        $upside18        = (float)($sig['upside_room_to_18pct'] ?? 0.0);
+        $upside25        = (float)($sig['upside_room_to_25pct'] ?? 0.0);
+        $firstSeenLate   = (bool)($sig['candidate_first_seen_too_late'] ?? false);
+        $qualityClass    = (string)($sig['signal_quality_class'] ?? 'clean_signal');
 
         // ── Hard blocks ───────────────────────────────────────────────────────
 
@@ -2710,21 +2758,31 @@ final class ControlledDailyMomentumLongStrategy
         if ((string)($sig['side'] ?? '') !== 'long') {
             $hardBlockReasons[] = 'side_not_long';
         }
-        // entry_risk_context in block list
-        $erc = (string)($sig['entry_risk_context'] ?? 'ok');
+        // entry_risk_context in block list (late / overextended)
         if (in_array($erc, $blockLateContexts, true)) {
             $hardBlockReasons[] = 'entry_risk_context_' . $erc;
         }
-        // daily_change_pct >= 25
-        $dailyChangePct = (float)($sig['daily_change_pct'] ?? 0.0);
+        // entry_risk_context must be 'ok' when required (blocks 'caution' too)
+        if ($requireErcOk && $erc !== 'ok') {
+            $hardBlockReasons[] = 'entry_risk_context_not_ok';
+        }
+        // candidate was first seen too late — always a hard block
+        if ($firstSeenLate) {
+            $hardBlockReasons[] = 'candidate_first_seen_too_late';
+        }
+        // daily_change_pct >= per-strategy handoff cap (tighter than global hard_max)
+        if ($dailyChangePct >= $handoffMaxDaily) {
+            $hardBlockReasons[] = 'daily_change_pct_above_handoff_max';
+        }
+        // daily_change_pct >= 25 (safety floor regardless of config)
         if ($dailyChangePct >= 25.0) {
             $hardBlockReasons[] = 'daily_change_pct_above_25';
         }
-        // daily_change_pct >= hard_max (defensive check; should already be filtered)
+        // daily_change_pct >= hard_max (defensive; should already be filtered upstream)
         if ($dailyChangePct >= $hardMaxDaily) {
             $hardBlockReasons[] = 'daily_change_pct_at_hard_max';
         }
-        // anti-blowoff hard reject reason exists in reject_reasons or reason_codes
+        // anti-blowoff hard reject reason present in reject_reasons or reason_codes
         $_antiBlowoffReasons = ['blowoff_1m_pump', 'blowoff_5m_pump', 'single_candle_move_too_large', 'deep_drawdown_from_high'];
         $_allCodes = array_merge((array)($sig['reject_reasons'] ?? []), (array)($sig['reason_codes'] ?? []));
         foreach ($_antiBlowoffReasons as $_abr) {
@@ -2734,25 +2792,43 @@ final class ControlledDailyMomentumLongStrategy
             }
         }
         // structure_type not in allowed list
-        $structureType = (string)($sig['structure_type'] ?? 'none');
         if (!in_array($structureType, $allowStructureTypes, true)) {
             $hardBlockReasons[] = 'structure_type_not_allowed';
+        }
+        // structure_type must be in preferred list when required
+        if ($requirePreferredStruct && !in_array($structureType, $preferStructTypes, true)) {
+            $hardBlockReasons[] = 'structure_type_not_preferred_required';
+        }
+
+        // ── Warning signal gate ───────────────────────────────────────────────
+        // When allowWarningSignals=false: block all warning signals (original behaviour).
+        // When allowWarningSignals=true + allowOnlySoftWarnings=true: only allow signals
+        // whose signal_warning_reasons are entirely within the allowed soft-warning list.
+        // Any reason present in blockWarnReasons is a hard block; any unrecognised reason
+        // that is not in allowedSoftWarnReasons is a soft block.
+        if ($qualityClass === 'warning_signal') {
+            if (!$allowWarningSignals) {
+                $softBlockReasons[] = 'warning_signal_not_allowed';
+            } elseif ($allowOnlySoftWarnings) {
+                $sigWarningReasons = (array)($sig['signal_warning_reasons'] ?? []);
+                $hasHardWarnBlock  = false;
+                foreach ($sigWarningReasons as $_wr) {
+                    if (in_array($_wr, $blockWarnReasons, true)) {
+                        if (!$hasHardWarnBlock) {
+                            $hardBlockReasons[] = 'warning_reason_hard_blocked';
+                            $hasHardWarnBlock   = true;
+                        }
+                    } elseif (!in_array($_wr, $allowedSoftWarnReasons, true)) {
+                        $softBlockReasons[] = 'warning_reason_not_allowed';
+                        break;
+                    }
+                }
+            }
+            // else: allowWarningSignals=true, allowOnlySoftWarnings=false → any warning passes
         }
 
         // ── Soft blocks ───────────────────────────────────────────────────────
 
-        $pullbackScore  = (float)($sig['pullback_score']          ?? 0.0);
-        $reclaimScore   = (float)($sig['reclaim_score']           ?? 0.0);
-        $cqs            = (float)($sig['candidate_quality_score'] ?? 0.0);
-        $upside18       = (float)($sig['upside_room_to_18pct']    ?? 0.0);
-        $upside25       = (float)($sig['upside_room_to_25pct']    ?? 0.0);
-        $firstSeenLate  = (bool)($sig['candidate_first_seen_too_late'] ?? false);
-        $qualityClass   = (string)($sig['signal_quality_class']   ?? 'clean_signal');
-
-        // warning_signal when not allowed
-        if ($qualityClass === 'warning_signal' && !$allowWarningSignals) {
-            $softBlockReasons[] = 'warning_signal_not_allowed';
-        }
         // pullback_score too low
         if ($pullbackScore < $minPullbackScore) {
             $softBlockReasons[] = 'pullback_score_too_low';
@@ -2769,12 +2845,8 @@ final class ControlledDailyMomentumLongStrategy
         if ($requireFreshReclaim && (string)($sig['pullback_reclaim_status'] ?? '') !== 'pass') {
             $softBlockReasons[] = 'no_fresh_reclaim';
         }
-        // first_seen_too_late with insufficient upside room
-        if ($firstSeenLate && $upside18 < $minUpside18) {
-            $softBlockReasons[] = 'candidate_first_seen_too_late_with_low_upside_room';
-        }
 
-        // ── Warnings (don't block) ────────────────────────────────────────────
+        // ── Warnings (informational, do not block) ────────────────────────────
 
         if (!in_array($structureType, $preferStructTypes, true) && in_array($structureType, $allowStructureTypes, true)) {
             $warnReasons[] = 'structure_type_not_preferred';
@@ -2785,7 +2857,8 @@ final class ControlledDailyMomentumLongStrategy
         if ((string)($sig['structure_status'] ?? '') === 'warning') {
             $warnReasons[] = 'structure_status_warning';
         }
-        if ($erc === 'caution') {
+        // Only emit caution as a warning when it does not already trigger a hard block
+        if ($erc === 'caution' && !$requireErcOk) {
             $warnReasons[] = 'entry_risk_context_caution';
         }
         if ($upside18 < $minUpside18 && $upside25 >= $minUpside25) {
@@ -2807,7 +2880,7 @@ final class ControlledDailyMomentumLongStrategy
         if ($isEligible) {
             $readiness = 'ready';
         } elseif (empty($hardBlockReasons)) {
-            // Only soft blocks: diagnostic_only
+            // Only soft blocks → diagnostic_only
             $readiness = 'diagnostic_only';
         } else {
             $readiness = 'blocked';
@@ -2828,11 +2901,11 @@ final class ControlledDailyMomentumLongStrategy
         $score = max(0.0, min(10.0, round($score, 2)));
 
         return [
-            'handoff_eligible'       => $isEligible,
-            'handoff_readiness'      => $readiness,
-            'handoff_block_reasons'  => array_values($allBlockReasons),
-            'handoff_warning_reasons'=> array_values($warnReasons),
-            'handoff_score'          => $score,
+            'handoff_eligible'        => $isEligible,
+            'handoff_readiness'       => $readiness,
+            'handoff_block_reasons'   => array_values($allBlockReasons),
+            'handoff_warning_reasons' => array_values($warnReasons),
+            'handoff_score'           => $score,
         ];
     }
 

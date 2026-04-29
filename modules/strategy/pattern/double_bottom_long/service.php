@@ -156,8 +156,11 @@ final class DoubleBottomLongService
             file_put_contents($this->moduleDir . '/storage/cycle_history.ndjson', '');
         }
 
-        $cycleId = (int)($prevState['cycle_id'] ?? 0);
-        $nowIso  = date('c');
+        $cycleId    = (int)($prevState['cycle_id'] ?? 0);
+        $nowIso     = date('c');
+        $regDiag    = $this->readJson('storage/registry_diag.json', []);
+        $regEmpty   = (int)($regDiag['registry_symbol_count'] ?? 0) === 0;
+        $queueEmpty = count($universe) === 0;
         $state = [
             'status'        => 'queued',
             'queued_at'     => $nowIso,
@@ -183,7 +186,16 @@ final class DoubleBottomLongService
             'run_status'              => 'queued',
             'continuous_scan_enabled' => (bool)($config['continuous_scan_enabled'] ?? true),
             'errors'        => [],
-            'registry_diag' => $this->readJson('storage/registry_diag.json', []),
+            // Registry diagnostics — promoted to top level for easy consumption
+            'registry_diag'             => $regDiag,
+            'registry_source_path'      => $regDiag['registry_source_path']  ?? null,
+            'registry_loaded'           => (bool)($regDiag['registry_loaded'] ?? false),
+            'registry_symbol_count'     => (int)($regDiag['registry_symbol_count'] ?? 0),
+            'registry_empty'            => $regEmpty,
+            'queue_empty_universe'      => $queueEmpty,
+            // next_retry_allowed=true lets the next cron tick auto-requeue if the universe was empty
+            'next_retry_allowed'        => $queueEmpty ? (bool)($config['continuous_scan_enabled'] ?? true) : false,
+            'auto_requeued_from_status' => null,
         ];
         $this->writeJson('storage/run_state.json', $state);
         return ['ok' => true, 'total' => count($universe)];
@@ -197,18 +209,36 @@ final class DoubleBottomLongService
         $state  = $this->getRunState();
         $status = $state['status'] ?? 'idle';
 
-        // Auto-queue on first cron tick when the module is enabled with continuous scan.
-        if ($status === 'idle') {
+        // Auto-queue when:
+        //  - status is 'idle' (first cron tick after module is enabled), OR
+        //  - status is 'done' with continuous scan enabled (includes empty-registry recovery).
+        //
+        // The 'done' branch handles the case where a previous cycle completed with an empty
+        // universe (registry was not yet populated) and set next_cycle_ready=true.  Without
+        // this check the module stays frozen at status=done and never retries.
+        $isDoneRetryable = ($status === 'done') && (
+            (bool)($state['continuous_scan_enabled'] ?? false)
+            || (bool)($state['next_cycle_ready']     ?? false)
+            || (int)($state['total']                 ?? -1) === 0
+        );
+
+        if ($status === 'idle' || $isDoneRetryable) {
             $cfg = $this->getConfig();
             if ((bool)($cfg['enabled'] ?? false) && (bool)($cfg['continuous_scan_enabled'] ?? true)) {
+                $autoRequeuedFrom = $status;
                 $qResult = $this->queueRun();
                 if (!($qResult['ok'] ?? false)) {
                     return;
                 }
                 $state  = $this->getRunState();
+                // Stamp a diagnostic so operators can confirm the module recovered from 'done'.
+                if ($autoRequeuedFrom === 'done') {
+                    $state['auto_requeued_from_status'] = $autoRequeuedFrom;
+                    $this->writeJson('storage/run_state.json', $state);
+                }
                 $status = $state['status'] ?? 'idle';
             }
-            if ($status === 'idle') {
+            if (in_array($status, ['idle', 'done'], true)) {
                 return;
             }
         }
@@ -548,7 +578,13 @@ final class DoubleBottomLongService
         ];
 
         $this->writeJson('storage/last_run.json', [
-            'status'            => $isDone && !$continuousEnabled ? 'done' : 'running',
+            // 'done_retryable' when cycle finished with an empty universe so the dashboard
+            // does not show the misleading 'running' status while run_state shows 'done'.
+            'status'            => match(true) {
+                $isDone && !$continuousEnabled => 'done',
+                $isDone && $total === 0        => 'done_retryable',
+                default                        => 'running',
+            },
             'started_at'        => $state['started_at']      ?? null,
             'updated_at'        => date('c'),
             'finished_at'       => ($isDone && !$continuousEnabled) ? $finishedAt : null,
@@ -620,6 +656,14 @@ final class DoubleBottomLongService
             'final_reject_reason_distribution' => $cycleStats['final_reject_reason_distribution'] ?? (object)[],
             'reject_reason_distribution' => $cycleStats['reject_reason_distribution'] ?? (object)[],
             'errors_count'               => count($state['errors'] ?? []),
+            // Registry diagnostics — required for dashboard to diagnose empty-universe retries
+            'registry_source_path'      => $regDiag['registry_source_path']  ?? null,
+            'registry_loaded'           => (bool)($regDiag['registry_loaded'] ?? false),
+            'registry_symbol_count'     => (int)($regDiag['registry_symbol_count'] ?? 0),
+            'registry_empty'            => (int)($regDiag['registry_symbol_count'] ?? 0) === 0,
+            'queue_empty_universe'      => $total === 0,
+            'next_retry_allowed'        => $total === 0 ? $continuousEnabled : false,
+            'auto_requeued_from_status' => $state['auto_requeued_from_status'] ?? null,
         ]);
 
         if ($isDone) {
@@ -645,6 +689,13 @@ final class DoubleBottomLongService
             'batch_size'              => $config['batch_size']             ?? 50,
             'max_symbols_per_run'     => $config['max_symbols_per_run']    ?? 0,
             'continuous_scan_enabled' => $config['continuous_scan_enabled'] ?? true,
+            // Registry diagnostics (from last completed queue run)
+            'registry_symbol_count'   => (int)($state['registry_symbol_count']
+                ?? $state['registry_diag']['registry_symbol_count']
+                ?? 0),
+            'registry_empty'          => (bool)($state['registry_empty']
+                ?? ((int)($state['registry_diag']['registry_symbol_count'] ?? 0) === 0)),
+            'last_queue_total'        => (int)($state['total'] ?? 0),
             // Stop — fixed_from_liq_zone model
             'stop_mode'                  => $config['stop_mode']                    ?? 'fixed_from_liq_zone',
             'stop_from_liq_buffer_value' => $config['stop_from_liq_buffer_value']   ?? 0.002,

@@ -4387,6 +4387,7 @@ BLCK;
     }
 
     return <<<HTML
+<style>
 .dh-tab-nav{display:flex;gap:0;border-bottom:1px solid var(--ui-border);margin-bottom:20px;}
 .dh-tab-btn{background:none;border:none;border-bottom:2px solid transparent;padding:10px 22px;color:var(--ui-text-muted);cursor:pointer;font-size:14px;transition:color .15s,border-color .15s;outline:none;}
 .dh-tab-btn:hover{color:var(--ui-text);border-bottom-color:var(--ui-border);}

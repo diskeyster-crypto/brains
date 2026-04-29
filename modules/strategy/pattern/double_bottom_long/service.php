@@ -547,6 +547,10 @@ final class DoubleBottomLongService
                 // Set done + next_cycle_ready=true so the isDoneRetryable check on the
                 // next cron tick calls queueRun(), which advances the registry cursor to
                 // the next window of symbols (registry rotation).
+                //
+                // Back-reference: the isDoneRetryable condition (above in tickBatch startup)
+                // triggers on (status==='done' && continuous_scan_enabled===true), which is
+                // exactly what we set here.  The two blocks must stay in sync.
                 $state['status']           = 'done';
                 $state['completed_at']     = date('c');
                 $state['next_cycle_ready'] = true;

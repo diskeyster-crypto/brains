@@ -269,16 +269,52 @@ function renderDashboardHub(): string
         }
     }
 
+    // ── Pre-load strategy module configs (source of truth for enabled/mode) ─
+    // For strategy modules that have a module_path, enabled and mode are
+    // authoritative in the strategy's own config files (base.php merged with
+    // active.php). operator_overrides.json is NOT the source of truth for
+    // these fields in strategy modules.
+    $stratModuleConfigs = [];
+    {
+        $_smcRoot = System::path('root');
+        foreach ($registry as $_smcRec) {
+            $_smcId   = (string)($_smcRec['strategy_id'] ?? '');
+            $_smcPath = (string)($_smcRec['module_path'] ?? '');
+            if ($_smcId === '' || $_smcPath === '') {
+                continue;
+            }
+            $_smcMerged = [];
+            foreach (['config/base.php', 'config/active.php'] as $_smcCfgFile) {
+                $_smcCfgPath = $_smcRoot . '/' . $_smcPath . '/' . $_smcCfgFile;
+                if (is_file($_smcCfgPath)) {
+                    $_smcLoaded = @include $_smcCfgPath;
+                    if (is_array($_smcLoaded)) {
+                        $_smcMerged = array_merge($_smcMerged, $_smcLoaded);
+                    }
+                }
+            }
+            if (!empty($_smcMerged)) {
+                $stratModuleConfigs[$_smcId] = $_smcMerged;
+            }
+        }
+        unset($_smcRec, $_smcId, $_smcPath, $_smcMerged, $_smcCfgFile, $_smcCfgPath, $_smcLoaded, $_smcRoot);
+    }
+
     $totalStrat    = count($registry);
     $enabledStrat  = 0;
     $disabledStrat = 0;
     foreach ($registry as $r) {
         $rid = (string)($r['strategy_id'] ?? '');
-        $op  = (array)($overrides[$rid] ?? []);
-        // Use override if present; fall back to manifest's enabled_by_default; then true
-        $isEnabled = array_key_exists('enabled', $op)
-            ? (bool)$op['enabled']
-            : (bool)($r['enabled_by_default'] ?? true);
+        // Use strategy module config as source of truth when available;
+        // fall back to operator_overrides, then manifest's enabled_by_default
+        if (isset($stratModuleConfigs[$rid]) && array_key_exists('enabled', $stratModuleConfigs[$rid])) {
+            $isEnabled = (bool)$stratModuleConfigs[$rid]['enabled'];
+        } else {
+            $op = (array)($overrides[$rid] ?? []);
+            $isEnabled = array_key_exists('enabled', $op)
+                ? (bool)$op['enabled']
+                : (bool)($r['enabled_by_default'] ?? true);
+        }
         if ($isEnabled) {
             $enabledStrat++;
         } else {
@@ -449,16 +485,26 @@ function renderDashboardHub(): string
             $hasHandoff = ($rec['handoff_queue_path'] ?? null) !== null;
             $signalCount = $stratSignals[$stratId] ?? null;
 
-            $op          = (array)($overrides[$stratId] ?? []);
-            // Use stored override if present; fall back to manifest's enabled_by_default; then true
-            $opEnabled   = array_key_exists('enabled', $op)
-                ? (bool)$op['enabled']
-                : (bool)($rec['enabled_by_default'] ?? true);
-            // Mode: use stored override if present; fall back to manifest default_mode; then 'demo'
+            // Use strategy module config as source of truth for enabled/mode;
+            // fall back to operator_overrides when strategy config is unavailable.
             $defaultMode = (string)($rec['default_mode'] ?? 'demo');
-            $opMode      = array_key_exists('mode', $op)
-                ? (string)$op['mode']
-                : $defaultMode;
+            if (isset($stratModuleConfigs[$stratId])) {
+                $_cardCfg = $stratModuleConfigs[$stratId];
+                $opEnabled = array_key_exists('enabled', $_cardCfg)
+                    ? (bool)$_cardCfg['enabled']
+                    : (bool)($rec['enabled_by_default'] ?? true);
+                $opMode    = array_key_exists('mode', $_cardCfg)
+                    ? (string)$_cardCfg['mode']
+                    : $defaultMode;
+            } else {
+                $op        = (array)($overrides[$stratId] ?? []);
+                $opEnabled = array_key_exists('enabled', $op)
+                    ? (bool)$op['enabled']
+                    : (bool)($rec['enabled_by_default'] ?? true);
+                $opMode    = array_key_exists('mode', $op)
+                    ? (string)$op['mode']
+                    : $defaultMode;
+            }
 
             $esId    = $e($stratId);
             $esTitle = $e($title);
@@ -968,16 +1014,26 @@ HTML;
     foreach ($registry as $rec) {
         $sid    = (string)($rec['strategy_id'] ?? '');
         $stitle = $e($rec['title'] ?? $sid);
-        $op     = (array)($overrides[$sid] ?? []);
 
-        // Use same consistent logic as summary counts and strategy cards
-        $mEnabled = array_key_exists('enabled', $op)
-            ? (bool)$op['enabled']
-            : (bool)($rec['enabled_by_default'] ?? true);
+        // Use strategy module config as source of truth for enabled/mode when available
         $mDefaultMode = (string)($rec['default_mode'] ?? 'demo');
-        $mMode = array_key_exists('mode', $op)
-            ? (string)$op['mode']
-            : $mDefaultMode;
+        if (isset($stratModuleConfigs[$sid])) {
+            $_mCfg   = $stratModuleConfigs[$sid];
+            $mEnabled = array_key_exists('enabled', $_mCfg)
+                ? (bool)$_mCfg['enabled']
+                : (bool)($rec['enabled_by_default'] ?? true);
+            $mMode    = array_key_exists('mode', $_mCfg)
+                ? (string)$_mCfg['mode']
+                : $mDefaultMode;
+        } else {
+            $op       = (array)($overrides[$sid] ?? []);
+            $mEnabled = array_key_exists('enabled', $op)
+                ? (bool)$op['enabled']
+                : (bool)($rec['enabled_by_default'] ?? true);
+            $mMode    = array_key_exists('mode', $op)
+                ? (string)$op['mode']
+                : $mDefaultMode;
+        }
 
         $enColor  = $mEnabled ? '#3fb950' : '#8b949e';
         $enLbl    = $mEnabled ? 'Включено' : 'Выключено';
@@ -2017,10 +2073,15 @@ HTML;
     foreach ($registry as $rec) {
         $cSid    = (string)($rec['strategy_id'] ?? '');
         $cTitle  = $e($rec['title'] ?? $cSid);
-        $cOp     = (array)($overrides[$cSid] ?? []);
-        $cEnabled = array_key_exists('enabled', $cOp)
-            ? (bool)$cOp['enabled']
-            : (bool)($rec['enabled_by_default'] ?? true);
+        // Use strategy module config as source of truth for enabled when available
+        if (isset($stratModuleConfigs[$cSid]) && array_key_exists('enabled', $stratModuleConfigs[$cSid])) {
+            $cEnabled = (bool)$stratModuleConfigs[$cSid]['enabled'];
+        } else {
+            $cOp      = (array)($overrides[$cSid] ?? []);
+            $cEnabled = array_key_exists('enabled', $cOp)
+                ? (bool)$cOp['enabled']
+                : (bool)($rec['enabled_by_default'] ?? true);
+        }
         $cEnColor = $cEnabled ? '#3fb950' : '#8b949e';
         $cEnLabel = $cEnabled ? 'ON' : 'OFF';
         $cStatus  = $e((string)($rec['status'] ?? 'discovered'));
@@ -6025,7 +6086,12 @@ function handleDashboardChainRun(): void
             continue;
         }
         $op      = (array)($overrides[$sid] ?? []);
-        $enabled = $op['enabled'] ?? true;
+        // Use strategy module config as source of truth for enabled when available
+        if (isset($stratModuleConfigs[$sid]) && array_key_exists('enabled', $stratModuleConfigs[$sid])) {
+            $enabled = (bool)$stratModuleConfigs[$sid]['enabled'];
+        } else {
+            $enabled = $op['enabled'] ?? true;
+        }
         if (!$enabled) {
             $steps[] = "Стратегия «{$sid}»: пропущена (выключена)";
             continue;

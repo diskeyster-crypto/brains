@@ -123,8 +123,59 @@ final class DoubleBottomLongService
             return ['ok' => false, 'error' => 'Config load failed'];
         }
 
-        $prevState = $this->getRunState();
-        $universe = $this->buildUniverse($config);
+        $prevState   = $this->getRunState();
+        $fullSymbols = $this->buildUniverse($config);   // full filtered registry
+
+        // ── Registry cursor rotation ─────────────────────────────────────────
+        // max_symbols_per_run is a per-cycle WINDOW SIZE, not a permanent cap.
+        // The cursor persists in run_state.json['next_registry_cursor'] across cycles
+        // so each new queueRun() advances to the next unseen window of symbols.
+        $registryTotal     = count($fullSymbols);
+        $maxSymbols        = (int)($config['max_symbols_per_run'] ?? 0);
+        if ($maxSymbols <= 0) {
+            $maxSymbols = $registryTotal;   // 0 = scan entire registry per cycle
+        }
+
+        $prevCursor        = (int)($prevState['next_registry_cursor'] ?? 0);
+        $cursorResetReason = null;
+        if ($registryTotal > 0 && ($prevCursor < 0 || $prevCursor >= $registryTotal)) {
+            $prevCursor        = 0;
+            $cursorResetReason = 'cursor_out_of_range';
+        }
+        $windowStart       = $prevCursor;
+        $registryWrapped   = false;
+        $prevRound         = (int)($prevState['full_registry_scan_round'] ?? 0);
+        $registryScanRound = $prevRound;
+
+        if ($registryTotal === 0) {
+            // Empty registry — no windowing possible.
+            $universe        = [];
+            $windowEnd       = 0;
+            $nextCursor      = 0;
+            $selectedTotal   = 0;
+        } elseif ($maxSymbols >= $registryTotal) {
+            // Window covers the entire registry: always scan all, cursor resets to 0.
+            $universe          = $fullSymbols;
+            $windowEnd         = $registryTotal - 1;
+            $nextCursor        = 0;
+            $selectedTotal     = $registryTotal;
+            $registryWrapped   = true;
+            $registryScanRound = $prevRound + 1;
+        } else {
+            // Windowed scan: take up to $maxSymbols starting at $windowStart.
+            // Do NOT wrap within one cycle; just take what is available up to the end.
+            $available     = $registryTotal - $windowStart;
+            $selectedCount = min($maxSymbols, $available);
+            $universe      = array_slice($fullSymbols, $windowStart, $selectedCount);
+            $windowEnd     = $windowStart + $selectedCount - 1;
+            $nextCursor    = ($windowStart + $selectedCount) % $registryTotal;
+            $selectedTotal = $selectedCount;
+            if (($windowStart + $selectedCount) >= $registryTotal) {
+                $registryWrapped   = true;
+                $registryScanRound = $prevRound + 1;
+            }
+        }
+        // ── end rotation ─────────────────────────────────────────────────────
 
         // Cycle-local stats are reset on each new queue run; cumulative stats.json is never wiped.
         $this->writeJson('storage/cycle_stats.json', $this->zeroStats());
@@ -159,7 +210,7 @@ final class DoubleBottomLongService
         $cycleId    = (int)($prevState['cycle_id'] ?? 0);
         $nowIso     = date('c');
         $regDiag    = $this->readJson('storage/registry_diag.json', []);
-        $regEmpty   = (int)($regDiag['registry_symbol_count'] ?? 0) === 0;
+        $regEmpty   = $registryTotal === 0;
         $queueEmpty = count($universe) === 0;
         $state = [
             'status'        => 'queued',
@@ -190,12 +241,25 @@ final class DoubleBottomLongService
             'registry_diag'             => $regDiag,
             'registry_source_path'      => $regDiag['registry_source_path']  ?? null,
             'registry_loaded'           => (bool)($regDiag['registry_loaded'] ?? false),
-            'registry_symbol_count'     => (int)($regDiag['registry_symbol_count'] ?? 0),
+            'registry_symbol_count'     => $registryTotal,
+            'registry_total'            => $registryTotal,
             'registry_empty'            => $regEmpty,
             'queue_empty_universe'      => $queueEmpty,
             // next_retry_allowed=true lets the next cron tick auto-requeue if the universe was empty
             'next_retry_allowed'        => $queueEmpty ? (bool)($config['continuous_scan_enabled'] ?? true) : false,
             'auto_requeued_from_status' => null,
+            // Registry rotation cursor fields
+            'registry_cursor'             => $windowStart,
+            'previous_registry_cursor'    => $prevCursor,
+            'next_registry_cursor'        => $nextCursor,
+            'registry_window_start'       => $windowStart,
+            'registry_window_end'         => $windowEnd,
+            'registry_wrapped'            => $registryWrapped,
+            'full_registry_scan_round'    => $registryScanRound,
+            'selected_symbols_total'      => $selectedTotal,
+            'max_symbols_per_run'         => (int)($config['max_symbols_per_run'] ?? 0),
+            'batch_size'                  => (int)($config['batch_size'] ?? 50),
+            'registry_cursor_reset_reason' => $cursorResetReason,
         ];
         $this->writeJson('storage/run_state.json', $state);
         return ['ok' => true, 'total' => count($universe)];
@@ -479,13 +543,13 @@ final class DoubleBottomLongService
             );
 
             if ($continuousEnabled && $total > 0) {
-                // Auto-restart: reset cursor, keep symbols list, stay running
-                $state['status']           = 'running';
-                $state['cursor']           = 0;
-                $state['processed']        = 0;
-                $state['found']            = 0;
-                $state['cycle_started_at'] = date('c');
-                $state['next_cycle_ready'] = false;
+                // Cycle window complete with continuous scan enabled.
+                // Set done + next_cycle_ready=true so the isDoneRetryable check on the
+                // next cron tick calls queueRun(), which advances the registry cursor to
+                // the next window of symbols (registry rotation).
+                $state['status']           = 'done';
+                $state['completed_at']     = date('c');
+                $state['next_cycle_ready'] = true;
                 $foundCandidates           = [];
                 $emittedCandidates         = [];
                 // Mark that cycle_stats.json should be reset at the start of the next cycle.
@@ -578,12 +642,13 @@ final class DoubleBottomLongService
         ];
 
         $this->writeJson('storage/last_run.json', [
-            // 'done_retryable' when cycle finished with an empty universe so the dashboard
-            // does not show the misleading 'running' status while run_state shows 'done'.
+            // done_retryable = empty universe (registry not yet populated, will retry)
+            // done           = normal cycle completion (continuous or not)
+            // running        = mid-cycle batch tick
             'status'            => match(true) {
-                $isDone && !$continuousEnabled => 'done',
-                $isDone && $total === 0        => 'done_retryable',
-                default                        => 'running',
+                $isDone && $total === 0 => 'done_retryable',
+                $isDone                 => 'done',
+                default                 => 'running',
             },
             'started_at'        => $state['started_at']      ?? null,
             'updated_at'        => date('c'),
@@ -659,11 +724,23 @@ final class DoubleBottomLongService
             // Registry diagnostics — required for dashboard to diagnose empty-universe retries
             'registry_source_path'      => $regDiag['registry_source_path']  ?? null,
             'registry_loaded'           => (bool)($regDiag['registry_loaded'] ?? false),
-            'registry_symbol_count'     => (int)($regDiag['registry_symbol_count'] ?? 0),
-            'registry_empty'            => (int)($regDiag['registry_symbol_count'] ?? 0) === 0,
+            'registry_symbol_count'     => (int)($state['registry_symbol_count'] ?? $regDiag['registry_symbol_count'] ?? 0),
+            'registry_total'            => (int)($state['registry_total'] ?? 0),
+            'registry_empty'            => (int)($state['registry_total'] ?? $regDiag['registry_symbol_count'] ?? 0) === 0,
             'queue_empty_universe'      => $total === 0,
             'next_retry_allowed'        => $total === 0 ? $continuousEnabled : false,
             'auto_requeued_from_status' => $state['auto_requeued_from_status'] ?? null,
+            // Registry rotation cursor fields
+            'registry_cursor'           => (int)($state['registry_cursor']          ?? 0),
+            'previous_registry_cursor'  => (int)($state['previous_registry_cursor'] ?? 0),
+            'next_registry_cursor'      => (int)($state['next_registry_cursor']      ?? 0),
+            'registry_window_start'     => (int)($state['registry_window_start']     ?? 0),
+            'registry_window_end'       => (int)($state['registry_window_end']       ?? 0),
+            'registry_wrapped'          => (bool)($state['registry_wrapped']         ?? false),
+            'full_registry_scan_round'  => (int)($state['full_registry_scan_round']  ?? 0),
+            'selected_symbols_total'    => (int)($state['selected_symbols_total']    ?? 0),
+            'max_symbols_per_run'       => (int)($config['max_symbols_per_run']      ?? 0),
+            'batch_size'                => (int)($config['batch_size']               ?? 50),
         ]);
 
         if ($isDone) {
@@ -693,9 +770,18 @@ final class DoubleBottomLongService
             'registry_symbol_count'   => (int)($state['registry_symbol_count']
                 ?? $state['registry_diag']['registry_symbol_count']
                 ?? 0),
+            'registry_total'          => (int)($state['registry_total']       ?? 0),
             'registry_empty'          => (bool)($state['registry_empty']
                 ?? ((int)($state['registry_diag']['registry_symbol_count'] ?? 0) === 0)),
             'last_queue_total'        => (int)($state['total'] ?? 0),
+            // Registry rotation cursor fields
+            'registry_cursor'          => (int)($state['registry_cursor']          ?? 0),
+            'next_registry_cursor'     => (int)($state['next_registry_cursor']      ?? 0),
+            'registry_window_start'    => (int)($state['registry_window_start']     ?? 0),
+            'registry_window_end'      => (int)($state['registry_window_end']       ?? 0),
+            'registry_wrapped'         => (bool)($state['registry_wrapped']         ?? false),
+            'full_registry_scan_round' => (int)($state['full_registry_scan_round']  ?? 0),
+            'selected_symbols_total'   => (int)($state['selected_symbols_total']    ?? 0),
             // Stop — fixed_from_liq_zone model
             'stop_mode'                  => $config['stop_mode']                    ?? 'fixed_from_liq_zone',
             'stop_from_liq_buffer_value' => $config['stop_from_liq_buffer_value']   ?? 0.002,
@@ -1582,11 +1668,17 @@ final class DoubleBottomLongService
         );
     }
 
+    /**
+     * Load and return the FULL filtered registry symbol list.
+     *
+     * max_symbols_per_run windowing is intentionally NOT applied here; it is
+     * handled by queueRun() so that the persistent registry cursor can rotate
+     * through the complete registry across successive cycles.
+     */
     private function buildUniverse(array $config): array
     {
-        $mode     = (string)($config['universe_mode']    ?? 'all');
-        $excluded = (array)($config['excluded_symbols']  ?? []);
-        $maxCount = (int)($config['max_symbols_per_run'] ?? 0);
+        $mode     = (string)($config['universe_mode']   ?? 'all');
+        $excluded = (array)($config['excluded_symbols'] ?? []);
 
         $registryDiag = [
             'registry_source_path'  => null,
@@ -1641,13 +1733,8 @@ final class DoubleBottomLongService
         $this->writeJson('storage/registry_diag.json', $registryDiag);
 
         $symbols = array_filter($symbols, fn($s) => !in_array($s, $excluded, true));
-        $symbols = array_values($symbols);
 
-        if ($maxCount > 0 && count($symbols) > $maxCount) {
-            $symbols = array_slice($symbols, 0, $maxCount);
-        }
-
-        return $symbols;
+        return array_values($symbols);
     }
 
     private function fetchCandles(string $symbol, array $config): array

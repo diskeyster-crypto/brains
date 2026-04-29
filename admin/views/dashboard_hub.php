@@ -5173,6 +5173,7 @@ BLCK;
       <!-- Settings form -->
       <form method="post" action="{$freezeSaveUrl}" style="margin:0;">
         <input type="hidden" name="dashboard_action" value="freeze_blacklist_save">
+        <input type="hidden" name="freeze_blacklist_scope" value="freeze">
         <input type="hidden" name="active_tab" value="dh-ctrl">
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px 16px;margin-bottom:12px;">
           <div>
@@ -5226,6 +5227,7 @@ BLCK;
       <!-- Settings form -->
       <form method="post" action="{$blacklistSaveUrl}" style="margin:0;">
         <input type="hidden" name="dashboard_action" value="freeze_blacklist_save">
+        <input type="hidden" name="freeze_blacklist_scope" value="blacklist">
         <input type="hidden" name="active_tab" value="dh-ctrl">
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px 16px;margin-bottom:12px;">
           <div>
@@ -5779,40 +5781,50 @@ function handleFreezeBlacklistSave(): void
         }
     }
 
-    // ── Freeze settings ───────────────────────────────────────────────────────
-    $current['symbol_freeze_after_close_enabled']   = (bool)(int)($_POST['symbol_freeze_after_close_enabled'] ?? 0);
-    $current['symbol_freeze_after_close_minutes']   = max(1, (int)($_POST['symbol_freeze_after_close_minutes'] ?? 10));
-    $current['symbol_freeze_apply_to_profit_close'] = isset($_POST['symbol_freeze_apply_to_profit_close']);
-    $current['symbol_freeze_apply_to_stop_close']   = isset($_POST['symbol_freeze_apply_to_stop_close']);
-    $current['symbol_freeze_apply_to_loss_close']   = isset($_POST['symbol_freeze_apply_to_loss_close']);
-    $current['symbol_freeze_apply_to_manual_close'] = isset($_POST['symbol_freeze_apply_to_manual_close']);
+    // ── Determine scope ───────────────────────────────────────────────────────
+    $scope = $_POST['freeze_blacklist_scope'] ?? 'all';
+    if (!in_array($scope, ['freeze', 'blacklist', 'all'], true)) {
+        $scope = 'all';
+    }
 
-    $freezeModesRaw = trim((string)($_POST['symbol_freeze_modes'] ?? 'demo, live'));
-    $freezeModes = array_values(array_filter(array_map('trim', explode(',', $freezeModesRaw))));
-    if (empty($freezeModes)) { $freezeModes = ['demo', 'live']; }
-    $current['symbol_freeze_modes'] = $freezeModes;
+    // ── Freeze settings ───────────────────────────────────────────────────────
+    if ($scope === 'freeze' || $scope === 'all') {
+        $current['symbol_freeze_after_close_enabled']   = (bool)(int)($_POST['symbol_freeze_after_close_enabled'] ?? 0);
+        $current['symbol_freeze_after_close_minutes']   = max(1, (int)($_POST['symbol_freeze_after_close_minutes'] ?? 10));
+        $current['symbol_freeze_apply_to_profit_close'] = isset($_POST['symbol_freeze_apply_to_profit_close']);
+        $current['symbol_freeze_apply_to_stop_close']   = isset($_POST['symbol_freeze_apply_to_stop_close']);
+        $current['symbol_freeze_apply_to_loss_close']   = isset($_POST['symbol_freeze_apply_to_loss_close']);
+        $current['symbol_freeze_apply_to_manual_close'] = isset($_POST['symbol_freeze_apply_to_manual_close']);
+
+        $freezeModesRaw = trim((string)($_POST['symbol_freeze_modes'] ?? 'demo, live'));
+        $freezeModes = array_values(array_filter(array_map('trim', explode(',', $freezeModesRaw))));
+        if (empty($freezeModes)) { $freezeModes = ['demo', 'live']; }
+        $current['symbol_freeze_modes'] = $freezeModes;
+    }
 
     // ── Blacklist settings ────────────────────────────────────────────────────
-    $current['symbol_blacklist_enabled']               = (bool)(int)($_POST['symbol_blacklist_enabled'] ?? 0);
-    $current['auto_blacklist_enabled']                 = (bool)(int)($_POST['auto_blacklist_enabled'] ?? 0);
-    $current['auto_blacklist_loss_threshold']          = max(1, (int)($_POST['auto_blacklist_loss_threshold'] ?? 3));
-    $current['auto_blacklist_window_hours']            = max(1, (int)($_POST['auto_blacklist_window_hours'] ?? 24));
-    $current['auto_blacklist_duration_hours']          = max(1, (int)($_POST['auto_blacklist_duration_hours'] ?? 24));
-    $current['auto_blacklist_count_only_closed_losses']= isset($_POST['auto_blacklist_count_only_closed_losses']);
-    $current['auto_blacklist_reset_on_win']            = isset($_POST['auto_blacklist_reset_on_win']);
+    if ($scope === 'blacklist' || $scope === 'all') {
+        $current['symbol_blacklist_enabled']               = (bool)(int)($_POST['symbol_blacklist_enabled'] ?? 0);
+        $current['auto_blacklist_enabled']                 = (bool)(int)($_POST['auto_blacklist_enabled'] ?? 0);
+        $current['auto_blacklist_loss_threshold']          = max(1, (int)($_POST['auto_blacklist_loss_threshold'] ?? 3));
+        $current['auto_blacklist_window_hours']            = max(1, (int)($_POST['auto_blacklist_window_hours'] ?? 24));
+        $current['auto_blacklist_duration_hours']          = max(1, (int)($_POST['auto_blacklist_duration_hours'] ?? 24));
+        $current['auto_blacklist_count_only_closed_losses']= isset($_POST['auto_blacklist_count_only_closed_losses']);
+        $current['auto_blacklist_reset_on_win']            = isset($_POST['auto_blacklist_reset_on_win']);
 
-    $autoBlModesRaw = trim((string)($_POST['auto_blacklist_modes'] ?? 'demo, live'));
-    $autoBlModes = array_values(array_filter(array_map('trim', explode(',', $autoBlModesRaw))));
-    if (empty($autoBlModes)) { $autoBlModes = ['demo', 'live']; }
-    $current['auto_blacklist_modes'] = $autoBlModes;
+        $autoBlModesRaw = trim((string)($_POST['auto_blacklist_modes'] ?? 'demo, live'));
+        $autoBlModes = array_values(array_filter(array_map('trim', explode(',', $autoBlModesRaw))));
+        if (empty($autoBlModes)) { $autoBlModes = ['demo', 'live']; }
+        $current['auto_blacklist_modes'] = $autoBlModes;
 
-    // Manual blacklist: one symbol per line, uppercase
-    $manualRaw = (string)($_POST['manual_symbol_blacklist'] ?? '');
-    $manualList = array_values(array_filter(array_map(
-        fn($s) => strtoupper(trim($s)),
-        explode("\n", $manualRaw)
-    )));
-    $current['manual_symbol_blacklist'] = $manualList;
+        // Manual blacklist: one symbol per line, uppercase
+        $manualRaw = (string)($_POST['manual_symbol_blacklist'] ?? '');
+        $manualList = array_values(array_filter(array_map(
+            fn($s) => strtoupper(trim($s)),
+            explode("\n", $manualRaw)
+        )));
+        $current['manual_symbol_blacklist'] = $manualList;
+    }
 
     $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Bot Module — Active Config Overrides\n * Written by the admin UI.\n */\n\nreturn ";
     $php .= var_export($current, true);
@@ -5823,7 +5835,14 @@ function handleFreezeBlacklistSave(): void
     }
     file_put_contents($activeFile, $php);
 
-    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Настройки Freeze & Blacklist сохранены'];
+    if ($scope === 'freeze') {
+        $flashMsg = 'Настройки Symbol Freeze сохранены';
+    } elseif ($scope === 'blacklist') {
+        $flashMsg = 'Настройки Symbol Blacklist сохранены';
+    } else {
+        $flashMsg = 'Настройки Freeze & Blacklist сохранены';
+    }
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => $flashMsg];
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
     $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }

@@ -181,10 +181,20 @@ return [
     'handoff_min_reclaim_score'           => 9.0,
     'handoff_min_candidate_quality_score' => 8.0,
 
-    // Minimum range_hold_score to bypass the preferred-structure requirement for
-    // range_hold signals. When range_hold_score >= this threshold the signal is
-    // treated as if structure_type were preferred, allowing it through handoff even
-    // though range_hold is not in handoff_prefer_structure_types.
-    // Set to a very high value (e.g., 99.0) to disable the bypass entirely.
-    'handoff_range_hold_strong_bypass_score' => 7.5,
+    // ── Strong range_hold exception path ──────────────────────────────────────
+    // When true, a range_hold signal may bypass the preferred-structure hard block,
+    // but only when ALL quality gates in classifyHandoffReadiness() are satisfied.
+    // This is an exception path only; higher_low remains the clean preferred path.
+    'handoff_allow_strong_range_hold'           => true,
+
+    // Score thresholds that all must be met for a strong range_hold exception.
+    'handoff_min_range_hold_structure_score'    => 9.0,
+    'handoff_min_range_hold_pullback_score'     => 8.0,
+    'handoff_min_range_hold_reclaim_score'      => 9.0,
+    'handoff_min_range_hold_quality_score'      => 8.0,
+
+    // DEPRECATED — kept only for backward compatibility; not used as the sole decision gate.
+    // The strong range_hold path now requires the full quality gate above.
+    // Set to 99.0 to disable any legacy code that still reads this key.
+    'handoff_range_hold_strong_bypass_score' => 99.0,
 ];

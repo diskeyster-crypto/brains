@@ -8,7 +8,11 @@ declare(strict_types=1);
  *
  * Demo-domain safety: mode is explicitly set to 'demo' here so that even if
  * the admin UI accidentally writes 'live', a deploy from this repo corrects it.
- * Do NOT change mode to 'live' in this file.
+ *
+ * To enable live execution:
+ *   1. Confirm the bot execution logic is fully wired and tested.
+ *   2. Change mode to 'live' via the admin UI on the target server only.
+ *   3. Do NOT commit 'live' into this file — keep repo state as 'demo'.
  */
 
 return [

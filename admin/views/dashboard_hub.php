@@ -1525,6 +1525,10 @@ ROWS;
         'no_post_dump_flat_reclaim'                 => 'Нет: падение → база → возврат',
         'bearish_reversal_exception_after_stabilization' => 'Исключение: разворот после стабилизации',
         'coin_trend_context_too_weak'               => 'Контекст тренда монеты слишком слабый',
+        // double_bottom_long — support/resistance
+        'no_support_level'                          => 'Нет уровня поддержки',
+        'support_broken'                            => 'Поддержка пробита вниз',
+        'entry_too_far_after_reclaim'               => 'Вход слишком далеко от reclaim-уровня',
         // controlled_daily_momentum_long
         'ignore_low_momentum_below_5pct'  => 'Моментум < 5% — пропуск',
         'watch_only_weak_momentum'        => 'Слабый моментум 5–8% — только наблюдение',

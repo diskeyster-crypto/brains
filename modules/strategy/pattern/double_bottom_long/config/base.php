@@ -131,9 +131,18 @@ return [
     'flat_base_min_touches'              => 2,
     'flat_base_volume_cooling_required'  => false,
 
+    'support_resistance_enabled'         => true,
+    'sr_lookback_candles'                => 120,
+    'support_touch_tolerance_pct'        => 0.4,
+    'resistance_touch_tolerance_pct'     => 0.4,
+    'min_support_touches'                => 2,
+    'min_resistance_touches'             => 1,
+
     'reclaim_after_flat_required'        => true,
-    'reclaim_min_close_above_base_pct'   => 0.4,
+    'reclaim_min_close_above_base_pct'   => 0.4,  // legacy alias
+    'reclaim_min_close_above_level_pct'  => 0.4,
     'reclaim_confirm_bars'               => 2,
+    'max_entry_distance_from_reclaim_pct' => 2.5,
 
     'bearish_reversal_exception_enabled'                   => true,
     'bearish_reversal_requires_post_dump_stabilization'    => true,

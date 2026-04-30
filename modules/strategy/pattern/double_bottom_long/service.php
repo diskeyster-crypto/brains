@@ -734,6 +734,7 @@ final class DoubleBottomLongService
             'active_downtrend_reject_total'      => (int)($cycleStats['active_downtrend_reject_total']      ?? 0),
             'post_dump_detected_total'           => (int)($cycleStats['post_dump_detected_total']           ?? 0),
             'stabilization_detected_total'       => (int)($cycleStats['stabilization_detected_total']       ?? 0),
+            'support_resistance_detected_total'  => (int)($cycleStats['support_resistance_detected_total']  ?? 0),
             'flat_base_detected_total'           => (int)($cycleStats['flat_base_detected_total']           ?? 0),
             'reclaim_after_flat_detected_total'  => (int)($cycleStats['reclaim_after_flat_detected_total']  ?? 0),
             'bearish_reversal_exception_used_total'    => (int)($cycleStats['bearish_reversal_exception_used_total']    ?? 0),
@@ -985,6 +986,18 @@ final class DoubleBottomLongService
             'reclaim_confirmed_bars'         => $coinCtx['reclaim_confirmed_bars'],
             'reclaim_strength_pct'           => $coinCtx['reclaim_strength_pct'],
             'reclaim_score'                  => $coinCtx['reclaim_score'],
+            'entry_distance_from_reclaim_pct' => $coinCtx['entry_distance_from_reclaim_pct'],
+            // Support / resistance
+            'support_level'                  => $coinCtx['support_level'],
+            'resistance_level'               => $coinCtx['resistance_level'],
+            'neckline_level'                 => $coinCtx['neckline_level'],
+            'base_low'                       => $coinCtx['base_low'],
+            'base_high'                      => $coinCtx['base_high'],
+            'base_width_pct'                 => $coinCtx['base_width_pct'],
+            'support_touches'                => $coinCtx['support_touches'],
+            'resistance_touches'             => $coinCtx['resistance_touches'],
+            'support_resistance_score'       => $coinCtx['support_resistance_score'],
+            'support_broken'                 => $coinCtx['support_broken'],
             'setup_context_type'             => $coinCtx['setup_context_type'],
             'bearish_reversal_exception_used'=> false,  // set by tryLong() if used
             'reversal_context_score'         => $coinCtx['reversal_context_score'],
@@ -1633,6 +1646,11 @@ final class DoubleBottomLongService
         if ((bool)($result['stabilization_detected'] ?? false)) {
             $inc($stats, 'stabilization_detected_total');
         }
+        // S/R detection counter
+        $srScore = (float)($result['support_resistance_score'] ?? -1.0);
+        if ($srScore >= 0.0) {
+            $inc($stats, 'support_resistance_detected_total');
+        }
         if ((bool)($result['flat_base_detected'] ?? false)) {
             $inc($stats, 'flat_base_detected_total');
         }
@@ -1785,6 +1803,7 @@ final class DoubleBottomLongService
             'active_downtrend_reject_total'      => 0,
             'post_dump_detected_total'           => 0,
             'stabilization_detected_total'       => 0,
+            'support_resistance_detected_total'  => 0,
             'flat_base_detected_total'           => 0,
             'reclaim_after_flat_detected_total'  => 0,
             'bearish_reversal_exception_used_total'    => 0,
@@ -1882,6 +1901,18 @@ final class DoubleBottomLongService
                 'reclaim_confirmed_bars'         => 0,
                 'reclaim_strength_pct'           => 0.0,
                 'reclaim_score'                  => 0.0,
+                'entry_distance_from_reclaim_pct' => 0.0,
+                // Support/resistance
+                'support_level'                  => null,
+                'resistance_level'               => null,
+                'neckline_level'                 => null,
+                'base_low'                       => null,
+                'base_high'                      => null,
+                'base_width_pct'                 => 0.0,
+                'support_touches'                => 0,
+                'resistance_touches'             => 0,
+                'support_resistance_score'       => 0.0,
+                'support_broken'                 => false,
                 'setup_context_type'             => 'standard',
                 'reversal_context_score'         => 0.0,
                 'entry_context_score'            => 10.0,
@@ -1959,14 +1990,22 @@ final class DoubleBottomLongService
             ? $this->detectReclaimAfterFlatBase($candles, $config, $flatBaseResult)
             : ['reclaim_after_flat_detected' => false, 'reclaim_level' => null,
                'reclaim_confirmed_bars' => 0, 'reclaim_strength_pct' => 0.0,
-               'reclaim_score' => 0.0, 'reclaim_reason' => 'disabled'];
+               'reclaim_score' => 0.0, 'entry_distance_from_reclaim_pct' => 0.0,
+               'reclaim_reason' => 'disabled'];
+
+        $srResult = (bool)($config['support_resistance_enabled'] ?? true)
+            ? $this->detectSupportResistanceLevels($candles, $config)
+            : ['support_level' => null, 'resistance_level' => null, 'neckline_level' => null,
+               'base_low' => null, 'base_high' => null, 'base_mid' => null, 'base_width_pct' => 0.0,
+               'support_touches' => 0, 'resistance_touches' => 0,
+               'support_resistance_score' => 0.0, 'support_resistance_reason' => 'disabled',
+               'support_broken' => false];
 
         // Reversal context score (0–10): used by bearish_reversal_exception check
         $reversalScore = $this->computeReversalContextScore(
             $postDumpResult, $flatBaseResult, $reclaimResult,
             $activeFallingKnife, $activeDowntrend, $config
         );
-
         // Entry context score: higher is better; includes non-reversal signals
         $entryContextScore = $reversalScore;
         if (!$activeFallingKnife && !$activeDowntrend) {
@@ -2042,6 +2081,18 @@ final class DoubleBottomLongService
             'reclaim_confirmed_bars'         => (int)($reclaimResult['reclaim_confirmed_bars']      ?? 0),
             'reclaim_strength_pct'           => (float)($reclaimResult['reclaim_strength_pct']     ?? 0.0),
             'reclaim_score'                  => (float)($reclaimResult['reclaim_score']             ?? 0.0),
+            'entry_distance_from_reclaim_pct' => (float)($reclaimResult['entry_distance_from_reclaim_pct'] ?? 0.0),
+            // Support / resistance
+            'support_level'                  => $srResult['support_level']              ?? null,
+            'resistance_level'               => $srResult['resistance_level']           ?? null,
+            'neckline_level'                 => $srResult['neckline_level']             ?? null,
+            'base_low'                       => $srResult['base_low']                  ?? null,
+            'base_high'                      => $srResult['base_high']                 ?? null,
+            'base_width_pct'                 => (float)($srResult['base_width_pct']    ?? 0.0),
+            'support_touches'                => (int)($srResult['support_touches']      ?? 0),
+            'resistance_touches'             => (int)($srResult['resistance_touches']   ?? 0),
+            'support_resistance_score'       => (float)($srResult['support_resistance_score'] ?? 0.0),
+            'support_broken'                 => (bool)($srResult['support_broken']      ?? false),
             'setup_context_type'             => $setupContextType,
             'reversal_context_score'         => round($reversalScore, 2),
             'entry_context_score'            => round($entryContextScore, 2),
@@ -2289,7 +2340,8 @@ final class DoubleBottomLongService
         $empty = [
             'reclaim_after_flat_detected' => false, 'reclaim_level' => null,
             'reclaim_confirmed_bars' => 0, 'reclaim_strength_pct' => 0.0,
-            'reclaim_score' => 0.0, 'reclaim_reason' => 'no_flat_base',
+            'reclaim_score' => 0.0, 'entry_distance_from_reclaim_pct' => 0.0,
+            'reclaim_reason' => 'no_flat_base',
         ];
 
         if (!(bool)($flatBaseResult['flat_base_detected'] ?? false)) {
@@ -2301,14 +2353,18 @@ final class DoubleBottomLongService
             return array_merge($empty, ['reclaim_reason' => 'invalid_base_high']);
         }
 
-        $minAbove    = (float)($config['reclaim_min_close_above_base_pct'] ?? 0.4);
-        $confirmBars = (int)($config['reclaim_confirm_bars']                ?? 2);
+        // Support both config key names for backwards compatibility
+        $minAbove    = (float)($config['reclaim_min_close_above_level_pct']
+            ?? $config['reclaim_min_close_above_base_pct'] ?? 0.4);
+        $confirmBars = (int)($config['reclaim_confirm_bars'] ?? 2);
+        $maxEntryDist = (float)($config['max_entry_distance_from_reclaim_pct'] ?? 2.5);
         $n           = count($candles);
 
         // Look at the last confirm_bars closes
         $reclaimWindow = array_slice($candles, max(0, $n - max($confirmBars, 5)));
         $confirmedCount = 0;
         $lastClose      = 0.0;
+        $failedBackBelow = false;
 
         foreach ($reclaimWindow as $c) {
             $close = (float)($c['close'] ?? 0.0);
@@ -2318,38 +2374,57 @@ final class DoubleBottomLongService
             if ($close > $fbHigh * (1.0 + $minAbove / 100.0)) {
                 $confirmedCount++;
             }
+            // Detect if price reclaimed but then fell back below
+            if ($confirmedCount > 0 && $close > 0.0 && $close < $fbHigh * 0.995) {
+                $failedBackBelow = true;
+            }
         }
 
         $reclaimStrength = ($fbHigh > 0.0 && $lastClose > 0.0)
             ? (($lastClose - $fbHigh) / $fbHigh) * 100.0
             : 0.0;
 
+        // Entry distance from reclaim: how far above the reclaim level is the current close
+        $entryDistPct = max(0.0, $reclaimStrength);
+
+        if ($failedBackBelow) {
+            return array_merge($empty, [
+                'reclaim_level'                   => round($fbHigh, 6),
+                'reclaim_confirmed_bars'          => $confirmedCount,
+                'reclaim_strength_pct'            => round($reclaimStrength, 4),
+                'entry_distance_from_reclaim_pct' => round($entryDistPct, 4),
+                'reclaim_reason'                  => 'reclaim_failed_back_below_level',
+            ]);
+        }
+
         if ($confirmedCount < $confirmBars) {
             return array_merge($empty, [
-                'reclaim_level'          => round($fbHigh, 6),
-                'reclaim_confirmed_bars' => $confirmedCount,
-                'reclaim_strength_pct'   => round($reclaimStrength, 4),
-                'reclaim_reason'         => 'reclaim_after_flat_not_confirmed',
+                'reclaim_level'                   => round($fbHigh, 6),
+                'reclaim_confirmed_bars'          => $confirmedCount,
+                'reclaim_strength_pct'            => round($reclaimStrength, 4),
+                'entry_distance_from_reclaim_pct' => round($entryDistPct, 4),
+                'reclaim_reason'                  => 'reclaim_after_flat_not_confirmed',
             ]);
         }
 
         // Check not too far extended above reclaim
-        $maxExtension = 5.0;  // allow up to 5% above reclaim level
-        if ($reclaimStrength > $maxExtension) {
+        if ($entryDistPct > $maxEntryDist) {
             return array_merge($empty, [
-                'reclaim_level'          => round($fbHigh, 6),
-                'reclaim_confirmed_bars' => $confirmedCount,
-                'reclaim_strength_pct'   => round($reclaimStrength, 4),
-                'reclaim_reason'         => 'entry_too_far_after_reclaim',
+                'reclaim_level'                   => round($fbHigh, 6),
+                'reclaim_confirmed_bars'          => $confirmedCount,
+                'reclaim_strength_pct'            => round($reclaimStrength, 4),
+                'entry_distance_from_reclaim_pct' => round($entryDistPct, 4),
+                'reclaim_reason'                  => 'entry_too_far_after_reclaim',
             ]);
         }
 
         if ($reclaimStrength < 0.0) {
             return array_merge($empty, [
-                'reclaim_level'          => round($fbHigh, 6),
-                'reclaim_confirmed_bars' => $confirmedCount,
-                'reclaim_strength_pct'   => round($reclaimStrength, 4),
-                'reclaim_reason'         => 'reclaim_too_weak_after_flat',
+                'reclaim_level'                   => round($fbHigh, 6),
+                'reclaim_confirmed_bars'          => $confirmedCount,
+                'reclaim_strength_pct'            => round($reclaimStrength, 4),
+                'entry_distance_from_reclaim_pct' => round($entryDistPct, 4),
+                'reclaim_reason'                  => 'reclaim_too_weak_after_flat',
             ]);
         }
 
@@ -2358,12 +2433,231 @@ final class DoubleBottomLongService
             + min(4.0, max(0.0, $reclaimStrength));
 
         return [
-            'reclaim_after_flat_detected' => true,
-            'reclaim_level'               => round($fbHigh, 6),
-            'reclaim_confirmed_bars'      => $confirmedCount,
-            'reclaim_strength_pct'        => round($reclaimStrength, 4),
-            'reclaim_score'               => min(10.0, $reclaimScore),
-            'reclaim_reason'              => 'reclaim_ok',
+            'reclaim_after_flat_detected'     => true,
+            'reclaim_level'                   => round($fbHigh, 6),
+            'reclaim_confirmed_bars'          => $confirmedCount,
+            'reclaim_strength_pct'            => round($reclaimStrength, 4),
+            'reclaim_score'                   => min(10.0, $reclaimScore),
+            'entry_distance_from_reclaim_pct' => round($entryDistPct, 4),
+            'reclaim_reason'                  => 'reclaim_ok',
+        ];
+    }
+
+    /**
+     * Detect support and resistance levels from recent candle data.
+     *
+     * Support  = repeated local lows / base-low area within sr_lookback_candles.
+     * Resistance / neckline = upper side of the post-dump base or last local rejection high.
+     *
+     * Returns a map of level data consumed by pipelineCoinTrendContext().
+     */
+    private function detectSupportResistanceLevels(array $candles, array $config): array
+    {
+        $empty = [
+            'support_level'            => null,
+            'resistance_level'         => null,
+            'neckline_level'           => null,
+            'base_low'                 => null,
+            'base_high'                => null,
+            'base_mid'                 => null,
+            'base_width_pct'           => 0.0,
+            'support_touches'          => 0,
+            'resistance_touches'       => 0,
+            'support_resistance_score' => 0.0,
+            'support_resistance_reason'=> 'no_support_level',
+            'support_broken'           => false,
+        ];
+
+        $n = count($candles);
+        if ($n < 5) {
+            return $empty;
+        }
+
+        $srLookback      = min((int)($config['sr_lookback_candles']             ?? 120), $n);
+        $supportTolPct   = (float)($config['support_touch_tolerance_pct']       ?? 0.4);
+        $resistTolPct    = (float)($config['resistance_touch_tolerance_pct']    ?? 0.4);
+        $minSupportTouch = (int)($config['min_support_touches']                 ?? 2);
+        $minResistTouch  = (int)($config['min_resistance_touches']              ?? 1);
+
+        $slice     = array_slice($candles, $n - $srLookback);
+        $sliceN    = count($slice);
+        $lastClose = (float)(end($candles)['close'] ?? 0.0);
+
+        if ($lastClose <= 0.0) {
+            return $empty;
+        }
+
+        // Collect local lows and highs (pivot swing points)
+        $localLows  = [];
+        $localHighs = [];
+        for ($i = 1; $i < $sliceN - 1; $i++) {
+            $prevLow  = (float)($slice[$i - 1]['low']  ?? 0.0);
+            $currLow  = (float)($slice[$i]['low']      ?? 0.0);
+            $nextLow  = (float)($slice[$i + 1]['low']  ?? 0.0);
+            $prevHigh = (float)($slice[$i - 1]['high'] ?? 0.0);
+            $currHigh = (float)($slice[$i]['high']     ?? 0.0);
+            $nextHigh = (float)($slice[$i + 1]['high'] ?? 0.0);
+
+            if ($currLow > 0.0 && $currLow <= $prevLow && $currLow <= $nextLow) {
+                $localLows[] = $currLow;
+            }
+            if ($currHigh > 0.0 && $currHigh >= $prevHigh && $currHigh >= $nextHigh) {
+                $localHighs[] = $currHigh;
+            }
+        }
+
+        if (empty($localLows)) {
+            return $empty;
+        }
+
+        // --- Support level: cluster local lows ---
+        sort($localLows);
+        $supportLevel  = null;
+        $supportTouches = 0;
+
+        // Group nearby lows (within tolerance) and find the most-touched cluster
+        $clusters = [];
+        foreach ($localLows as $low) {
+            $placed = false;
+            foreach ($clusters as &$cluster) {
+                $refLow = $cluster['ref'];
+                if ($refLow > 0.0 && abs($low - $refLow) / $refLow * 100.0 <= $supportTolPct) {
+                    $cluster['count']++;
+                    $cluster['sum'] += $low;
+                    $cluster['ref']  = $cluster['sum'] / $cluster['count'];  // update centroid
+                    $placed = true;
+                    break;
+                }
+            }
+            unset($cluster);
+            if (!$placed) {
+                $clusters[] = ['ref' => $low, 'count' => 1, 'sum' => $low];
+            }
+        }
+
+        // Pick cluster with most touches
+        usort($clusters, fn($a, $b) => $b['count'] <=> $a['count']);
+        if (!empty($clusters)) {
+            $best          = $clusters[0];
+            $supportLevel  = round($best['ref'], 6);
+            $supportTouches = (int)$best['count'];
+        }
+
+        if ($supportLevel === null || $supportTouches < $minSupportTouch) {
+            return array_merge($empty, [
+                'support_level'   => $supportLevel,
+                'support_touches' => $supportTouches,
+                'support_resistance_reason' => $supportTouches > 0
+                    ? 'support_touches_too_low' : 'no_support_level',
+            ]);
+        }
+
+        // --- Resistance / neckline: use the highest local high above support ---
+        $resistanceLows  = array_filter($localHighs, fn($h) => $supportLevel !== null && $h > $supportLevel);
+        $resistanceLevel = null;
+        $resistTouches   = 0;
+
+        if (!empty($resistanceLows)) {
+            sort($resistanceLows);
+            $rClusters = [];
+            foreach ($resistanceLows as $high) {
+                $placed = false;
+                foreach ($rClusters as &$rc) {
+                    $refH = $rc['ref'];
+                    if ($refH > 0.0 && abs($high - $refH) / $refH * 100.0 <= $resistTolPct) {
+                        $rc['count']++;
+                        $rc['sum'] += $high;
+                        $rc['ref']  = $rc['sum'] / $rc['count'];
+                        $placed = true;
+                        break;
+                    }
+                }
+                unset($rc);
+                if (!$placed) {
+                    $rClusters[] = ['ref' => $high, 'count' => 1, 'sum' => $high];
+                }
+            }
+            usort($rClusters, fn($a, $b) => $b['count'] <=> $a['count']);
+            if (!empty($rClusters)) {
+                $rBest           = $rClusters[0];
+                $resistanceLevel = round($rBest['ref'], 6);
+                $resistTouches   = (int)$rBest['count'];
+            }
+        }
+
+        // Base dimensions (support → resistance)
+        $baseHigh     = $resistanceLevel ?? (float)(array_sum($localHighs) / max(1, count($localHighs)));
+        $baseLow      = $supportLevel;
+        $baseMid      = null;
+        $baseWidthPct = 0.0;
+        if ($baseLow > 0.0 && $baseHigh > $baseLow) {
+            $baseWidthPct = (($baseHigh - $baseLow) / $baseLow) * 100.0;
+            $baseMid      = round(($baseLow + $baseHigh) / 2.0, 6);
+        }
+
+        // Neckline = resistance level (or base high if no discrete resistance)
+        $necklineLevel = $resistanceLevel ?? round($baseHigh, 6);
+
+        // Support broken: current close is meaningfully below support
+        $supportBroken = $supportLevel > 0.0 && $lastClose < $supportLevel * (1.0 - $supportTolPct / 100.0);
+
+        if ($supportBroken) {
+            return array_merge($empty, [
+                'support_level'             => $supportLevel,
+                'resistance_level'          => $resistanceLevel,
+                'neckline_level'            => $necklineLevel,
+                'base_low'                  => round($baseLow, 6),
+                'base_high'                 => round($baseHigh, 6),
+                'base_mid'                  => $baseMid,
+                'base_width_pct'            => round($baseWidthPct, 4),
+                'support_touches'           => $supportTouches,
+                'resistance_touches'        => $resistTouches,
+                'support_resistance_score'  => 0.0,
+                'support_resistance_reason' => 'support_broken',
+                'support_broken'            => true,
+            ]);
+        }
+
+        if ($resistanceLevel === null || $resistTouches < $minResistTouch) {
+            return array_merge($empty, [
+                'support_level'             => $supportLevel,
+                'resistance_level'          => $resistanceLevel,
+                'neckline_level'            => $necklineLevel,
+                'base_low'                  => round($baseLow, 6),
+                'base_high'                 => round($baseHigh, 6),
+                'base_mid'                  => $baseMid,
+                'base_width_pct'            => round($baseWidthPct, 4),
+                'support_touches'           => $supportTouches,
+                'resistance_touches'        => $resistTouches,
+                'support_resistance_score'  => 2.0,
+                'support_resistance_reason' => 'no_resistance_level',
+                'support_broken'            => false,
+            ]);
+        }
+
+        // S/R score: 0–10
+        $srScore = 0.0;
+        $srScore += min(3.0, $supportTouches * 1.0);
+        $srScore += min(2.0, $resistTouches * 1.0);
+        if ($baseWidthPct > 0.0 && $baseWidthPct <= 5.0) { $srScore += 2.0; }
+        elseif ($baseWidthPct <= 10.0)                    { $srScore += 1.0; }
+        // Price inside or above base (not below support)
+        if ($lastClose >= $baseLow && $lastClose <= $baseHigh) { $srScore += 2.0; }
+        elseif ($lastClose > $baseHigh)                        { $srScore += 1.0; }
+
+        return [
+            'support_level'             => $supportLevel,
+            'resistance_level'          => $resistanceLevel,
+            'neckline_level'            => $necklineLevel,
+            'base_low'                  => round($baseLow, 6),
+            'base_high'                 => round($baseHigh, 6),
+            'base_mid'                  => $baseMid,
+            'base_width_pct'            => round($baseWidthPct, 4),
+            'support_touches'           => $supportTouches,
+            'resistance_touches'        => $resistTouches,
+            'support_resistance_score'  => min(10.0, $srScore),
+            'support_resistance_reason' => 'ok',
+            'support_broken'            => false,
         ];
     }
 
@@ -2993,7 +3287,9 @@ final class DoubleBottomLongService
             // Coin trend context handoff guard
             'active_falling_knife_detected'  => (bool)($signal['active_falling_knife_detected']  ?? false),
             'reclaim_after_flat_detected'     => (bool)($signal['reclaim_after_flat_detected']     ?? false),
+            'support_broken'                  => (bool)($signal['support_broken']                  ?? false),
             'entry_context_score'             => (float)($signal['entry_context_score']             ?? 0.0),
+            'entry_distance_from_reclaim_pct' => (float)($signal['entry_distance_from_reclaim_pct'] ?? 0.0),
             'bearish_reversal_exception_used' => (bool)($signal['bearish_reversal_exception_used'] ?? false),
             'setup_context_type'              => (string)($signal['setup_context_type']             ?? 'standard'),
             'signal_quality_class'            => (string)($signal['signal_quality_class']           ?? 'clean_signal'),

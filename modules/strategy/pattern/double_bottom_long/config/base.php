@@ -243,7 +243,7 @@ return [
     'synthetic_quality_intraday_db_borderline_min_score'                  => 8.5,    // min db_score AND setup_score to be late_good
 
     // H4 final gate mode for setup_allowed A/B signals (Task 5).
-    // 'warning' = final_trend_mismatch / final_context_inconsistent / final_low_quality become warning-only.
+    // 'warning' = final_trend_mismatch / final_context_inconsistent become warning-only.
     // 'strict'  = keep hard-reject behaviour (legacy).
     'final_old_h4_gates_mode_for_setup_allowed'  => 'warning',
 

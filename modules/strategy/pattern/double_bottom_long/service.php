@@ -2233,7 +2233,7 @@ final class DoubleBottomLongService
             $low    = $candles[$i]['low'];
             $isPivot = true;
             for ($j = $i - $pivWin; $j <= $i + $pivWin; $j++) {
-                if ($j !== $i && ($candles[$j]['low'] ?? PHP_FLOAT_MAX) <= $low) {
+                if ($j !== $i && ($candles[$j]['low'] ?? 0.0) <= $low) {
                     $isPivot = false;
                     break;
                 }

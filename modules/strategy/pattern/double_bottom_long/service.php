@@ -384,13 +384,22 @@ final class DoubleBottomLongService
 
         // Pre-initialise pending confirmation counters for this tick
         $pendingConfirmationStats = [
-            'loaded_total'      => 0,
-            'rechecked_total'   => 0,
-            'added_total'       => 0,
-            'confirmed_total'   => 0,
-            'invalidated_total' => 0,
-            'expired_total'     => 0,
-            'active_total'      => 0,
+            'loaded_total'                               => 0,
+            'rechecked_total'                            => 0,
+            'added_total'                                => 0,
+            'confirmed_total'                            => 0,
+            'invalidated_total'                          => 0,
+            'expired_total'                              => 0,
+            'active_total'                               => 0,
+            'invalidated_fresh_dump_total'               => 0,
+            'invalidated_reclaim_lost_total'             => 0,
+            'invalidated_base_support_broken_total'      => 0,
+            'invalidated_falling_knife_total'            => 0,
+            'invalidated_entry_distance_worsened_total'  => 0,
+            'invalidated_stale_setup_total'              => 0,
+            'confirmed_dropped_total'                    => 0,
+            'confirmed_examples'                         => [],
+            'invalidated_examples'                       => [],
         ];
 
         // Recheck pending confirmations first (before normal symbol processing)
@@ -402,12 +411,20 @@ final class DoubleBottomLongService
                 $sig['_setup_signal_allowed'] = true;
                 $newlyEmitted[] = $sig;
             }
-            $pendingConfirmationStats['loaded_total']    = $pendingRecheckResult['loaded_total'];
-            $pendingConfirmationStats['rechecked_total'] = $pendingRecheckResult['rechecked_total'];
-            $pendingConfirmationStats['confirmed_total'] = $pendingRecheckResult['confirmed_total'];
+            $pendingConfirmationStats['loaded_total']      = $pendingRecheckResult['loaded_total'];
+            $pendingConfirmationStats['rechecked_total']   = $pendingRecheckResult['rechecked_total'];
+            $pendingConfirmationStats['confirmed_total']   = $pendingRecheckResult['confirmed_total'];
             $pendingConfirmationStats['invalidated_total'] = $pendingRecheckResult['invalidated_total'];
-            $pendingConfirmationStats['expired_total']   = $pendingRecheckResult['expired_total'];
-            $pendingConfirmationStats['active_total']    = $pendingRecheckResult['active_total'];
+            $pendingConfirmationStats['expired_total']     = $pendingRecheckResult['expired_total'];
+            $pendingConfirmationStats['active_total']      = $pendingRecheckResult['active_total'];
+            $pendingConfirmationStats['invalidated_fresh_dump_total']              = $pendingRecheckResult['invalidated_fresh_dump_total']              ?? 0;
+            $pendingConfirmationStats['invalidated_reclaim_lost_total']            = $pendingRecheckResult['invalidated_reclaim_lost_total']            ?? 0;
+            $pendingConfirmationStats['invalidated_base_support_broken_total']     = $pendingRecheckResult['invalidated_base_support_broken_total']     ?? 0;
+            $pendingConfirmationStats['invalidated_falling_knife_total']           = $pendingRecheckResult['invalidated_falling_knife_total']           ?? 0;
+            $pendingConfirmationStats['invalidated_entry_distance_worsened_total'] = $pendingRecheckResult['invalidated_entry_distance_worsened_total'] ?? 0;
+            $pendingConfirmationStats['invalidated_stale_setup_total']             = $pendingRecheckResult['invalidated_stale_setup_total']             ?? 0;
+            $pendingConfirmationStats['confirmed_examples']                        = $pendingRecheckResult['confirmed_examples']                        ?? [];
+            $pendingConfirmationStats['invalidated_examples']                      = $pendingRecheckResult['invalidated_examples']                      ?? [];
         }
 
         // Pre-initialise fields that are only assigned inside the $isDone block
@@ -944,11 +961,26 @@ final class DoubleBottomLongService
             'pending_confirmation_invalidated_total' => $pendingConfirmationStats['invalidated_total'],
             'pending_confirmation_expired_total'     => $pendingConfirmationStats['expired_total'],
             'pending_confirmation_active_total'      => $pendingConfirmationStats['active_total'],
+            'pending_confirmation_invalidated_fresh_dump_total'              => $pendingConfirmationStats['invalidated_fresh_dump_total'] ?? 0,
+            'pending_confirmation_invalidated_reclaim_lost_total'            => $pendingConfirmationStats['invalidated_reclaim_lost_total'] ?? 0,
+            'pending_confirmation_invalidated_falling_knife_total'           => $pendingConfirmationStats['invalidated_falling_knife_total'] ?? 0,
+            'pending_confirmation_invalidated_entry_distance_worsened_total' => $pendingConfirmationStats['invalidated_entry_distance_worsened_total'] ?? 0,
+            'pending_confirmation_invalidated_stale_setup_total'             => $pendingConfirmationStats['invalidated_stale_setup_total'] ?? 0,
+            'pending_confirmation_confirmed_examples'   => $pendingConfirmationStats['confirmed_examples']   ?? [],
+            'pending_confirmation_invalidated_examples' => $pendingConfirmationStats['invalidated_examples'] ?? [],
             // Adaptive stop-width gate counters
             'final_stop_width_warning_total'                    => (int)($cycleStats['final_stop_width_warning_total']                    ?? 0),
             'final_stop_width_hard_reject_total'                => (int)($cycleStats['final_stop_width_hard_reject_total']                ?? 0),
             'final_stop_width_bypassed_for_synthetic_total'     => (int)($cycleStats['final_stop_width_bypassed_for_synthetic_total']     ?? 0),
             'final_stop_missing_for_synthetic_total'            => (int)($cycleStats['final_stop_missing_for_synthetic_total']            ?? 0),
+            // H4 final gate warning counters
+            'setup_allowed_final_trend_warning_total'           => (int)($cycleStats['setup_allowed_final_trend_warning_total']           ?? 0),
+            'setup_allowed_final_context_warning_total'         => (int)($cycleStats['setup_allowed_final_context_warning_total']         ?? 0),
+            'setup_allowed_old_h4_final_gates_bypassed_total'   => (int)($cycleStats['setup_allowed_old_h4_final_gates_bypassed_total']   ?? 0),
+            // Late good setup counters
+            'late_good_setup_detected_total'                    => (int)($cycleStats['late_good_setup_detected_total']                    ?? 0),
+            'late_good_setup_waiting_pullback_total'            => (int)($cycleStats['late_good_setup_waiting_pullback_total']            ?? 0),
+            'pending_confirmation_added_better_entry_distance_total' => (int)($cycleStats['pending_confirmation_added_better_entry_distance_total'] ?? 0),
             // Diagnostic examples: last 5 synthetic quality failures in this tick
             'synthetic_quality_failed_examples'                  => $synQFailedExamples,
         ]);
@@ -1076,8 +1108,8 @@ final class DoubleBottomLongService
      * At the start of each tick, recheck any pending confirmations.
      * - Prune expired entries
      * - Re-fetch entry-context candles for each pending symbol
-     * - If confirm bars now satisfied and safety checks pass: emit signal candidate
-     * - If safety check fails or entry too far: invalidate
+     * - If confirm bars now satisfied and all safety checks pass: emit full signal candidate
+     * - If safety check fails: invalidate with specific reason
      *
      * Returns stats array + newly_emitted signal candidates.
      */
@@ -1085,13 +1117,22 @@ final class DoubleBottomLongService
     {
         $path = $this->moduleDir . '/storage/pending_confirmations.json';
         $result = [
-            'newly_emitted'     => [],
-            'loaded_total'      => 0,
-            'rechecked_total'   => 0,
-            'confirmed_total'   => 0,
-            'invalidated_total' => 0,
-            'expired_total'     => 0,
-            'active_total'      => 0,
+            'newly_emitted'                              => [],
+            'loaded_total'                               => 0,
+            'rechecked_total'                            => 0,
+            'confirmed_total'                            => 0,
+            'invalidated_total'                          => 0,
+            'expired_total'                              => 0,
+            'active_total'                               => 0,
+            'invalidated_fresh_dump_total'               => 0,
+            'invalidated_reclaim_lost_total'             => 0,
+            'invalidated_base_support_broken_total'      => 0,
+            'invalidated_falling_knife_total'            => 0,
+            'invalidated_entry_distance_worsened_total'  => 0,
+            'invalidated_stale_setup_total'              => 0,
+            'confirmed_dropped_total'                    => 0,
+            'confirmed_examples'                         => [],
+            'invalidated_examples'                       => [],
         ];
 
         if (!file_exists($path)) {
@@ -1112,25 +1153,37 @@ final class DoubleBottomLongService
             if (!is_array($entry) || empty($entry['symbol'])) {
                 continue;
             }
-            $symbol    = (string)$entry['symbol'];
-            $expiresAt = (string)($entry['expires_at'] ?? '');
-            $expireTs  = $expiresAt ? strtotime($expiresAt) : 0;
+            $symbol       = (string)$entry['symbol'];
+            $setupClass   = (string)($entry['setup_class'] ?? '');
+            $expiresAt    = (string)($entry['expires_at'] ?? '');
+            $expireTs     = $expiresAt ? strtotime($expiresAt) : 0;
+            $createdAt    = (string)($entry['created_at'] ?? '');
+            $createdTs    = $createdAt ? strtotime($createdAt) : 0;
 
-            // Prune expired
+            // Prune expired (stale setup)
             if ($expireTs > 0 && $nowTs > $expireTs) {
                 $result['expired_total']++;
                 $result['invalidated_total']++;
+                $result['invalidated_stale_setup_total']++;
+                if (count($result['invalidated_examples']) < 5) {
+                    $result['invalidated_examples'][] = [
+                        'symbol'     => $symbol,
+                        'setup_class'=> $setupClass,
+                        'reason'     => 'pending_invalidated_stale_setup',
+                        'expires_at' => $expiresAt,
+                    ];
+                }
                 continue;
             }
 
             $result['rechecked_total']++;
 
             // Only recheck entries that match the current operating mode.
-            // Entries stored under a different mode are invalidated (stale config).
             $entryMode  = (string)($entry['mode'] ?? 'demo');
             $configMode = (string)($config['mode'] ?? 'demo');
             if ($entryMode !== $configMode) {
                 $result['invalidated_total']++;
+                $result['invalidated_stale_setup_total']++;
                 continue;
             }
 
@@ -1144,37 +1197,110 @@ final class DoubleBottomLongService
             }
 
             if (count($ctxCandles) < 5) {
-                // Cannot recheck without candles; keep pending
                 $kept[] = $entry;
                 $result['active_total']++;
                 continue;
             }
 
-            $lastClose = (float)($ctxCandles[count($ctxCandles) - 1]['close'] ?? 0.0);
+            $lastCandle = $ctxCandles[count($ctxCandles) - 1];
+            $lastClose  = (float)($lastCandle['close'] ?? 0.0);
+            $neckline   = (float)($entry['neckline_level'] ?? 0.0);
 
-            // Safety: falling knife
+            // ── Strict invalidation checks ────────────────────────────────────
+
+            // 1. Falling knife: last close has broken sharply below the stored neckline/reclaim
             if ((bool)($config['synthetic_quality_require_no_falling_knife'] ?? true)) {
-                // Simple: if last close < neckline_level significantly, invalidate
-                $neckline = (float)($entry['neckline_level'] ?? 0.0);
-                if ($neckline > 0.0 && $lastClose < $neckline * (1.0 - 0.03)) {
+                if ($neckline > 0.0 && $lastClose < $neckline * (1.0 - 0.04)) {
                     $result['invalidated_total']++;
+                    $result['invalidated_falling_knife_total']++;
+                    if (count($result['invalidated_examples']) < 5) {
+                        $result['invalidated_examples'][] = [
+                            'symbol'      => $symbol,
+                            'setup_class' => $setupClass,
+                            'reason'      => 'pending_invalidated_falling_knife',
+                            'last_close'  => $lastClose,
+                            'neckline'    => $neckline,
+                        ];
+                    }
                     continue;
                 }
             }
 
-            // Check entry distance from neckline
-            $neckline = (float)($entry['neckline_level'] ?? 0.0);
-            $maxDist  = (float)($config['synthetic_quality_intraday_db_max_entry_distance_from_neckline_pct']
+            // 2. Reclaim lost: price has dropped back below neckline by a small margin
+            if ($neckline > 0.0 && $lastClose < $neckline * (1.0 - 0.015)) {
+                $result['invalidated_total']++;
+                $result['invalidated_reclaim_lost_total']++;
+                if (count($result['invalidated_examples']) < 5) {
+                    $result['invalidated_examples'][] = [
+                        'symbol'      => $symbol,
+                        'setup_class' => $setupClass,
+                        'reason'      => 'pending_invalidated_reclaim_lost',
+                        'last_close'  => $lastClose,
+                        'neckline'    => $neckline,
+                    ];
+                }
+                continue;
+            }
+
+            // 3. Fresh dump after pending was created: check for a significant drop in recent candles
+            if ($createdTs > 0) {
+                $maxDumpPct   = (float)($config['max_recent_dump_1h_pct'] ?? 9.0);
+                $checkWindow  = min(count($ctxCandles), 60);
+                $recentBars   = array_slice($ctxCandles, -$checkWindow);
+                // Find the highest close after pending creation and the current close
+                $postCreateHigh = 0.0;
+                foreach ($recentBars as $bar) {
+                    $barTs = isset($bar['time']) ? (int)($bar['time'] / 1000) : 0;
+                    if ($barTs >= $createdTs - 60) {
+                        $barClose = (float)($bar['close'] ?? 0.0);
+                        if ($barClose > $postCreateHigh) {
+                            $postCreateHigh = $barClose;
+                        }
+                    }
+                }
+                if ($postCreateHigh > 0.0) {
+                    $dumpPct = (($postCreateHigh - $lastClose) / $postCreateHigh) * 100.0;
+                    if ($dumpPct >= $maxDumpPct) {
+                        $result['invalidated_total']++;
+                        // Count as reclaim_lost (price dumped post-creation)
+                        $result['invalidated_reclaim_lost_total']++;
+                        if (count($result['invalidated_examples']) < 5) {
+                            $result['invalidated_examples'][] = [
+                                'symbol'         => $symbol,
+                                'setup_class'    => $setupClass,
+                                'reason'         => 'pending_invalidated_fresh_dump',
+                                'dump_pct'       => round($dumpPct, 2),
+                                'post_high'      => $postCreateHigh,
+                                'last_close'     => $lastClose,
+                            ];
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            // 4. Entry distance worsened beyond the hard cap
+            $maxDist = (float)($config['synthetic_quality_intraday_db_max_entry_distance_from_neckline_pct']
                 ?? $config['synthetic_quality_max_entry_distance_from_neckline_pct'] ?? 2.0);
             if ($neckline > 0.0 && $maxDist > 0.0) {
                 $distPct = (($lastClose - $neckline) / $neckline) * 100.0;
                 if ($distPct > $maxDist) {
                     $result['invalidated_total']++;
+                    $result['invalidated_entry_distance_worsened_total']++;
+                    if (count($result['invalidated_examples']) < 5) {
+                        $result['invalidated_examples'][] = [
+                            'symbol'    => $symbol,
+                            'setup_class' => $setupClass,
+                            'reason'    => 'pending_invalidated_entry_distance_worsened',
+                            'dist_pct'  => round($distPct, 3),
+                            'max_dist'  => $maxDist,
+                        ];
+                    }
                     continue;
                 }
             }
 
-            // Check confirm bars: count bars above neckline
+            // ── Confirm bar count check ───────────────────────────────────────
             $confirmBarsRequired = max(1, (int)($entry['confirm_bars_required'] ?? 2));
             $barsAbove = 0;
             $checkCandles = array_slice($ctxCandles, -$confirmBarsRequired - 5);
@@ -1185,23 +1311,105 @@ final class DoubleBottomLongService
             }
 
             if ($barsAbove >= $confirmBarsRequired) {
-                // Confirmed — build a minimal signal candidate for the emitter
                 $result['confirmed_total']++;
-                $result['newly_emitted'][] = [
-                    'symbol'                           => $symbol,
-                    'side'                             => $entry['side'] ?? 'long',
-                    'setup_class'                      => $entry['setup_class'] ?? 'classic_intraday_double_bottom_reclaim',
-                    'pending_confirmation_status'      => 'confirmed',
-                    'pending_confirmation_reason'      => 'confirm_bars_satisfied',
-                    'neckline_level'                   => $neckline,
-                    'entry_distance_from_neckline_pct' => $neckline > 0.0 ? round((($lastClose - $neckline) / $neckline) * 100, 4) : 0.0,
-                    'pending_created_at'               => $entry['created_at'] ?? null,
-                    'pending_confirmed_at'             => date('c'),
-                    'synthetic_quality_score'          => $entry['synthetic_quality_score'] ?? null,
-                    'final_signal_status'              => 'pending_confirmed',
-                    'regime'                           => $regimeStr,
+
+                // Build a full signal-compatible object from the stored context.
+                // The signal must have signal_id and all quality fields to survive
+                // applySignalFilters() ($isComplete check and quality gates).
+                $trigger  = (float)($entry['candidate_trigger'] ?? $neckline);
+                $sqScore  = (float)($entry['synthetic_quality_score'] ?? 0.7);
+                $cqScore  = (float)($entry['candidate_quality_score'] ?? $sqScore);
+                $trigInt  = (int)round($trigger * 1e4);
+                $signalId = sprintf('dbl_%s_%d_long', strtolower($symbol), $trigInt);
+
+                // Compute stop-loss from stored lows (same formula as PatternSignal::computeStopLoss).
+                $bufferPct = (float)($config['stop_buffer_pct_below_lows'] ?? 0.005);
+                $low1      = (float)($entry['low1_price'] ?? 0.0);
+                $low2      = (float)($entry['low2_price'] ?? 0.0);
+                $slPrice   = null;
+                $slPct     = null;
+                if ($low1 > 0.0 && $low2 > 0.0 && $trigger > 0.0) {
+                    $stopRef = min($low1, $low2);
+                    $slPrice = round($stopRef * (1.0 - $bufferPct), 8);
+                    $slPct   = round(($trigger - $slPrice) / $trigger, 6);
+                }
+
+                $confirmedSig = [
+                    // Identity
+                    'strategy_id'             => 'double_bottom_long',
+                    'signal_id'               => $signalId,
+                    'symbol'                  => $symbol,
+                    'side'                    => 'long',
+                    'setup_class'             => $setupClass,
+                    // Entry geometry
+                    'entry_type'              => 'breakout',
+                    'entry_price'             => $trigger,
+                    'primary_pattern'         => 'double_bottom',
+                    'candidate_score'         => $sqScore,
+                    // Stop-loss (reconstructed)
+                    'stop_loss_price'         => $slPrice,
+                    'stop_loss_pct'           => $slPct,
+                    'stop_basis'              => 'pattern_lows',
+                    // Take-profit
+                    'tp_enabled'              => (bool)($config['tp_enabled'] ?? true),
+                    'tp_mode'                 => (string)($config['tp_mode'] ?? 'fixed_r'),
+                    'tp_value'                => (float)($config['tp_value'] ?? 2.5),
+                    'tp_price'                => null,
+                    // Quality scores (from stored context)
+                    'pattern_score'           => (float)($entry['pattern_score'] ?? $sqScore),
+                    'structure_score'         => (float)($entry['structure_score'] ?? $sqScore),
+                    'neckline_score'          => (float)($entry['neckline_score'] ?? $sqScore),
+                    'confirmation_score'      => (float)($entry['confirmation_score'] ?? $sqScore),
+                    'context_score'           => (float)($entry['context_score'] ?? $sqScore),
+                    'candidate_quality_score' => $cqScore,
+                    'synthetic_quality_score' => $sqScore,
+                    // Quality gate outcome
+                    'quality_pass'            => true,
+                    'quality_reject_reason'   => null,
+                    // H4 market context (from stored context; used by applySignalFilters)
+                    'trend_direction'         => (string)($entry['trend_direction'] ?? 'unknown'),
+                    'wave_state'              => (string)($entry['wave_state'] ?? 'unknown'),
+                    'corridor_bucket'         => (int)($entry['corridor_bucket'] ?? 0),
+                    'market_regime'           => $regimeStr,
+                    // Lifecycle
+                    'detected_at'             => $entry['created_at'] ?? date('c'),
+                    'status'                  => 'active',
+                    'final_signal_status'     => 'emitted',
+                    // Pending confirmation metadata
+                    'pending_confirmation_status'   => 'confirmed',
+                    'pending_confirmation_reason'   => 'confirm_bars_satisfied',
+                    'pending_confirmed_at'          => date('c'),
+                    'pending_created_at'            => $entry['created_at'] ?? null,
+                    'entry_distance_from_neckline_pct' => $neckline > 0.0
+                        ? round((($lastClose - $neckline) / $neckline) * 100, 4) : 0.0,
+                    '_setup_signal_allowed'         => true,
+                    // Corridor/wave (stored copies from H4 at creation time)
+                    'corridor_low'            => 0.0,
+                    'corridor_high'           => 0.0,
+                    'wave_direction'          => 'unknown',
                 ];
-                continue;  // Do not re-add to kept; it's now confirmed and processed
+
+                // Compute TP price if possible
+                if ($slPrice !== null && $slPrice > 0.0) {
+                    $riskDist = abs($trigger - $slPrice);
+                    $tpVal = (float)($config['tp_value'] ?? 2.5);
+                    $confirmedSig['tp_price'] = round($trigger + $riskDist * $tpVal, 8);
+                }
+
+                if (count($result['confirmed_examples']) < 5) {
+                    $result['confirmed_examples'][] = [
+                        'symbol'               => $symbol,
+                        'setup_class'          => $setupClass,
+                        'signal_id'            => $signalId,
+                        'candidate_trigger'    => $trigger,
+                        'synthetic_quality_score' => $sqScore,
+                        'stop_loss_pct'        => $slPct,
+                        'confirmed_at'         => date('c'),
+                    ];
+                }
+
+                $result['newly_emitted'][] = $confirmedSig;
+                continue;
             }
 
             // Still waiting — keep it
@@ -1873,6 +2081,90 @@ final class DoubleBottomLongService
             $diagBase['synthetic_quality_warnings']      = $synQuality['synthetic_quality_warnings'] ?? [];
             $diagBase['synthetic_quality_soft_warnings'] = $synQuality['synthetic_quality_soft_warnings'] ?? [];
             $diagBase['synthetic_quality_is_intraday_db'] = $synQuality['synthetic_quality_is_intraday_db'] ?? false;
+
+            // late_good_setup detection (Task 4):
+            // Setup is high-quality but entry is in the soft-distance zone beyond the hard cap.
+            // For GENIUS-like setups: do not emit immediate market signal; create pending for better entry.
+            $isLateGoodSetup = (bool)($synQuality['late_good_setup'] ?? false);
+            $diagBase['late_good_setup']                  = $isLateGoodSetup;
+            $diagBase['missed_ideal_entry']               = (bool)($synQuality['missed_ideal_entry'] ?? false);
+            $diagBase['waiting_for_better_entry_distance'] = (bool)($synQuality['waiting_for_better_entry_distance'] ?? false);
+            if ($isLateGoodSetup) {
+                // Store as pending-better-entry if enabled.
+                $lateGoodPendingEnabled = (bool)($config['synthetic_quality_intraday_db_borderline_distance_pending_enabled'] ?? true);
+                if ($lateGoodPendingEnabled && (bool)($config['pending_confirmation_enabled'] ?? true)) {
+                    $ttlMin    = max(1, (int)($config['pending_confirmation_ttl_minutes'] ?? 15));
+                    $expiresAt = date('c', time() + $ttlMin * 60);
+                    $this->writePendingConfirmation([
+                        'symbol'                              => $symbol,
+                        'side'                                => $side,
+                        'mode'                                => $config['mode'] ?? 'demo',
+                        'setup_class'                         => $diagBase['setup_class'] ?? null,
+                        'neckline_level'                      => $candidate['neckline'] ?? null,
+                        'candidate_trigger'                   => $candidate['candidate_trigger'] ?? $candidate['neckline'] ?? null,
+                        'low1_price'                          => $candidate['low1_price'] ?? null,
+                        'low2_price'                          => $candidate['low2_price'] ?? null,
+                        'reclaim_level'                       => $diagBase['reclaim_level'] ?? null,
+                        'created_at'                          => date('c'),
+                        'expires_at'                          => $expiresAt,
+                        'confirm_bars_required'               => $config['reclaim_confirm_bars'] ?? $config['double_bottom_reclaim_confirm_bars'] ?? 2,
+                        'confirm_bars_seen'                   => 0,
+                        'entry_distance_from_neckline_pct'    => $diagBase['entry_distance_from_neckline_pct'] ?? null,
+                        'reason'                              => 'late_good_setup_waiting_better_entry',
+                        'status'                              => 'pending_better_entry',
+                        'synthetic_quality_score'             => $synQuality['synthetic_quality_score'],
+                        'synthetic_quality_warnings'          => $synQuality['synthetic_quality_warnings'] ?? [],
+                        'candidate_quality_score'             => $quality['candidate_quality_score'],
+                        'neckline_score'                      => $quality['neckline_score'],
+                        'confirmation_score'                  => $quality['confirmation_score'],
+                        'structure_score'                     => $quality['structure_score'],
+                        'context_score'                       => $quality['context_score'],
+                        'pattern_score'                       => $quality['pattern_score'],
+                        'trend_direction'                     => $diagBase['trend_direction'] ?? 'unknown',
+                        'wave_state'                          => $diagBase['wave_state'] ?? 'unknown',
+                        'corridor_bucket'                     => $diagBase['corridor_bucket'] ?? 0,
+                        'signal_quality_class'                => $bearishRevExUsed ? 'controlled_reversal' : 'clean_signal',
+                        'active_falling_knife_detected'       => $diagBase['active_falling_knife_detected'] ?? false,
+                        'support_broken'                      => $diagBase['support_broken'] ?? false,
+                        'reclaim_after_flat_detected'         => $diagBase['reclaim_after_flat_detected'] ?? false,
+                        'entry_context_score'                 => $diagBase['entry_context_score'] ?? null,
+                        'late_good_setup'                     => true,
+                    ], $config);
+                    $diagBase['pending_confirmation_status'] = 'added_better_entry';
+                    $diagBase['pending_confirmation_reason'] = 'late_good_setup_waiting_better_entry';
+                    $diagBase['pending_confirmation_expires_at'] = $expiresAt;
+                }
+                $diagBase['setup_allowed_kill_stage']  = 'late_good_setup';
+                $diagBase['setup_allowed_kill_reason'] = 'late_good_setup_waiting_better_entry';
+                return array_merge($diagBase, [
+                    'symbol'                  => $symbol,
+                    'candidate_found'         => true,
+                    'candidate_side'          => $side,
+                    'primary_pattern'         => 'double_bottom',
+                    'double_bottom_checked'   => true,
+                    'neckline_value'          => $candidate['neckline']              ?? 0.0,
+                    'low1_value'              => $candidate['low1_price']            ?? 0.0,
+                    'low2_value'              => $candidate['low2_price']            ?? 0.0,
+                    'pattern_window_size'     => $candidate['window_size']           ?? 0,
+                    'similarity_delta_pct'    => $candidate['similarity_delta_pct'] ?? 0.0,
+                    'pattern_score'           => $quality['pattern_score'],
+                    'structure_score'         => $quality['structure_score'],
+                    'neckline_score'          => $quality['neckline_score'],
+                    'confirmation_score'      => $quality['confirmation_score'],
+                    'context_score'           => $quality['context_score'],
+                    'candidate_quality_score' => $quality['candidate_quality_score'],
+                    'quality_pass'            => true,
+                    'quality_reject_reason'   => null,
+                    'quality_source'          => 'synthetic_intraday_setup',
+                    'signal_quality_class'    => $bearishRevExUsed ? 'controlled_reversal' : 'clean_signal',
+                    'confirm_status'          => null,
+                    'confirm_bars_waited'     => 0,
+                    'candidate_expired'       => false,
+                    'final_signal_status'     => 'late_good_setup',
+                    'reject_reason'           => 'late_good_setup_waiting_better_entry',
+                    'signal'                  => null,
+                ]);
+            }
         } else {
             $this->requireLogic('candidate_quality');
             $quality = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternCandidateQuality())->score(
@@ -1939,6 +2231,9 @@ final class DoubleBottomLongService
                         'mode'                                => $config['mode'] ?? 'demo',
                         'setup_class'                         => $diagBase['setup_class'] ?? null,
                         'neckline_level'                      => $candidate['neckline'] ?? null,
+                        'candidate_trigger'                   => $candidate['candidate_trigger'] ?? $candidate['neckline'] ?? null,
+                        'low1_price'                          => $candidate['low1_price'] ?? null,
+                        'low2_price'                          => $candidate['low2_price'] ?? null,
                         'reclaim_level'                       => $diagBase['reclaim_level'] ?? null,
                         'created_at'                          => date('c'),
                         'expires_at'                          => $expiresAt,
@@ -1950,6 +2245,22 @@ final class DoubleBottomLongService
                         'status'                              => 'pending',
                         'synthetic_quality_score'             => $diagBase['synthetic_quality_score'] ?? null,
                         'synthetic_quality_warnings'          => $diagBase['synthetic_quality_warnings'] ?? [],
+                        // Quality fields needed to reconstruct a full signal-compatible object on confirmation.
+                        'candidate_quality_score'             => $quality['candidate_quality_score'] ?? null,
+                        'neckline_score'                      => $quality['neckline_score'] ?? null,
+                        'confirmation_score'                  => $quality['confirmation_score'] ?? null,
+                        'structure_score'                     => $quality['structure_score'] ?? null,
+                        'context_score'                       => $quality['context_score'] ?? null,
+                        'pattern_score'                       => $quality['pattern_score'] ?? null,
+                        // H4 market context — used by applySignalFilters() gates.
+                        'trend_direction'                     => $diagBase['trend_direction'] ?? 'unknown',
+                        'wave_state'                          => $diagBase['wave_state'] ?? 'unknown',
+                        'corridor_bucket'                     => $diagBase['corridor_bucket'] ?? 0,
+                        'signal_quality_class'                => $bearishRevExUsed ? 'controlled_reversal' : 'clean_signal',
+                        'active_falling_knife_detected'       => $diagBase['active_falling_knife_detected'] ?? false,
+                        'support_broken'                      => $diagBase['support_broken'] ?? false,
+                        'reclaim_after_flat_detected'         => $diagBase['reclaim_after_flat_detected'] ?? false,
+                        'entry_context_score'                 => $diagBase['entry_context_score'] ?? null,
                     ], $config);
                 } else {
                     $diagBase['setup_allowed_kill_reason'] = 'setup_allowed_but_control_failed';
@@ -2115,6 +2426,17 @@ final class DoubleBottomLongService
         $allowedLong      = (array)($config['allowed_long_buckets']        ?? [1, 2]);
         $maxStopLossPct   = (float)($config['max_stop_loss_pct']           ?? 0.0);
 
+        // H4 final gate warning mode for setup_allowed A/B signals.
+        // When 'warning': final_trend_mismatch / final_context_inconsistent become warning-only
+        // for signals that are _setup_signal_allowed=true with an A/B synthetic setup class.
+        $h4FinalGatesMode       = (string)($config['final_old_h4_gates_mode_for_setup_allowed'] ?? 'warning');
+        $h4GateWarnSetupClasses = ['classic_intraday_double_bottom_reclaim', 'post_dump_base_reclaim'];
+
+        // Counters for H4 final gate warnings
+        $setupAllowedFinalTrendWarningTotal   = 0;
+        $setupAllowedFinalContextWarningTotal = 0;
+        $setupAllowedOldH4FinalGatesBypassedTotal = 0;
+
         // Adaptive stop-width gate config
         $stopGateMode        = (string)($config['final_stop_width_gate_mode']        ?? 'adaptive');
         $stopWarnPct         = (float)($config['final_stop_width_warning_pct']       ?? 0.05);
@@ -2261,17 +2583,23 @@ final class DoubleBottomLongService
             // 1c. Trend consistency — long requires bullish context
             if ($trendRequired) {
                 $trendDir = (string)($s['trend_direction'] ?? 'unknown');
-                if (!in_array($trendDir, ['bullish', 'bearish', 'flat'], true)) {
-                    $rejectedFinalTrend++;
-                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_trend_mismatch'];
-                    $finalRejectDist['final_trend_mismatch'] = ($finalRejectDist['final_trend_mismatch'] ?? 0) + 1;
-                    continue;
-                }
-                if ($trendDir !== 'bullish') {
-                    $rejectedFinalTrend++;
-                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_trend_mismatch'];
-                    $finalRejectDist['final_trend_mismatch'] = ($finalRejectDist['final_trend_mismatch'] ?? 0) + 1;
-                    continue;
+                $trendMismatch = !in_array($trendDir, ['bullish', 'bearish', 'flat'], true) || $trendDir !== 'bullish';
+                if ($trendMismatch) {
+                    // For setup_allowed A/B synthetic signals, apply warning mode instead of hard reject.
+                    $signalSetupClass = (string)($s['setup_class'] ?? '');
+                    $isSetupAllowedAB = $isSetupAllowed && in_array($signalSetupClass, $h4GateWarnSetupClasses, true);
+                    if ($h4FinalGatesMode === 'warning' && $isSetupAllowedAB) {
+                        $setupAllowedFinalTrendWarningTotal++;
+                        $setupAllowedOldH4FinalGatesBypassedTotal++;
+                        $s['final_trend_mismatch_warning'] = true;
+                        $s['final_trend_direction_seen']   = $trendDir;
+                        // Fall through to context check (do not continue/reject)
+                    } else {
+                        $rejectedFinalTrend++;
+                        $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_trend_mismatch'];
+                        $finalRejectDist['final_trend_mismatch'] = ($finalRejectDist['final_trend_mismatch'] ?? 0) + 1;
+                        continue;
+                    }
                 }
             }
 
@@ -2290,10 +2618,21 @@ final class DoubleBottomLongService
                 }
             }
             if ($contextRejectReason !== null) {
-                $rejectedFinalContext++;
-                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => $contextRejectReason];
-                $finalRejectDist[$contextRejectReason] = ($finalRejectDist[$contextRejectReason] ?? 0) + 1;
-                continue;
+                // For setup_allowed A/B synthetic signals, apply warning mode instead of hard reject.
+                $signalSetupClass = (string)($s['setup_class'] ?? '');
+                $isSetupAllowedAB = $isSetupAllowed && in_array($signalSetupClass, $h4GateWarnSetupClasses, true);
+                if ($h4FinalGatesMode === 'warning' && $isSetupAllowedAB) {
+                    $setupAllowedFinalContextWarningTotal++;
+                    $setupAllowedOldH4FinalGatesBypassedTotal++;
+                    $s['final_context_inconsistent_warning'] = true;
+                    $s['final_context_reject_reason_seen']   = $contextRejectReason;
+                    // Fall through to quality check (do not continue/reject)
+                } else {
+                    $rejectedFinalContext++;
+                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => $contextRejectReason];
+                    $finalRejectDist[$contextRejectReason] = ($finalRejectDist[$contextRejectReason] ?? 0) + 1;
+                    continue;
+                }
             }
 
             // 1e. Final quality composite floor
@@ -2380,6 +2719,10 @@ final class DoubleBottomLongService
             'final_stop_width_hard_reject_total'      => $stopWidthHardRejectTotal,
             'final_stop_width_bypassed_for_synthetic_total' => $stopWidthBypassedForSynthTotal,
             'final_stop_missing_for_synthetic_total'  => $stopMissingForSynthTotal,
+            // H4 final gate warning counters for setup_allowed A/B signals
+            'setup_allowed_final_trend_warning_total'         => $setupAllowedFinalTrendWarningTotal,
+            'setup_allowed_final_context_warning_total'       => $setupAllowedFinalContextWarningTotal,
+            'setup_allowed_old_h4_final_gates_bypassed_total' => $setupAllowedOldH4FinalGatesBypassedTotal,
         ];
 
         return [array_values($winnerSignals), $filterStats, $signalOutcomeMap];
@@ -2638,6 +2981,14 @@ final class DoubleBottomLongService
                 $inc($stats, 'setup_allowed_quality_checked_total');
                 if ($killStage === 'quality') {
                     $inc($stats, 'setup_allowed_quality_failed_total');
+                } elseif ($killStage === 'late_good_setup') {
+                    // late_good_setup: quality passed but entry distance in soft zone — counted as pass
+                    $inc($stats, 'setup_allowed_quality_pass_total');
+                    $inc($stats, 'late_good_setup_detected_total');
+                    if ((bool)($result['pending_confirmation_status'] ?? false)) {
+                        $inc($stats, 'late_good_setup_waiting_pullback_total');
+                        $inc($stats, 'pending_confirmation_added_better_entry_distance_total');
+                    }
                 } else {
                     $inc($stats, 'setup_allowed_quality_pass_total');
                     $inc($stats, 'setup_allowed_control_checked_total');
@@ -2780,6 +3131,13 @@ final class DoubleBottomLongService
             ($s['final_stop_width_bypassed_for_synthetic_total'] ?? 0) + (int)($filterStats['final_stop_width_bypassed_for_synthetic_total'] ?? 0);
         $s['final_stop_missing_for_synthetic_total'] =
             ($s['final_stop_missing_for_synthetic_total'] ?? 0) + (int)($filterStats['final_stop_missing_for_synthetic_total'] ?? 0);
+        // H4 final gate warning counters
+        $s['setup_allowed_final_trend_warning_total'] =
+            ($s['setup_allowed_final_trend_warning_total'] ?? 0) + (int)($filterStats['setup_allowed_final_trend_warning_total'] ?? 0);
+        $s['setup_allowed_final_context_warning_total'] =
+            ($s['setup_allowed_final_context_warning_total'] ?? 0) + (int)($filterStats['setup_allowed_final_context_warning_total'] ?? 0);
+        $s['setup_allowed_old_h4_final_gates_bypassed_total'] =
+            ($s['setup_allowed_old_h4_final_gates_bypassed_total'] ?? 0) + (int)($filterStats['setup_allowed_old_h4_final_gates_bypassed_total'] ?? 0);
         return $s;
     }
 
@@ -2958,6 +3316,14 @@ final class DoubleBottomLongService
             'final_stop_width_hard_reject_total'                 => 0,
             'final_stop_width_bypassed_for_synthetic_total'      => 0,
             'final_stop_missing_for_synthetic_total'             => 0,
+            // H4 final gate warning counters
+            'setup_allowed_final_trend_warning_total'            => 0,
+            'setup_allowed_final_context_warning_total'          => 0,
+            'setup_allowed_old_h4_final_gates_bypassed_total'    => 0,
+            // Late good setup counters
+            'late_good_setup_detected_total'                     => 0,
+            'late_good_setup_waiting_pullback_total'             => 0,
+            'pending_confirmation_added_better_entry_distance_total' => 0,
         ];
     }
 
@@ -4751,8 +5117,30 @@ final class DoubleBottomLongService
                 ?? $config['synthetic_quality_max_entry_distance_from_neckline_pct'] ?? 2.0);
             $neckDist    = (float)($ctx['entry_distance_from_neckline_pct'] ?? 0.0);
             $components['entry_distance_from_neckline_pct'] = $neckDist;
+            // Soft cap for late_good_setup classification (GENIUS-like: good scores, slightly too far)
+            $softNeckDist = (float)($config['synthetic_quality_intraday_db_soft_entry_distance_from_neckline_pct'] ?? 2.5);
             if ($maxNeckDist > 0.0 && $neckDist > $maxNeckDist) {
-                $blockReasons[] = 'entry_too_far_after_neckline_reclaim';
+                // Check if it qualifies as a late_good_setup (high-quality but entry distance in soft zone)
+                $minBorderlineScore = (float)($config['synthetic_quality_intraday_db_borderline_min_score'] ?? 8.5);
+                $borderlinePendingEnabled = (bool)($config['synthetic_quality_intraday_db_borderline_distance_pending_enabled'] ?? true);
+                $isLateGoodSetup = $borderlinePendingEnabled
+                    && $neckDist <= $softNeckDist
+                    && $dbScore >= $minBorderlineScore
+                    && $setupScore >= $minBorderlineScore
+                    && count($blockReasons) === 0; // Only quality-passing setups (no other blocks yet)
+                if ($isLateGoodSetup) {
+                    // Mark as late_good_setup: do not add to blockReasons so $pass stays true.
+                    // Set indicator flags for tryLong() to use.
+                    $warnings[] = 'late_good_setup_entry_distance';
+                    $softWarnings[] = 'late_good_setup_entry_distance';
+                    $components['late_good_setup']                  = true;
+                    $components['missed_ideal_entry']               = true;
+                    $components['waiting_for_better_entry_distance'] = true;
+                    $components['late_good_setup_neckline_dist']    = $neckDist;
+                    $components['late_good_setup_soft_cap']         = $softNeckDist;
+                } else {
+                    $blockReasons[] = 'entry_too_far_after_neckline_reclaim';
+                }
             }
         } elseif ($setupClass === 'post_dump_base_reclaim'
             || $candidate['candidate_source'] === 'post_dump_base_reclaim'
@@ -4835,6 +5223,9 @@ final class DoubleBottomLongService
             'synthetic_quality_warnings'      => $warnings,
             'synthetic_quality_soft_warnings' => $softWarnings,
             'synthetic_quality_is_intraday_db'=> $isIntradayDb,
+            'late_good_setup'                 => (bool)($components['late_good_setup'] ?? false),
+            'missed_ideal_entry'              => (bool)($components['missed_ideal_entry'] ?? false),
+            'waiting_for_better_entry_distance' => (bool)($components['waiting_for_better_entry_distance'] ?? false),
         ];
     }
 
@@ -4974,6 +5365,11 @@ final class DoubleBottomLongService
 
         return [
             'candidate_found'      => true,
+            'candidate_side'       => 'long',
+            // candidate_trigger is the price level at which the signal fires (neckline/reclaim).
+            // PatternSignal::build() uses this as the entry_price / trigger.  A zero trigger
+            // produces a signal_id with '0' and a zero stop_loss_pct — both are invalid.
+            'candidate_trigger'    => $neckline,
             'neckline'             => $neckline,
             'low1_price'           => $low1Price,
             'low2_price'           => $low2Price,

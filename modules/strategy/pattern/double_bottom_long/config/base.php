@@ -234,6 +234,19 @@ return [
     'pending_confirmation_max_items'        => 20,
     'pending_confirmation_recheck_first'    => true,
 
+    // Late good setup (Task 4): high-quality A-class setups where entry is slightly beyond
+    // the hard distance cap but within the soft cap.  Instead of rejecting, classify as
+    // late_good_setup and create a pending-better-entry entry.
+    // Example: GENIUSUSDT — great scores, but 2.2% above neckline when hard cap is 2.0%.
+    'synthetic_quality_intraday_db_soft_entry_distance_from_neckline_pct' => 2.5,   // soft cap (late_good_setup zone)
+    'synthetic_quality_intraday_db_borderline_distance_pending_enabled'   => true,   // create pending for late_good setups
+    'synthetic_quality_intraday_db_borderline_min_score'                  => 8.5,    // min db_score AND setup_score to be late_good
+
+    // H4 final gate mode for setup_allowed A/B signals (Task 5).
+    // 'warning' = final_trend_mismatch / final_context_inconsistent become warning-only.
+    // 'strict'  = keep hard-reject behaviour (legacy).
+    'final_old_h4_gates_mode_for_setup_allowed'  => 'warning',
+
     // ── Intraday double-bottom detection on entry-context candles ────────────
     // Detects: dump → bottom_1 → neckline bounce → bottom_2/low hold → reclaim
     'intraday_double_bottom_enabled'                     => true,

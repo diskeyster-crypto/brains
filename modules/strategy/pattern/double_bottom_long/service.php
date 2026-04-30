@@ -380,6 +380,7 @@ final class DoubleBottomLongService
         $tickAt           = date('c');
         $foundCandidates   = (array)$this->readJson('storage/candidates_found.json', []);
         $emittedCandidates = (array)$this->readJson('storage/candidates_emitted.json', []);
+        $synQFailedExamples = [];  // accumulated per tick, max 5
 
         // Pre-initialise fields that are only assigned inside the $isDone block
         // so they are always defined when used in the last_run.json write below.
@@ -412,6 +413,28 @@ final class DoubleBottomLongService
                 }
                 $stats      = $this->accumulateStats($stats,      $result);
                 $cycleStats = $this->accumulateStats($cycleStats, $result);
+
+                // Collect synthetic quality fail examples for diagnostics (max 5 per tick)
+                if (count($synQFailedExamples) < 5
+                    && (
+                        (bool)($result['synthetic_quality_checked'] ?? false) && !(bool)($result['synthetic_quality_pass'] ?? false)
+                        || (string)($result['reject_reason'] ?? '') === 'synthetic_candidate_quality_failed'
+                    )
+                ) {
+                    $synQFailedExamples[] = [
+                        'symbol'                          => $symbol,
+                        'setup_class'                     => $result['setup_class']          ?? null,
+                        'synthetic_candidate_source'      => $result['synthetic_candidate_source'] ?? null,
+                        'synthetic_quality_score'         => $result['synthetic_quality_score']    ?? null,
+                        'synthetic_quality_reason'        => $result['synthetic_quality_reason']   ?? null,
+                        'synthetic_quality_block_reasons' => $result['synthetic_quality_block_reasons'] ?? [],
+                        'entry_context_score'             => $result['entry_context_score']         ?? null,
+                        'intraday_double_bottom_score'    => $result['intraday_double_bottom_score']?? null,
+                        'setup_class_score'               => $result['setup_class_score']           ?? null,
+                        'entry_distance_from_neckline_pct' => $result['entry_distance_from_neckline_pct'] ?? null,
+                        'entry_distance_from_reclaim_pct'  => $result['entry_distance_from_reclaim_pct']  ?? null,
+                    ];
+                }
 
                 $rejectR       = $result['reject_reason']     ?? null;
                 $neckDistStatus = 'n/a';
@@ -873,6 +896,8 @@ final class DoubleBottomLongService
             'synthetic_quality_post_dump_base_reclaim_pass_total' => (int)($cycleStats['synthetic_quality_post_dump_base_reclaim_pass_total'] ?? 0),
             'reject_synthetic_candidate_quality_failed_total'    => (int)($cycleStats['reject_synthetic_candidate_quality_failed_total']    ?? 0),
             'reject_quality_weak_structure_total'                => (int)($cycleStats['reject_quality_weak_structure_total']                ?? 0),
+            // Diagnostic examples: last 5 synthetic quality failures in this tick
+            'synthetic_quality_failed_examples'                  => $synQFailedExamples,
         ]);
 
         if ($isDone) {
@@ -1294,7 +1319,8 @@ final class DoubleBottomLongService
             'context_score'           => null,
             'candidate_quality_score' => null,
             'quality_pass'            => null,
-            'quality_reject_reason'   => null,
+            'quality_reject_reason'   => $longResult['quality_reject_reason'] ?? null,
+            'quality_source'          => $longResult['quality_source']         ?? null,
             'confirm_status'         => null,
             'confirm_bars_waited'    => 0,
             'candidate_expired'      => false,
@@ -1311,6 +1337,13 @@ final class DoubleBottomLongService
             'entry_setup_old_h4_gates_bypassed' => $longResult['entry_setup_old_h4_gates_bypassed'] ?? false,
             'synthetic_candidate_built'         => $longResult['synthetic_candidate_built']         ?? false,
             'synthetic_candidate_source'        => $longResult['synthetic_candidate_source']        ?? null,
+            // Forward synthetic quality diagnostic fields so accumulateStats() can count them.
+            'synthetic_quality_checked'         => $longResult['synthetic_quality_checked']         ?? false,
+            'synthetic_quality_pass'            => $longResult['synthetic_quality_pass']            ?? null,
+            'synthetic_quality_score'           => $longResult['synthetic_quality_score']           ?? null,
+            'synthetic_quality_reason'          => $longResult['synthetic_quality_reason']          ?? null,
+            'synthetic_quality_block_reasons'   => $longResult['synthetic_quality_block_reasons']   ?? [],
+            'synthetic_quality_components'      => $longResult['synthetic_quality_components']      ?? [],
             'final_signal_status'    => 'no_signal',
             'reject_reason'          => $longRej ?? 'no_valid_candidate',
             'signal'                 => null,
@@ -2324,6 +2357,16 @@ final class DoubleBottomLongService
                 $inc($stats, 'synthetic_quality_failed_total');
                 $inc($stats, 'reject_synthetic_candidate_quality_failed_total');
             }
+        } elseif (
+            // Fallback: if synthetic_quality_checked field was lost in result merging,
+            // recover counters from reject_reason / setup_allowed_kill_reason.
+            (string)($result['reject_reason'] ?? '') === 'synthetic_candidate_quality_failed'
+            || (string)($result['setup_allowed_kill_reason'] ?? '') === 'synthetic_candidate_quality_failed'
+        ) {
+            $inc($stats, 'synthetic_quality_checked_total');
+            $inc($stats, 'synthetic_quality_bypassed_old_h4_quality_total');
+            $inc($stats, 'synthetic_quality_failed_total');
+            $inc($stats, 'reject_synthetic_candidate_quality_failed_total');
         }
         // Track old H4 quality_weak_structure rejects on non-synthetic candidates
         if (!((bool)($result['synthetic_candidate_built'] ?? false))

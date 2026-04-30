@@ -856,6 +856,14 @@ final class DoubleBottomLongService
             'setup_allowed_final_eligibility_pass_total'        => (int)($cycleStats['setup_allowed_final_eligibility_pass_total']        ?? 0),
             'setup_allowed_final_eligibility_failed_total'      => (int)($cycleStats['setup_allowed_final_eligibility_failed_total']      ?? 0),
             'setup_allowed_signal_emitted_total'                => (int)($cycleStats['setup_allowed_signal_emitted_total']                ?? 0),
+            // Entry-setup-allowed / old-gate-bypass / synthetic candidate counters
+            'entry_setup_allowed_total'                          => (int)($cycleStats['entry_setup_allowed_total']                          ?? 0),
+            'entry_setup_blocked_by_safety_total'                => (int)($cycleStats['entry_setup_blocked_by_safety_total']                ?? 0),
+            'entry_setup_old_h4_gates_bypassed_total'            => (int)($cycleStats['entry_setup_old_h4_gates_bypassed_total']            ?? 0),
+            'entry_setup_old_h4_gates_warning_total'             => (int)($cycleStats['entry_setup_old_h4_gates_warning_total']             ?? 0),
+            'synthetic_candidate_built_total'                    => (int)($cycleStats['synthetic_candidate_built_total']                    ?? 0),
+            'synthetic_candidate_intraday_double_bottom_total'   => (int)($cycleStats['synthetic_candidate_intraday_double_bottom_total']   ?? 0),
+            'synthetic_candidate_post_dump_base_reclaim_total'   => (int)($cycleStats['synthetic_candidate_post_dump_base_reclaim_total']   ?? 0),
         ]);
 
         if ($isDone) {
@@ -1229,6 +1237,29 @@ final class DoubleBottomLongService
             'entry_context_prefilter_reject_reason' => $pref['prefilter_reject_reason'],
         ];
 
+        // ── Precompute entry_setup_allowed (A/B intraday allowance) ──────────
+        // Evaluated after entry context / setup class classification but BEFORE
+        // tryLong() so the result can be passed into tryLong() as a gate override.
+        // When entry_setup_allowed=true the old regime/trend/corridor/wave hard
+        // rejects are downgraded to warnings inside tryLong().
+        $entrySetupRes = $this->computeEntrySetupAllowed($diagBase, $config);
+        $diagBase['entry_setup_allowed']           = $entrySetupRes['entry_setup_allowed'];
+        $diagBase['entry_setup_class']             = $entrySetupRes['entry_setup_class'];
+        $diagBase['entry_setup_reason']            = $entrySetupRes['entry_setup_reason'];
+        $diagBase['entry_setup_score']             = $entrySetupRes['entry_setup_score'];
+        $diagBase['entry_setup_blocked_by_safety'] = $entrySetupRes['blocked_by_safety'];
+        $diagBase['entry_setup_block_reason']      = $entrySetupRes['block_reason'];
+        // Fields updated by tryLong(); initialised here so no_signal return can
+        // safely pick them up from $longResult without needing a separate default path.
+        $diagBase['old_market_regime_warning']          = null;
+        $diagBase['old_trend_warning']                  = null;
+        $diagBase['old_corridor_warning']               = null;
+        $diagBase['old_wave_warning']                   = null;
+        $diagBase['old_h4_gate_warning_reasons']        = [];
+        $diagBase['entry_setup_old_h4_gates_bypassed']  = false;
+        $diagBase['synthetic_candidate_built']          = false;
+        $diagBase['synthetic_candidate_source']         = null;
+
         $longResult = $this->tryLong($symbol, $candles, $config, $regimeStr, $trendDir, $corridor, $wave, $diagBase);
         if ($longResult['final_signal_status'] === 'emitted') {
             return $longResult;
@@ -1259,9 +1290,18 @@ final class DoubleBottomLongService
             'confirm_bars_waited'    => 0,
             'candidate_expired'      => false,
             // Forward setup funnel fields so accumulateStats() can track per-stage counts.
-            'setup_allowed'            => $longResult['setup_allowed']            ?? false,
-            'setup_allowed_kill_stage'  => $longResult['setup_allowed_kill_stage']  ?? null,
-            'setup_allowed_kill_reason' => $longResult['setup_allowed_kill_reason'] ?? null,
+            'setup_allowed'                     => $longResult['setup_allowed']                     ?? false,
+            'setup_allowed_kill_stage'          => $longResult['setup_allowed_kill_stage']          ?? null,
+            'setup_allowed_kill_reason'         => $longResult['setup_allowed_kill_reason']         ?? null,
+            // Forward tryLong-modified diagnostic fields (not in processSymbol's diagBase copy).
+            'old_market_regime_warning'         => $longResult['old_market_regime_warning']         ?? null,
+            'old_trend_warning'                 => $longResult['old_trend_warning']                 ?? null,
+            'old_corridor_warning'              => $longResult['old_corridor_warning']              ?? null,
+            'old_wave_warning'                  => $longResult['old_wave_warning']                  ?? null,
+            'old_h4_gate_warning_reasons'       => $longResult['old_h4_gate_warning_reasons']       ?? [],
+            'entry_setup_old_h4_gates_bypassed' => $longResult['entry_setup_old_h4_gates_bypassed'] ?? false,
+            'synthetic_candidate_built'         => $longResult['synthetic_candidate_built']         ?? false,
+            'synthetic_candidate_source'        => $longResult['synthetic_candidate_source']        ?? null,
             'final_signal_status'    => 'no_signal',
             'reject_reason'          => $longRej ?? 'no_valid_candidate',
             'signal'                 => null,
@@ -1273,7 +1313,14 @@ final class DoubleBottomLongService
     {
         $side = 'long';
 
+        // Whether this symbol was pre-qualified as an A/B intraday setup.
+        // When true, old regime/trend/corridor/wave failures become warnings so
+        // the symbol can enter the setup_allowed funnel.
+        $entrySetupAllowed = (bool)($diagBase['entry_setup_allowed'] ?? false);
+        $oldGateWarnings   = [];
+
         // ── Active falling knife: hard reject before anything else ────────────
+        // This block stays hard even when entry_setup_allowed=true.
         if ((bool)($config['coin_trend_context_enabled'] ?? true)
             && (bool)($config['active_downtrend_block_enabled'] ?? true)
             && (bool)($diagBase['active_falling_knife_detected'] ?? false)
@@ -1283,8 +1330,9 @@ final class DoubleBottomLongService
 
         // ── Market regime gate ────────────────────────────────────────────────
         // Bearish regime is hard-blocked by default.
-        // Exception: bearish_reversal_exception allows entry when all post-dump
-        // stabilization conditions are met (post-dump → flat/base → reclaim).
+        // Exception 1: bearish_reversal_exception (classic post-dump stabilization path).
+        // Exception 2: entry_setup_allowed=true (A/B intraday setup confirmed), in which
+        //   case the regime failure is recorded as a warning and bearishRevExUsed is set.
         $bearishRevExUsed = false;
         if ((bool)($config['market_regime_enabled'] ?? true)) {
             $regimeGateMode = (string)($config['market_regime_gate_mode'] ?? 'soft');
@@ -1293,41 +1341,52 @@ final class DoubleBottomLongService
                 $rGate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternMarketRegime())
                     ->gate($regimeStr, $side, $regimeGateMode);
                 if (!$rGate['pass']) {
-                    // Check bearish reversal exception
-                    $exceptionAllowed = false;
-                    if ((bool)($config['bearish_reversal_exception_enabled'] ?? true)
-                        && !(bool)($diagBase['active_falling_knife_detected'] ?? false)
-                    ) {
-                        $requireStab  = (bool)($config['bearish_reversal_requires_post_dump_stabilization'] ?? true);
-                        $requireFlat  = (bool)($config['bearish_reversal_requires_flat_base'] ?? true);
-                        $requireReclaim = (bool)($config['bearish_reversal_requires_reclaim'] ?? true);
-                        $maxLowerLows = (int)($config['max_recent_lower_low_count'] ?? 2);
-                        $minRevScore  = (float)($config['min_reversal_context_score'] ?? 7.0);
-
-                        $stabOk   = !$requireStab  || (bool)($diagBase['stabilization_detected'] ?? false);
-                        $flatOk   = !$requireFlat  || (bool)($diagBase['flat_base_detected']     ?? false);
-                        $reclOk   = !$requireReclaim || (bool)($diagBase['reclaim_after_flat_detected'] ?? false);
-                        $llOk     = (int)($diagBase['recent_lower_low_count'] ?? 999) <= $maxLowerLows;
-                        $revScore = (float)($diagBase['reversal_context_score'] ?? 0.0);
-                        $scoreOk  = $revScore >= $minRevScore;
-
-                        if ($stabOk && $flatOk && $reclOk && $llOk && $scoreOk) {
-                            $exceptionAllowed = true;
+                    if ($entrySetupAllowed) {
+                        // Downgrade to warning; set reversal exception flag so
+                        // the downstream trend gate is also skipped correctly.
+                        $oldGateWarnings[] = $rGate['reason'];
+                        $diagBase['old_market_regime_warning'] = $rGate['reason'];
+                        if ($regimeStr === 'bearish') {
                             $bearishRevExUsed = true;
+                            $diagBase['bearish_reversal_exception_used'] = true;
                         }
-                    }
-                    if (!$exceptionAllowed) {
-                        // Resolve the most specific failure reason (regime alone is a fallback).
-                        $specificReason = $this->resolveDoubleBottomRejectReason($diagBase, $config);
-                        $diagBase['primary_reject_reason']    = $specificReason;
-                        $diagBase['secondary_reject_reasons'] = $specificReason !== $rGate['reason']
-                            ? [$rGate['reason']]
-                            : [];
-                        $diagBase['reason_codes'] = array_values(array_unique(
-                            [$specificReason, $rGate['reason']]
-                        ));
-                        $diagBase['failed_stage'] = $this->failedStageForReason($specificReason);
-                        return $this->reject($diagBase, $symbol, 'double_bottom', $specificReason);
+                    } else {
+                        // Original path: check bearish reversal exception
+                        $exceptionAllowed = false;
+                        if ((bool)($config['bearish_reversal_exception_enabled'] ?? true)
+                            && !(bool)($diagBase['active_falling_knife_detected'] ?? false)
+                        ) {
+                            $requireStab  = (bool)($config['bearish_reversal_requires_post_dump_stabilization'] ?? true);
+                            $requireFlat  = (bool)($config['bearish_reversal_requires_flat_base'] ?? true);
+                            $requireReclaim = (bool)($config['bearish_reversal_requires_reclaim'] ?? true);
+                            $maxLowerLows = (int)($config['max_recent_lower_low_count'] ?? 2);
+                            $minRevScore  = (float)($config['min_reversal_context_score'] ?? 7.0);
+
+                            $stabOk   = !$requireStab  || (bool)($diagBase['stabilization_detected'] ?? false);
+                            $flatOk   = !$requireFlat  || (bool)($diagBase['flat_base_detected']     ?? false);
+                            $reclOk   = !$requireReclaim || (bool)($diagBase['reclaim_after_flat_detected'] ?? false);
+                            $llOk     = (int)($diagBase['recent_lower_low_count'] ?? 999) <= $maxLowerLows;
+                            $revScore = (float)($diagBase['reversal_context_score'] ?? 0.0);
+                            $scoreOk  = $revScore >= $minRevScore;
+
+                            if ($stabOk && $flatOk && $reclOk && $llOk && $scoreOk) {
+                                $exceptionAllowed = true;
+                                $bearishRevExUsed = true;
+                            }
+                        }
+                        if (!$exceptionAllowed) {
+                            // Resolve the most specific failure reason (regime alone is a fallback).
+                            $specificReason = $this->resolveDoubleBottomRejectReason($diagBase, $config);
+                            $diagBase['primary_reject_reason']    = $specificReason;
+                            $diagBase['secondary_reject_reasons'] = $specificReason !== $rGate['reason']
+                                ? [$rGate['reason']]
+                                : [];
+                            $diagBase['reason_codes'] = array_values(array_unique(
+                                [$specificReason, $rGate['reason']]
+                            ));
+                            $diagBase['failed_stage'] = $this->failedStageForReason($specificReason);
+                            return $this->reject($diagBase, $symbol, 'double_bottom', $specificReason);
+                        }
                     }
                 }
             }
@@ -1335,7 +1394,7 @@ final class DoubleBottomLongService
 
         // Update diagBase with bearish_reversal_exception_used flag
         $diagBase['bearish_reversal_exception_used'] = $bearishRevExUsed;
-        if ($bearishRevExUsed) {
+        if ($bearishRevExUsed && !$entrySetupAllowed) {
             $diagBase['setup_context_type'] = 'post_dump_flat_reversal';
         }
 
@@ -1348,13 +1407,23 @@ final class DoubleBottomLongService
             $requireBullish = (bool)($config['trend_long_require_bullish'] ?? true);
             if ($requireBullish && !$bearishRevExUsed) {
                 if ($trendDir !== 'bullish') {
-                    return $this->reject($diagBase, $symbol, 'double_bottom',
-                        "trend_{$trendDir}_side_long_mismatch");
+                    if ($entrySetupAllowed) {
+                        $oldGateWarnings[] = "trend_{$trendDir}_side_long_mismatch";
+                        $diagBase['old_trend_warning'] = "trend_{$trendDir}_side_long_mismatch";
+                    } else {
+                        return $this->reject($diagBase, $symbol, 'double_bottom',
+                            "trend_{$trendDir}_side_long_mismatch");
+                    }
                 }
             } elseif (!$bearishRevExUsed) {
                 $tGate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternTrend())->gate($trendDir, $side);
                 if (!$tGate['pass']) {
-                    return $this->reject($diagBase, $symbol, 'double_bottom', $tGate['reason']);
+                    if ($entrySetupAllowed) {
+                        $oldGateWarnings[] = $tGate['reason'];
+                        $diagBase['old_trend_warning'] = $tGate['reason'];
+                    } else {
+                        return $this->reject($diagBase, $symbol, 'double_bottom', $tGate['reason']);
+                    }
                 }
             }
             // When bearish_reversal_exception_used=true, trend gate is bypassed.
@@ -1364,7 +1433,12 @@ final class DoubleBottomLongService
             $this->requireLogic('corridor');
             $cGate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternCorridor())->gate($corridor, $side);
             if (!$cGate['pass']) {
-                return $this->reject($diagBase, $symbol, 'double_bottom', $cGate['reason']);
+                if ($entrySetupAllowed) {
+                    $oldGateWarnings[] = $cGate['reason'];
+                    $diagBase['old_corridor_warning'] = $cGate['reason'];
+                } else {
+                    return $this->reject($diagBase, $symbol, 'double_bottom', $cGate['reason']);
+                }
             }
         }
 
@@ -1372,14 +1446,24 @@ final class DoubleBottomLongService
             $this->requireLogic('wave');
             $wGate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternWave())->gate($wave, $side);
             if (!$wGate['pass']) {
-                return $this->reject($diagBase, $symbol, 'double_bottom', $wGate['reason']);
+                if ($entrySetupAllowed) {
+                    $oldGateWarnings[] = $wGate['reason'];
+                    $diagBase['old_wave_warning'] = $wGate['reason'];
+                } else {
+                    return $this->reject($diagBase, $symbol, 'double_bottom', $wGate['reason']);
+                }
             }
         }
+
+        // Record old-gate warning diagnostics.
+        $diagBase['old_h4_gate_warning_reasons']       = $oldGateWarnings;
+        $diagBase['entry_setup_old_h4_gates_bypassed'] = $entrySetupAllowed && count($oldGateWarnings) > 0;
 
         // ── Entry context safety gate ─────────────────────────────────────────
         // Block signal emission when entry-context candles were not fetched.
         // The coin_trend_context pipeline ran on H4 fallback only in this case,
         // and its dump/stab/flat/reclaim results cannot be trusted for decisions.
+        // This remains a hard reject even for entry_setup_allowed=true.
         if (!(bool)($diagBase['entry_context_available'] ?? true)) {
             return $this->reject(
                 $diagBase, $symbol, 'double_bottom',
@@ -1390,20 +1474,29 @@ final class DoubleBottomLongService
         // ── Setup class gate ──────────────────────────────────────────────────
         // Only A/B classes (classic_intraday_double_bottom_reclaim, post_dump_base_reclaim)
         // may emit signals. C (diagnostic_recovery_context) is diagnostics only.
+        // When entry_setup_allowed=true the class check was already satisfied by
+        // computeEntrySetupAllowed(); we skip the gate and stamp directly.
         if ((bool)($config['intraday_setup_classification_enabled'] ?? true)) {
-            $setupClass       = (string)($diagBase['setup_class']          ?? 'none');
-            $setupSigAllowed  = (bool)($diagBase['setup_signal_allowed']   ?? false);
-            $allowedClasses   = (array)($config['setup_class_handoff_allowed'] ?? ['classic_intraday_double_bottom_reclaim', 'post_dump_base_reclaim']);
-            if (!$setupSigAllowed || !in_array($setupClass, $allowedClasses, true)) {
-                $specificReason = $this->resolveDoubleBottomRejectReason($diagBase, $config);
-                return $this->reject($diagBase, $symbol, 'double_bottom', $specificReason);
+            if (!$entrySetupAllowed) {
+                $setupClass       = (string)($diagBase['setup_class']          ?? 'none');
+                $setupSigAllowed  = (bool)($diagBase['setup_signal_allowed']   ?? false);
+                $allowedClasses   = (array)($config['setup_class_handoff_allowed'] ?? ['classic_intraday_double_bottom_reclaim', 'post_dump_base_reclaim']);
+                if (!$setupSigAllowed || !in_array($setupClass, $allowedClasses, true)) {
+                    $specificReason = $this->resolveDoubleBottomRejectReason($diagBase, $config);
+                    return $this->reject($diagBase, $symbol, 'double_bottom', $specificReason);
+                }
             }
         }
 
-        // Setup class gate passed — stamp for funnel diagnostics.
+        // Setup class gate passed (either directly or via entry_setup_allowed) — stamp for funnel diagnostics.
         $diagBase['setup_allowed']            = true;
         $diagBase['setup_allowed_kill_stage']  = null;
         $diagBase['setup_allowed_kill_reason'] = null;
+        if ($entrySetupAllowed) {
+            $diagBase['setup_context_type']   = 'entry_setup_allowed';
+            $diagBase['setup_allowed_source'] = 'setup_class';
+            $diagBase['setup_allowed_reason'] = $diagBase['entry_setup_reason'] ?? null;
+        }
 
         $this->requireLogic('double_bottom');
         $candidate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternDoubleBottom())->detect($candles, $config);
@@ -1419,8 +1512,12 @@ final class DoubleBottomLongService
                    || ($allowWithoutClassic      && $currentSetupClass === 'post_dump_base_reclaim');
 
             if ($skipH4) {
-                // Keep candidate_found=true; neckline/low fields remain null for non-H4 path.
-                $candidate = array_merge($candidate, ['candidate_found' => true]);
+                // Build a synthetic candidate from intraday fields so the quality/control
+                // code has real values instead of nulls, which avoids spurious quality failures.
+                $synth = $this->buildSyntheticCandidate($diagBase, $currentSetupClass);
+                $candidate = $synth;
+                $diagBase['synthetic_candidate_built'] = true;
+                $diagBase['synthetic_candidate_source'] = $synth['candidate_source'] ?? $currentSetupClass;
             } else {
                 // Classic-pattern kill: stamp kill stage before rejecting.
                 $diagBase['setup_allowed_kill_stage']  = 'classic_pattern';
@@ -2105,6 +2202,29 @@ final class DoubleBottomLongService
             }
         }
 
+        // Entry-setup-allowed / old-gate-bypass / synthetic candidate counters
+        if ((bool)($result['entry_setup_allowed'] ?? false)) {
+            $inc($stats, 'entry_setup_allowed_total');
+        }
+        if ((bool)($result['entry_setup_blocked_by_safety'] ?? false)) {
+            $inc($stats, 'entry_setup_blocked_by_safety_total');
+        }
+        if ((bool)($result['entry_setup_old_h4_gates_bypassed'] ?? false)) {
+            $inc($stats, 'entry_setup_old_h4_gates_bypassed_total');
+            if (count((array)($result['old_h4_gate_warning_reasons'] ?? [])) > 0) {
+                $inc($stats, 'entry_setup_old_h4_gates_warning_total');
+            }
+        }
+        if ((bool)($result['synthetic_candidate_built'] ?? false)) {
+            $inc($stats, 'synthetic_candidate_built_total');
+            $src = (string)($result['synthetic_candidate_source'] ?? '');
+            if ($src === 'intraday_double_bottom') {
+                $inc($stats, 'synthetic_candidate_intraday_double_bottom_total');
+            } elseif ($src === 'post_dump_base_reclaim') {
+                $inc($stats, 'synthetic_candidate_post_dump_base_reclaim_total');
+            }
+        }
+
         return $stats;
     }
 
@@ -2306,6 +2426,14 @@ final class DoubleBottomLongService
             'setup_allowed_final_eligibility_pass_total'        => 0,
             'setup_allowed_final_eligibility_failed_total'      => 0,
             'setup_allowed_signal_emitted_total'                => 0,
+            // Entry-setup-allowed / old-gate-bypass / synthetic candidate counters
+            'entry_setup_allowed_total'                          => 0,
+            'entry_setup_blocked_by_safety_total'                => 0,
+            'entry_setup_old_h4_gates_bypassed_total'            => 0,
+            'entry_setup_old_h4_gates_warning_total'             => 0,
+            'synthetic_candidate_built_total'                    => 0,
+            'synthetic_candidate_intraday_double_bottom_total'   => 0,
+            'synthetic_candidate_post_dump_base_reclaim_total'   => 0,
         ];
     }
 
@@ -4032,6 +4160,157 @@ final class DoubleBottomLongService
      *
      * Bearish regime alone is NEVER returned unless nothing more specific is found.
      */
+
+    /**
+     * Determine whether an A/B intraday setup class is fully confirmed and safe to
+     * emit a signal for, independent of the old H4 market-regime/trend/corridor/wave
+     * gates.  When this returns entry_setup_allowed=true the old H4 gates are
+     * downgraded to warnings inside tryLong() so the symbol reaches the
+     * setup_allowed funnel.
+     *
+     * Hard safety blocks (active_falling_knife, entry_context unavailable, support
+     * broken, reclaim not confirmed, entry too far) still prevent entry_setup_allowed
+     * and are flagged via blocked_by_safety=true with a block_reason string.
+     */
+    private function computeEntrySetupAllowed(array $ctx, array $config): array
+    {
+        $default = [
+            'entry_setup_allowed' => false,
+            'entry_setup_class'   => null,
+            'entry_setup_reason'  => null,
+            'entry_setup_score'   => 0.0,
+            'blocked_by_safety'   => false,
+            'block_reason'        => null,
+        ];
+
+        // Hard block: intraday detection cannot be trusted without entry context.
+        if (!(bool)($ctx['entry_context_available'] ?? false)) {
+            return array_merge($default, [
+                'blocked_by_safety' => true,
+                'block_reason'      => 'entry_context_unavailable',
+            ]);
+        }
+
+        // Hard block: active falling knife, never enter long.
+        if ((bool)($ctx['active_falling_knife_detected'] ?? false)) {
+            return array_merge($default, [
+                'blocked_by_safety' => true,
+                'block_reason'      => 'active_falling_knife',
+            ]);
+        }
+
+        // Must be a signal-allowed setup class.
+        if (!(bool)($ctx['setup_signal_allowed'] ?? false)) {
+            return $default;
+        }
+
+        $setupClass     = (string)($ctx['setup_class'] ?? 'none');
+        $allowedClasses = (array)($config['setup_class_handoff_allowed']
+            ?? ['classic_intraday_double_bottom_reclaim', 'post_dump_base_reclaim']);
+        if (!in_array($setupClass, $allowedClasses, true)) {
+            return $default;
+        }
+
+        // Hard block: support broken.
+        if ((bool)($ctx['support_broken'] ?? false)) {
+            return array_merge($default, [
+                'blocked_by_safety' => true,
+                'block_reason'      => 'base_support_broken',
+            ]);
+        }
+
+        // A-class checks: neckline reclaim must be confirmed and entry distance within limit.
+        if ($setupClass === 'classic_intraday_double_bottom_reclaim') {
+            if (!(bool)($ctx['neckline_reclaim_confirmed'] ?? false)) {
+                return array_merge($default, [
+                    'blocked_by_safety' => true,
+                    'block_reason'      => 'neckline_reclaim_not_confirmed',
+                ]);
+            }
+            $maxNeckDist = (float)($config['max_entry_distance_from_neckline_pct'] ?? 0.0);
+            if ($maxNeckDist > 0.0 && (float)($ctx['entry_distance_from_neckline_pct'] ?? 0.0) > $maxNeckDist) {
+                return array_merge($default, [
+                    'blocked_by_safety' => true,
+                    'block_reason'      => 'entry_too_far_after_neckline_reclaim',
+                ]);
+            }
+        }
+
+        // B-class checks: reclaim after flat must be confirmed and entry distance within limit.
+        if ($setupClass === 'post_dump_base_reclaim') {
+            if (!(bool)($ctx['reclaim_after_flat_detected'] ?? false)) {
+                return array_merge($default, [
+                    'blocked_by_safety' => true,
+                    'block_reason'      => 'reclaim_after_flat_not_confirmed',
+                ]);
+            }
+            $maxReclDist = (float)($config['max_entry_distance_from_reclaim_pct'] ?? 0.0);
+            if ($maxReclDist > 0.0 && (float)($ctx['entry_distance_from_reclaim_pct'] ?? 0.0) > $maxReclDist) {
+                return array_merge($default, [
+                    'blocked_by_safety' => true,
+                    'block_reason'      => 'entry_too_far_after_reclaim',
+                ]);
+            }
+        }
+
+        return [
+            'entry_setup_allowed' => true,
+            'entry_setup_class'   => $setupClass,
+            'entry_setup_reason'  => (string)($ctx['setup_class_reason'] ?? 'intraday_setup_allowed'),
+            'entry_setup_score'   => (float)($ctx['setup_class_score']   ?? 0.0),
+            'blocked_by_safety'   => false,
+            'block_reason'        => null,
+        ];
+    }
+
+    /**
+     * Build a synthetic candidate array for A/B intraday setup classes when the
+     * H4 PatternDoubleBottom detector found nothing.  Provides real price values
+     * from intraday detection so the downstream quality/control scorers do not
+     * receive null fields and produce spurious failures.
+     *
+     * @param  array  $ctx        Merged diagBase (includes coinCtx and intraday fields).
+     * @param  string $setupClass 'classic_intraday_double_bottom_reclaim' | 'post_dump_base_reclaim'
+     */
+    private function buildSyntheticCandidate(array $ctx, string $setupClass): array
+    {
+        if ($setupClass === 'classic_intraday_double_bottom_reclaim') {
+            $neckline  = (float)($ctx['intraday_db_neckline_level'] ?? $ctx['neckline_level'] ?? 0.0);
+            $low1Price = (float)($ctx['bottom_1_price'] ?? 0.0);
+            $low2Price = (float)($ctx['bottom_2_price'] ?? 0.0);
+            $simDelta  = (float)($ctx['bottom_low_diff_pct'] ?? 0.0);
+            $b1        = (int)($ctx['bottom_1_index'] ?? 0);
+            $b2        = (int)($ctx['bottom_2_index'] ?? 0);
+            $windowSz  = max(4, $b2 - $b1);
+            $source    = 'intraday_double_bottom';
+            // Use intraday double-bottom quality score as candidate_score proxy.
+            $candScore = min(1.0, max(0.0, (float)($ctx['intraday_double_bottom_score'] ?? 0.65)));
+        } else {
+            // post_dump_base_reclaim
+            $neckline  = (float)($ctx['reclaim_level'] ?? $ctx['base_high'] ?? $ctx['neckline_level'] ?? 0.0);
+            $low1Price = (float)($ctx['flat_base_low'] ?? $ctx['base_low'] ?? 0.0);
+            $low2Price = $low1Price;
+            $simDelta  = 0.0;
+            $windowSz  = max(4, (int)($ctx['flat_base_touches'] ?? $ctx['stabilization_bars'] ?? 6));
+            $source    = 'post_dump_base_reclaim';
+            $candScore = min(1.0, max(0.0, (float)($ctx['reclaim_score'] ?? 0.60)));
+        }
+
+        return [
+            'candidate_found'      => true,
+            'neckline'             => $neckline,
+            'low1_price'           => $low1Price,
+            'low2_price'           => $low2Price,
+            'similarity_delta_pct' => $simDelta,
+            'window_size'          => $windowSz,
+            'candidate_score'      => $candScore,
+            'candidate_source'     => $source,
+            'low1_index'           => $ctx['bottom_1_index'] ?? null,
+            'low2_index'           => $ctx['bottom_2_index'] ?? null,
+            'reject_reason'        => null,
+        ];
+    }
+
     private function resolveDoubleBottomRejectReason(array $ctx, array $config): string
     {
         // 1. Active falling knife

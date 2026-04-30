@@ -862,6 +862,32 @@ final class BotService
         // ── 7e. Freeze/blacklist diagnostics ──────────────────────────────────
         $fbDiag = $this->computeFreezeBlacklistDiagnostics($config);
 
+        // ── 7f. Signal trace diagnostics for open positions (Task 5) ──────────
+        $positionsOpenedWithTrace    = 0;
+        $positionsOpenedMissingTrace = 0;
+        $signalTraceMissingExamples  = [];
+        foreach ($activePositions as $pos) {
+            $hasTrace = (string)($pos['signal_id'] ?? '') !== ''
+                && (string)($pos['strategy_id']    ?? '') !== '';
+            if ($hasTrace) {
+                $positionsOpenedWithTrace++;
+            } else {
+                $positionsOpenedMissingTrace++;
+                if (count($signalTraceMissingExamples) < 5) {
+                    $signalTraceMissingExamples[] = [
+                        'symbol'         => $pos['symbol']      ?? null,
+                        'signal_id'      => $pos['signal_id']   ?? null,
+                        'strategy'       => $pos['strategy_id'] ?? null,
+                        'missing_fields' => array_filter([
+                            ((string)($pos['signal_id']   ?? '') === '') ? 'signal_id'   : null,
+                            ((string)($pos['strategy_id'] ?? '') === '') ? 'strategy_id' : null,
+                        ]),
+                        'reason'         => 'no_signal_id_or_strategy_id_in_position',
+                    ];
+                }
+            }
+        }
+
         $lastRun = [
             'status'      => 'ok',
             'tick_at'     => $tickAt,
@@ -1047,6 +1073,10 @@ final class BotService
             'orders_blocked_by_auto_blacklist_total'   => $ordersBlockedByAutoBl,
             'freeze_block_examples'               => $freezeBlockExamples,
             'blacklist_block_examples'            => $blacklistBlockExamples,
+            // ── Signal trace diagnostics for open positions (Task 5) ─────────────
+            'positions_opened_with_signal_trace_total'    => $positionsOpenedWithTrace,
+            'positions_opened_missing_signal_trace_total' => $positionsOpenedMissingTrace,
+            'signal_trace_missing_examples'               => $signalTraceMissingExamples,
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -2203,6 +2233,11 @@ final class BotService
             'duration_sec'              => $durationSec,
             'entered_at'                => $openedAt,
             'last_updated_at'           => $tickAt,
+
+            // ── Signal trace attribution (Task 3) ────────────────────────────────
+            'pattern_algorithm'       => (string)($qItem['pattern_algorithm']        ?? ''),
+            'setup_class'             => $qItem['setup_class']                       ?? null,
+            'strategy_signal_context' => $qItem['strategy_signal_context']           ?? null,
         ];
     }
 
@@ -3856,6 +3891,11 @@ final class BotService
             'tp_mode'                       => (string)($signal['tp_mode']                     ?? 'fixed_r'),
             'tp_value'                      => (float)($signal['tp_value']                     ?? 2.0),
             'reverse_pattern_close_enabled' => (bool)($signal['reverse_pattern_close_enabled'] ?? false),
+
+            // ── Signal diagnostic context propagation (Task 3) ───────────────────────
+            'pattern_algorithm'      => (string)($signal['primary_pattern'] ?? ''),
+            'setup_class'            => $signal['setup_class']            ?? null,
+            'strategy_signal_context' => $signal['strategy_signal_context'] ?? null,
 
             // Bot lifecycle state (overwritten by caller)
             'queue_status'   => 'queued',

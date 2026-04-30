@@ -673,7 +673,6 @@ function renderDashboardHub(): string
                 $_dblWinEnd    = (int)($stratLastRun['registry_window_end']     ?? 0);
                 $_dblNextCurs  = (int)($stratLastRun['next_registry_cursor']    ?? 0);
                 $_dblRound     = (int)($stratLastRun['full_registry_scan_round'] ?? 0);
-                $_dblScanned   = (int)($stratLastRun['symbols_scanned'] ?? $rsTotal);
                 if ($_dblRegTotal > 0) {
                     // "в окне" qualifier immediately after the rsCursor/rsTotal ratio
                     // so the reader sees "50/50 в окне · окно 50–99 из 562 · cursor 100 · круг 1"
@@ -684,15 +683,16 @@ function renderDashboardHub(): string
                 }
             }
             if ($stratId === 'double_bottom_long') {
-                $_dblScanned   = (int)($stratLastRun['symbols_scanned'] ?? 0);
-                $_dblTotal     = (int)($stratLastRun['symbols_total']   ?? 0);
-                $_dblCtxFetch  = (int)($stratLastRun['entry_context_fetch_attempted_total'] ?? 0);
-                $_dblCtxSkip   = (int)($stratLastRun['entry_context_fetch_skipped_prefilter_total'] ?? 0);
+                $_dblScanned   = (int)($stratLastRun['processed']   ?? $stratLastRun['symbols_scanned'] ?? 0);
+                $_dblTotal     = (int)($stratLastRun['total']       ?? $stratLastRun['symbols_total']   ?? 0);
+                $_dblCtxFetch  = (int)($stratLastRun['entry_context_fetch_attempted_total']           ?? 0);
+                $_dblCtxSkip   = (int)($stratLastRun['entry_context_fetch_skipped_prefilter_total']   ?? 0);
+                $_dblSigEmit   = (int)($stratLastRun['current_cycle_signals_emitted_total'] ?? $stratLastRun['signals_emitted_total'] ?? $slrGeneratedSig);
                 $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
-                    . ' · обработано <code>' . $_dblScanned . '/' . $_dblTotal . '</code>'
+                    . ' · обработано <code>' . $_dblScanned . '/' . $_dblTotal . ' в окне</code>'
                     . ' · ctx fetch <code>' . $_dblCtxFetch . '</code>'
                     . ' · preflt skip <code>' . $_dblCtxSkip . '</code>'
-                    . ' · сигналов <code>' . $slrGeneratedSig . '</code>'
+                    . ' · сигналов <code>' . $_dblSigEmit . '</code>'
                     . ' · активных <code>' . $slrPoolTotal . '</code>';
             } elseif ($stratId === 'corridor_bottom_long') {
                 $_cblValidated    = (int)($stratLastRun['candidates_validated']    ?? 0);

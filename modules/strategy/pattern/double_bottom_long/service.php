@@ -1894,9 +1894,12 @@ final class DoubleBottomLongService
             }
         }
 
-        // Specific reject reason counters
+        // Specific reject reason counters — must match reject_reason_distribution.
+        // Note: processSymbol() returns final_signal_status='no_signal' for all non-emitted
+        // symbols; the reject_reason_distribution is driven by $rejectReason regardless of
+        // that status, so we use the same condition here.
         $primaryRej = (string)($result['primary_reject_reason'] ?? $rejectReason ?? '');
-        if ($primaryRej !== '' && $result['final_signal_status'] === 'rejected') {
+        if ($primaryRej !== '' && $rejectReason !== null && $rejectReason !== '') {
             if ($primaryRej !== 'regime_bearish_long_hard_block') {
                 $inc($stats, 'specific_reject_reason_used_total');
             } else {

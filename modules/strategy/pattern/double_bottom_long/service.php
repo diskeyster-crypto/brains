@@ -796,6 +796,24 @@ final class DoubleBottomLongService
             'entry_context_prefilter_checked_total' => (int)($cycleStats['entry_context_prefilter_checked_total'] ?? 0),
             'entry_context_prefilter_pass_total'    => (int)($cycleStats['entry_context_prefilter_pass_total']    ?? 0),
             'entry_context_prefilter_reject_total'  => (int)($cycleStats['entry_context_prefilter_reject_total']  ?? 0),
+            // Specific reject reason counters
+            'specific_reject_reason_used_total'              => (int)($cycleStats['specific_reject_reason_used_total']              ?? 0),
+            'generic_bearish_reject_total'                   => (int)($cycleStats['generic_bearish_reject_total']                   ?? 0),
+            'bearish_reject_with_specific_reason_total'      => (int)($cycleStats['bearish_reject_with_specific_reason_total']      ?? 0),
+            'reject_active_falling_knife_total'              => (int)($cycleStats['reject_active_falling_knife_total']              ?? 0),
+            'reject_entry_context_unavailable_total'         => (int)($cycleStats['reject_entry_context_unavailable_total']         ?? 0),
+            'reject_skipped_entry_context_due_prefilter_total' => (int)($cycleStats['reject_skipped_entry_context_due_prefilter_total'] ?? 0),
+            'reject_no_post_dump_detected_total'             => (int)($cycleStats['reject_no_post_dump_detected_total']             ?? 0),
+            'reject_active_downtrend_no_stabilization_total' => (int)($cycleStats['reject_active_downtrend_no_stabilization_total'] ?? 0),
+            'reject_recent_dump_still_unstable_total'        => (int)($cycleStats['reject_recent_dump_still_unstable_total']        ?? 0),
+            'reject_no_flat_base_after_dump_total'           => (int)($cycleStats['reject_no_flat_base_after_dump_total']           ?? 0),
+            'reject_flat_base_too_wide_total'                => (int)($cycleStats['reject_flat_base_too_wide_total']                ?? 0),
+            'reject_base_support_broken_total'               => (int)($cycleStats['reject_base_support_broken_total']               ?? 0),
+            'reject_reclaim_after_flat_not_confirmed_total'  => (int)($cycleStats['reject_reclaim_after_flat_not_confirmed_total']  ?? 0),
+            'reject_entry_too_far_after_reclaim_total'       => (int)($cycleStats['reject_entry_too_far_after_reclaim_total']       ?? 0),
+            'reject_no_post_dump_flat_reclaim_total'         => (int)($cycleStats['reject_no_post_dump_flat_reclaim_total']         ?? 0),
+            'reject_no_intraday_double_bottom_total'         => (int)($cycleStats['reject_no_intraday_double_bottom_total']         ?? 0),
+            'reject_classic_double_bottom_not_confirmed_total' => (int)($cycleStats['reject_classic_double_bottom_not_confirmed_total'] ?? 0),
         ]);
 
         if ($isDone) {
@@ -1058,6 +1076,23 @@ final class DoubleBottomLongService
         // Runs on $ctxCandles (1m/5m when fetched) or falls back to H4 when empty.
         $coinCtx = $this->pipelineCoinTrendContext($candles, $ctxCandles, $config);
 
+        // Normalise entry-context fetch outcome into a status / reason pair.
+        if ($entryCtxAvailable) {
+            $entryCtxStatus = 'pass';
+            $entryCtxNormReason = null;
+        } elseif ($entryCtxSkipReason === 'skipped_entry_context_due_prefilter') {
+            $entryCtxStatus = 'skipped';
+            $entryCtxNormReason = 'skipped_entry_context_due_prefilter';
+        } elseif ($entryCtxSkipReason !== null) {
+            // fetch_limit_reached or other skip
+            $entryCtxStatus = 'skipped';
+            $entryCtxNormReason = $entryCtxSkipReason;
+        } else {
+            // fetch was attempted but returned too few candles
+            $entryCtxStatus = 'unavailable';
+            $entryCtxNormReason = 'entry_context_unavailable';
+        }
+
         $diagBase = [
             'market_regime'                  => $regimeStr,
             'trend_direction'                => $trendDir,
@@ -1122,6 +1157,9 @@ final class DoubleBottomLongService
             // Entry context availability (lazy-fetch decision result)
             'entry_context_available'        => $entryCtxAvailable,
             'entry_context_skip_reason'      => $entryCtxSkipReason,
+            // Normalised entry-context status (pass / skipped / unavailable)
+            'entry_context_status'           => $entryCtxStatus,
+            'entry_context_reason'           => $entryCtxNormReason,
             // Intraday double-bottom detection
             'intraday_double_bottom_detected'       => $coinCtx['intraday_double_bottom_detected'],
             'bottom_1_price'                        => $coinCtx['bottom_1_price'],
@@ -1227,7 +1265,17 @@ final class DoubleBottomLongService
                         }
                     }
                     if (!$exceptionAllowed) {
-                        return $this->reject($diagBase, $symbol, 'double_bottom', $rGate['reason']);
+                        // Resolve the most specific failure reason (regime alone is a fallback).
+                        $specificReason = $this->resolveDoubleBottomRejectReason($diagBase, $config);
+                        $diagBase['primary_reject_reason']    = $specificReason;
+                        $diagBase['secondary_reject_reasons'] = $specificReason !== $rGate['reason']
+                            ? [$rGate['reason']]
+                            : [];
+                        $diagBase['reason_codes'] = array_values(array_unique(
+                            [$specificReason, $rGate['reason']]
+                        ));
+                        $diagBase['failed_stage'] = $this->failedStageForReason($specificReason);
+                        return $this->reject($diagBase, $symbol, 'double_bottom', $specificReason);
                     }
                 }
             }
@@ -1421,6 +1469,13 @@ final class DoubleBottomLongService
 
     private function reject(array $diag, string $symbol, string $pattern, ?string $reason, bool $patternChecked = false, array $extra = []): array
     {
+        // Respect any primary_reject_reason already stamped on diag (e.g., from bearish resolver);
+        // otherwise default to the explicit $reason.
+        $primaryRej   = $diag['primary_reject_reason']    ?? $reason;
+        $secondaryRej = (array)($diag['secondary_reject_reasons'] ?? []);
+        $reasonCodes  = (array)($diag['reason_codes']             ?? ($reason !== null ? [$reason] : []));
+        $failedStage  = $diag['failed_stage'] ?? $this->failedStageForReason($reason ?? '');
+
         return array_merge($diag, $extra, [
             'symbol'                  => $symbol,
             'candidate_found'         => false,
@@ -1440,6 +1495,10 @@ final class DoubleBottomLongService
             'candidate_expired'       => false,
             'final_signal_status'     => 'rejected',
             'reject_reason'           => $reason,
+            'primary_reject_reason'   => $primaryRej,
+            'secondary_reject_reasons' => $secondaryRej,
+            'reason_codes'            => $reasonCodes,
+            'failed_stage'            => $failedStage,
             'signal'                  => null,
         ]);
     }
@@ -1835,6 +1894,41 @@ final class DoubleBottomLongService
             }
         }
 
+        // Specific reject reason counters
+        $primaryRej = (string)($result['primary_reject_reason'] ?? $rejectReason ?? '');
+        if ($primaryRej !== '' && $result['final_signal_status'] === 'rejected') {
+            if ($primaryRej !== 'regime_bearish_long_hard_block') {
+                $inc($stats, 'specific_reject_reason_used_total');
+            } else {
+                $inc($stats, 'generic_bearish_reject_total');
+            }
+            // Did bearish regime contribute but we still have a specific reason?
+            $secReasons = (array)($result['secondary_reject_reasons'] ?? []);
+            if (in_array('regime_bearish_long_hard_block', $secReasons, true)) {
+                $inc($stats, 'bearish_reject_with_specific_reason_total');
+            }
+            // Per-reason counters
+            $specificCounterMap = [
+                'active_falling_knife'                        => 'reject_active_falling_knife_total',
+                'entry_context_unavailable'                   => 'reject_entry_context_unavailable_total',
+                'skipped_entry_context_due_prefilter'         => 'reject_skipped_entry_context_due_prefilter_total',
+                'no_post_dump_detected'                       => 'reject_no_post_dump_detected_total',
+                'active_downtrend_no_stabilization'           => 'reject_active_downtrend_no_stabilization_total',
+                'recent_dump_still_unstable'                  => 'reject_recent_dump_still_unstable_total',
+                'no_flat_base_after_dump'                     => 'reject_no_flat_base_after_dump_total',
+                'flat_base_too_wide'                          => 'reject_flat_base_too_wide_total',
+                'base_support_broken'                         => 'reject_base_support_broken_total',
+                'reclaim_after_flat_not_confirmed'            => 'reject_reclaim_after_flat_not_confirmed_total',
+                'entry_too_far_after_reclaim'                 => 'reject_entry_too_far_after_reclaim_total',
+                'no_post_dump_flat_reclaim'                   => 'reject_no_post_dump_flat_reclaim_total',
+                'no_intraday_double_bottom'                   => 'reject_no_intraday_double_bottom_total',
+                'classic_double_bottom_not_confirmed'         => 'reject_classic_double_bottom_not_confirmed_total',
+            ];
+            if (isset($specificCounterMap[$primaryRej])) {
+                $inc($stats, $specificCounterMap[$primaryRej]);
+            }
+        }
+
         return $stats;
     }
 
@@ -1978,6 +2072,24 @@ final class DoubleBottomLongService
             'entry_context_prefilter_checked_total' => 0,
             'entry_context_prefilter_pass_total'    => 0,
             'entry_context_prefilter_reject_total'  => 0,
+            // Specific reject reason counters
+            'specific_reject_reason_used_total'              => 0,
+            'generic_bearish_reject_total'                   => 0,
+            'bearish_reject_with_specific_reason_total'      => 0,
+            'reject_active_falling_knife_total'              => 0,
+            'reject_entry_context_unavailable_total'         => 0,
+            'reject_skipped_entry_context_due_prefilter_total' => 0,
+            'reject_no_post_dump_detected_total'             => 0,
+            'reject_active_downtrend_no_stabilization_total' => 0,
+            'reject_recent_dump_still_unstable_total'        => 0,
+            'reject_no_flat_base_after_dump_total'           => 0,
+            'reject_flat_base_too_wide_total'                => 0,
+            'reject_base_support_broken_total'               => 0,
+            'reject_reclaim_after_flat_not_confirmed_total'  => 0,
+            'reject_entry_too_far_after_reclaim_total'       => 0,
+            'reject_no_post_dump_flat_reclaim_total'         => 0,
+            'reject_no_intraday_double_bottom_total'         => 0,
+            'reject_classic_double_bottom_not_confirmed_total' => 0,
         ];
     }
 
@@ -3547,6 +3659,157 @@ final class DoubleBottomLongService
             'prefilter_reasons'         => $reasons,
             'prefilter_reject_reason'   => $rejectReason,
         ];
+    }
+
+    /**
+     * Determine the most specific reject reason given the current symbol's diagnostic context.
+     *
+     * Priority order (highest specificity first):
+     *  1. active_falling_knife
+     *  2. entry_context_unavailable
+     *  3. skipped_entry_context_due_prefilter
+     *  4. no_post_dump_detected
+     *  5. active_downtrend_no_stabilization
+     *  6. recent_dump_still_unstable
+     *  7. no_flat_base_after_dump
+     *  8. flat_base_too_wide
+     *  9. base_support_broken
+     * 10. reclaim_after_flat_not_confirmed
+     * 11. reclaim_failed_back_below_level
+     * 12. entry_too_far_after_reclaim
+     * 13. no_post_dump_flat_reclaim
+     * 14. no_intraday_double_bottom
+     * 15. classic_double_bottom_not_confirmed
+     * 16. regime_bearish_long_hard_block  (fallback)
+     *
+     * Bearish regime alone is NEVER returned unless nothing more specific is found.
+     */
+    private function resolveDoubleBottomRejectReason(array $ctx, array $config): string
+    {
+        // 1. Active falling knife
+        if ((bool)($ctx['active_falling_knife_detected'] ?? false)) {
+            return 'active_falling_knife';
+        }
+
+        // 2. Entry-context candles unavailable (fetch attempted but failed)
+        $ctxStatus = $ctx['entry_context_status'] ?? null;
+        if ($ctxStatus === 'unavailable') {
+            return 'entry_context_unavailable';
+        }
+
+        // 3. Entry-context skipped by prefilter
+        if ($ctx['entry_context_skip_reason'] === 'skipped_entry_context_due_prefilter'
+            || $ctxStatus === 'skipped'
+        ) {
+            return 'skipped_entry_context_due_prefilter';
+        }
+
+        // 4. No post-dump (price never dumped so no double-bottom setup possible)
+        if (!(bool)($ctx['post_dump_detected'] ?? true)) {
+            return 'no_post_dump_detected';
+        }
+
+        // 5. Active downtrend with no stabilization
+        if ((bool)($ctx['active_downtrend_detected'] ?? false)
+            && !(bool)($ctx['stabilization_detected'] ?? false)
+        ) {
+            return 'active_downtrend_no_stabilization';
+        }
+
+        // 6. Post-dump exists but not yet stabilized
+        if ((bool)($ctx['post_dump_detected'] ?? false)
+            && !(bool)($ctx['stabilization_detected'] ?? false)
+        ) {
+            return 'recent_dump_still_unstable';
+        }
+
+        // 7. No flat base after dump
+        if (!(bool)($ctx['flat_base_detected'] ?? false)) {
+            return 'no_flat_base_after_dump';
+        }
+
+        // 8. Flat base is too wide
+        $maxFlatWidth = (float)($config['max_flat_base_width_pct'] ?? 0.0);
+        if ($maxFlatWidth > 0.0 && (float)($ctx['flat_base_width_pct'] ?? 0.0) > $maxFlatWidth) {
+            return 'flat_base_too_wide';
+        }
+
+        // 9. Base support broken
+        if ((bool)($ctx['support_broken'] ?? false)) {
+            return 'base_support_broken';
+        }
+
+        // 10. Reclaim after flat not confirmed
+        if (!(bool)($ctx['reclaim_after_flat_detected'] ?? false)) {
+            return 'reclaim_after_flat_not_confirmed';
+        }
+
+        // 11. Reclaim failed back below level (negative reclaim strength)
+        if ((float)($ctx['reclaim_strength_pct'] ?? 0.0) < 0.0) {
+            return 'reclaim_failed_back_below_level';
+        }
+
+        // 12. Entry too far after reclaim
+        $maxEntryDist = (float)($config['max_entry_distance_from_reclaim_pct'] ?? 0.0);
+        if ($maxEntryDist > 0.0
+            && (float)($ctx['entry_distance_from_reclaim_pct'] ?? 0.0) > $maxEntryDist
+        ) {
+            return 'entry_too_far_after_reclaim';
+        }
+
+        // 13. Missing dump → flat → reclaim chain
+        $hasDump   = (bool)($ctx['post_dump_detected']         ?? false);
+        $hasFlat   = (bool)($ctx['flat_base_detected']         ?? false);
+        $hasReclaim = (bool)($ctx['reclaim_after_flat_detected'] ?? false);
+        if (!$hasDump || !$hasFlat || !$hasReclaim) {
+            return 'no_post_dump_flat_reclaim';
+        }
+
+        // 14. No intraday double bottom
+        if (!(bool)($ctx['intraday_double_bottom_detected'] ?? true)) {
+            return 'no_intraday_double_bottom';
+        }
+
+        // 15. Classic double bottom not confirmed
+        if ((bool)($ctx['double_bottom_checked'] ?? false)
+            && !(bool)($ctx['candidate_found'] ?? false)
+        ) {
+            return 'classic_double_bottom_not_confirmed';
+        }
+
+        // 16. Generic bearish block (fallback — nothing more specific found)
+        return 'regime_bearish_long_hard_block';
+    }
+
+    /**
+     * Map a reject reason string to a coarse pipeline stage name.
+     * Used for the failed_stage diagnostic field.
+     */
+    private function failedStageForReason(string $reason): string
+    {
+        return match (true) {
+            $reason === 'active_falling_knife'                       => 'falling_knife',
+            $reason === 'entry_context_unavailable'                  => 'entry_context',
+            $reason === 'skipped_entry_context_due_prefilter'        => 'prefilter',
+            str_starts_with($reason, 'entry_context_')               => 'entry_context',
+            $reason === 'no_post_dump_detected'                      => 'post_dump',
+            $reason === 'active_downtrend_no_stabilization'          => 'stabilization',
+            $reason === 'recent_dump_still_unstable'                 => 'stabilization',
+            $reason === 'no_flat_base_after_dump'                    => 'flat_base',
+            $reason === 'flat_base_too_wide'                         => 'flat_base',
+            $reason === 'base_support_broken'                        => 'support',
+            $reason === 'reclaim_after_flat_not_confirmed'           => 'reclaim',
+            $reason === 'reclaim_failed_back_below_level'            => 'reclaim',
+            $reason === 'entry_too_far_after_reclaim'                => 'entry_distance',
+            $reason === 'no_post_dump_flat_reclaim'                  => 'post_dump_flat_reclaim',
+            $reason === 'no_intraday_double_bottom'                  => 'intraday_pattern',
+            $reason === 'classic_double_bottom_not_confirmed'        => 'classic_pattern',
+            $reason === 'regime_bearish_long_hard_block'             => 'regime',
+            str_starts_with($reason, 'trend_')                       => 'trend',
+            str_starts_with($reason, 'bucket_')                      => 'corridor',
+            str_starts_with($reason, 'wave_')                        => 'wave',
+            default                                                   => 'other',
+        };
     }
 
     private function requireLogic(string $file): void

@@ -673,13 +673,28 @@ function renderDashboardHub(): string
                 $_dblWinEnd    = (int)($stratLastRun['registry_window_end']     ?? 0);
                 $_dblNextCurs  = (int)($stratLastRun['next_registry_cursor']    ?? 0);
                 $_dblRound     = (int)($stratLastRun['full_registry_scan_round'] ?? 0);
+                $_dblScanned   = (int)($stratLastRun['symbols_scanned'] ?? $rsTotal);
                 if ($_dblRegTotal > 0) {
-                    $rsRuntimeExtra = ' · окно ' . $_dblWinStart . '–' . $_dblWinEnd
+                    // "в окне" qualifier immediately after the rsCursor/rsTotal ratio
+                    // so the reader sees "50/50 в окне · окно 50–99 из 562 · cursor 100 · круг 1"
+                    $rsRuntimeExtra = ' в окне · окно ' . $_dblWinStart . '–' . $_dblWinEnd
                         . ' из ' . $_dblRegTotal
+                        . ' · cursor ' . $_dblNextCurs
                         . ' · круг ' . $_dblRound;
                 }
             }
-            if ($stratId === 'corridor_bottom_long') {
+            if ($stratId === 'double_bottom_long') {
+                $_dblScanned   = (int)($stratLastRun['symbols_scanned'] ?? 0);
+                $_dblTotal     = (int)($stratLastRun['symbols_total']   ?? 0);
+                $_dblCtxFetch  = (int)($stratLastRun['entry_context_fetch_attempted_total'] ?? 0);
+                $_dblCtxSkip   = (int)($stratLastRun['entry_context_fetch_skipped_prefilter_total'] ?? 0);
+                $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
+                    . ' · обработано <code>' . $_dblScanned . '/' . $_dblTotal . '</code>'
+                    . ' · ctx fetch <code>' . $_dblCtxFetch . '</code>'
+                    . ' · preflt skip <code>' . $_dblCtxSkip . '</code>'
+                    . ' · сигналов <code>' . $slrGeneratedSig . '</code>'
+                    . ' · активных <code>' . $slrPoolTotal . '</code>';
+            } elseif ($stratId === 'corridor_bottom_long') {
                 $_cblValidated    = (int)($stratLastRun['candidates_validated']    ?? 0);
                 $_cblHandoffReady = (int)($stratLastRun['handoff_ready'] ?? $slrHandoffReady);
                 $cycleLineHtml = 'статус <code>' . $e($rsStatus) . '</code>'
@@ -1546,7 +1561,14 @@ ROWS;
         'flat_base_too_wide'                        => 'База слишком широкая',
         'base_support_broken'                       => 'Поддержка базы пробита вниз',
         'reclaim_after_flat_not_confirmed'          => 'Возврат в базу не подтверждён',
+        'reclaim_failed_back_below_level'           => 'Reclaim провалился обратно под уровень',
         'no_post_dump_flat_reclaim'                 => 'Нет: падение → база → возврат',
+        'no_post_dump_detected'                     => 'Нет предварительного слива',
+        'no_intraday_double_bottom'                 => 'Нет intraday double bottom',
+        'classic_double_bottom_not_confirmed'       => 'Классическое двойное дно не подтверждено',
+        'entry_context_unavailable'                 => 'Нет entry-context свечей',
+        'skipped_entry_context_due_prefilter'       => 'Entry-context пропущен префильтром',
+        'regime_bearish_long_hard_block'            => 'Медвежий режим: вход заблокирован',
         'bearish_reversal_exception_after_stabilization' => 'Исключение: разворот после стабилизации',
         'coin_trend_context_too_weak'               => 'Контекст тренда монеты слишком слабый',
         // double_bottom_long — support/resistance

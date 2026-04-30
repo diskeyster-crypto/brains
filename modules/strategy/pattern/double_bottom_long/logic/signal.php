@@ -163,10 +163,11 @@ final class PatternSignal
         }
 
         // If the natural SL distance exceeds the configured max, still return computed values.
-        // The stop-width gate in service.php applySignalFilters() enforces the limit there,
-        // with adaptive behaviour for synthetic/intraday A/B setup classes.
-        // (Returning null here would lose the actual distance, preventing the adaptive gate
-        //  from distinguishing "slightly wide" from "absurdly wide".)
+        // Previously this function returned [null, null] when $slPct > $maxSlPct, but that early
+        // clip prevented the downstream adaptive gate in service.php applySignalFilters() from
+        // distinguishing "moderately wide (5–12%)" from "absurdly wide (>12%)" — both became null.
+        // The stop-width gate in applySignalFilters() now applies the adaptive policy:
+        // warn-only for synthetic A/B setups within the warning..hard range, hard-block above the cap.
 
         return [$slPrice, $slPct];
     }

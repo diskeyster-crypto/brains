@@ -2211,7 +2211,12 @@ final class DoubleBottomLongService
                 if ($isSynthAdaptive) {
                     // Adaptive path for A/B synthetic setups
                     if ($slPct === null) {
-                        // Missing SL: record diagnostic warning but allow through (SL will be managed by Stop Manager)
+                        // Missing SL: lows were zero or entry price was invalid.
+                        // For synthetic A/B setups, do not hard-reject here — the stop was never capped to null
+                        // by computeStopLoss() any more (that early clip was removed). Null means the geometry
+                        // data (low1_price/low2_price) was missing, not that it was "too wide".
+                        // The Stop Manager module is responsible for managing live risk; strategy-level eligibility
+                        // is determined by reclaim quality and entry distance (already checked upstream).
                         $stopMissingForSynthTotal++;
                         $stopWidthBypassedForSynthTotal++;
                         $s['final_stop_width_warning']        = true;

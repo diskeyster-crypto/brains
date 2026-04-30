@@ -1009,6 +1009,21 @@ final class DoubleBottomLongService
             // Entry context candle diagnostics
             'ctx_interval'                   => $coinCtx['ctx_interval'],
             'ctx_candles_count'              => $coinCtx['ctx_candles_count'],
+            // Intraday double-bottom detection
+            'intraday_double_bottom_detected'       => $coinCtx['intraday_double_bottom_detected'],
+            'bottom_1_price'                        => $coinCtx['bottom_1_price'],
+            'bottom_1_index'                        => $coinCtx['bottom_1_index'],
+            'bottom_2_price'                        => $coinCtx['bottom_2_price'],
+            'bottom_2_index'                        => $coinCtx['bottom_2_index'],
+            'bottom_low_diff_pct'                   => $coinCtx['bottom_low_diff_pct'],
+            'second_low_break_pct'                  => $coinCtx['second_low_break_pct'],
+            'intraday_db_neckline_level'            => $coinCtx['intraday_db_neckline_level'],
+            'neckline_bounce_pct'                   => $coinCtx['neckline_bounce_pct'],
+            'neckline_reclaim_confirmed'            => $coinCtx['neckline_reclaim_confirmed'],
+            'neckline_reclaim_confirm_bars'         => $coinCtx['neckline_reclaim_confirm_bars'],
+            'entry_distance_from_neckline_pct'      => $coinCtx['entry_distance_from_neckline_pct'],
+            'intraday_double_bottom_score'          => $coinCtx['intraday_double_bottom_score'],
+            'intraday_double_bottom_reason'         => $coinCtx['intraday_double_bottom_reason'],
         ];
 
         $longResult = $this->tryLong($symbol, $candles, $config, $regimeStr, $trendDir, $corridor, $wave, $diagBase);
@@ -1932,6 +1947,21 @@ final class DoubleBottomLongService
                 'entry_context_score'            => 10.0,
                 'ctx_interval'                   => $ctxInterval,
                 'ctx_candles_count'              => 0,
+                // Intraday double-bottom detection
+                'intraday_double_bottom_detected'       => false,
+                'bottom_1_price'                        => null,
+                'bottom_1_index'                        => null,
+                'bottom_2_price'                        => null,
+                'bottom_2_index'                        => null,
+                'bottom_low_diff_pct'                   => 0.0,
+                'second_low_break_pct'                  => 0.0,
+                'intraday_db_neckline_level'            => null,
+                'neckline_bounce_pct'                   => 0.0,
+                'neckline_reclaim_confirmed'            => false,
+                'neckline_reclaim_confirm_bars'         => 0,
+                'entry_distance_from_neckline_pct'      => 0.0,
+                'intraday_double_bottom_score'          => 0.0,
+                'intraday_double_bottom_reason'         => 'disabled',
             ];
         };
 
@@ -2043,6 +2073,9 @@ final class DoubleBottomLongService
             $entryContextScore = min(10.0, $reversalScore + 1.0);
         }
 
+        // ── Intraday double-bottom detection on entry-context candles ─────────
+        $intradayDbResult = $this->detectIntradayDoubleBottom($ctxCandlesUsed, $config);
+
         // Determine status
         $status = 'ok';
         $reason = 'ok';
@@ -2129,6 +2162,218 @@ final class DoubleBottomLongService
             'entry_context_score'            => round($entryContextScore, 2),
             'ctx_interval'                   => $ctxUsedInterval,
             'ctx_candles_count'              => count($ctxCandlesUsed),
+            // Intraday double-bottom detection
+            'intraday_double_bottom_detected'       => (bool)($intradayDbResult['intraday_double_bottom_detected'] ?? false),
+            'bottom_1_price'                        => $intradayDbResult['bottom_1_price']                   ?? null,
+            'bottom_1_index'                        => $intradayDbResult['bottom_1_index']                   ?? null,
+            'bottom_2_price'                        => $intradayDbResult['bottom_2_price']                   ?? null,
+            'bottom_2_index'                        => $intradayDbResult['bottom_2_index']                   ?? null,
+            'bottom_low_diff_pct'                   => (float)($intradayDbResult['bottom_low_diff_pct']      ?? 0.0),
+            'second_low_break_pct'                  => (float)($intradayDbResult['second_low_break_pct']     ?? 0.0),
+            'intraday_db_neckline_level'            => $intradayDbResult['intraday_db_neckline_level']       ?? null,
+            'neckline_bounce_pct'                   => (float)($intradayDbResult['neckline_bounce_pct']      ?? 0.0),
+            'neckline_reclaim_confirmed'            => (bool)($intradayDbResult['neckline_reclaim_confirmed'] ?? false),
+            'neckline_reclaim_confirm_bars'         => (int)($intradayDbResult['neckline_reclaim_confirm_bars'] ?? 0),
+            'entry_distance_from_neckline_pct'      => (float)($intradayDbResult['entry_distance_from_neckline_pct'] ?? 0.0),
+            'intraday_double_bottom_score'          => (float)($intradayDbResult['intraday_double_bottom_score'] ?? 0.0),
+            'intraday_double_bottom_reason'         => (string)($intradayDbResult['intraday_double_bottom_reason'] ?? 'not_run'),
+        ];
+    }
+
+    /**
+     * Detect an intraday classic double-bottom structure on entry-context candles.
+     *
+     * Pattern: dump → bottom_1 → neckline bounce → bottom_2/low hold → neckline reclaim → confirmation
+     *
+     * Returns diagnostics for all 14 specified fields. `intraday_double_bottom_detected`
+     * is true only when every pass condition is satisfied. When no full pass is found the
+     * best near-miss candidate is retained and its first failing condition is reported as
+     * `intraday_double_bottom_reason`.
+     */
+    private function detectIntradayDoubleBottom(array $candles, array $config): array
+    {
+        $empty = [
+            'intraday_double_bottom_detected'       => false,
+            'bottom_1_price'                        => null,
+            'bottom_1_index'                        => null,
+            'bottom_2_price'                        => null,
+            'bottom_2_index'                        => null,
+            'bottom_low_diff_pct'                   => 0.0,
+            'second_low_break_pct'                  => 0.0,
+            'intraday_db_neckline_level'            => null,
+            'neckline_bounce_pct'                   => 0.0,
+            'neckline_reclaim_confirmed'            => false,
+            'neckline_reclaim_confirm_bars'         => 0,
+            'entry_distance_from_neckline_pct'      => 0.0,
+            'intraday_double_bottom_score'          => 0.0,
+            'intraday_double_bottom_reason'         => 'disabled',
+        ];
+
+        if (!(bool)($config['intraday_double_bottom_enabled'] ?? true)) {
+            return $empty;
+        }
+
+        $n = count($candles);
+        if ($n < 10) {
+            return array_merge($empty, ['intraday_double_bottom_reason' => 'not_enough_candles']);
+        }
+
+        $minSep      = max(2, (int)($config['double_bottom_min_separation_bars']                ?? 5));
+        $maxSep      = max($minSep + 1, (int)($config['double_bottom_max_separation_bars']      ?? 80));
+        $pivWin      = max(1, (int)($config['double_bottom_pivot_window']                        ?? 2));
+        $lowTolPct   = (float)($config['double_bottom_low_tolerance_pct']                       ?? 3.0);
+        $maxBreakPct = (float)($config['double_bottom_max_second_low_break_pct']                ?? 1.5);
+        $minBnc      = (float)($config['double_bottom_neckline_min_bounce_pct']                 ?? 1.5);
+        $minConfBars = (int)($config['double_bottom_reclaim_confirm_bars']                       ?? 2);
+        $maxEntryDst = (float)($config['double_bottom_max_entry_distance_from_neckline_pct']    ?? 3.0);
+
+        // ── Find pivot lows ───────────────────────────────────────────────────
+        $pivotLows = [];
+        for ($i = $pivWin; $i < $n - $pivWin; $i++) {
+            $low    = $candles[$i]['low'];
+            $isPivot = true;
+            for ($j = $i - $pivWin; $j <= $i + $pivWin; $j++) {
+                if ($j !== $i && ($candles[$j]['low'] ?? PHP_FLOAT_MAX) <= $low) {
+                    $isPivot = false;
+                    break;
+                }
+            }
+            if ($isPivot) {
+                $pivotLows[] = ['idx' => $i, 'price' => $low];
+            }
+        }
+
+        if (count($pivotLows) < 2) {
+            return array_merge($empty, ['intraday_double_bottom_reason' => 'no_intraday_double_bottom']);
+        }
+
+        $lastClose = (float)($candles[$n - 1]['close'] ?? 0.0);
+
+        // ── Scan pairs most-recent first to find the best valid double bottom ─
+        $best      = null;
+        $bestScore = -1.0;
+
+        $pLen = count($pivotLows);
+        for ($pi2 = $pLen - 1; $pi2 >= 1; $pi2--) {
+            $b2 = $pivotLows[$pi2];
+            for ($pi1 = $pi2 - 1; $pi1 >= 0; $pi1--) {
+                $b1  = $pivotLows[$pi1];
+                $sep = $b2['idx'] - $b1['idx'];
+
+                if ($sep < $minSep) {
+                    continue;
+                }
+                if ($sep > $maxSep) {
+                    break; // b1 only moves further back for lower pi1
+                }
+
+                // ── Evaluate each pass condition in order; track failure reason ──
+                $reason = 'pass';
+
+                // (1) Low-difference tolerance
+                $lowDiffPct = $b1['price'] > 0.0
+                    ? abs($b2['price'] - $b1['price']) / $b1['price'] * 100.0
+                    : 0.0;
+                if ($lowDiffPct > $lowTolPct) {
+                    $reason = 'double_bottom_lows_too_far_apart';
+                }
+
+                // (2) Second low must not break too deep below first
+                $breakPct = $b1['price'] > 0.0
+                    ? ($b1['price'] - $b2['price']) / $b1['price'] * 100.0
+                    : 0.0;
+                if ($reason === 'pass' && $breakPct > $maxBreakPct) {
+                    $reason = 'second_low_broke_too_deep';
+                }
+
+                // (3) Neckline: highest high between b1 and b2
+                $neckline = 0.0;
+                for ($k = $b1['idx'] + 1; $k < $b2['idx']; $k++) {
+                    $h = $candles[$k]['high'] ?? 0.0;
+                    if ($h > $neckline) {
+                        $neckline = $h;
+                    }
+                }
+
+                if ($neckline <= 0.0) {
+                    continue; // no candles between the lows — degenerate, skip
+                }
+
+                $avgLow     = ($b1['price'] + $b2['price']) / 2.0;
+                $bouncePct  = $avgLow > 0.0
+                    ? ($neckline - $avgLow) / $avgLow * 100.0
+                    : 0.0;
+                if ($reason === 'pass' && $bouncePct < $minBnc) {
+                    $reason = 'neckline_bounce_too_weak';
+                }
+
+                // (4) Neckline reclaim: count bars closing above neckline after b2
+                $reclaimBars = 0;
+                for ($k = $b2['idx'] + 1; $k < $n; $k++) {
+                    if (($candles[$k]['close'] ?? 0.0) > $neckline) {
+                        $reclaimBars++;
+                    }
+                }
+                $reclaimConfirmed = ($reclaimBars >= $minConfBars) && ($lastClose > $neckline);
+
+                if ($reason === 'pass' && !$reclaimConfirmed) {
+                    $reason = 'neckline_reclaim_not_confirmed';
+                }
+
+                // (5) Entry distance from neckline
+                $entryDstPct = $neckline > 0.0
+                    ? ($lastClose - $neckline) / $neckline * 100.0
+                    : 0.0;
+                if ($reason === 'pass' && $entryDstPct > $maxEntryDst) {
+                    $reason = 'entry_too_far_after_neckline_reclaim';
+                }
+
+                // Score (used to prefer the best candidate among ties)
+                $score = 0.0;
+                $score += min(3.0, $bouncePct / max(0.01, $minBnc));          // bounce quality up to 3
+                $score += ($lowDiffPct <= $lowTolPct * 0.5) ? 2.0 : 1.0;     // tight lows bonus
+                $score += $reclaimConfirmed ? 3.0 : 0.0;                      // reclaim bonus
+                $score += max(0.0, 2.0 - ($entryDstPct / max(0.01, $maxEntryDst)) * 2.0); // proximity bonus
+                $score += ($reason === 'pass') ? 1.0 : 0.0;                   // full-pass bonus
+
+                if ($score > $bestScore) {
+                    $bestScore = $score;
+                    $best = [
+                        'b1'               => $b1,
+                        'b2'               => $b2,
+                        'neckline'         => $neckline,
+                        'lowDiffPct'       => $lowDiffPct,
+                        'breakPct'         => $breakPct,
+                        'bouncePct'        => $bouncePct,
+                        'reclaimBars'      => $reclaimBars,
+                        'reclaimConfirmed' => $reclaimConfirmed,
+                        'entryDstPct'      => $entryDstPct,
+                        'score'            => $score,
+                        'reason'           => $reason,
+                    ];
+                }
+            }
+        }
+
+        if ($best === null) {
+            return array_merge($empty, ['intraday_double_bottom_reason' => 'no_intraday_double_bottom']);
+        }
+
+        return [
+            'intraday_double_bottom_detected'       => ($best['reason'] === 'pass'),
+            'bottom_1_price'                        => round($best['b1']['price'], 8),
+            'bottom_1_index'                        => $best['b1']['idx'],
+            'bottom_2_price'                        => round($best['b2']['price'], 8),
+            'bottom_2_index'                        => $best['b2']['idx'],
+            'bottom_low_diff_pct'                   => round($best['lowDiffPct'], 4),
+            'second_low_break_pct'                  => round($best['breakPct'], 4),
+            'intraday_db_neckline_level'            => round($best['neckline'], 8),
+            'neckline_bounce_pct'                   => round($best['bouncePct'], 4),
+            'neckline_reclaim_confirmed'            => $best['reclaimConfirmed'],
+            'neckline_reclaim_confirm_bars'         => $best['reclaimBars'],
+            'entry_distance_from_neckline_pct'      => round($best['entryDstPct'], 4),
+            'intraday_double_bottom_score'          => round($best['score'], 2),
+            'intraday_double_bottom_reason'         => $best['reason'],
         ];
     }
 

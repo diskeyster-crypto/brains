@@ -152,6 +152,18 @@ return [
     'min_reversal_context_score'         => 7.0,
     'min_entry_context_score'            => 7.5,
 
+    // ── Intraday double-bottom detection on entry-context candles ────────────
+    // Detects: dump → bottom_1 → neckline bounce → bottom_2/low hold → reclaim
+    'intraday_double_bottom_enabled'                     => true,
+    'double_bottom_min_separation_bars'                  => 5,     // min bars between b1 and b2
+    'double_bottom_max_separation_bars'                  => 80,    // max bars between b1 and b2
+    'double_bottom_pivot_window'                         => 2,     // pivot low detection window (bars each side)
+    'double_bottom_low_tolerance_pct'                    => 3.0,   // max % difference between the two lows
+    'double_bottom_max_second_low_break_pct'             => 1.5,   // max % bottom_2 may be lower than bottom_1
+    'double_bottom_neckline_min_bounce_pct'              => 1.5,   // min % neckline is above avg of two lows
+    'double_bottom_reclaim_confirm_bars'                 => 2,     // min bars closing above neckline after b2
+    'double_bottom_max_entry_distance_from_neckline_pct' => 3.0,   // max % last-close is above neckline
+
     // Entry context candles — separate short-timeframe feed for
     // dump detection / stabilization / flat-base / reclaim.
     // H4 candles are still used for pattern / trend / corridor / wave.

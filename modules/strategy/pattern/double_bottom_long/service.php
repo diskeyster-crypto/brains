@@ -864,6 +864,15 @@ final class DoubleBottomLongService
             'synthetic_candidate_built_total'                    => (int)($cycleStats['synthetic_candidate_built_total']                    ?? 0),
             'synthetic_candidate_intraday_double_bottom_total'   => (int)($cycleStats['synthetic_candidate_intraday_double_bottom_total']   ?? 0),
             'synthetic_candidate_post_dump_base_reclaim_total'   => (int)($cycleStats['synthetic_candidate_post_dump_base_reclaim_total']   ?? 0),
+            // Synthetic quality scorer counters
+            'synthetic_quality_checked_total'                    => (int)($cycleStats['synthetic_quality_checked_total']                    ?? 0),
+            'synthetic_quality_pass_total'                       => (int)($cycleStats['synthetic_quality_pass_total']                       ?? 0),
+            'synthetic_quality_failed_total'                     => (int)($cycleStats['synthetic_quality_failed_total']                     ?? 0),
+            'synthetic_quality_bypassed_old_h4_quality_total'    => (int)($cycleStats['synthetic_quality_bypassed_old_h4_quality_total']    ?? 0),
+            'synthetic_quality_classic_intraday_db_pass_total'   => (int)($cycleStats['synthetic_quality_classic_intraday_db_pass_total']   ?? 0),
+            'synthetic_quality_post_dump_base_reclaim_pass_total' => (int)($cycleStats['synthetic_quality_post_dump_base_reclaim_pass_total'] ?? 0),
+            'reject_synthetic_candidate_quality_failed_total'    => (int)($cycleStats['reject_synthetic_candidate_quality_failed_total']    ?? 0),
+            'reject_quality_weak_structure_total'                => (int)($cycleStats['reject_quality_weak_structure_total']                ?? 0),
         ]);
 
         if ($isDone) {
@@ -1532,10 +1541,81 @@ final class DoubleBottomLongService
             }
         }
 
-        $this->requireLogic('candidate_quality');
-        $quality = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternCandidateQuality())->score(
-            $candidate, $wave, $config, $side
-        );
+        // ── Quality check ─────────────────────────────────────────────────────
+        // For synthetic A/B candidates (H4 PatternDoubleBottom bypassed) use the
+        // dedicated synthetic quality scorer instead of the old H4 quality scorer.
+        // The old scorer rates structure from similarity_delta_pct / H4 neckline depth
+        // which is meaningless for intraday-derived candidates and produces spurious
+        // quality_weak_structure failures.
+        $isSynthetic = (bool)($diagBase['synthetic_candidate_built'] ?? false);
+        if ($isSynthetic && (bool)($config['synthetic_setup_quality_enabled'] ?? true)) {
+            $synQuality = $this->scoreSyntheticSetupQuality($diagBase, $candidate, $config);
+            if (!$synQuality['synthetic_quality_pass']) {
+                $diagBase['setup_allowed_kill_stage']  = 'quality';
+                $diagBase['setup_allowed_kill_reason'] = 'synthetic_candidate_quality_failed';
+                $diagBase['synthetic_quality_checked'] = true;
+                $diagBase['synthetic_quality_pass']    = false;
+                $diagBase['synthetic_quality_score']   = $synQuality['synthetic_quality_score'];
+                $diagBase['synthetic_quality_reason']  = $synQuality['synthetic_quality_reason'];
+                $diagBase['synthetic_quality_block_reasons'] = $synQuality['synthetic_quality_block_reasons'];
+                $diagBase['synthetic_quality_components']    = $synQuality['synthetic_quality_components'];
+                $diagBase['quality_source']            = 'synthetic_intraday_setup';
+                return array_merge($diagBase, [
+                    'symbol'                  => $symbol,
+                    'candidate_found'         => true,
+                    'candidate_side'          => $side,
+                    'primary_pattern'         => 'double_bottom',
+                    'double_bottom_checked'   => true,
+                    'neckline_value'          => $candidate['neckline']              ?? 0.0,
+                    'low1_value'              => $candidate['low1_price']            ?? 0.0,
+                    'low2_value'              => $candidate['low2_price']            ?? 0.0,
+                    'pattern_window_size'     => $candidate['window_size']           ?? 0,
+                    'similarity_delta_pct'    => $candidate['similarity_delta_pct'] ?? 0.0,
+                    'pattern_score'           => $synQuality['synthetic_quality_score'],
+                    'structure_score'         => 0.0,
+                    'neckline_score'          => 0.0,
+                    'confirmation_score'      => 0.0,
+                    'context_score'           => 0.0,
+                    'candidate_quality_score' => $synQuality['synthetic_quality_score'],
+                    'quality_pass'            => false,
+                    'quality_reject_reason'   => 'synthetic_candidate_quality_failed',
+                    'quality_source'          => 'synthetic_intraday_setup',
+                    'signal_quality_class'    => $bearishRevExUsed ? 'controlled_reversal' : 'clean_signal',
+                    'confirm_status'          => null,
+                    'confirm_bars_waited'     => 0,
+                    'candidate_expired'       => false,
+                    'final_signal_status'     => 'rejected',
+                    'reject_reason'           => 'synthetic_candidate_quality_failed',
+                    'signal'                  => null,
+                ]);
+            }
+            // Synthetic quality passed — build a normalised $quality array that the
+            // downstream signal builder and return blocks expect.
+            $quality = [
+                'pattern_score'           => $synQuality['synthetic_quality_score'],
+                'structure_score'         => min(1.0, $synQuality['synthetic_quality_score']),
+                'neckline_score'          => min(1.0, $synQuality['synthetic_quality_score']),
+                'confirmation_score'      => min(1.0, $synQuality['synthetic_quality_score']),
+                'context_score'           => min(1.0, $synQuality['synthetic_quality_score']),
+                'candidate_quality_score' => $synQuality['synthetic_quality_score'],
+                'quality_pass'            => true,
+                'quality_reject_reason'   => null,
+            ];
+            $diagBase['quality_source']            = 'synthetic_intraday_setup';
+            $diagBase['synthetic_quality_checked'] = true;
+            $diagBase['synthetic_quality_pass']    = true;
+            $diagBase['synthetic_quality_score']   = $synQuality['synthetic_quality_score'];
+            $diagBase['synthetic_quality_reason']  = $synQuality['synthetic_quality_reason'];
+            $diagBase['synthetic_quality_block_reasons'] = [];
+            $diagBase['synthetic_quality_components']    = $synQuality['synthetic_quality_components'];
+        } else {
+            $this->requireLogic('candidate_quality');
+            $quality = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternCandidateQuality())->score(
+                $candidate, $wave, $config, $side
+            );
+            $diagBase['quality_source'] = 'h4_pattern_quality';
+        }
+
         if (!$quality['quality_pass']) {
             // Quality kill: stamp before returning so accumulateStats() can track it.
             $diagBase['setup_allowed_kill_stage']  = 'quality';
@@ -1559,6 +1639,7 @@ final class DoubleBottomLongService
                 'candidate_quality_score' => $quality['candidate_quality_score'],
                 'quality_pass'            => false,
                 'quality_reject_reason'   => $quality['quality_reject_reason'],
+                'quality_source'          => $diagBase['quality_source'] ?? 'h4_pattern_quality',
                 'signal_quality_class'    => $bearishRevExUsed ? 'controlled_reversal' : 'clean_signal',
                 'confirm_status'          => null,
                 'confirm_bars_waited'     => 0,
@@ -1596,6 +1677,7 @@ final class DoubleBottomLongService
                     'candidate_quality_score' => $quality['candidate_quality_score'],
                     'quality_pass'            => true,
                     'quality_reject_reason'   => null,
+                    'quality_source'          => $diagBase['quality_source'] ?? 'h4_pattern_quality',
                     'signal_quality_class'    => $bearishRevExUsed ? 'controlled_reversal' : 'clean_signal',
                     'confirm_status'          => $confirm['confirm_status'],
                     'confirm_bars_waited'     => $confirm['confirm_bars_waited'],
@@ -1643,6 +1725,7 @@ final class DoubleBottomLongService
             'candidate_quality_score' => $quality['candidate_quality_score'],
             'quality_pass'            => true,
             'quality_reject_reason'   => null,
+            'quality_source'          => $diagBase['quality_source'] ?? 'h4_pattern_quality',
             'signal_quality_class'    => $bearishRevExUsed ? 'controlled_reversal' : 'clean_signal',
             'confirm_status'          => 'confirm_pass',
             'confirm_bars_waited'     => $confirm['confirm_bars_waited'] ?? 0,
@@ -2225,6 +2308,31 @@ final class DoubleBottomLongService
             }
         }
 
+        // Synthetic quality scorer counters
+        if ((bool)($result['synthetic_quality_checked'] ?? false)) {
+            $inc($stats, 'synthetic_quality_checked_total');
+            $inc($stats, 'synthetic_quality_bypassed_old_h4_quality_total');
+            if ((bool)($result['synthetic_quality_pass'] ?? false)) {
+                $inc($stats, 'synthetic_quality_pass_total');
+                $synthSrc = (string)($result['synthetic_candidate_source'] ?? '');
+                if ($synthSrc === 'intraday_double_bottom') {
+                    $inc($stats, 'synthetic_quality_classic_intraday_db_pass_total');
+                } elseif ($synthSrc === 'post_dump_base_reclaim') {
+                    $inc($stats, 'synthetic_quality_post_dump_base_reclaim_pass_total');
+                }
+            } else {
+                $inc($stats, 'synthetic_quality_failed_total');
+                $inc($stats, 'reject_synthetic_candidate_quality_failed_total');
+            }
+        }
+        // Track old H4 quality_weak_structure rejects on non-synthetic candidates
+        if (!((bool)($result['synthetic_candidate_built'] ?? false))
+            && (string)($result['quality_reject_reason'] ?? '') !== ''
+            && str_starts_with((string)($result['quality_reject_reason'] ?? ''), 'quality_weak_structure')
+        ) {
+            $inc($stats, 'reject_quality_weak_structure_total');
+        }
+
         return $stats;
     }
 
@@ -2434,6 +2542,15 @@ final class DoubleBottomLongService
             'synthetic_candidate_built_total'                    => 0,
             'synthetic_candidate_intraday_double_bottom_total'   => 0,
             'synthetic_candidate_post_dump_base_reclaim_total'   => 0,
+            // Synthetic quality scorer counters
+            'synthetic_quality_checked_total'                    => 0,
+            'synthetic_quality_pass_total'                       => 0,
+            'synthetic_quality_failed_total'                     => 0,
+            'synthetic_quality_bypassed_old_h4_quality_total'    => 0,
+            'synthetic_quality_classic_intraday_db_pass_total'   => 0,
+            'synthetic_quality_post_dump_base_reclaim_pass_total' => 0,
+            'reject_synthetic_candidate_quality_failed_total'    => 0,
+            'reject_quality_weak_structure_total'                => 0,
         ];
     }
 
@@ -4162,7 +4279,132 @@ final class DoubleBottomLongService
      */
 
     /**
-     * Determine whether an A/B intraday setup class is fully confirmed and safe to
+     * Score quality for a synthetic A/B intraday setup candidate.
+     *
+     * Called when synthetic_candidate_built=true and synthetic_setup_quality_enabled=true.
+     * Instead of old H4 structure metrics (similarity_delta / neckline depth), this
+     * scorer uses the intraday detection scores already computed in diagBase.
+     *
+     * @param  array  $ctx       Merged diagBase (includes coinCtx and intraday fields).
+     * @param  array  $candidate The synthetic candidate array (from buildSyntheticCandidate).
+     * @param  array  $config    Effective strategy config.
+     * @return array {
+     *   synthetic_quality_checked, synthetic_quality_pass, synthetic_quality_score,
+     *   synthetic_quality_reason, synthetic_quality_block_reasons[], synthetic_quality_components
+     * }
+     */
+    private function scoreSyntheticSetupQuality(array $ctx, array $candidate, array $config): array
+    {
+        $setupClass  = (string)($ctx['setup_class']    ?? $candidate['candidate_source'] ?? 'unknown');
+        $blockReasons = [];
+        $components   = [];
+
+        // Hard safety blocks (shared A + B)
+        if ((bool)($config['synthetic_quality_require_no_falling_knife'] ?? true)
+            && (bool)($ctx['active_falling_knife_detected'] ?? false)
+        ) {
+            $blockReasons[] = 'active_falling_knife';
+        }
+        if ((bool)($config['synthetic_quality_require_support_not_broken'] ?? true)
+            && (bool)($ctx['support_broken'] ?? false)
+        ) {
+            $blockReasons[] = 'base_support_broken';
+        }
+
+        if ($setupClass === 'classic_intraday_double_bottom_reclaim'
+            || $candidate['candidate_source'] === 'intraday_double_bottom'
+        ) {
+            // A-class checks
+            if (!(bool)($ctx['intraday_double_bottom_detected'] ?? false)) {
+                $blockReasons[] = 'no_intraday_double_bottom';
+            }
+            if ((bool)($config['synthetic_quality_require_neckline_reclaim'] ?? true)
+                && !(bool)($ctx['neckline_reclaim_confirmed'] ?? false)
+            ) {
+                $blockReasons[] = 'neckline_reclaim_not_confirmed';
+            }
+            $minDbScore  = (float)($config['synthetic_quality_min_intraday_db_score'] ?? 7.5);
+            $dbScore     = (float)($ctx['intraday_double_bottom_score'] ?? 0.0);
+            $components['intraday_db_score']   = $dbScore;
+            if ($dbScore < $minDbScore) {
+                $blockReasons[] = 'intraday_db_score_too_low';
+            }
+            $maxNeckDist = (float)($config['synthetic_quality_max_entry_distance_from_neckline_pct'] ?? 2.0);
+            $neckDist    = (float)($ctx['entry_distance_from_neckline_pct'] ?? 0.0);
+            $components['entry_distance_from_neckline_pct'] = $neckDist;
+            if ($maxNeckDist > 0.0 && $neckDist > $maxNeckDist) {
+                $blockReasons[] = 'entry_too_far_after_neckline_reclaim';
+            }
+        } elseif ($setupClass === 'post_dump_base_reclaim'
+            || $candidate['candidate_source'] === 'post_dump_base_reclaim'
+        ) {
+            // B-class checks
+            if (!(bool)($ctx['post_dump_detected'] ?? false)) {
+                $blockReasons[] = 'no_post_dump_detected';
+            }
+            if (!(bool)($ctx['stabilization_detected'] ?? false)) {
+                $blockReasons[] = 'no_stabilization_detected';
+            }
+            if (!(bool)($ctx['flat_base_detected'] ?? false)) {
+                $blockReasons[] = 'no_flat_base_detected';
+            }
+            if ((bool)($config['synthetic_quality_require_reclaim_after_flat'] ?? true)
+                && !(bool)($ctx['reclaim_after_flat_detected'] ?? false)
+            ) {
+                $blockReasons[] = 'reclaim_after_flat_not_confirmed';
+            }
+            $maxReclDist = (float)($config['synthetic_quality_max_entry_distance_from_reclaim_pct'] ?? 2.5);
+            $reclDist    = (float)($ctx['entry_distance_from_reclaim_pct'] ?? 0.0);
+            $components['entry_distance_from_reclaim_pct'] = $reclDist;
+            if ($maxReclDist > 0.0 && $reclDist > $maxReclDist) {
+                $blockReasons[] = 'entry_too_far_after_reclaim';
+            }
+        } else {
+            $blockReasons[] = 'unknown_synthetic_setup_class';
+        }
+
+        // Shared score thresholds
+        $minClassScore   = (float)($config['synthetic_quality_min_setup_class_score']     ?? 7.5);
+        $minCtxScore     = (float)($config['synthetic_quality_min_entry_context_score']   ?? 7.5);
+        $classScore      = (float)($ctx['setup_class_score']    ?? 0.0);
+        $ctxScore        = (float)($ctx['entry_context_score']  ?? $ctx['reversal_context_score'] ?? 0.0);
+        $components['setup_class_score']   = $classScore;
+        $components['entry_context_score'] = $ctxScore;
+        if ($classScore < $minClassScore) {
+            $blockReasons[] = 'setup_class_score_too_low';
+        }
+        if ($ctxScore < $minCtxScore) {
+            $blockReasons[] = 'entry_context_score_too_low';
+        }
+
+        $pass = count($blockReasons) === 0;
+
+        // Composite score: average of the numeric components (0-10 scale) normalised to 0-1
+        $numericVals = array_filter($components, 'is_numeric');
+        $rawScore    = count($numericVals) > 0 ? (array_sum($numericVals) / count($numericVals)) : 0.0;
+        // Normalise db/class/ctx scores (0-10) to 0-1; distance scores already pct, keep as info
+        $scoreFields = ['intraday_db_score', 'setup_class_score', 'entry_context_score'];
+        $normSum     = 0.0;
+        $normCount   = 0;
+        foreach ($scoreFields as $f) {
+            if (isset($components[$f])) {
+                $normSum += min(1.0, max(0.0, (float)$components[$f] / 10.0));
+                $normCount++;
+            }
+        }
+        $compositeScore = $normCount > 0 ? round($normSum / $normCount, 4) : 0.0;
+
+        return [
+            'synthetic_quality_checked'      => true,
+            'synthetic_quality_pass'         => $pass,
+            'synthetic_quality_score'        => $compositeScore,
+            'synthetic_quality_reason'       => $pass ? 'synthetic_quality_passed' : implode(',', $blockReasons),
+            'synthetic_quality_block_reasons' => $blockReasons,
+            'synthetic_quality_components'   => $components,
+        ];
+    }
+
+    /**
      * emit a signal for, independent of the old H4 market-regime/trend/corridor/wave
      * gates.  When this returns entry_setup_allowed=true the old H4 gates are
      * downgraded to warnings inside tryLong() so the symbol reaches the

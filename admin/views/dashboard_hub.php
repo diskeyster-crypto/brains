@@ -690,11 +690,15 @@ function renderDashboardHub(): string
                 $_dblSetupOk     = (int)($stratLastRun['setup_class_signal_allowed_total']              ?? 0);
                 $_dblEntrySetup  = (int)($stratLastRun['entry_setup_allowed_total']                     ?? 0);
                 $_dblSynthetic   = (int)($stratLastRun['synthetic_candidate_built_total']               ?? 0);
+                $_dblSynQPass    = (int)($stratLastRun['synthetic_quality_pass_total']                  ?? 0);
+                $_dblSynQFail    = (int)($stratLastRun['synthetic_quality_failed_total']                ?? 0);
                 $_dblKillPat     = (int)($stratLastRun['setup_allowed_classic_pattern_failed_total']    ?? 0);
                 $_dblKillQual    = (int)($stratLastRun['setup_allowed_quality_failed_total']            ?? 0);
                 $_dblKillCtrl    = (int)($stratLastRun['setup_allowed_control_failed_total']            ?? 0);
                 $_dblKillFinal   = (int)($stratLastRun['setup_allowed_final_eligibility_failed_total']  ?? 0);
-                $_dblSigEmit     = (int)($stratLastRun['current_cycle_signals_emitted_total'] ?? $stratLastRun['signals_emitted_total'] ?? $slrGeneratedSig);
+                // Use current-cycle count. Fallback chain: current_cycle → active pool → cumulative.
+                $_dblSigCurrent  = (int)($stratLastRun['current_cycle_signals_emitted_total']           ?? 0);
+                $_dblSigPool     = (int)($stratLastRun['active_pool_signals_total']                     ?? $slrPoolTotal);
                 $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
                     . ' · обработано <code>' . $_dblScanned . '/' . $_dblTotal . ' в окне</code>'
                     . ' · ctx fetch <code>' . $_dblCtxFetch . '</code>'
@@ -702,12 +706,10 @@ function renderDashboardHub(): string
                     . ' · setup ok <code>' . $_dblSetupOk . '</code>'
                     . ' · entry setup <code>' . $_dblEntrySetup . '</code>'
                     . ' · synthetic <code>' . $_dblSynthetic . '</code>'
-                    . ' · killed pat <code>' . $_dblKillPat . '</code>'
+                    . ' · syn q pass <code>' . $_dblSynQPass . '/' . ($_dblSynQPass + $_dblSynQFail) . '</code>'
                     . ' · killed qual <code>' . $_dblKillQual . '</code>'
-                    . ' · killed ctrl <code>' . $_dblKillCtrl . '</code>'
-                    . ' · killed final <code>' . $_dblKillFinal . '</code>'
-                    . ' · сигналов <code>' . $_dblSigEmit . '</code>'
-                    . ' · активных <code>' . $slrPoolTotal . '</code>';
+                    . ' · сигналов <code>' . $_dblSigCurrent . '</code>'
+                    . ' · активных <code>' . $_dblSigPool . '</code>';
             } elseif ($stratId === 'corridor_bottom_long') {
                 $_cblValidated    = (int)($stratLastRun['candidates_validated']    ?? 0);
                 $_cblHandoffReady = (int)($stratLastRun['handoff_ready'] ?? $slrHandoffReady);

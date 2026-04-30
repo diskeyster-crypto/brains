@@ -183,6 +183,27 @@ return [
     // Set to false to let the intraday DB + neckline reclaim alone suffice for A-class.
     'require_h4_double_bottom_after_intraday_setup' => false,
 
+    // ── Synthetic setup quality scorer ───────────────────────────────────────
+    // When a synthetic candidate was built (H4 PatternDoubleBottom bypassed),
+    // use this dedicated quality scorer instead of the old H4 PatternCandidateQuality.
+    // The old scorer expects classic H4 structure fields; synthetic candidates are built
+    // from intraday fields and would be killed by quality_weak_structure spuriously.
+    'synthetic_setup_quality_enabled'                      => true,
+    // Minimum scores for A-class (classic_intraday_double_bottom_reclaim)
+    'synthetic_quality_min_intraday_db_score'              => 7.5,
+    'synthetic_quality_min_setup_class_score'              => 7.5,
+    'synthetic_quality_min_entry_context_score'            => 7.5,
+    'synthetic_quality_max_entry_distance_from_neckline_pct' => 2.0,
+    // Minimum scores for B-class (post_dump_base_reclaim)
+    'synthetic_quality_max_entry_distance_from_reclaim_pct' => 2.5,
+    // Safety requirements (both A and B class)
+    'synthetic_quality_require_neckline_reclaim'           => true,
+    'synthetic_quality_require_reclaim_after_flat'         => true,
+    'synthetic_quality_require_support_not_broken'         => true,
+    'synthetic_quality_require_no_falling_knife'           => true,
+    // When true, old H4 structure score is not used to reject synthetic candidates
+    'synthetic_quality_bypass_old_h4_structure_score'      => true,
+
     // ── Intraday double-bottom detection on entry-context candles ────────────
     // Detects: dump → bottom_1 → neckline bounce → bottom_2/low hold → reclaim
     'intraday_double_bottom_enabled'                     => true,

@@ -101,6 +101,48 @@ return [
     // Batching / scan run controls
     'batch_size'           => 50,
     'max_symbols_per_run'  => 0,
+
+    // Coin trend context and entry quality gate
+    'coin_trend_context_enabled'         => true,
+    'trend_lookback_short_candles'       => 60,
+    'trend_lookback_mid_candles'         => 240,
+    'trend_lookback_long_candles'        => 720,
+
+    'active_downtrend_block_enabled'     => true,
+    'max_recent_lower_low_count'         => 2,
+    'max_recent_down_slope_pct'          => -1.5,
+    'max_recent_dump_15m_pct'            => 5.0,
+    'max_recent_dump_1h_pct'             => 9.0,
+
+    'post_dump_stabilization_enabled'           => true,
+    'post_dump_min_drop_from_recent_high_pct'   => 4.0,
+    'post_dump_max_drop_from_recent_high_pct'   => 25.0,
+    'post_dump_lookback_candles'                => 240,
+
+    'stabilization_min_bars'             => 12,
+    'stabilization_max_range_width_pct'  => 4.0,
+    'stabilization_max_down_slope_pct'   => 0.8,
+    'stabilization_min_low_hold_bars'    => 6,
+    'stabilization_allow_minor_low_break_pct' => 0.6,
+
+    'flat_base_enabled'                  => true,
+    'flat_base_lookback_candles'         => 48,
+    'flat_base_max_width_pct'            => 3.5,
+    'flat_base_min_touches'              => 2,
+    'flat_base_volume_cooling_required'  => false,
+
+    'reclaim_after_flat_required'        => true,
+    'reclaim_min_close_above_base_pct'   => 0.4,
+    'reclaim_confirm_bars'               => 2,
+
+    'bearish_reversal_exception_enabled'                   => true,
+    'bearish_reversal_requires_post_dump_stabilization'    => true,
+    'bearish_reversal_requires_flat_base'                  => true,
+    'bearish_reversal_requires_reclaim'                    => true,
+
+    'min_reversal_context_score'         => 7.0,
+    'min_entry_context_score'            => 7.5,
+
     'max_runtime_seconds'  => 55,
 
     // Candle data

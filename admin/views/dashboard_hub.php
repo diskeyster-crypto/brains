@@ -1513,6 +1513,18 @@ ROWS;
         'duplicate_signal'              => 'Дубликат сигнала',
         'stale_signal'                  => 'Сигнал устарел',
         'confirm_bar_failed'            => 'Подтверждающая свеча не прошла проверку',
+        // double_bottom_long — coin trend context
+        'active_falling_knife'                      => 'Активный обвал: нельзя входить в лонг',
+        'active_downtrend_no_stabilization'         => 'Активный нисходящий тренд без стабилизации',
+        'fresh_lower_low_sequence'                  => 'Серия свежих обновлений минимумов',
+        'recent_dump_still_unstable'                => 'Недавний сброс не стабилизировался',
+        'no_flat_base_after_dump'                   => 'Нет флэтовой базы после падения',
+        'flat_base_too_wide'                        => 'База слишком широкая',
+        'base_support_broken'                       => 'Поддержка базы пробита вниз',
+        'reclaim_after_flat_not_confirmed'          => 'Возврат в базу не подтверждён',
+        'no_post_dump_flat_reclaim'                 => 'Нет: падение → база → возврат',
+        'bearish_reversal_exception_after_stabilization' => 'Исключение: разворот после стабилизации',
+        'coin_trend_context_too_weak'               => 'Контекст тренда монеты слишком слабый',
         // controlled_daily_momentum_long
         'ignore_low_momentum_below_5pct'  => 'Моментум < 5% — пропуск',
         'watch_only_weak_momentum'        => 'Слабый моментум 5–8% — только наблюдение',

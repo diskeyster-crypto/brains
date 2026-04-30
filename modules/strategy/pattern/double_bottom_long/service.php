@@ -725,6 +725,21 @@ final class DoubleBottomLongService
             'final_reject_reason_distribution' => $cycleStats['final_reject_reason_distribution'] ?? (object)[],
             'reject_reason_distribution' => $cycleStats['reject_reason_distribution'] ?? (object)[],
             'errors_count'               => count($state['errors'] ?? []),
+            // Coin trend context pipeline counters
+            'coin_trend_context_checked_total'   => (int)($cycleStats['coin_trend_context_checked_total']   ?? 0),
+            'coin_trend_context_pass_total'      => (int)($cycleStats['coin_trend_context_pass_total']      ?? 0),
+            'coin_trend_context_warning_total'   => (int)($cycleStats['coin_trend_context_warning_total']   ?? 0),
+            'coin_trend_context_reject_total'    => (int)($cycleStats['coin_trend_context_reject_total']    ?? 0),
+            'active_falling_knife_reject_total'  => (int)($cycleStats['active_falling_knife_reject_total']  ?? 0),
+            'active_downtrend_reject_total'      => (int)($cycleStats['active_downtrend_reject_total']      ?? 0),
+            'post_dump_detected_total'           => (int)($cycleStats['post_dump_detected_total']           ?? 0),
+            'stabilization_detected_total'       => (int)($cycleStats['stabilization_detected_total']       ?? 0),
+            'flat_base_detected_total'           => (int)($cycleStats['flat_base_detected_total']           ?? 0),
+            'reclaim_after_flat_detected_total'  => (int)($cycleStats['reclaim_after_flat_detected_total']  ?? 0),
+            'bearish_reversal_exception_used_total'    => (int)($cycleStats['bearish_reversal_exception_used_total']    ?? 0),
+            'bearish_reversal_exception_blocked_total' => (int)($cycleStats['bearish_reversal_exception_blocked_total'] ?? 0),
+            'double_bottom_context_pass_total'   => (int)($cycleStats['double_bottom_context_pass_total']   ?? 0),
+            'double_bottom_context_reject_total' => (int)($cycleStats['double_bottom_context_reject_total'] ?? 0),
             // Registry diagnostics — required for dashboard to diagnose empty-universe retries
             'registry_source_path'      => $regDiag['registry_source_path']  ?? null,
             'registry_loaded'           => (bool)($regDiag['registry_loaded'] ?? false),
@@ -925,15 +940,55 @@ final class DoubleBottomLongService
         $this->requireLogic('wave');
         $wave = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternWave())->analyse($candles);
 
+        // ── Coin trend context ────────────────────────────────────────────────
+        $coinCtx = $this->pipelineCoinTrendContext($candles, $config);
+
         $diagBase = [
-            'market_regime'       => $regimeStr,
-            'trend_direction'     => $trendDir,
-            'corridor_low'        => $corridor['corridor_low'],
-            'corridor_high'       => $corridor['corridor_high'],
-            'current_bucket'      => $corridor['current_bucket'],
-            'bucket_allowed_long' => $corridor['bucket_allowed_long'],
-            'wave_direction'      => $wave['wave_direction'],
-            'wave_state'          => $wave['wave_state'],
+            'market_regime'                  => $regimeStr,
+            'trend_direction'                => $trendDir,
+            'corridor_low'                   => $corridor['corridor_low'],
+            'corridor_high'                  => $corridor['corridor_high'],
+            'current_bucket'                 => $corridor['current_bucket'],
+            'bucket_allowed_long'            => $corridor['bucket_allowed_long'],
+            'wave_direction'                 => $wave['wave_direction'],
+            'wave_state'                     => $wave['wave_state'],
+            // Coin trend context fields (from pipelineCoinTrendContext)
+            'coin_trend_context_status'      => $coinCtx['coin_trend_context_status'],
+            'coin_trend_context_score'       => $coinCtx['coin_trend_context_score'],
+            'coin_trend_context_reason'      => $coinCtx['coin_trend_context_reason'],
+            'short_trend_slope_pct'          => $coinCtx['short_trend_slope_pct'],
+            'mid_trend_slope_pct'            => $coinCtx['mid_trend_slope_pct'],
+            'long_trend_slope_pct'           => $coinCtx['long_trend_slope_pct'],
+            'recent_lower_low_count'         => $coinCtx['recent_lower_low_count'],
+            'recent_lower_high_count'        => $coinCtx['recent_lower_high_count'],
+            'recent_dump_15m_pct'            => $coinCtx['recent_dump_15m_pct'],
+            'recent_dump_1h_pct'             => $coinCtx['recent_dump_1h_pct'],
+            'distance_from_recent_high_pct'  => $coinCtx['distance_from_recent_high_pct'],
+            'distance_from_recent_low_pct'   => $coinCtx['distance_from_recent_low_pct'],
+            'active_downtrend_detected'      => $coinCtx['active_downtrend_detected'],
+            'active_falling_knife_detected'  => $coinCtx['active_falling_knife_detected'],
+            'post_dump_detected'             => $coinCtx['post_dump_detected'],
+            'post_dump_drop_pct'             => $coinCtx['post_dump_drop_pct'],
+            'stabilization_detected'         => $coinCtx['stabilization_detected'],
+            'stabilization_bars'             => $coinCtx['stabilization_bars'],
+            'stabilization_range_width_pct'  => $coinCtx['stabilization_range_width_pct'],
+            'stabilization_slope_pct'        => $coinCtx['stabilization_slope_pct'],
+            'stabilization_score'            => $coinCtx['stabilization_score'],
+            'flat_base_detected'             => $coinCtx['flat_base_detected'],
+            'flat_base_low'                  => $coinCtx['flat_base_low'],
+            'flat_base_high'                 => $coinCtx['flat_base_high'],
+            'flat_base_width_pct'            => $coinCtx['flat_base_width_pct'],
+            'flat_base_touches'              => $coinCtx['flat_base_touches'],
+            'flat_base_score'                => $coinCtx['flat_base_score'],
+            'reclaim_after_flat_detected'    => $coinCtx['reclaim_after_flat_detected'],
+            'reclaim_level'                  => $coinCtx['reclaim_level'],
+            'reclaim_confirmed_bars'         => $coinCtx['reclaim_confirmed_bars'],
+            'reclaim_strength_pct'           => $coinCtx['reclaim_strength_pct'],
+            'reclaim_score'                  => $coinCtx['reclaim_score'],
+            'setup_context_type'             => $coinCtx['setup_context_type'],
+            'bearish_reversal_exception_used'=> false,  // set by tryLong() if used
+            'reversal_context_score'         => $coinCtx['reversal_context_score'],
+            'entry_context_score'            => $coinCtx['entry_context_score'],
         ];
 
         $longResult = $this->tryLong($symbol, $candles, $config, $regimeStr, $trendDir, $corridor, $wave, $diagBase);
@@ -976,8 +1031,19 @@ final class DoubleBottomLongService
     {
         $side = 'long';
 
+        // ── Active falling knife: hard reject before anything else ────────────
+        if ((bool)($config['coin_trend_context_enabled'] ?? true)
+            && (bool)($config['active_downtrend_block_enabled'] ?? true)
+            && (bool)($diagBase['active_falling_knife_detected'] ?? false)
+        ) {
+            return $this->reject($diagBase, $symbol, 'double_bottom', 'active_falling_knife');
+        }
+
         // ── Market regime gate ────────────────────────────────────────────────
-        // Checked first: avoid expensive computation in hostile macro regimes.
+        // Bearish regime is hard-blocked by default.
+        // Exception: bearish_reversal_exception allows entry when all post-dump
+        // stabilization conditions are met (post-dump → flat/base → reclaim).
+        $bearishRevExUsed = false;
         if ((bool)($config['market_regime_enabled'] ?? true)) {
             $regimeGateMode = (string)($config['market_regime_gate_mode'] ?? 'soft');
             if ($regimeGateMode === 'hard') {
@@ -985,29 +1051,61 @@ final class DoubleBottomLongService
                 $rGate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternMarketRegime())
                     ->gate($regimeStr, $side, $regimeGateMode);
                 if (!$rGate['pass']) {
-                    return $this->reject($diagBase, $symbol, 'double_bottom', $rGate['reason']);
+                    // Check bearish reversal exception
+                    $exceptionAllowed = false;
+                    if ((bool)($config['bearish_reversal_exception_enabled'] ?? true)
+                        && !(bool)($diagBase['active_falling_knife_detected'] ?? false)
+                    ) {
+                        $requireStab  = (bool)($config['bearish_reversal_requires_post_dump_stabilization'] ?? true);
+                        $requireFlat  = (bool)($config['bearish_reversal_requires_flat_base'] ?? true);
+                        $requireReclaim = (bool)($config['bearish_reversal_requires_reclaim'] ?? true);
+                        $maxLowerLows = (int)($config['max_recent_lower_low_count'] ?? 2);
+                        $minRevScore  = (float)($config['min_reversal_context_score'] ?? 7.0);
+
+                        $stabOk   = !$requireStab  || (bool)($diagBase['stabilization_detected'] ?? false);
+                        $flatOk   = !$requireFlat  || (bool)($diagBase['flat_base_detected']     ?? false);
+                        $reclOk   = !$requireReclaim || (bool)($diagBase['reclaim_after_flat_detected'] ?? false);
+                        $llOk     = (int)($diagBase['recent_lower_low_count'] ?? 999) <= $maxLowerLows;
+                        $revScore = (float)($diagBase['reversal_context_score'] ?? 0.0);
+                        $scoreOk  = $revScore >= $minRevScore;
+
+                        if ($stabOk && $flatOk && $reclOk && $llOk && $scoreOk) {
+                            $exceptionAllowed = true;
+                            $bearishRevExUsed = true;
+                        }
+                    }
+                    if (!$exceptionAllowed) {
+                        return $this->reject($diagBase, $symbol, 'double_bottom', $rGate['reason']);
+                    }
                 }
             }
+        }
+
+        // Update diagBase with bearish_reversal_exception_used flag
+        $diagBase['bearish_reversal_exception_used'] = $bearishRevExUsed;
+        if ($bearishRevExUsed) {
+            $diagBase['setup_context_type'] = 'post_dump_flat_reversal';
         }
 
         // ── Trend gate ────────────────────────────────────────────────────────
         if ((bool)($config['trend_required'] ?? true)) {
             $this->requireLogic('trend');
             // When trend_long_require_bullish is true (default), only emit long signals
-            // when the short-term trend is already turning bullish.  This is the
-            // primary early filter that eliminates "catching a falling knife" setups.
+            // when the short-term trend is already turning bullish.
+            // Exception: skip bullish requirement when bearish_reversal_exception_used=true.
             $requireBullish = (bool)($config['trend_long_require_bullish'] ?? true);
-            if ($requireBullish) {
+            if ($requireBullish && !$bearishRevExUsed) {
                 if ($trendDir !== 'bullish') {
                     return $this->reject($diagBase, $symbol, 'double_bottom',
                         "trend_{$trendDir}_side_long_mismatch");
                 }
-            } else {
+            } elseif (!$bearishRevExUsed) {
                 $tGate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternTrend())->gate($trendDir, $side);
                 if (!$tGate['pass']) {
                     return $this->reject($diagBase, $symbol, 'double_bottom', $tGate['reason']);
                 }
             }
+            // When bearish_reversal_exception_used=true, trend gate is bypassed.
         }
 
         if ((bool)($config['corridor_required'] ?? true)) {
@@ -1062,6 +1160,7 @@ final class DoubleBottomLongService
                 'candidate_quality_score' => $quality['candidate_quality_score'],
                 'quality_pass'            => false,
                 'quality_reject_reason'   => $quality['quality_reject_reason'],
+                'signal_quality_class'    => $bearishRevExUsed ? 'controlled_reversal' : 'clean_signal',
                 'confirm_status'          => null,
                 'confirm_bars_waited'     => 0,
                 'candidate_expired'       => false,
@@ -1095,6 +1194,7 @@ final class DoubleBottomLongService
                     'candidate_quality_score' => $quality['candidate_quality_score'],
                     'quality_pass'            => true,
                     'quality_reject_reason'   => null,
+                    'signal_quality_class'    => $bearishRevExUsed ? 'controlled_reversal' : 'clean_signal',
                     'confirm_status'          => $confirm['confirm_status'],
                     'confirm_bars_waited'     => $confirm['confirm_bars_waited'],
                     'candidate_expired'       => $confirm['candidate_expired'],
@@ -1141,6 +1241,7 @@ final class DoubleBottomLongService
             'candidate_quality_score' => $quality['candidate_quality_score'],
             'quality_pass'            => true,
             'quality_reject_reason'   => null,
+            'signal_quality_class'    => $bearishRevExUsed ? 'controlled_reversal' : 'clean_signal',
             'confirm_status'          => 'confirm_pass',
             'confirm_bars_waited'     => $confirm['confirm_bars_waited'] ?? 0,
             'candidate_expired'       => false,
@@ -1512,6 +1613,46 @@ final class DoubleBottomLongService
             $inc($stats, 'rejected_by_pattern_total');
         }
 
+        // Coin trend context counters
+        $ctxStatus = $result['coin_trend_context_status'] ?? null;
+        if ($ctxStatus !== null) {
+            $inc($stats, 'coin_trend_context_checked_total');
+            if ($ctxStatus === 'ok')      { $inc($stats, 'coin_trend_context_pass_total'); }
+            if ($ctxStatus === 'warning') { $inc($stats, 'coin_trend_context_warning_total'); }
+            if ($ctxStatus === 'reject')  { $inc($stats, 'coin_trend_context_reject_total'); }
+        }
+        if ((bool)($result['active_falling_knife_detected'] ?? false)) {
+            $inc($stats, 'active_falling_knife_reject_total');
+        }
+        if ((bool)($result['active_downtrend_detected'] ?? false)) {
+            $inc($stats, 'active_downtrend_reject_total');
+        }
+        if ((bool)($result['post_dump_detected'] ?? false)) {
+            $inc($stats, 'post_dump_detected_total');
+        }
+        if ((bool)($result['stabilization_detected'] ?? false)) {
+            $inc($stats, 'stabilization_detected_total');
+        }
+        if ((bool)($result['flat_base_detected'] ?? false)) {
+            $inc($stats, 'flat_base_detected_total');
+        }
+        if ((bool)($result['reclaim_after_flat_detected'] ?? false)) {
+            $inc($stats, 'reclaim_after_flat_detected_total');
+        }
+        if ((bool)($result['bearish_reversal_exception_used'] ?? false)) {
+            $inc($stats, 'bearish_reversal_exception_used_total');
+        } elseif ($rejectReason === 'regime_bearish_long_hard_block') {
+            $inc($stats, 'bearish_reversal_exception_blocked_total');
+        }
+        if ((bool)($result['double_bottom_checked'] ?? false)) {
+            $ctxStatus2 = $result['coin_trend_context_status'] ?? 'ok';
+            if (in_array($ctxStatus2, ['ok', 'warning'], true) && !(bool)($result['active_falling_knife_detected'] ?? false)) {
+                $inc($stats, 'double_bottom_context_pass_total');
+            } else {
+                $inc($stats, 'double_bottom_context_reject_total');
+            }
+        }
+
         return $stats;
     }
 
@@ -1635,6 +1776,21 @@ final class DoubleBottomLongService
             'last_updated_at'              => null,
             'reject_reason_distribution'         => (object)[],
             'pattern_reject_reason_distribution' => (object)[],
+            // Coin trend context counters
+            'coin_trend_context_checked_total'   => 0,
+            'coin_trend_context_pass_total'      => 0,
+            'coin_trend_context_warning_total'   => 0,
+            'coin_trend_context_reject_total'    => 0,
+            'active_falling_knife_reject_total'  => 0,
+            'active_downtrend_reject_total'      => 0,
+            'post_dump_detected_total'           => 0,
+            'stabilization_detected_total'       => 0,
+            'flat_base_detected_total'           => 0,
+            'reclaim_after_flat_detected_total'  => 0,
+            'bearish_reversal_exception_used_total'    => 0,
+            'bearish_reversal_exception_blocked_total' => 0,
+            'double_bottom_context_pass_total'   => 0,
+            'double_bottom_context_reject_total' => 0,
         ];
     }
 
@@ -1670,6 +1826,720 @@ final class DoubleBottomLongService
                 return $ts !== false && ($ts + $ttlSec) > $now;
             })
         );
+    }
+
+    // =========================================================================
+    // Coin trend context — post-dump stabilization gate
+    // =========================================================================
+
+    /**
+     * Analyse coin-level trend context and detect post-dump stabilization conditions.
+     *
+     * Returns a full context array consumed by tryLong() to:
+     *   1. Hard-reject active falling knives.
+     *   2. Allow a bearish_reversal_exception when post-dump → flat/base → reclaim
+     *      conditions are all met.
+     *
+     * NOTE: Only H4 candles are available (lookback_candles); mid/long lookbacks
+     * are capped at the available candle count.
+     */
+    private function pipelineCoinTrendContext(array $candles, array $config): array
+    {
+        $enabled = (bool)($config['coin_trend_context_enabled'] ?? true);
+
+        // Neutral context returned when the feature is disabled
+        $neutral = static function (): array {
+            return [
+                'coin_trend_context_status'      => 'ok',
+                'coin_trend_context_score'       => 10.0,
+                'coin_trend_context_reason'      => 'disabled',
+                'short_trend_slope_pct'          => null,
+                'mid_trend_slope_pct'            => null,
+                'long_trend_slope_pct'           => null,
+                'recent_lower_low_count'         => 0,
+                'recent_lower_high_count'        => 0,
+                'recent_dump_15m_pct'            => 0.0,
+                'recent_dump_1h_pct'             => 0.0,
+                'distance_from_recent_high_pct'  => 0.0,
+                'distance_from_recent_low_pct'   => 0.0,
+                'active_downtrend_detected'      => false,
+                'active_falling_knife_detected'  => false,
+                'post_dump_detected'             => false,
+                'post_dump_drop_pct'             => 0.0,
+                'stabilization_detected'         => false,
+                'stabilization_bars'             => 0,
+                'stabilization_range_width_pct'  => 0.0,
+                'stabilization_slope_pct'        => 0.0,
+                'stabilization_score'            => 0.0,
+                'flat_base_detected'             => false,
+                'flat_base_low'                  => null,
+                'flat_base_high'                 => null,
+                'flat_base_width_pct'            => 0.0,
+                'flat_base_touches'              => 0,
+                'flat_base_score'                => 0.0,
+                'reclaim_after_flat_detected'    => false,
+                'reclaim_level'                  => null,
+                'reclaim_confirmed_bars'         => 0,
+                'reclaim_strength_pct'           => 0.0,
+                'reclaim_score'                  => 0.0,
+                'setup_context_type'             => 'standard',
+                'reversal_context_score'         => 0.0,
+                'entry_context_score'            => 10.0,
+            ];
+        };
+
+        if (!$enabled || count($candles) < 5) {
+            return $neutral();
+        }
+
+        $n = count($candles);
+
+        $shortLb = min((int)($config['trend_lookback_short_candles'] ?? 60),  $n);
+        $midLb   = min((int)($config['trend_lookback_mid_candles']   ?? 240), $n);
+        $longLb  = min((int)($config['trend_lookback_long_candles']  ?? 720), $n);
+
+        $shortSlice = array_slice($candles, $n - $shortLb);
+        $midSlice   = array_slice($candles, $n - $midLb);
+        $longSlice  = array_slice($candles, $n - $longLb);
+
+        $shortSlopePct = $this->computeSlopePct($shortSlice);
+        $midSlopePct   = $this->computeSlopePct($midSlice);
+        $longSlopePct  = $this->computeSlopePct($longSlice);
+
+        $recentLowerLowCount  = $this->countRecentLowerLows($shortSlice);
+        $recentLowerHighCount = $this->countRecentLowerHighs($shortSlice);
+
+        $recentDump15mPct = $this->estimateRecentDump($candles, 2);
+        $recentDump1hPct  = $this->estimateRecentDump($candles, 4);
+
+        [$distFromHighPct, $distFromLowPct] = $this->distanceFromRecentHighLow($candles, $shortLb);
+
+        $maxLowerLows = (int)($config['max_recent_lower_low_count'] ?? 2);
+        $maxDownSlope = (float)($config['max_recent_down_slope_pct'] ?? -1.5);
+        $maxDump15m   = (float)($config['max_recent_dump_15m_pct']  ?? 5.0);
+        $maxDump1h    = (float)($config['max_recent_dump_1h_pct']   ?? 9.0);
+
+        // Active downtrend: slope steeply negative AND multiple fresh lower lows
+        $activeDowntrend = (bool)($config['active_downtrend_block_enabled'] ?? true)
+            && ($shortSlopePct < $maxDownSlope)
+            && ($recentLowerLowCount > $maxLowerLows);
+
+        // Falling knife: very steep recent dump still in progress (no stabilization)
+        $activeFallingKnife = (
+            $recentDump15mPct > $maxDump15m
+            && $recentLowerLowCount > 0
+            && $shortSlopePct < $maxDownSlope
+        ) || (
+            $recentDump1hPct > $maxDump1h
+            && $shortSlopePct < ($maxDownSlope * 1.5)
+        );
+
+        // Sub-checks: post-dump stabilization, flat base, reclaim
+        $pdCtx = [
+            'short_slope_pct'        => $shortSlopePct,
+            'dist_from_high_pct'     => $distFromHighPct,
+            'active_falling_knife'   => $activeFallingKnife,
+        ];
+
+        $postDumpResult = (bool)($config['post_dump_stabilization_enabled'] ?? true)
+            ? $this->detectPostDumpStabilization($candles, $config, $pdCtx)
+            : ['post_dump_detected' => false, 'post_dump_drop_pct' => 0.0,
+               'stabilization_detected' => false, 'stabilization_bars' => 0,
+               'stabilization_range_width_pct' => 0.0, 'stabilization_slope_pct' => 0.0,
+               'low_hold_score' => 0.0, 'stabilization_score' => 0.0,
+               'stabilization_reason' => 'disabled', 'stabilization_warnings' => []];
+
+        $flatBaseResult = (bool)($config['flat_base_enabled'] ?? true)
+            ? $this->detectFlatBaseAfterDump($candles, $config, $postDumpResult)
+            : ['flat_base_detected' => false, 'flat_base_low' => null, 'flat_base_high' => null,
+               'flat_base_mid' => null, 'flat_base_width_pct' => 0.0, 'flat_base_touches' => 0,
+               'flat_base_score' => 0.0, 'flat_base_reason' => 'disabled'];
+
+        $reclaimResult = (bool)($config['reclaim_after_flat_required'] ?? true)
+            ? $this->detectReclaimAfterFlatBase($candles, $config, $flatBaseResult)
+            : ['reclaim_after_flat_detected' => false, 'reclaim_level' => null,
+               'reclaim_confirmed_bars' => 0, 'reclaim_strength_pct' => 0.0,
+               'reclaim_score' => 0.0, 'reclaim_reason' => 'disabled'];
+
+        // Reversal context score (0–10): used by bearish_reversal_exception check
+        $reversalScore = $this->computeReversalContextScore(
+            $postDumpResult, $flatBaseResult, $reclaimResult,
+            $activeFallingKnife, $activeDowntrend, $config
+        );
+
+        // Entry context score: higher is better; includes non-reversal signals
+        $entryContextScore = $reversalScore;
+        if (!$activeFallingKnife && !$activeDowntrend) {
+            $entryContextScore = min(10.0, $reversalScore + 1.0);
+        }
+
+        // Determine status
+        $status = 'ok';
+        $reason = 'ok';
+
+        if ($activeFallingKnife) {
+            $status = 'reject';
+            $reason = 'active_falling_knife';
+        } elseif ($activeDowntrend && !(bool)($postDumpResult['stabilization_detected'] ?? false)) {
+            $status = 'reject';
+            $reason = 'active_downtrend_no_stabilization';
+        } elseif ($recentLowerLowCount > $maxLowerLows + 1) {
+            $status = 'reject';
+            $reason = 'fresh_lower_low_sequence';
+        } elseif ($recentDump1hPct > $maxDump1h && !(bool)($postDumpResult['stabilization_detected'] ?? false)) {
+            $status = 'reject';
+            $reason = 'recent_dump_still_unstable';
+        } elseif ($reversalScore < (float)($config['min_reversal_context_score'] ?? 7.0)
+               && $activeDowntrend) {
+            $status = 'reject';
+            $reason = 'coin_trend_context_too_weak';
+        } elseif ($shortSlopePct < 0 && $recentLowerLowCount > 0) {
+            $status = 'warning';
+            $reason = 'weak_trend_warning';
+        }
+
+        // Determine setup_context_type
+        $setupContextType = 'standard';
+        if ((bool)($postDumpResult['stabilization_detected'] ?? false)
+            && (bool)($flatBaseResult['flat_base_detected']  ?? false)
+            && (bool)($reclaimResult['reclaim_after_flat_detected'] ?? false)
+        ) {
+            $setupContextType = 'post_dump_flat_reversal';
+        } elseif ((bool)($postDumpResult['post_dump_detected'] ?? false)) {
+            $setupContextType = 'post_dump';
+        }
+
+        return [
+            'coin_trend_context_status'      => $status,
+            'coin_trend_context_score'       => round($reversalScore, 2),
+            'coin_trend_context_reason'      => $reason,
+            'short_trend_slope_pct'          => round($shortSlopePct, 4),
+            'mid_trend_slope_pct'            => round($midSlopePct, 4),
+            'long_trend_slope_pct'           => round($longSlopePct, 4),
+            'recent_lower_low_count'         => $recentLowerLowCount,
+            'recent_lower_high_count'        => $recentLowerHighCount,
+            'recent_dump_15m_pct'            => round($recentDump15mPct, 4),
+            'recent_dump_1h_pct'             => round($recentDump1hPct, 4),
+            'distance_from_recent_high_pct'  => round($distFromHighPct, 4),
+            'distance_from_recent_low_pct'   => round($distFromLowPct, 4),
+            'active_downtrend_detected'      => $activeDowntrend,
+            'active_falling_knife_detected'  => $activeFallingKnife,
+            'post_dump_detected'             => (bool)($postDumpResult['post_dump_detected']       ?? false),
+            'post_dump_drop_pct'             => (float)($postDumpResult['post_dump_drop_pct']       ?? 0.0),
+            'stabilization_detected'         => (bool)($postDumpResult['stabilization_detected']   ?? false),
+            'stabilization_bars'             => (int)($postDumpResult['stabilization_bars']         ?? 0),
+            'stabilization_range_width_pct'  => (float)($postDumpResult['stabilization_range_width_pct'] ?? 0.0),
+            'stabilization_slope_pct'        => (float)($postDumpResult['stabilization_slope_pct'] ?? 0.0),
+            'stabilization_score'            => (float)($postDumpResult['stabilization_score']     ?? 0.0),
+            'flat_base_detected'             => (bool)($flatBaseResult['flat_base_detected']       ?? false),
+            'flat_base_low'                  => $flatBaseResult['flat_base_low']                   ?? null,
+            'flat_base_high'                 => $flatBaseResult['flat_base_high']                  ?? null,
+            'flat_base_width_pct'            => (float)($flatBaseResult['flat_base_width_pct']     ?? 0.0),
+            'flat_base_touches'              => (int)($flatBaseResult['flat_base_touches']          ?? 0),
+            'flat_base_score'                => (float)($flatBaseResult['flat_base_score']          ?? 0.0),
+            'reclaim_after_flat_detected'    => (bool)($reclaimResult['reclaim_after_flat_detected'] ?? false),
+            'reclaim_level'                  => $reclaimResult['reclaim_level']                    ?? null,
+            'reclaim_confirmed_bars'         => (int)($reclaimResult['reclaim_confirmed_bars']      ?? 0),
+            'reclaim_strength_pct'           => (float)($reclaimResult['reclaim_strength_pct']     ?? 0.0),
+            'reclaim_score'                  => (float)($reclaimResult['reclaim_score']             ?? 0.0),
+            'setup_context_type'             => $setupContextType,
+            'reversal_context_score'         => round($reversalScore, 2),
+            'entry_context_score'            => round($entryContextScore, 2),
+        ];
+    }
+
+    /**
+     * Detect post-dump stabilization: a significant prior drop from recent high
+     * followed by price compressing into a narrow range (lows holding).
+     */
+    private function detectPostDumpStabilization(array $candles, array $config, array $ctx): array
+    {
+        $n = count($candles);
+        if ($n < 5) {
+            return [
+                'post_dump_detected' => false, 'post_dump_drop_pct' => 0.0,
+                'stabilization_detected' => false, 'stabilization_bars' => 0,
+                'stabilization_range_width_pct' => 0.0, 'stabilization_slope_pct' => 0.0,
+                'low_hold_score' => 0.0, 'stabilization_score' => 0.0,
+                'stabilization_reason' => 'insufficient_candles', 'stabilization_warnings' => [],
+            ];
+        }
+
+        $pdLookback = min((int)($config['post_dump_lookback_candles'] ?? 240), $n);
+        $slice      = array_slice($candles, $n - $pdLookback);
+        $sliceN     = count($slice);
+
+        // Find the highest high in the lookback window
+        $recentHigh = 0.0;
+        foreach ($slice as $c) {
+            $h = (float)($c['high'] ?? 0.0);
+            if ($h > $recentHigh) {
+                $recentHigh = $h;
+            }
+        }
+
+        $lastClose    = (float)(end($candles)['close'] ?? 0.0);
+        $postDumpDrop = $recentHigh > 0.0
+            ? (($recentHigh - $lastClose) / $recentHigh) * 100.0
+            : 0.0;
+
+        $minDrop = (float)($config['post_dump_min_drop_from_recent_high_pct'] ?? 4.0);
+        $maxDrop = (float)($config['post_dump_max_drop_from_recent_high_pct'] ?? 25.0);
+
+        $postDumpDetected = ($postDumpDrop >= $minDrop && $postDumpDrop <= $maxDrop);
+
+        // Stabilization window: last stabilization_min_bars candles
+        $stabMinBars = (int)($config['stabilization_min_bars'] ?? 12);
+        $stabWindow  = array_slice($candles, max(0, $n - $stabMinBars));
+        $stabN       = count($stabWindow);
+
+        if ($stabN < 3) {
+            return [
+                'post_dump_detected' => $postDumpDetected, 'post_dump_drop_pct' => round($postDumpDrop, 4),
+                'stabilization_detected' => false, 'stabilization_bars' => $stabN,
+                'stabilization_range_width_pct' => 0.0, 'stabilization_slope_pct' => 0.0,
+                'low_hold_score' => 0.0, 'stabilization_score' => 0.0,
+                'stabilization_reason' => 'stab_window_too_small', 'stabilization_warnings' => [],
+            ];
+        }
+
+        // Compute stab window high/low/range
+        $stabHigh = 0.0;
+        $stabLow  = PHP_FLOAT_MAX;
+        foreach ($stabWindow as $c) {
+            $h = (float)($c['high']  ?? 0.0);
+            $l = (float)($c['low']   ?? 0.0);
+            if ($h > $stabHigh) { $stabHigh = $h; }
+            if ($l < $stabLow  && $l > 0.0) { $stabLow = $l; }
+        }
+        $stabRangeWidthPct = ($stabLow > 0.0 && $stabHigh > $stabLow)
+            ? (($stabHigh - $stabLow) / $stabLow) * 100.0
+            : 0.0;
+
+        $stabSlopePct = $this->computeSlopePct($stabWindow);
+
+        $maxRangeWidth = (float)($config['stabilization_max_range_width_pct'] ?? 4.0);
+        $maxStabSlope  = (float)($config['stabilization_max_down_slope_pct']  ?? 0.8);
+        $minLowHold    = (int)($config['stabilization_min_low_hold_bars']      ?? 6);
+        $minorBreakPct = (float)($config['stabilization_allow_minor_low_break_pct'] ?? 0.6);
+
+        // Count bars where lows held (not making new lows outside minor break tolerance)
+        $refLow       = (float)($stabWindow[0]['low'] ?? 0.0);
+        $lowHoldCount = 0;
+        foreach ($stabWindow as $c) {
+            $l = (float)($c['low'] ?? 0.0);
+            $allowedBreak = $refLow > 0.0 ? $refLow * (1.0 - $minorBreakPct / 100.0) : 0.0;
+            if ($l >= $allowedBreak) {
+                $lowHoldCount++;
+            }
+            // Update reference: only tighten, never widen
+            if ($l > 0.0 && $l > $refLow) {
+                $refLow = $l;
+            }
+        }
+        $lowHoldScore = $stabN > 0 ? $lowHoldCount / $stabN : 0.0;
+
+        $stabDetected = $postDumpDetected
+            && $stabN >= $stabMinBars
+            && $stabRangeWidthPct <= $maxRangeWidth
+            && abs($stabSlopePct) <= $maxStabSlope
+            && $lowHoldCount >= $minLowHold
+            && !(bool)($ctx['active_falling_knife'] ?? false);
+
+        $stabScore = 0.0;
+        if ($postDumpDetected) { $stabScore += 2.0; }
+        if ($stabN >= $stabMinBars) { $stabScore += 2.0; }
+        if ($stabRangeWidthPct <= $maxRangeWidth) { $stabScore += 2.0; }
+        if (abs($stabSlopePct) <= $maxStabSlope) { $stabScore += 2.0; }
+        if ($lowHoldCount >= $minLowHold) { $stabScore += 2.0; }
+
+        $stabReason = $stabDetected ? 'stabilization_ok' :
+            ($postDumpDetected ? 'post_dump_but_no_stabilization' : 'no_post_dump');
+
+        return [
+            'post_dump_detected'            => $postDumpDetected,
+            'post_dump_drop_pct'            => round($postDumpDrop, 4),
+            'stabilization_detected'        => $stabDetected,
+            'stabilization_bars'            => $stabN,
+            'stabilization_range_width_pct' => round($stabRangeWidthPct, 4),
+            'stabilization_slope_pct'       => round($stabSlopePct, 4),
+            'low_hold_score'                => round($lowHoldScore, 4),
+            'stabilization_score'           => $stabScore,
+            'stabilization_reason'          => $stabReason,
+            'stabilization_warnings'        => [],
+        ];
+    }
+
+    /**
+     * Detect a flat/base consolidation zone after the dump, within the last
+     * flat_base_lookback_candles bars.
+     */
+    private function detectFlatBaseAfterDump(array $candles, array $config, array $postDumpResult): array
+    {
+        $empty = [
+            'flat_base_detected' => false, 'flat_base_low' => null, 'flat_base_high' => null,
+            'flat_base_mid' => null, 'flat_base_width_pct' => 0.0, 'flat_base_touches' => 0,
+            'flat_base_score' => 0.0, 'flat_base_reason' => 'no_post_dump',
+        ];
+
+        if (!(bool)($postDumpResult['post_dump_detected'] ?? false)) {
+            return $empty;
+        }
+
+        $n         = count($candles);
+        $fbLookback = min((int)($config['flat_base_lookback_candles'] ?? 48), $n);
+        $fbSlice    = array_slice($candles, $n - $fbLookback);
+        $fbN        = count($fbSlice);
+
+        if ($fbN < 3) {
+            return array_merge($empty, ['flat_base_reason' => 'insufficient_candles']);
+        }
+
+        $fbHigh = 0.0;
+        $fbLow  = PHP_FLOAT_MAX;
+        foreach ($fbSlice as $c) {
+            $h = (float)($c['high'] ?? 0.0);
+            $l = (float)($c['low']  ?? 0.0);
+            if ($h > $fbHigh) { $fbHigh = $h; }
+            if ($l < $fbLow && $l > 0.0) { $fbLow = $l; }
+        }
+
+        if ($fbLow <= 0.0 || $fbHigh <= $fbLow) {
+            return array_merge($empty, ['flat_base_reason' => 'invalid_range']);
+        }
+
+        $fbWidthPct   = (($fbHigh - $fbLow) / $fbLow) * 100.0;
+        $fbMid        = ($fbHigh + $fbLow) / 2.0;
+
+        $maxWidth    = (float)($config['flat_base_max_width_pct'] ?? 3.5);
+        $minTouches  = (int)($config['flat_base_min_touches']     ?? 2);
+
+        // Count candles that "touch" or stay near the base range (within base)
+        $touches = 0;
+        foreach ($fbSlice as $c) {
+            $l = (float)($c['low']  ?? 0.0);
+            $h = (float)($c['high'] ?? 0.0);
+            // Touch = low is within 1% of fbLow or high is within 1% of fbHigh
+            $nearLow  = $fbLow  > 0.0 && abs($l - $fbLow)  / $fbLow  < 0.01;
+            $nearHigh = $fbHigh > 0.0 && abs($h - $fbHigh) / $fbHigh < 0.01;
+            if ($nearLow || $nearHigh) {
+                $touches++;
+            }
+        }
+
+        $lastClose = (float)(end($candles)['close'] ?? 0.0);
+        $baseBroken = $lastClose < $fbLow * (1.0 - 0.005);  // below base with 0.5% tolerance
+
+        if ($baseBroken) {
+            return array_merge($empty, [
+                'flat_base_low'    => round($fbLow, 6),
+                'flat_base_high'   => round($fbHigh, 6),
+                'flat_base_width_pct' => round($fbWidthPct, 4),
+                'flat_base_touches' => $touches,
+                'flat_base_reason' => 'base_support_broken',
+            ]);
+        }
+
+        if ($fbWidthPct > $maxWidth) {
+            return array_merge($empty, [
+                'flat_base_low'    => round($fbLow, 6),
+                'flat_base_high'   => round($fbHigh, 6),
+                'flat_base_width_pct' => round($fbWidthPct, 4),
+                'flat_base_touches' => $touches,
+                'flat_base_reason' => 'flat_base_too_wide',
+            ]);
+        }
+
+        if ($touches < $minTouches) {
+            return array_merge($empty, [
+                'flat_base_low'    => round($fbLow, 6),
+                'flat_base_high'   => round($fbHigh, 6),
+                'flat_base_width_pct' => round($fbWidthPct, 4),
+                'flat_base_touches' => $touches,
+                'flat_base_reason' => 'flat_base_not_enough_touches',
+            ]);
+        }
+
+        // Score: 0–10
+        $fbScore = 0.0;
+        if ($fbWidthPct <= $maxWidth * 0.6)       { $fbScore += 3.0; }
+        elseif ($fbWidthPct <= $maxWidth)          { $fbScore += 1.5; }
+        if ($touches >= $minTouches * 2)           { $fbScore += 3.0; }
+        elseif ($touches >= $minTouches)           { $fbScore += 1.5; }
+        if ((bool)($postDumpResult['stabilization_detected'] ?? false)) { $fbScore += 4.0; }
+
+        return [
+            'flat_base_detected'  => true,
+            'flat_base_low'       => round($fbLow, 6),
+            'flat_base_high'      => round($fbHigh, 6),
+            'flat_base_mid'       => round($fbMid, 6),
+            'flat_base_width_pct' => round($fbWidthPct, 4),
+            'flat_base_touches'   => $touches,
+            'flat_base_score'     => min(10.0, $fbScore),
+            'flat_base_reason'    => 'flat_base_ok',
+        ];
+    }
+
+    /**
+     * Detect that the last closes have reclaimed above the flat/base high
+     * for at least reclaim_confirm_bars bars.
+     */
+    private function detectReclaimAfterFlatBase(array $candles, array $config, array $flatBaseResult): array
+    {
+        $empty = [
+            'reclaim_after_flat_detected' => false, 'reclaim_level' => null,
+            'reclaim_confirmed_bars' => 0, 'reclaim_strength_pct' => 0.0,
+            'reclaim_score' => 0.0, 'reclaim_reason' => 'no_flat_base',
+        ];
+
+        if (!(bool)($flatBaseResult['flat_base_detected'] ?? false)) {
+            return $empty;
+        }
+
+        $fbHigh = (float)($flatBaseResult['flat_base_high'] ?? 0.0);
+        if ($fbHigh <= 0.0) {
+            return array_merge($empty, ['reclaim_reason' => 'invalid_base_high']);
+        }
+
+        $minAbove    = (float)($config['reclaim_min_close_above_base_pct'] ?? 0.4);
+        $confirmBars = (int)($config['reclaim_confirm_bars']                ?? 2);
+        $n           = count($candles);
+
+        // Look at the last confirm_bars closes
+        $reclaimWindow = array_slice($candles, max(0, $n - max($confirmBars, 5)));
+        $confirmedCount = 0;
+        $lastClose      = 0.0;
+
+        foreach ($reclaimWindow as $c) {
+            $close = (float)($c['close'] ?? 0.0);
+            if ($close > 0.0) {
+                $lastClose = $close;
+            }
+            if ($close > $fbHigh * (1.0 + $minAbove / 100.0)) {
+                $confirmedCount++;
+            }
+        }
+
+        $reclaimStrength = ($fbHigh > 0.0 && $lastClose > 0.0)
+            ? (($lastClose - $fbHigh) / $fbHigh) * 100.0
+            : 0.0;
+
+        if ($confirmedCount < $confirmBars) {
+            return array_merge($empty, [
+                'reclaim_level'          => round($fbHigh, 6),
+                'reclaim_confirmed_bars' => $confirmedCount,
+                'reclaim_strength_pct'   => round($reclaimStrength, 4),
+                'reclaim_reason'         => 'reclaim_after_flat_not_confirmed',
+            ]);
+        }
+
+        // Check not too far extended above reclaim
+        $maxExtension = 5.0;  // allow up to 5% above reclaim level
+        if ($reclaimStrength > $maxExtension) {
+            return array_merge($empty, [
+                'reclaim_level'          => round($fbHigh, 6),
+                'reclaim_confirmed_bars' => $confirmedCount,
+                'reclaim_strength_pct'   => round($reclaimStrength, 4),
+                'reclaim_reason'         => 'entry_too_far_after_reclaim',
+            ]);
+        }
+
+        if ($reclaimStrength < 0.0) {
+            return array_merge($empty, [
+                'reclaim_level'          => round($fbHigh, 6),
+                'reclaim_confirmed_bars' => $confirmedCount,
+                'reclaim_strength_pct'   => round($reclaimStrength, 4),
+                'reclaim_reason'         => 'reclaim_too_weak_after_flat',
+            ]);
+        }
+
+        $reclaimScore = 2.0
+            + min(4.0, $confirmedCount * 1.0)
+            + min(4.0, max(0.0, $reclaimStrength));
+
+        return [
+            'reclaim_after_flat_detected' => true,
+            'reclaim_level'               => round($fbHigh, 6),
+            'reclaim_confirmed_bars'      => $confirmedCount,
+            'reclaim_strength_pct'        => round($reclaimStrength, 4),
+            'reclaim_score'               => min(10.0, $reclaimScore),
+            'reclaim_reason'              => 'reclaim_ok',
+        ];
+    }
+
+    /**
+     * Compute % slope of close prices over the candle window using
+     * simple linear regression (rise-over-run as % of first price).
+     */
+    private function computeSlopePct(array $candles): float
+    {
+        $closes = array_map(fn($c) => (float)($c['close'] ?? 0.0), $candles);
+        $closes = array_values(array_filter($closes, fn($v) => $v > 0.0));
+        $n      = count($closes);
+        if ($n < 2) {
+            return 0.0;
+        }
+
+        // Simple: last – first / first × 100, normalized by bar count
+        $first = $closes[0];
+        $last  = $closes[$n - 1];
+        if ($first <= 0.0) {
+            return 0.0;
+        }
+        return (($last - $first) / $first) * 100.0;
+    }
+
+    /**
+     * Count the number of candles in the window whose low is strictly
+     * lower than the previous candle's low (recent lower lows).
+     */
+    private function countRecentLowerLows(array $candles): int
+    {
+        $n = count($candles);
+        if ($n < 2) {
+            return 0;
+        }
+        $count   = 0;
+        $prevLow = (float)($candles[0]['low'] ?? 0.0);
+        for ($i = 1; $i < $n; $i++) {
+            $low = (float)($candles[$i]['low'] ?? 0.0);
+            if ($low > 0.0 && $prevLow > 0.0 && $low < $prevLow) {
+                $count++;
+            }
+            if ($low > 0.0) {
+                $prevLow = $low;
+            }
+        }
+        return $count;
+    }
+
+    /**
+     * Count recent lower highs in the candle window.
+     */
+    private function countRecentLowerHighs(array $candles): int
+    {
+        $n = count($candles);
+        if ($n < 2) {
+            return 0;
+        }
+        $count    = 0;
+        $prevHigh = (float)($candles[0]['high'] ?? 0.0);
+        for ($i = 1; $i < $n; $i++) {
+            $high = (float)($candles[$i]['high'] ?? 0.0);
+            if ($high > 0.0 && $prevHigh > 0.0 && $high < $prevHigh) {
+                $count++;
+            }
+            if ($high > 0.0) {
+                $prevHigh = $high;
+            }
+        }
+        return $count;
+    }
+
+    /**
+     * Estimate a recent dump % over the last $bars H4 candles.
+     * Returns: (highest high over window - latest close) / highest high * 100.
+     */
+    private function estimateRecentDump(array $candles, int $bars): float
+    {
+        $n     = count($candles);
+        $slice = array_slice($candles, max(0, $n - $bars));
+        if (empty($slice)) {
+            return 0.0;
+        }
+        $high      = 0.0;
+        $lastClose = 0.0;
+        foreach ($slice as $c) {
+            $h = (float)($c['high']  ?? 0.0);
+            $cl = (float)($c['close'] ?? 0.0);
+            if ($h > $high)   { $high      = $h; }
+            if ($cl > 0.0)    { $lastClose = $cl; }
+        }
+        if ($high <= 0.0 || $lastClose <= 0.0) {
+            return 0.0;
+        }
+        return max(0.0, (($high - $lastClose) / $high) * 100.0);
+    }
+
+    /**
+     * Return [distFromHighPct, distFromLowPct] for the current close
+     * relative to the recent high/low over $lookbackBars.
+     */
+    private function distanceFromRecentHighLow(array $candles, int $lookbackBars): array
+    {
+        $n     = count($candles);
+        $slice = array_slice($candles, max(0, $n - $lookbackBars));
+        if (empty($slice)) {
+            return [0.0, 0.0];
+        }
+        $high      = 0.0;
+        $low       = PHP_FLOAT_MAX;
+        $lastClose = 0.0;
+        foreach ($slice as $c) {
+            $h  = (float)($c['high']  ?? 0.0);
+            $l  = (float)($c['low']   ?? 0.0);
+            $cl = (float)($c['close'] ?? 0.0);
+            if ($h > $high)          { $high      = $h; }
+            if ($l < $low && $l > 0) { $low       = $l; }
+            if ($cl > 0.0)           { $lastClose = $cl; }
+        }
+        if ($lastClose <= 0.0) {
+            return [0.0, 0.0];
+        }
+        $distFromHigh = $high > 0.0
+            ? (($high - $lastClose) / $high) * 100.0 : 0.0;
+        $distFromLow  = ($low < PHP_FLOAT_MAX && $low > 0.0)
+            ? (($lastClose - $low) / $low) * 100.0 : 0.0;
+        return [max(0.0, $distFromHigh), max(0.0, $distFromLow)];
+    }
+
+    /**
+     * Compute a 0–10 reversal context score based on all sub-check results.
+     * Used by bearish_reversal_exception eligibility.
+     */
+    private function computeReversalContextScore(
+        array $postDumpResult,
+        array $flatBaseResult,
+        array $reclaimResult,
+        bool  $activeFallingKnife,
+        bool  $activeDowntrend,
+        array $config
+    ): float {
+        if ($activeFallingKnife) {
+            return 0.0;
+        }
+
+        $score = 0.0;
+
+        // Post-dump presence (0–2)
+        if ((bool)($postDumpResult['post_dump_detected'] ?? false)) {
+            $score += 2.0;
+        }
+
+        // Stabilization quality (0–3)
+        if ((bool)($postDumpResult['stabilization_detected'] ?? false)) {
+            $stabScore = (float)($postDumpResult['stabilization_score'] ?? 0.0);
+            $score += min(3.0, $stabScore * 0.3);
+        }
+
+        // Flat base quality (0–2.5)
+        if ((bool)($flatBaseResult['flat_base_detected'] ?? false)) {
+            $fbScore = (float)($flatBaseResult['flat_base_score'] ?? 0.0);
+            $score += min(2.5, $fbScore * 0.25);
+        }
+
+        // Reclaim quality (0–2.5)
+        if ((bool)($reclaimResult['reclaim_after_flat_detected'] ?? false)) {
+            $reclScore = (float)($reclaimResult['reclaim_score'] ?? 0.0);
+            $score += min(2.5, $reclScore * 0.25);
+        }
+
+        // Penalty for active downtrend without stabilization
+        if ($activeDowntrend && !(bool)($postDumpResult['stabilization_detected'] ?? false)) {
+            $score = max(0.0, $score - 2.0);
+        }
+
+        return min(10.0, $score);
     }
 
     /**
@@ -2119,6 +2989,14 @@ final class DoubleBottomLongService
             'context_score'           => (float)($signal['context_score']           ?? 0.0),
             'candidate_quality_score' => (float)($signal['candidate_quality_score'] ?? 0.0),
             'quality_pass'            => (bool)($signal['quality_pass']             ?? true),
+
+            // Coin trend context handoff guard
+            'active_falling_knife_detected'  => (bool)($signal['active_falling_knife_detected']  ?? false),
+            'reclaim_after_flat_detected'     => (bool)($signal['reclaim_after_flat_detected']     ?? false),
+            'entry_context_score'             => (float)($signal['entry_context_score']             ?? 0.0),
+            'bearish_reversal_exception_used' => (bool)($signal['bearish_reversal_exception_used'] ?? false),
+            'setup_context_type'              => (string)($signal['setup_context_type']             ?? 'standard'),
+            'signal_quality_class'            => (string)($signal['signal_quality_class']           ?? 'clean_signal'),
 
             // Execution parameters (strategy-owned; no exchange-order fields yet)
             'stop_mode'                     => (string)($config['stop_mode']                     ?? 'fixed_from_liq_zone'),

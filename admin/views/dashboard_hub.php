@@ -680,6 +680,7 @@ function renderDashboardHub(): string
                 }
             }
             if ($stratId === 'corridor_bottom_long') {
+                $_cblValidated    = (int)($stratLastRun['candidates_validated']    ?? 0);
                 $_cblHandoffReady = (int)($stratLastRun['handoff_ready'] ?? $slrHandoffReady);
                 $cycleLineHtml = 'статус <code>' . $e($rsStatus) . '</code>'
                     . ' · кандидатов <code>' . $slrCandidates . '</code>'

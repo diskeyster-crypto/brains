@@ -1118,9 +1118,11 @@ final class DoubleBottomLongService
 
             $result['rechecked_total']++;
 
-            // Safety: mode must be demo when mode is set
-            $entryMode = (string)($entry['mode'] ?? 'demo');
-            if ($entryMode !== 'demo' && ($config['mode'] ?? 'demo') !== $entryMode) {
+            // Only recheck entries that match the current operating mode.
+            // Entries stored under a different mode are invalidated (stale config).
+            $entryMode  = (string)($entry['mode'] ?? 'demo');
+            $configMode = (string)($config['mode'] ?? 'demo');
+            if ($entryMode !== $configMode) {
                 $result['invalidated_total']++;
                 continue;
             }

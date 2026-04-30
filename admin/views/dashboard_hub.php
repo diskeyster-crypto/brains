@@ -705,7 +705,7 @@ function renderDashboardHub(): string
                 $_dblPendConf    = (int)($stratLastRun['pending_confirmation_confirmed_total']          ?? 0);
                 $_dblPendInval   = (int)($stratLastRun['pending_confirmation_invalidated_total']        ?? 0);
                 $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
-                    . ' · обработано <code>' . $_dblScanned . '/' . $_dblTotal . ' в окне</code>'
+                    . ' · обработано <code>' . $_dblScanned . '/' . $_dblTotal . '</code>'
                     . ' · ctx fetch <code>' . $_dblCtxFetch . '</code>'
                     . ' · preflt skip <code>' . $_dblCtxSkip . '</code>'
                     . ' · setup ok <code>' . $_dblSetupOk . '</code>'

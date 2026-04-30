@@ -173,6 +173,14 @@ return [
     'entry_context_fallback_interval'         => '5',    // used if 1m fetch fails
     'entry_context_fallback_lookback_candles' => 180,    // 15 h on 5m
 
+    // Lazy entry-context fetch: only fetch 1m/5m candles when a symbol
+    // survives cheap H4 filters (trend / corridor / wave).
+    // This avoids API load for symbols that will be hard-rejected anyway.
+    'entry_context_lazy_fetch_enabled'             => true,   // master toggle for lazy fetch
+    'entry_context_fetch_after_prefilters'         => true,   // skip if all H4 gates fail
+    'entry_context_fetch_for_rejected_diagnostics' => false,  // also fetch for already-rejected symbols
+    'entry_context_max_symbols_per_tick'           => 50,     // max ctx fetches per cron tick
+
     'max_runtime_seconds'  => 55,
 
     // Candle data

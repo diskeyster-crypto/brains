@@ -19,6 +19,6 @@ return [
     'mode'               => 'demo',    // demo | passive — never live in this repo
     'enabled'            => true,
     'handoff_enabled'    => true,
-    'batch_size'         => 200,
-    'max_symbols_per_run'=> 200,
+    'batch_size'         => 50,
+    'max_symbols_per_run'=> 50,
 ];

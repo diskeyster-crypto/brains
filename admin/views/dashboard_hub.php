@@ -665,8 +665,21 @@ function renderDashboardHub(): string
             }
 
             // ── Build cycle-line HTML (strategy-specific labels) ──────────
+            // For double_bottom_long: extract registry rotation fields from last_run.
+            $rsRuntimeExtra = '';
+            if ($stratId === 'double_bottom_long' && $slrHasData) {
+                $_dblRegTotal  = (int)($stratLastRun['registry_total']          ?? 0);
+                $_dblWinStart  = (int)($stratLastRun['registry_window_start']   ?? 0);
+                $_dblWinEnd    = (int)($stratLastRun['registry_window_end']     ?? 0);
+                $_dblNextCurs  = (int)($stratLastRun['next_registry_cursor']    ?? 0);
+                $_dblRound     = (int)($stratLastRun['full_registry_scan_round'] ?? 0);
+                if ($_dblRegTotal > 0) {
+                    $rsRuntimeExtra = ' · окно ' . $_dblWinStart . '–' . $_dblWinEnd
+                        . ' из ' . $_dblRegTotal
+                        . ' · круг ' . $_dblRound;
+                }
+            }
             if ($stratId === 'corridor_bottom_long') {
-                $_cblValidated    = (int)($stratLastRun['candidates_validated']    ?? 0);
                 $_cblHandoffReady = (int)($stratLastRun['handoff_ready'] ?? $slrHandoffReady);
                 $cycleLineHtml = 'статус <code>' . $e($rsStatus) . '</code>'
                     . ' · кандидатов <code>' . $slrCandidates . '</code>'
@@ -872,7 +885,7 @@ HTG;
         <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Runtime</td>
         <td colspan="3" style="padding:3px 0;">
           <code style="font-size:11px;">{$rsStatus}</code>
-          <span style="font-size:11px;color:var(--ui-text-muted);margin-left:8px;">{$rsCursor}/{$rsTotal} · цикл {$rsCycleId} · {$rsLastTick}</span>
+          <span style="font-size:11px;color:var(--ui-text-muted);margin-left:8px;">{$rsCursor}/{$rsTotal} · цикл {$rsCycleId} · {$rsLastTick}{$rsRuntimeExtra}</span>
         </td>
       </tr>
       <tr>
@@ -887,6 +900,16 @@ HTML;
       <tr>
         <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Скан</td>
         <td colspan="3" style="padding:3px 0;font-size:11px;color:var(--ui-text-muted);">{$scanSummaryHtml}</td>
+      </tr>
+HTML;
+            }
+            // For double_bottom_long: show cursor / registry row when rotation data is available.
+            if ($stratId === 'double_bottom_long' && isset($_dblRegTotal) && $_dblRegTotal > 0) {
+                $_dblCursorStr = $e((string)$_dblNextCurs) . ' / registry ' . $e((string)$_dblRegTotal);
+                $stratCards .= <<<HTML
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Cursor</td>
+        <td colspan="3" style="padding:3px 0;font-size:11px;color:var(--ui-text-muted);">next {$_dblCursorStr}</td>
       </tr>
 HTML;
             }

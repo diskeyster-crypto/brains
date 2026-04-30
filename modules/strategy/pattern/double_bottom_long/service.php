@@ -30,6 +30,13 @@ final class DoubleBottomLongService
 
     private const H4_INTERVAL = '240';  // Bybit kline interval
 
+    // ── Per-tick entry-context fetch counters (reset at start of each tickBatch) ──
+    private int $ctxFetchAttemptedThisTick       = 0;
+    private int $ctxFetchSuccessThisTick         = 0;
+    private int $ctxFetchFailedThisTick          = 0;
+    private int $ctxFetchSkippedPrefilterThisTick = 0;
+    private int $ctxFetchSkippedLimitThisTick     = 0;
+
     public function __construct(?string $moduleDir = null)
     {
         if ($moduleDir !== null) {
@@ -321,6 +328,13 @@ final class DoubleBottomLongService
         $batchSz = max(1, (int)($config['batch_size'] ?? 20));
         $maxSec  = max(10, (int)($config['max_runtime_seconds'] ?? 55));
 
+        // Reset per-tick entry-context fetch counters.
+        $this->ctxFetchAttemptedThisTick        = 0;
+        $this->ctxFetchSuccessThisTick          = 0;
+        $this->ctxFetchFailedThisTick           = 0;
+        $this->ctxFetchSkippedPrefilterThisTick = 0;
+        $this->ctxFetchSkippedLimitThisTick     = 0;
+
         $symbols = (array)($state['symbols']  ?? []);
         $cursor  = (int)($state['cursor']      ?? 0);
         $total   = count($symbols);
@@ -575,12 +589,21 @@ final class DoubleBottomLongService
             (int)($state['cycle_id'] ?? 0),
             $totalProcessed,
             $total,
-            ($isDone && $continuousEnabled) ? $total : max(0, $total - $cursor)
+            max(0, $total - $cursor)
         );
         $state['run_status']              = $state['status'];
         $state['processed_symbols']       = $totalProcessed;
         $state['total_symbols']           = $total;
-        $state['remaining_symbols']       = ($isDone && $continuousEnabled) ? $total : max(0, $total - $cursor);
+        // remaining_symbols = how many in the current window are still unprocessed.
+        // Always 0 when processed >= total (regardless of continuous mode).
+        $state['remaining_symbols']       = max(0, $total - $cursor);
+        // registry_symbols_remaining_until_wrap = how many symbols remain in the full
+        // registry before the rotation wraps back to position 0.
+        $registryTotal  = (int)($state['registry_total'] ?? 0);
+        $nextCursorVal  = (int)($state['next_registry_cursor'] ?? 0);
+        $state['registry_symbols_remaining_until_wrap'] = $registryTotal > 0
+            ? max(0, $registryTotal - $nextCursorVal)
+            : 0;
         $state['continuous_scan_enabled'] = $continuousEnabled;
         $state['signals_json_semantics']  = 'active_rolling_pool_across_cycles_ttl';
         $state['signals_active_final_total'] = count($signals);
@@ -761,6 +784,14 @@ final class DoubleBottomLongService
             'selected_symbols_total'    => (int)($state['selected_symbols_total']    ?? 0),
             'max_symbols_per_run'       => (int)($config['max_symbols_per_run']      ?? 0),
             'batch_size'                => (int)($config['batch_size']               ?? 50),
+            'registry_symbols_remaining_until_wrap' => (int)($state['registry_symbols_remaining_until_wrap'] ?? 0),
+            // Entry-context fetch counters for this tick
+            'entry_context_fetch_attempted_total'       => $this->ctxFetchAttemptedThisTick,
+            'entry_context_fetch_success_total'         => $this->ctxFetchSuccessThisTick,
+            'entry_context_fetch_failed_total'          => $this->ctxFetchFailedThisTick,
+            'entry_context_fetch_skipped_prefilter_total' => $this->ctxFetchSkippedPrefilterThisTick,
+            'entry_context_fetch_skipped_limit_total'   => $this->ctxFetchSkippedLimitThisTick,
+            'entry_context_fetch_limit'                 => (int)($config['entry_context_max_symbols_per_tick'] ?? 50),
         ]);
 
         if ($isDone) {
@@ -802,6 +833,17 @@ final class DoubleBottomLongService
             'registry_wrapped'         => (bool)($state['registry_wrapped']         ?? false),
             'full_registry_scan_round' => (int)($state['full_registry_scan_round']  ?? 0),
             'selected_symbols_total'   => (int)($state['selected_symbols_total']    ?? 0),
+            'registry_symbols_remaining_until_wrap' => (int)($state['registry_symbols_remaining_until_wrap'] ?? 0),
+            // Entry-context lazy-fetch config
+            'entry_context_lazy_fetch_enabled'             => (bool)($config['entry_context_lazy_fetch_enabled']             ?? true),
+            'entry_context_fetch_after_prefilters'         => (bool)($config['entry_context_fetch_after_prefilters']         ?? true),
+            'entry_context_fetch_for_rejected_diagnostics' => (bool)($config['entry_context_fetch_for_rejected_diagnostics'] ?? false),
+            'entry_context_max_symbols_per_tick'           => (int)($config['entry_context_max_symbols_per_tick']            ?? 50),
+            // Entry-context fetch counters from the last completed cycle tick
+            'entry_context_fetch_attempted_total'           => $this->ctxFetchAttemptedThisTick,
+            'entry_context_fetch_success_total'             => $this->ctxFetchSuccessThisTick,
+            'entry_context_fetch_skipped_prefilter_total'   => $this->ctxFetchSkippedPrefilterThisTick,
+            'entry_context_fetch_skipped_limit_total'       => $this->ctxFetchSkippedLimitThisTick,
             // Stop — fixed_from_liq_zone model
             'stop_mode'                  => $config['stop_mode']                    ?? 'fixed_from_liq_zone',
             'stop_from_liq_buffer_value' => $config['stop_from_liq_buffer_value']   ?? 0.002,
@@ -930,10 +972,7 @@ final class DoubleBottomLongService
     {
         $candles = $this->fetchCandles($symbol, $config);
 
-        // Fetch short-timeframe candles for entry context (dump/stab/flat/reclaim).
-        // Falls back to a wider interval if the primary fetch fails.
-        $ctxCandles = $this->fetchEntryContextCandles($symbol, $config);
-
+        // ── Cheap H4 filters — run BEFORE expensive ctx fetch ─────────────────
         $this->requireLogic('trend');
         $trend    = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternTrend())->analyse($candles);
         $trendDir = $trend['trend_direction'];
@@ -945,7 +984,63 @@ final class DoubleBottomLongService
         $this->requireLogic('wave');
         $wave = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternWave())->analyse($candles);
 
+        // ── Lazy entry-context fetch decision ────────────────────────────────
+        // Fetch 1m/5m candles only when the symbol is a plausible candidate.
+        // Skipping saves API quota for symbols already doomed by cheap H4 gates.
+        $lazyEnabled     = (bool)($config['entry_context_lazy_fetch_enabled']             ?? true);
+        $fetchAfterPre   = (bool)($config['entry_context_fetch_after_prefilters']         ?? true);
+        $fetchForRejDiag = (bool)($config['entry_context_fetch_for_rejected_diagnostics'] ?? false);
+        $maxPerTick      = max(1, (int)($config['entry_context_max_symbols_per_tick']     ?? 50));
+
+        $ctxCandles         = [];
+        $entryCtxAvailable  = false;
+        $entryCtxSkipReason = null;
+
+        if ($lazyEnabled && $fetchAfterPre) {
+            // Heuristic: at least one cheap gate must be promising, OR the regime
+            // is bearish/unknown (bearish_reversal_exception might rescue the symbol).
+            $trendOk = ($trendDir === 'bullish')
+                || ($regimeStr !== 'bullish')    // bearish/unknown: reversal exception possible
+                || !(bool)($config['trend_long_require_bullish'] ?? true);
+            $corrOk  = (bool)($corridor['bucket_allowed_long'] ?? false);
+            $waveOk  = ($wave['wave_direction'] === 'up') && ($wave['wave_state'] === 'corrective');
+
+            $shouldFetch = $trendOk || $corrOk || $waveOk || $fetchForRejDiag;
+
+            if ($shouldFetch) {
+                if ($this->ctxFetchAttemptedThisTick >= $maxPerTick) {
+                    $entryCtxSkipReason = 'entry_context_fetch_limit_reached';
+                    $this->ctxFetchSkippedLimitThisTick++;
+                } else {
+                    $this->ctxFetchAttemptedThisTick++;
+                    $fetched = $this->fetchEntryContextCandles($symbol, $config);
+                    if (count($fetched) >= 5) {
+                        $ctxCandles        = $fetched;
+                        $entryCtxAvailable = true;
+                        $this->ctxFetchSuccessThisTick++;
+                    } else {
+                        $this->ctxFetchFailedThisTick++;
+                    }
+                }
+            } else {
+                $entryCtxSkipReason = 'skipped_entry_context_due_prefilter';
+                $this->ctxFetchSkippedPrefilterThisTick++;
+            }
+        } else {
+            // Lazy fetch disabled: always fetch ctx candles.
+            $this->ctxFetchAttemptedThisTick++;
+            $fetched = $this->fetchEntryContextCandles($symbol, $config);
+            if (count($fetched) >= 5) {
+                $ctxCandles        = $fetched;
+                $entryCtxAvailable = true;
+                $this->ctxFetchSuccessThisTick++;
+            } else {
+                $this->ctxFetchFailedThisTick++;
+            }
+        }
+
         // ── Coin trend context ────────────────────────────────────────────────
+        // Runs on $ctxCandles (1m/5m when fetched) or falls back to H4 when empty.
         $coinCtx = $this->pipelineCoinTrendContext($candles, $ctxCandles, $config);
 
         $diagBase = [
@@ -1009,6 +1104,9 @@ final class DoubleBottomLongService
             // Entry context candle diagnostics
             'ctx_interval'                   => $coinCtx['ctx_interval'],
             'ctx_candles_count'              => $coinCtx['ctx_candles_count'],
+            // Entry context availability (lazy-fetch decision result)
+            'entry_context_available'        => $entryCtxAvailable,
+            'entry_context_skip_reason'      => $entryCtxSkipReason,
             // Intraday double-bottom detection
             'intraday_double_bottom_detected'       => $coinCtx['intraday_double_bottom_detected'],
             'bottom_1_price'                        => $coinCtx['bottom_1_price'],
@@ -1157,6 +1255,17 @@ final class DoubleBottomLongService
             if (!$wGate['pass']) {
                 return $this->reject($diagBase, $symbol, 'double_bottom', $wGate['reason']);
             }
+        }
+
+        // ── Entry context safety gate ─────────────────────────────────────────
+        // Block signal emission when entry-context candles were not fetched.
+        // The coin_trend_context pipeline ran on H4 fallback only in this case,
+        // and its dump/stab/flat/reclaim results cannot be trusted for decisions.
+        if (!(bool)($diagBase['entry_context_available'] ?? true)) {
+            return $this->reject(
+                $diagBase, $symbol, 'double_bottom',
+                (string)($diagBase['entry_context_skip_reason'] ?? 'entry_context_unavailable')
+            );
         }
 
         $this->requireLogic('double_bottom');

@@ -1251,7 +1251,7 @@ final class DoubleBottomLongService
                 $postCreateHigh = 0.0;
                 foreach ($recentBars as $bar) {
                     $barTs = isset($bar['time']) ? (int)($bar['time'] / 1000) : 0;
-                    if ($barTs >= $createdTs - 60) {
+                    if ($barTs >= $createdTs - 60 /* 1-minute clock-skew tolerance */) {
                         $barClose = (float)($bar['close'] ?? 0.0);
                         if ($barClose > $postCreateHigh) {
                             $postCreateHigh = $barClose;

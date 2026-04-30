@@ -401,7 +401,10 @@ final class DoubleBottomLongService
                     );
                 }
                 if ($result['final_signal_status'] === 'emitted') {
-                    $newlyEmitted[] = $result['signal'];
+                    $sig = $result['signal'];
+                    // Tag signal with setup_allowed so applySignalFilters() can track final_eligibility per setup.
+                    $sig['_setup_signal_allowed'] = (bool)($result['setup_signal_allowed'] ?? false);
+                    $newlyEmitted[] = $sig;
                     $emittedCandidates = $this->mergeCandidateRecord(
                         $emittedCandidates,
                         $this->buildEmittedCandidateRecord($result, (int)($state['cycle_id'] ?? 0), $tickAt)
@@ -472,6 +475,15 @@ final class DoubleBottomLongService
                     'control_check_status'    => $result['confirm_status']          ?? null,
                     'final_signal_status'     => $fss,
                     'reject_reason'           => $rejectR,
+                    // Setup-allowed funnel diagnostics
+                    'setup_class'              => $result['setup_class']              ?? null,
+                    'setup_signal_allowed'     => $result['setup_signal_allowed']     ?? false,
+                    'setup_allowed_kill_stage'  => $result['setup_allowed_kill_stage']  ?? null,
+                    'setup_allowed_kill_reason' => $result['setup_allowed_kill_reason'] ?? null,
+                    'intraday_double_bottom_detected' => $result['intraday_double_bottom_detected'] ?? false,
+                    'neckline_reclaim_confirmed'      => $result['neckline_reclaim_confirmed']      ?? false,
+                    'reclaim_after_flat_detected'     => $result['reclaim_after_flat_detected']     ?? false,
+                    'entry_context_score'             => $result['entry_context_score']             ?? null,
                     'signal_id'               => $result['signal_id']              ?? null,
                     'winner_selected'         => null,
                     'winner_reject_reason'    => null,
@@ -829,6 +841,21 @@ final class DoubleBottomLongService
             'setup_class_diagnostic_recovery_total'          => (int)($cycleStats['setup_class_diagnostic_recovery_total']          ?? 0),
             'setup_class_signal_allowed_total'               => (int)($cycleStats['setup_class_signal_allowed_total']               ?? 0),
             'setup_class_signal_blocked_total'               => (int)($cycleStats['setup_class_signal_blocked_total']               ?? 0),
+            // Setup-allowed funnel counters
+            'setup_allowed_total'                               => (int)($cycleStats['setup_allowed_total']                               ?? 0),
+            'setup_allowed_classic_pattern_checked_total'       => (int)($cycleStats['setup_allowed_classic_pattern_checked_total']       ?? 0),
+            'setup_allowed_classic_pattern_pass_total'          => (int)($cycleStats['setup_allowed_classic_pattern_pass_total']          ?? 0),
+            'setup_allowed_classic_pattern_failed_total'        => (int)($cycleStats['setup_allowed_classic_pattern_failed_total']        ?? 0),
+            'setup_allowed_quality_checked_total'               => (int)($cycleStats['setup_allowed_quality_checked_total']               ?? 0),
+            'setup_allowed_quality_pass_total'                  => (int)($cycleStats['setup_allowed_quality_pass_total']                  ?? 0),
+            'setup_allowed_quality_failed_total'                => (int)($cycleStats['setup_allowed_quality_failed_total']                ?? 0),
+            'setup_allowed_control_checked_total'               => (int)($cycleStats['setup_allowed_control_checked_total']               ?? 0),
+            'setup_allowed_control_pass_total'                  => (int)($cycleStats['setup_allowed_control_pass_total']                  ?? 0),
+            'setup_allowed_control_failed_total'                => (int)($cycleStats['setup_allowed_control_failed_total']                ?? 0),
+            'setup_allowed_final_eligibility_checked_total'     => (int)($cycleStats['setup_allowed_final_eligibility_checked_total']     ?? 0),
+            'setup_allowed_final_eligibility_pass_total'        => (int)($cycleStats['setup_allowed_final_eligibility_pass_total']        ?? 0),
+            'setup_allowed_final_eligibility_failed_total'      => (int)($cycleStats['setup_allowed_final_eligibility_failed_total']      ?? 0),
+            'setup_allowed_signal_emitted_total'                => (int)($cycleStats['setup_allowed_signal_emitted_total']                ?? 0),
         ]);
 
         if ($isDone) {
@@ -1231,6 +1258,10 @@ final class DoubleBottomLongService
             'confirm_status'         => null,
             'confirm_bars_waited'    => 0,
             'candidate_expired'      => false,
+            // Forward setup funnel fields so accumulateStats() can track per-stage counts.
+            'setup_allowed'            => $longResult['setup_allowed']            ?? false,
+            'setup_allowed_kill_stage'  => $longResult['setup_allowed_kill_stage']  ?? null,
+            'setup_allowed_kill_reason' => $longResult['setup_allowed_kill_reason'] ?? null,
             'final_signal_status'    => 'no_signal',
             'reject_reason'          => $longRej ?? 'no_valid_candidate',
             'signal'                 => null,
@@ -1369,16 +1400,31 @@ final class DoubleBottomLongService
             }
         }
 
+        // Setup class gate passed — stamp for funnel diagnostics.
+        $diagBase['setup_allowed']            = true;
+        $diagBase['setup_allowed_kill_stage']  = null;
+        $diagBase['setup_allowed_kill_reason'] = null;
+
         $this->requireLogic('double_bottom');
         $candidate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternDoubleBottom())->detect($candles, $config);
         if (!$candidate['candidate_found']) {
-            // Allow B-class (post_dump_base_reclaim) to proceed without strict H4 double-bottom.
+            // A-class bypass: intraday double-bottom + neckline reclaim already confirmed;
+            // skip H4 PatternDoubleBottom unless require_h4_double_bottom_after_intraday_setup=true.
+            $requireH4ForIntraday = (bool)($config['require_h4_double_bottom_after_intraday_setup'] ?? false);
+            // B-class bypass: post-dump base reclaim may skip H4 pattern when explicitly allowed.
             $allowWithoutClassic = (bool)($config['allow_post_dump_base_reclaim_without_classic_double_bottom'] ?? true);
             $currentSetupClass   = (string)($diagBase['setup_class'] ?? 'none');
-            if ($allowWithoutClassic && $currentSetupClass === 'post_dump_base_reclaim') {
-                // B-class: skip H4 pattern requirement; continue to quality check with mock candidate.
+
+            $skipH4 = (!$requireH4ForIntraday && $currentSetupClass === 'classic_intraday_double_bottom_reclaim')
+                   || ($allowWithoutClassic      && $currentSetupClass === 'post_dump_base_reclaim');
+
+            if ($skipH4) {
+                // Keep candidate_found=true; neckline/low fields remain null for non-H4 path.
                 $candidate = array_merge($candidate, ['candidate_found' => true]);
             } else {
+                // Classic-pattern kill: stamp kill stage before rejecting.
+                $diagBase['setup_allowed_kill_stage']  = 'classic_pattern';
+                $diagBase['setup_allowed_kill_reason'] = 'setup_allowed_but_classic_pattern_failed';
                 return $this->reject($diagBase, $symbol, 'double_bottom', $candidate['reject_reason'] ?? 'no_double_bottom', true, [
                     'neckline_value'       => $candidate['neckline']              ?? 0.0,
                     'low1_value'           => $candidate['low1_price']            ?? 0.0,
@@ -1394,6 +1440,9 @@ final class DoubleBottomLongService
             $candidate, $wave, $config, $side
         );
         if (!$quality['quality_pass']) {
+            // Quality kill: stamp before returning so accumulateStats() can track it.
+            $diagBase['setup_allowed_kill_stage']  = 'quality';
+            $diagBase['setup_allowed_kill_reason'] = 'setup_allowed_but_quality_failed';
             return array_merge($diagBase, [
                 'symbol'                  => $symbol,
                 'candidate_found'         => true,
@@ -1428,6 +1477,9 @@ final class DoubleBottomLongService
             $candIdx = max(0, count($candles) - 3);
             $confirm = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternControlCheck())->check($candidate, $candles, $candIdx, $config);
             if (!$confirm['confirm_pass']) {
+                // Control-check kill: stamp before returning.
+                $diagBase['setup_allowed_kill_stage']  = 'control_check';
+                $diagBase['setup_allowed_kill_reason'] = 'setup_allowed_but_control_failed';
                 return array_merge($diagBase, [
                     'symbol'                  => $symbol,
                     'candidate_found'         => true,
@@ -1500,6 +1552,8 @@ final class DoubleBottomLongService
             'candidate_expired'       => false,
             'final_signal_status'     => 'emitted',
             'reject_reason'           => null,
+            'setup_allowed_kill_stage'  => null,
+            'setup_allowed_kill_reason' => null,
             'signal_id'               => $signal['signal_id'],
             'signal'                  => $signal,
         ]);
@@ -1605,6 +1659,10 @@ final class DoubleBottomLongService
         $rejectedFinalTrend       = 0;
         $rejectedFinalContext     = 0;
 
+        // Setup-allowed funnel: track how many setup_allowed signals enter/survive final_eligibility.
+        $setupAllowedBeforeElig = 0;
+        $setupAllowedAfterElig  = 0;
+
         $isComplete = static function (array $s): bool {
             static $requiredKeys = [
                 'quality_pass', 'candidate_quality_score', 'neckline_score',
@@ -1622,6 +1680,11 @@ final class DoubleBottomLongService
         };
 
         foreach ($merged as $id => $s) {
+            $isSetupAllowed = (bool)($s['_setup_signal_allowed'] ?? false);
+            if ($isSetupAllowed) {
+                $setupAllowedBeforeElig++;
+            }
+
             // 1a. Quality completeness
             if (!$isComplete($s)) {
                 $rejectedFinalQuality++;
@@ -1698,6 +1761,9 @@ final class DoubleBottomLongService
                 continue;
             }
 
+            if ($isSetupAllowed) {
+                $setupAllowedAfterElig++;
+            }
             $eligible[] = $s;
         }
 
@@ -1763,6 +1829,9 @@ final class DoubleBottomLongService
             'rejected_loser_by_quality'     => $rejectedLoserByQuality,
             'rejected_missing_quality'      => $rejectedFinalQuality,
             'rejected_low_neckline'         => $rejectedFinalLowNeckline,
+            // Setup-allowed final_eligibility tracking
+            'setup_allowed_before_final_eligibility' => $setupAllowedBeforeElig,
+            'setup_allowed_after_final_eligibility'  => $setupAllowedAfterElig,
         ];
 
         return [array_values($winnerSignals), $filterStats, $signalOutcomeMap];
@@ -2008,6 +2077,34 @@ final class DoubleBottomLongService
             }
         }
 
+        // Setup-allowed funnel counters — track where setup_allowed symbols die.
+        if ((bool)($result['setup_allowed'] ?? false)) {
+            $inc($stats, 'setup_allowed_total');
+            $killStage = (string)($result['setup_allowed_kill_stage'] ?? '');
+
+            $inc($stats, 'setup_allowed_classic_pattern_checked_total');
+            if ($killStage === 'classic_pattern') {
+                $inc($stats, 'setup_allowed_classic_pattern_failed_total');
+            } else {
+                $inc($stats, 'setup_allowed_classic_pattern_pass_total');
+                $inc($stats, 'setup_allowed_quality_checked_total');
+                if ($killStage === 'quality') {
+                    $inc($stats, 'setup_allowed_quality_failed_total');
+                } else {
+                    $inc($stats, 'setup_allowed_quality_pass_total');
+                    $inc($stats, 'setup_allowed_control_checked_total');
+                    if ($killStage === 'control_check') {
+                        $inc($stats, 'setup_allowed_control_failed_total');
+                    } else {
+                        $inc($stats, 'setup_allowed_control_pass_total');
+                        if ($fss === 'emitted') {
+                            $inc($stats, 'setup_allowed_signal_emitted_total');
+                        }
+                    }
+                }
+            }
+        }
+
         return $stats;
     }
 
@@ -2044,6 +2141,15 @@ final class DoubleBottomLongService
             $finalRejDist[$fReason] = ($finalRejDist[$fReason] ?? 0) + (int)$fCnt;
         }
         $s['final_reject_reason_distribution'] = empty($finalRejDist) ? (object)[] : $finalRejDist;
+        // Setup-allowed final_eligibility tracking (additive running totals)
+        $saBeforeElig = (int)($filterStats['setup_allowed_before_final_eligibility'] ?? 0);
+        $saAfterElig  = (int)($filterStats['setup_allowed_after_final_eligibility']  ?? 0);
+        $s['setup_allowed_final_eligibility_checked_total'] =
+            ($s['setup_allowed_final_eligibility_checked_total'] ?? 0) + $saBeforeElig;
+        $s['setup_allowed_final_eligibility_pass_total'] =
+            ($s['setup_allowed_final_eligibility_pass_total'] ?? 0) + $saAfterElig;
+        $s['setup_allowed_final_eligibility_failed_total'] =
+            ($s['setup_allowed_final_eligibility_failed_total'] ?? 0) + max(0, $saBeforeElig - $saAfterElig);
         return $s;
     }
 
@@ -2185,6 +2291,21 @@ final class DoubleBottomLongService
             'reject_neckline_reclaim_not_confirmed_total'       => 0,
             'reject_entry_too_far_after_neckline_reclaim_total' => 0,
             'reject_setup_class_not_signal_allowed_total'       => 0,
+            // Setup-allowed funnel counters (per-stage after setup_class gate passes)
+            'setup_allowed_total'                               => 0,
+            'setup_allowed_classic_pattern_checked_total'       => 0,
+            'setup_allowed_classic_pattern_pass_total'          => 0,
+            'setup_allowed_classic_pattern_failed_total'        => 0,
+            'setup_allowed_quality_checked_total'               => 0,
+            'setup_allowed_quality_pass_total'                  => 0,
+            'setup_allowed_quality_failed_total'                => 0,
+            'setup_allowed_control_checked_total'               => 0,
+            'setup_allowed_control_pass_total'                  => 0,
+            'setup_allowed_control_failed_total'                => 0,
+            'setup_allowed_final_eligibility_checked_total'     => 0,
+            'setup_allowed_final_eligibility_pass_total'        => 0,
+            'setup_allowed_final_eligibility_failed_total'      => 0,
+            'setup_allowed_signal_emitted_total'                => 0,
         ];
     }
 

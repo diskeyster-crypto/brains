@@ -178,6 +178,11 @@ return [
     // Allow B-class signal without a strict classic double-bottom pattern on H4
     'allow_post_dump_base_reclaim_without_classic_double_bottom' => true,
 
+    // Allow A-class (classic_intraday_double_bottom_reclaim) to skip the H4 PatternDoubleBottom gate.
+    // Default false means H4 pattern is still required even for A-class.
+    // Set to false to let the intraday DB + neckline reclaim alone suffice for A-class.
+    'require_h4_double_bottom_after_intraday_setup' => false,
+
     // ── Intraday double-bottom detection on entry-context candles ────────────
     // Detects: dump → bottom_1 → neckline bounce → bottom_2/low hold → reclaim
     'intraday_double_bottom_enabled'                     => true,

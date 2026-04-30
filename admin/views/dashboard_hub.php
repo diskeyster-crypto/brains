@@ -688,12 +688,20 @@ function renderDashboardHub(): string
                 $_dblCtxFetch  = (int)($stratLastRun['entry_context_fetch_attempted_total']           ?? 0);
                 $_dblCtxSkip   = (int)($stratLastRun['entry_context_fetch_skipped_prefilter_total']   ?? 0);
                 $_dblSetupOk   = (int)($stratLastRun['setup_class_signal_allowed_total']              ?? 0);
+                $_dblKillPat   = (int)($stratLastRun['setup_allowed_classic_pattern_failed_total']    ?? 0);
+                $_dblKillQual  = (int)($stratLastRun['setup_allowed_quality_failed_total']            ?? 0);
+                $_dblKillCtrl  = (int)($stratLastRun['setup_allowed_control_failed_total']            ?? 0);
+                $_dblKillFinal = (int)($stratLastRun['setup_allowed_final_eligibility_failed_total']  ?? 0);
                 $_dblSigEmit   = (int)($stratLastRun['current_cycle_signals_emitted_total'] ?? $stratLastRun['signals_emitted_total'] ?? $slrGeneratedSig);
                 $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
                     . ' · обработано <code>' . $_dblScanned . '/' . $_dblTotal . ' в окне</code>'
                     . ' · ctx fetch <code>' . $_dblCtxFetch . '</code>'
                     . ' · preflt skip <code>' . $_dblCtxSkip . '</code>'
                     . ' · setup ok <code>' . $_dblSetupOk . '</code>'
+                    . ' · killed pat <code>' . $_dblKillPat . '</code>'
+                    . ' · killed qual <code>' . $_dblKillQual . '</code>'
+                    . ' · killed ctrl <code>' . $_dblKillCtrl . '</code>'
+                    . ' · killed final <code>' . $_dblKillFinal . '</code>'
                     . ' · сигналов <code>' . $_dblSigEmit . '</code>'
                     . ' · активных <code>' . $slrPoolTotal . '</code>';
             } elseif ($stratId === 'corridor_bottom_long') {
@@ -1573,6 +1581,10 @@ ROWS;
         'neckline_reclaim_not_confirmed'            => 'Neckline reclaim не подтверждён',
         'entry_too_far_after_neckline_reclaim'      => 'Вход далеко после neckline reclaim',
         'setup_class_not_signal_allowed'            => 'Класс setup не разрешён для сигнала',
+        'setup_allowed_but_classic_pattern_failed'  => 'Setup разрешён, но H4 паттерн не найден',
+        'setup_allowed_but_quality_failed'          => 'Setup разрешён, но качество не прошло',
+        'setup_allowed_but_control_failed'          => 'Setup разрешён, но контроль не прошёл',
+        'setup_allowed_but_final_eligibility_failed'=> 'Setup разрешён, но финальный фильтр не прошёл',
         'classic_intraday_double_bottom_reclaim'    => 'Intraday double bottom + reclaim',
         'post_dump_base_reclaim'                    => 'Слив + база + reclaim',
         'diagnostic_recovery_context'              => 'Recovery context только диагностика',

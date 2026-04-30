@@ -813,7 +813,22 @@ final class DoubleBottomLongService
             'reject_entry_too_far_after_reclaim_total'       => (int)($cycleStats['reject_entry_too_far_after_reclaim_total']       ?? 0),
             'reject_no_post_dump_flat_reclaim_total'         => (int)($cycleStats['reject_no_post_dump_flat_reclaim_total']         ?? 0),
             'reject_no_intraday_double_bottom_total'         => (int)($cycleStats['reject_no_intraday_double_bottom_total']         ?? 0),
+            'reject_neckline_reclaim_not_confirmed_total'       => (int)($cycleStats['reject_neckline_reclaim_not_confirmed_total']       ?? 0),
+            'reject_entry_too_far_after_neckline_reclaim_total' => (int)($cycleStats['reject_entry_too_far_after_neckline_reclaim_total'] ?? 0),
+            'reject_setup_class_not_signal_allowed_total'        => (int)($cycleStats['reject_setup_class_not_signal_allowed_total']       ?? 0),
             'reject_classic_double_bottom_not_confirmed_total' => (int)($cycleStats['reject_classic_double_bottom_not_confirmed_total'] ?? 0),
+            // Intraday double-bottom detection counters
+            'intraday_double_bottom_checked_total'           => (int)($cycleStats['intraday_double_bottom_checked_total']           ?? 0),
+            'intraday_double_bottom_detected_total'          => (int)($cycleStats['intraday_double_bottom_detected_total']          ?? 0),
+            'intraday_double_bottom_reclaim_confirmed_total' => (int)($cycleStats['intraday_double_bottom_reclaim_confirmed_total'] ?? 0),
+            'intraday_double_bottom_reject_total'            => (int)($cycleStats['intraday_double_bottom_reject_total']            ?? 0),
+            // Setup class counters
+            'setup_class_checked_total'                      => (int)($cycleStats['setup_class_checked_total']                      ?? 0),
+            'setup_class_classic_double_bottom_total'        => (int)($cycleStats['setup_class_classic_double_bottom_total']        ?? 0),
+            'setup_class_post_dump_base_reclaim_total'       => (int)($cycleStats['setup_class_post_dump_base_reclaim_total']       ?? 0),
+            'setup_class_diagnostic_recovery_total'          => (int)($cycleStats['setup_class_diagnostic_recovery_total']          ?? 0),
+            'setup_class_signal_allowed_total'               => (int)($cycleStats['setup_class_signal_allowed_total']               ?? 0),
+            'setup_class_signal_blocked_total'               => (int)($cycleStats['setup_class_signal_blocked_total']               ?? 0),
         ]);
 
         if ($isDone) {

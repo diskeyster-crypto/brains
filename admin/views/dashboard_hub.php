@@ -687,11 +687,13 @@ function renderDashboardHub(): string
                 $_dblTotal     = (int)($stratLastRun['total']       ?? $stratLastRun['symbols_total']   ?? 0);
                 $_dblCtxFetch  = (int)($stratLastRun['entry_context_fetch_attempted_total']           ?? 0);
                 $_dblCtxSkip   = (int)($stratLastRun['entry_context_fetch_skipped_prefilter_total']   ?? 0);
+                $_dblSetupOk   = (int)($stratLastRun['setup_class_signal_allowed_total']              ?? 0);
                 $_dblSigEmit   = (int)($stratLastRun['current_cycle_signals_emitted_total'] ?? $stratLastRun['signals_emitted_total'] ?? $slrGeneratedSig);
                 $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
                     . ' · обработано <code>' . $_dblScanned . '/' . $_dblTotal . ' в окне</code>'
                     . ' · ctx fetch <code>' . $_dblCtxFetch . '</code>'
                     . ' · preflt skip <code>' . $_dblCtxSkip . '</code>'
+                    . ' · setup ok <code>' . $_dblSetupOk . '</code>'
                     . ' · сигналов <code>' . $_dblSigEmit . '</code>'
                     . ' · активных <code>' . $slrPoolTotal . '</code>';
             } elseif ($stratId === 'corridor_bottom_long') {

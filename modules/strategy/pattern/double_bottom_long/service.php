@@ -3705,7 +3705,7 @@ final class DoubleBottomLongService
         }
 
         // 4. No post-dump (price never dumped so no double-bottom setup possible)
-        if (!(bool)($ctx['post_dump_detected'] ?? true)) {
+        if (!(bool)($ctx['post_dump_detected'] ?? false)) {
             return 'no_post_dump_detected';
         }
 
@@ -3766,7 +3766,7 @@ final class DoubleBottomLongService
         }
 
         // 14. No intraday double bottom
-        if (!(bool)($ctx['intraday_double_bottom_detected'] ?? true)) {
+        if (!(bool)($ctx['intraday_double_bottom_detected'] ?? false)) {
             return 'no_intraday_double_bottom';
         }
 
@@ -3791,6 +3791,7 @@ final class DoubleBottomLongService
             $reason === 'active_falling_knife'                       => 'falling_knife',
             $reason === 'entry_context_unavailable'                  => 'entry_context',
             $reason === 'skipped_entry_context_due_prefilter'        => 'prefilter',
+            $reason === 'entry_too_far_after_reclaim'                => 'entry_distance',
             str_starts_with($reason, 'entry_context_')               => 'entry_context',
             $reason === 'no_post_dump_detected'                      => 'post_dump',
             $reason === 'active_downtrend_no_stabilization'          => 'stabilization',
@@ -3800,7 +3801,6 @@ final class DoubleBottomLongService
             $reason === 'base_support_broken'                        => 'support',
             $reason === 'reclaim_after_flat_not_confirmed'           => 'reclaim',
             $reason === 'reclaim_failed_back_below_level'            => 'reclaim',
-            $reason === 'entry_too_far_after_reclaim'                => 'entry_distance',
             $reason === 'no_post_dump_flat_reclaim'                  => 'post_dump_flat_reclaim',
             $reason === 'no_intraday_double_bottom'                  => 'intraday_pattern',
             $reason === 'classic_double_bottom_not_confirmed'        => 'classic_pattern',

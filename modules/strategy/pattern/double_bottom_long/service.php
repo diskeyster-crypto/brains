@@ -382,6 +382,34 @@ final class DoubleBottomLongService
         $emittedCandidates = (array)$this->readJson('storage/candidates_emitted.json', []);
         $synQFailedExamples = [];  // accumulated per tick, max 5
 
+        // Pre-initialise pending confirmation counters for this tick
+        $pendingConfirmationStats = [
+            'loaded_total'      => 0,
+            'rechecked_total'   => 0,
+            'added_total'       => 0,
+            'confirmed_total'   => 0,
+            'invalidated_total' => 0,
+            'expired_total'     => 0,
+            'active_total'      => 0,
+        ];
+
+        // Recheck pending confirmations first (before normal symbol processing)
+        if ((bool)($config['pending_confirmation_enabled'] ?? true)
+            && (bool)($config['pending_confirmation_recheck_first'] ?? true)
+        ) {
+            $pendingRecheckResult = $this->recheckPendingConfirmations($config, $regimeStr);
+            foreach ($pendingRecheckResult['newly_emitted'] as $sig) {
+                $sig['_setup_signal_allowed'] = true;
+                $newlyEmitted[] = $sig;
+            }
+            $pendingConfirmationStats['loaded_total']    = $pendingRecheckResult['loaded_total'];
+            $pendingConfirmationStats['rechecked_total'] = $pendingRecheckResult['rechecked_total'];
+            $pendingConfirmationStats['confirmed_total'] = $pendingRecheckResult['confirmed_total'];
+            $pendingConfirmationStats['invalidated_total'] = $pendingRecheckResult['invalidated_total'];
+            $pendingConfirmationStats['expired_total']   = $pendingRecheckResult['expired_total'];
+            $pendingConfirmationStats['active_total']    = $pendingRecheckResult['active_total'];
+        }
+
         // Pre-initialise fields that are only assigned inside the $isDone block
         // so they are always defined when used in the last_run.json write below.
         $completedCycleId = null;
@@ -413,6 +441,11 @@ final class DoubleBottomLongService
                 }
                 $stats      = $this->accumulateStats($stats,      $result);
                 $cycleStats = $this->accumulateStats($cycleStats, $result);
+
+                // Track pending confirmation additions
+                if (($result['pending_confirmation_status'] ?? null) === 'added') {
+                    $pendingConfirmationStats['added_total']++;
+                }
 
                 // Collect synthetic quality fail examples for diagnostics (max 5 per tick)
                 if (count($synQFailedExamples) < 5
@@ -896,6 +929,19 @@ final class DoubleBottomLongService
             'synthetic_quality_post_dump_base_reclaim_pass_total' => (int)($cycleStats['synthetic_quality_post_dump_base_reclaim_pass_total'] ?? 0),
             'reject_synthetic_candidate_quality_failed_total'    => (int)($cycleStats['reject_synthetic_candidate_quality_failed_total']    ?? 0),
             'reject_quality_weak_structure_total'                => (int)($cycleStats['reject_quality_weak_structure_total']                ?? 0),
+            // A-class intraday DB specific counters
+            'synthetic_quality_intraday_db_checked_total'        => (int)($cycleStats['synthetic_quality_intraday_db_checked_total']        ?? 0),
+            'synthetic_quality_intraday_db_pass_total'           => (int)($cycleStats['synthetic_quality_intraday_db_pass_total']           ?? 0),
+            'synthetic_quality_intraday_db_failed_total'         => (int)($cycleStats['synthetic_quality_intraday_db_failed_total']         ?? 0),
+            'synthetic_quality_generic_entry_context_warning_total' => (int)($cycleStats['synthetic_quality_generic_entry_context_warning_total'] ?? 0),
+            // Pending confirmation counters
+            'pending_confirmation_loaded_total'      => $pendingConfirmationStats['loaded_total'],
+            'pending_confirmation_rechecked_total'   => $pendingConfirmationStats['rechecked_total'],
+            'pending_confirmation_added_total'       => $pendingConfirmationStats['added_total'],
+            'pending_confirmation_confirmed_total'   => $pendingConfirmationStats['confirmed_total'],
+            'pending_confirmation_invalidated_total' => $pendingConfirmationStats['invalidated_total'],
+            'pending_confirmation_expired_total'     => $pendingConfirmationStats['expired_total'],
+            'pending_confirmation_active_total'      => $pendingConfirmationStats['active_total'],
             // Diagnostic examples: last 5 synthetic quality failures in this tick
             'synthetic_quality_failed_examples'                  => $synQFailedExamples,
         ]);
@@ -990,6 +1036,174 @@ final class DoubleBottomLongService
             "return " . var_export($snap, true) . ";\n",
         ];
         @file_put_contents($path, implode('', $lines));
+    }
+
+    /**
+     * Write a pending confirmation entry to storage/pending_confirmations.json.
+     * Lazy-creates the file; respects pending_confirmation_max_items cap.
+     */
+    private function writePendingConfirmation(array $entry, array $config): void
+    {
+        $path     = $this->moduleDir . '/storage/pending_confirmations.json';
+        $maxItems = max(1, (int)($config['pending_confirmation_max_items'] ?? 20));
+        $existing = [];
+        if (file_exists($path)) {
+            $raw = @file_get_contents($path);
+            $decoded = $raw ? @json_decode($raw, true) : null;
+            $existing = is_array($decoded) ? $decoded : [];
+        }
+        // Deduplicate: if same symbol+setup_class already pending, replace it.
+        $existing = array_values(array_filter($existing, static function (array $e) use ($entry): bool {
+            return !(($e['symbol'] ?? '') === $entry['symbol']
+                && ($e['setup_class'] ?? '') === ($entry['setup_class'] ?? ''));
+        }));
+        $existing[] = $entry;
+        // Cap to max items (keep newest entries)
+        if (count($existing) > $maxItems) {
+            $existing = array_slice($existing, -$maxItems);
+        }
+        @file_put_contents($path, json_encode(array_values($existing), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
+    }
+
+    /**
+     * At the start of each tick, recheck any pending confirmations.
+     * - Prune expired entries
+     * - Re-fetch entry-context candles for each pending symbol
+     * - If confirm bars now satisfied and safety checks pass: emit signal candidate
+     * - If safety check fails or entry too far: invalidate
+     *
+     * Returns stats array + newly_emitted signal candidates.
+     */
+    private function recheckPendingConfirmations(array $config, string $regimeStr): array
+    {
+        $path = $this->moduleDir . '/storage/pending_confirmations.json';
+        $result = [
+            'newly_emitted'     => [],
+            'loaded_total'      => 0,
+            'rechecked_total'   => 0,
+            'confirmed_total'   => 0,
+            'invalidated_total' => 0,
+            'expired_total'     => 0,
+            'active_total'      => 0,
+        ];
+
+        if (!file_exists($path)) {
+            return $result;
+        }
+
+        $raw     = @file_get_contents($path);
+        $pending = $raw ? @json_decode($raw, true) : null;
+        if (!is_array($pending) || empty($pending)) {
+            return $result;
+        }
+
+        $result['loaded_total'] = count($pending);
+        $nowTs = time();
+        $kept  = [];
+
+        foreach ($pending as $entry) {
+            if (!is_array($entry) || empty($entry['symbol'])) {
+                continue;
+            }
+            $symbol    = (string)$entry['symbol'];
+            $expiresAt = (string)($entry['expires_at'] ?? '');
+            $expireTs  = $expiresAt ? strtotime($expiresAt) : 0;
+
+            // Prune expired
+            if ($expireTs > 0 && $nowTs > $expireTs) {
+                $result['expired_total']++;
+                $result['invalidated_total']++;
+                continue;
+            }
+
+            $result['rechecked_total']++;
+
+            // Safety: mode must be demo when mode is set
+            $entryMode = (string)($entry['mode'] ?? 'demo');
+            if ($entryMode !== 'demo' && ($config['mode'] ?? 'demo') !== $entryMode) {
+                $result['invalidated_total']++;
+                continue;
+            }
+
+            // Re-fetch current entry context candles for this symbol
+            try {
+                $ctxCandles = $this->fetchEntryContextCandles($symbol, $config);
+            } catch (\Throwable $e) {
+                $kept[] = $entry;
+                $result['active_total']++;
+                continue;
+            }
+
+            if (count($ctxCandles) < 5) {
+                // Cannot recheck without candles; keep pending
+                $kept[] = $entry;
+                $result['active_total']++;
+                continue;
+            }
+
+            $lastClose = (float)($ctxCandles[count($ctxCandles) - 1]['close'] ?? 0.0);
+
+            // Safety: falling knife
+            if ((bool)($config['synthetic_quality_require_no_falling_knife'] ?? true)) {
+                // Simple: if last close < neckline_level significantly, invalidate
+                $neckline = (float)($entry['neckline_level'] ?? 0.0);
+                if ($neckline > 0.0 && $lastClose < $neckline * (1.0 - 0.03)) {
+                    $result['invalidated_total']++;
+                    continue;
+                }
+            }
+
+            // Check entry distance from neckline
+            $neckline = (float)($entry['neckline_level'] ?? 0.0);
+            $maxDist  = (float)($config['synthetic_quality_intraday_db_max_entry_distance_from_neckline_pct']
+                ?? $config['synthetic_quality_max_entry_distance_from_neckline_pct'] ?? 2.0);
+            if ($neckline > 0.0 && $maxDist > 0.0) {
+                $distPct = (($lastClose - $neckline) / $neckline) * 100.0;
+                if ($distPct > $maxDist) {
+                    $result['invalidated_total']++;
+                    continue;
+                }
+            }
+
+            // Check confirm bars: count bars above neckline
+            $confirmBarsRequired = max(1, (int)($entry['confirm_bars_required'] ?? 2));
+            $barsAbove = 0;
+            $checkCandles = array_slice($ctxCandles, -$confirmBarsRequired - 5);
+            foreach ($checkCandles as $bar) {
+                if ((float)($bar['close'] ?? 0.0) >= $neckline * 0.998) {
+                    $barsAbove++;
+                }
+            }
+
+            if ($barsAbove >= $confirmBarsRequired) {
+                // Confirmed — build a minimal signal candidate for the emitter
+                $result['confirmed_total']++;
+                $result['newly_emitted'][] = [
+                    'symbol'                           => $symbol,
+                    'side'                             => $entry['side'] ?? 'long',
+                    'setup_class'                      => $entry['setup_class'] ?? 'classic_intraday_double_bottom_reclaim',
+                    'pending_confirmation_status'      => 'confirmed',
+                    'pending_confirmation_reason'      => 'confirm_bars_satisfied',
+                    'neckline_level'                   => $neckline,
+                    'entry_distance_from_neckline_pct' => $neckline > 0.0 ? round((($lastClose - $neckline) / $neckline) * 100, 4) : 0.0,
+                    'pending_created_at'               => $entry['created_at'] ?? null,
+                    'pending_confirmed_at'             => date('c'),
+                    'synthetic_quality_score'          => $entry['synthetic_quality_score'] ?? null,
+                    'final_signal_status'              => 'pending_confirmed',
+                    'regime'                           => $regimeStr,
+                ];
+                continue;  // Do not re-add to kept; it's now confirmed and processed
+            }
+
+            // Still waiting — keep it
+            $kept[] = $entry;
+            $result['active_total']++;
+        }
+
+        // Write back the surviving pending entries
+        @file_put_contents($path, json_encode(array_values($kept), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
+
+        return $result;
     }
 
     /**
@@ -1344,6 +1558,9 @@ final class DoubleBottomLongService
             'synthetic_quality_reason'          => $longResult['synthetic_quality_reason']          ?? null,
             'synthetic_quality_block_reasons'   => $longResult['synthetic_quality_block_reasons']   ?? [],
             'synthetic_quality_components'      => $longResult['synthetic_quality_components']      ?? [],
+            'synthetic_quality_warnings'        => $longResult['synthetic_quality_warnings']        ?? [],
+            'synthetic_quality_soft_warnings'   => $longResult['synthetic_quality_soft_warnings']   ?? [],
+            'synthetic_quality_is_intraday_db'  => $longResult['synthetic_quality_is_intraday_db']  ?? false,
             'final_signal_status'    => 'no_signal',
             'reject_reason'          => $longRej ?? 'no_valid_candidate',
             'signal'                 => null,
@@ -1592,6 +1809,9 @@ final class DoubleBottomLongService
                 $diagBase['synthetic_quality_reason']  = $synQuality['synthetic_quality_reason'];
                 $diagBase['synthetic_quality_block_reasons'] = $synQuality['synthetic_quality_block_reasons'];
                 $diagBase['synthetic_quality_components']    = $synQuality['synthetic_quality_components'];
+                $diagBase['synthetic_quality_warnings']      = $synQuality['synthetic_quality_warnings'] ?? [];
+                $diagBase['synthetic_quality_soft_warnings'] = $synQuality['synthetic_quality_soft_warnings'] ?? [];
+                $diagBase['synthetic_quality_is_intraday_db'] = $synQuality['synthetic_quality_is_intraday_db'] ?? false;
                 $diagBase['quality_source']            = 'synthetic_intraday_setup';
                 return array_merge($diagBase, [
                     'symbol'                  => $symbol,
@@ -1641,6 +1861,9 @@ final class DoubleBottomLongService
             $diagBase['synthetic_quality_reason']  = $synQuality['synthetic_quality_reason'];
             $diagBase['synthetic_quality_block_reasons'] = [];
             $diagBase['synthetic_quality_components']    = $synQuality['synthetic_quality_components'];
+            $diagBase['synthetic_quality_warnings']      = $synQuality['synthetic_quality_warnings'] ?? [];
+            $diagBase['synthetic_quality_soft_warnings'] = $synQuality['synthetic_quality_soft_warnings'] ?? [];
+            $diagBase['synthetic_quality_is_intraday_db'] = $synQuality['synthetic_quality_is_intraday_db'] ?? false;
         } else {
             $this->requireLogic('candidate_quality');
             $quality = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternCandidateQuality())->score(
@@ -1690,7 +1913,38 @@ final class DoubleBottomLongService
             if (!$confirm['confirm_pass']) {
                 // Control-check kill: stamp before returning.
                 $diagBase['setup_allowed_kill_stage']  = 'control_check';
-                $diagBase['setup_allowed_kill_reason'] = 'setup_allowed_but_control_failed';
+                $confirmStatus = $confirm['confirm_status'] ?? '';
+                // waiting_for_confirm_bar: store as pending confirmation instead of final dead reject
+                $isPendingWait = $confirmStatus === 'confirm_waiting'
+                    && (bool)($config['pending_confirmation_enabled'] ?? true);
+                if ($isPendingWait) {
+                    $diagBase['setup_allowed_kill_reason']    = 'waiting_for_confirm_bar';
+                    $diagBase['pending_confirmation_status']  = 'added';
+                    $diagBase['pending_confirmation_reason']  = 'waiting_for_confirm_bar';
+                    $ttlMin = max(1, (int)($config['pending_confirmation_ttl_minutes'] ?? 15));
+                    $expiresAt = date('c', time() + $ttlMin * 60);
+                    $diagBase['pending_confirmation_expires_at'] = $expiresAt;
+                    $this->writePendingConfirmation([
+                        'symbol'                              => $symbol,
+                        'side'                                => $side,
+                        'mode'                                => $config['mode'] ?? 'demo',
+                        'setup_class'                         => $diagBase['setup_class'] ?? null,
+                        'neckline_level'                      => $candidate['neckline'] ?? null,
+                        'reclaim_level'                       => $diagBase['reclaim_level'] ?? null,
+                        'created_at'                          => date('c'),
+                        'expires_at'                          => $expiresAt,
+                        'confirm_bars_required'               => $config['reclaim_confirm_bars'] ?? $config['double_bottom_reclaim_confirm_bars'] ?? 2,
+                        'confirm_bars_seen'                   => $confirm['confirm_bars_waited'] ?? 0,
+                        'entry_distance_from_neckline_pct'    => $diagBase['entry_distance_from_neckline_pct'] ?? null,
+                        'entry_distance_from_reclaim_pct'     => $diagBase['entry_distance_from_reclaim_pct'] ?? null,
+                        'reason'                              => 'waiting_for_confirm_bar',
+                        'status'                              => 'pending',
+                        'synthetic_quality_score'             => $diagBase['synthetic_quality_score'] ?? null,
+                        'synthetic_quality_warnings'          => $diagBase['synthetic_quality_warnings'] ?? [],
+                    ], $config);
+                } else {
+                    $diagBase['setup_allowed_kill_reason'] = 'setup_allowed_but_control_failed';
+                }
                 return array_merge($diagBase, [
                     'symbol'                  => $symbol,
                     'candidate_found'         => true,
@@ -1715,8 +1969,11 @@ final class DoubleBottomLongService
                     'confirm_status'          => $confirm['confirm_status'],
                     'confirm_bars_waited'     => $confirm['confirm_bars_waited'],
                     'candidate_expired'       => $confirm['candidate_expired'],
-                    'final_signal_status'     => 'confirm_pending',
-                    'reject_reason'           => $confirm['reject_reason'],
+                    'final_signal_status'     => $isPendingWait ? 'pending_confirmation' : 'confirm_pending',
+                    'reject_reason'           => $isPendingWait ? 'waiting_for_confirm_bar' : $confirm['reject_reason'],
+                    'pending_confirmation_status'   => $diagBase['pending_confirmation_status'] ?? null,
+                    'pending_confirmation_reason'   => $diagBase['pending_confirmation_reason'] ?? null,
+                    'pending_confirmation_expires_at' => $diagBase['pending_confirmation_expires_at'] ?? null,
                     'signal'                  => null,
                 ]);
             }
@@ -2345,8 +2602,15 @@ final class DoubleBottomLongService
         if ((bool)($result['synthetic_quality_checked'] ?? false)) {
             $inc($stats, 'synthetic_quality_checked_total');
             $inc($stats, 'synthetic_quality_bypassed_old_h4_quality_total');
+            $isIntraday = (bool)($result['synthetic_quality_is_intraday_db'] ?? false);
+            if ($isIntraday) {
+                $inc($stats, 'synthetic_quality_intraday_db_checked_total');
+            }
             if ((bool)($result['synthetic_quality_pass'] ?? false)) {
                 $inc($stats, 'synthetic_quality_pass_total');
+                if ($isIntraday) {
+                    $inc($stats, 'synthetic_quality_intraday_db_pass_total');
+                }
                 $synthSrc = (string)($result['synthetic_candidate_source'] ?? '');
                 if ($synthSrc === 'intraday_double_bottom') {
                     $inc($stats, 'synthetic_quality_classic_intraday_db_pass_total');
@@ -2356,6 +2620,14 @@ final class DoubleBottomLongService
             } else {
                 $inc($stats, 'synthetic_quality_failed_total');
                 $inc($stats, 'reject_synthetic_candidate_quality_failed_total');
+                if ($isIntraday) {
+                    $inc($stats, 'synthetic_quality_intraday_db_failed_total');
+                }
+            }
+            // Count generic entry context score warnings
+            $warnings = (array)($result['synthetic_quality_warnings'] ?? []);
+            if (in_array('generic_entry_context_score_low', $warnings, true)) {
+                $inc($stats, 'synthetic_quality_generic_entry_context_warning_total');
             }
         } elseif (
             // Fallback: if synthetic_quality_checked field was lost in result merging,
@@ -4340,6 +4612,8 @@ final class DoubleBottomLongService
     {
         $setupClass  = (string)($ctx['setup_class']    ?? $candidate['candidate_source'] ?? 'unknown');
         $blockReasons = [];
+        $warnings     = [];
+        $softWarnings = [];
         $components   = [];
 
         // Hard safety blocks (shared A + B)
@@ -4354,9 +4628,10 @@ final class DoubleBottomLongService
             $blockReasons[] = 'base_support_broken';
         }
 
-        if ($setupClass === 'classic_intraday_double_bottom_reclaim'
-            || $candidate['candidate_source'] === 'intraday_double_bottom'
-        ) {
+        $isIntradayDb = $setupClass === 'classic_intraday_double_bottom_reclaim'
+            || $candidate['candidate_source'] === 'intraday_double_bottom';
+
+        if ($isIntradayDb) {
             // A-class checks
             if (!(bool)($ctx['intraday_double_bottom_detected'] ?? false)) {
                 $blockReasons[] = 'no_intraday_double_bottom';
@@ -4366,13 +4641,22 @@ final class DoubleBottomLongService
             ) {
                 $blockReasons[] = 'neckline_reclaim_not_confirmed';
             }
-            $minDbScore  = (float)($config['synthetic_quality_min_intraday_db_score'] ?? 7.5);
+            $minDbScore  = (float)($config['synthetic_quality_intraday_db_min_score']
+                ?? $config['synthetic_quality_min_intraday_db_score'] ?? 7.5);
             $dbScore     = (float)($ctx['intraday_double_bottom_score'] ?? 0.0);
             $components['intraday_db_score']   = $dbScore;
             if ($dbScore < $minDbScore) {
                 $blockReasons[] = 'intraday_db_score_too_low';
             }
-            $maxNeckDist = (float)($config['synthetic_quality_max_entry_distance_from_neckline_pct'] ?? 2.0);
+            $minSetupScore = (float)($config['synthetic_quality_intraday_db_min_setup_score']
+                ?? $config['synthetic_quality_min_setup_class_score'] ?? 7.5);
+            $setupScore  = (float)($ctx['setup_class_score'] ?? 0.0);
+            $components['setup_class_score'] = $setupScore;
+            if ($setupScore < $minSetupScore) {
+                $blockReasons[] = 'setup_class_score_too_low';
+            }
+            $maxNeckDist = (float)($config['synthetic_quality_intraday_db_max_entry_distance_from_neckline_pct']
+                ?? $config['synthetic_quality_max_entry_distance_from_neckline_pct'] ?? 2.0);
             $neckDist    = (float)($ctx['entry_distance_from_neckline_pct'] ?? 0.0);
             $components['entry_distance_from_neckline_pct'] = $neckDist;
             if ($maxNeckDist > 0.0 && $neckDist > $maxNeckDist) {
@@ -4407,25 +4691,37 @@ final class DoubleBottomLongService
         }
 
         // Shared score thresholds
-        $minClassScore   = (float)($config['synthetic_quality_min_setup_class_score']     ?? 7.5);
-        $minCtxScore     = (float)($config['synthetic_quality_min_entry_context_score']   ?? 7.5);
-        $classScore      = (float)($ctx['setup_class_score']    ?? 0.0);
-        $ctxScore        = (float)($ctx['entry_context_score']  ?? $ctx['reversal_context_score'] ?? 0.0);
-        $components['setup_class_score']   = $classScore;
-        $components['entry_context_score'] = $ctxScore;
-        if ($classScore < $minClassScore) {
-            $blockReasons[] = 'setup_class_score_too_low';
+        // setup_class_score is already handled per-class above for A-class;
+        // only apply generic shared gate for B-class and unknown.
+        if (!$isIntradayDb) {
+            $minClassScore = (float)($config['synthetic_quality_min_setup_class_score'] ?? 7.5);
+            $classScore    = (float)($ctx['setup_class_score'] ?? 0.0);
+            $components['setup_class_score'] = $classScore;
+            if ($classScore < $minClassScore) {
+                $blockReasons[] = 'setup_class_score_too_low';
+            }
         }
-        if ($ctxScore < $minCtxScore) {
-            $blockReasons[] = 'entry_context_score_too_low';
+
+        // entry_context_score: hard gate for B-class; warning-only for A-class when config says so.
+        $minCtxScore = (float)($config['synthetic_quality_min_entry_context_score'] ?? 7.5);
+        $ctxScore    = (float)($ctx['entry_context_score'] ?? $ctx['reversal_context_score'] ?? 0.0);
+        $components['entry_context_score'] = $ctxScore;
+        $requireCtxForIntraday = (bool)($config['synthetic_quality_require_generic_entry_context_score_for_intraday_db'] ?? true);
+        if ($isIntradayDb && !$requireCtxForIntraday) {
+            // A-class: downgrade low generic ctx score to warning, not a hard block.
+            if ($ctxScore < $minCtxScore) {
+                $warnings[] = 'generic_entry_context_score_low';
+                $softWarnings[] = 'generic_entry_context_score_low';
+            }
+        } else {
+            if ($ctxScore < $minCtxScore) {
+                $blockReasons[] = 'entry_context_score_too_low';
+            }
         }
 
         $pass = count($blockReasons) === 0;
 
-        // Composite score: average of the numeric components (0-10 scale) normalised to 0-1
-        $numericVals = array_filter($components, 'is_numeric');
-        $rawScore    = count($numericVals) > 0 ? (array_sum($numericVals) / count($numericVals)) : 0.0;
-        // Normalise db/class/ctx scores (0-10) to 0-1; distance scores already pct, keep as info
+        // Composite score: normalise scoring fields (0–10) to 0–1
         $scoreFields = ['intraday_db_score', 'setup_class_score', 'entry_context_score'];
         $normSum     = 0.0;
         $normCount   = 0;
@@ -4438,12 +4734,15 @@ final class DoubleBottomLongService
         $compositeScore = $normCount > 0 ? round($normSum / $normCount, 4) : 0.0;
 
         return [
-            'synthetic_quality_checked'      => true,
-            'synthetic_quality_pass'         => $pass,
-            'synthetic_quality_score'        => $compositeScore,
-            'synthetic_quality_reason'       => $pass ? 'synthetic_quality_passed' : implode(',', $blockReasons),
+            'synthetic_quality_checked'       => true,
+            'synthetic_quality_pass'          => $pass,
+            'synthetic_quality_score'         => $compositeScore,
+            'synthetic_quality_reason'        => $pass ? 'synthetic_quality_passed' : implode(',', $blockReasons),
             'synthetic_quality_block_reasons' => $blockReasons,
-            'synthetic_quality_components'   => $components,
+            'synthetic_quality_components'    => $components,
+            'synthetic_quality_warnings'      => $warnings,
+            'synthetic_quality_soft_warnings' => $softWarnings,
+            'synthetic_quality_is_intraday_db'=> $isIntradayDb,
         ];
     }
 

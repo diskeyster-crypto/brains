@@ -191,9 +191,16 @@ return [
     'synthetic_setup_quality_enabled'                      => true,
     // Minimum scores for A-class (classic_intraday_double_bottom_reclaim)
     'synthetic_quality_min_intraday_db_score'              => 7.5,
+    'synthetic_quality_intraday_db_min_score'              => 7.5,    // alias used by scorer
+    'synthetic_quality_intraday_db_min_setup_score'        => 7.5,    // A-class setup_class_score threshold
+    'synthetic_quality_intraday_db_max_entry_distance_from_neckline_pct' => 2.0,  // A-class neckline distance
     'synthetic_quality_min_setup_class_score'              => 7.5,
     'synthetic_quality_min_entry_context_score'            => 7.5,
     'synthetic_quality_max_entry_distance_from_neckline_pct' => 2.0,
+    // A-class: whether to require generic entry_context_score gate.
+    // false = downgrade low generic ctx score to a warning, not a hard block.
+    // The A-class primary quality metrics are intraday_double_bottom_score and setup_class_score.
+    'synthetic_quality_require_generic_entry_context_score_for_intraday_db' => false,
     // Minimum scores for B-class (post_dump_base_reclaim)
     'synthetic_quality_max_entry_distance_from_reclaim_pct' => 2.5,
     // Safety requirements (both A and B class)
@@ -203,6 +210,14 @@ return [
     'synthetic_quality_require_no_falling_knife'           => true,
     // When true, old H4 structure score is not used to reject synthetic candidates
     'synthetic_quality_bypass_old_h4_structure_score'      => true,
+
+    // ── Pending confirmation storage ─────────────────────────────────────────
+    // When a setup passes quality but control check waits for confirm bar,
+    // store as pending and recheck on the next tick instead of treating as a final reject.
+    'pending_confirmation_enabled'          => true,
+    'pending_confirmation_ttl_minutes'      => 15,
+    'pending_confirmation_max_items'        => 20,
+    'pending_confirmation_recheck_first'    => true,
 
     // ── Intraday double-bottom detection on entry-context candles ────────────
     // Detects: dump → bottom_1 → neckline bounce → bottom_2/low hold → reclaim

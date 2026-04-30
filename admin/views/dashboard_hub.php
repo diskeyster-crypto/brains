@@ -691,7 +691,9 @@ function renderDashboardHub(): string
                 $_dblEntrySetup  = (int)($stratLastRun['entry_setup_allowed_total']                     ?? 0);
                 $_dblSynthetic   = (int)($stratLastRun['synthetic_candidate_built_total']               ?? 0);
                 $_dblSynQPass    = (int)($stratLastRun['synthetic_quality_pass_total']                  ?? 0);
+                $_dblSynQChecked = (int)($stratLastRun['synthetic_quality_checked_total']               ?? ($stratLastRun['synthetic_quality_pass_total'] ?? 0) + ($stratLastRun['synthetic_quality_failed_total'] ?? 0));
                 $_dblSynQFail    = (int)($stratLastRun['synthetic_quality_failed_total']                ?? 0);
+                $_dblSynQCtxWarn = (int)($stratLastRun['synthetic_quality_generic_entry_context_warning_total'] ?? 0);
                 $_dblKillPat     = (int)($stratLastRun['setup_allowed_classic_pattern_failed_total']    ?? 0);
                 $_dblKillQual    = (int)($stratLastRun['setup_allowed_quality_failed_total']            ?? 0);
                 $_dblKillCtrl    = (int)($stratLastRun['setup_allowed_control_failed_total']            ?? 0);
@@ -699,6 +701,9 @@ function renderDashboardHub(): string
                 // Use current-cycle count. Fallback chain: current_cycle → active pool → cumulative.
                 $_dblSigCurrent  = (int)($stratLastRun['current_cycle_signals_emitted_total']           ?? 0);
                 $_dblSigPool     = (int)($stratLastRun['active_pool_signals_total']                     ?? $slrPoolTotal);
+                $_dblPendActive  = (int)($stratLastRun['pending_confirmation_active_total']             ?? 0);
+                $_dblPendConf    = (int)($stratLastRun['pending_confirmation_confirmed_total']          ?? 0);
+                $_dblPendInval   = (int)($stratLastRun['pending_confirmation_invalidated_total']        ?? 0);
                 $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
                     . ' · обработано <code>' . $_dblScanned . '/' . $_dblTotal . ' в окне</code>'
                     . ' · ctx fetch <code>' . $_dblCtxFetch . '</code>'
@@ -706,8 +711,14 @@ function renderDashboardHub(): string
                     . ' · setup ok <code>' . $_dblSetupOk . '</code>'
                     . ' · entry setup <code>' . $_dblEntrySetup . '</code>'
                     . ' · synthetic <code>' . $_dblSynthetic . '</code>'
-                    . ' · syn q pass <code>' . $_dblSynQPass . '/' . ($_dblSynQPass + $_dblSynQFail) . '</code>'
+                    . ' · syn q pass <code>' . $_dblSynQPass . '/' . $_dblSynQChecked . '</code>'
                     . ' · killed qual <code>' . $_dblKillQual . '</code>'
+                    . ($_dblSynQCtxWarn > 0 ? ' · ctx warn <code>' . $_dblSynQCtxWarn . '</code>' : '')
+                    . ($_dblPendActive > 0 || $_dblPendConf > 0
+                        ? ' · pending <code>' . $_dblPendActive . '</code>'
+                            . ($_dblPendConf > 0 ? ' confirmed <code>' . $_dblPendConf . '</code>' : '')
+                            . ($_dblPendInval > 0 ? ' invalid <code>' . $_dblPendInval . '</code>' : '')
+                        : '')
                     . ' · сигналов <code>' . $_dblSigCurrent . '</code>'
                     . ' · активных <code>' . $_dblSigPool . '</code>';
             } elseif ($stratId === 'corridor_bottom_long') {

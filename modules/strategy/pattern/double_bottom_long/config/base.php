@@ -152,6 +152,15 @@ return [
     'min_reversal_context_score'         => 7.0,
     'min_entry_context_score'            => 7.5,
 
+    // Entry context candles — separate short-timeframe feed for
+    // dump detection / stabilization / flat-base / reclaim.
+    // H4 candles are still used for pattern / trend / corridor / wave.
+    'entry_context_enabled'                   => true,
+    'entry_context_interval'                  => '1',    // Bybit kline interval (minutes)
+    'entry_context_lookback_candles'          => 180,    // 3 h on 1m
+    'entry_context_fallback_interval'         => '5',    // used if 1m fetch fails
+    'entry_context_fallback_lookback_candles' => 180,    // 15 h on 5m
+
     'max_runtime_seconds'  => 55,
 
     // Candle data

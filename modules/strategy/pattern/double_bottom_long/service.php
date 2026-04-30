@@ -930,6 +930,10 @@ final class DoubleBottomLongService
     {
         $candles = $this->fetchCandles($symbol, $config);
 
+        // Fetch short-timeframe candles for entry context (dump/stab/flat/reclaim).
+        // Falls back to a wider interval if the primary fetch fails.
+        $ctxCandles = $this->fetchEntryContextCandles($symbol, $config);
+
         $this->requireLogic('trend');
         $trend    = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternTrend())->analyse($candles);
         $trendDir = $trend['trend_direction'];
@@ -942,7 +946,7 @@ final class DoubleBottomLongService
         $wave = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternWave())->analyse($candles);
 
         // ── Coin trend context ────────────────────────────────────────────────
-        $coinCtx = $this->pipelineCoinTrendContext($candles, $config);
+        $coinCtx = $this->pipelineCoinTrendContext($candles, $ctxCandles, $config);
 
         $diagBase = [
             'market_regime'                  => $regimeStr,
@@ -1002,6 +1006,9 @@ final class DoubleBottomLongService
             'bearish_reversal_exception_used'=> false,  // set by tryLong() if used
             'reversal_context_score'         => $coinCtx['reversal_context_score'],
             'entry_context_score'            => $coinCtx['entry_context_score'],
+            // Entry context candle diagnostics
+            'ctx_interval'                   => $coinCtx['ctx_interval'],
+            'ctx_candles_count'              => $coinCtx['ctx_candles_count'],
         ];
 
         $longResult = $this->tryLong($symbol, $candles, $config, $regimeStr, $trendDir, $corridor, $wave, $diagBase);
@@ -1859,15 +1866,22 @@ final class DoubleBottomLongService
      *   2. Allow a bearish_reversal_exception when post-dump → flat/base → reclaim
      *      conditions are all met.
      *
-     * NOTE: Only H4 candles are available (lookback_candles); mid/long lookbacks
-     * are capped at the available candle count.
+     * @param array $candles    H4 candles — used for slope / trend / pattern logic.
+     * @param array $ctxCandles Short-timeframe candles (1m/5m) — used for dump /
+     *                          stabilization / flat-base / reclaim / S/R detection.
+     *                          Falls back to $candles when empty.
+     * @param array $config     Strategy config.
      */
-    private function pipelineCoinTrendContext(array $candles, array $config): array
+    private function pipelineCoinTrendContext(array $candles, array $ctxCandles, array $config): array
     {
         $enabled = (bool)($config['coin_trend_context_enabled'] ?? true);
 
+        // Derive the interval of the context candles for bar-count conversions.
+        $ctxInterval    = (string)($config['entry_context_interval'] ?? '1');
+        $ctxIntervalMin = max(1, (int)$ctxInterval);  // 1m, 5m, 15m etc.
+
         // Neutral context returned when the feature is disabled
-        $neutral = static function (): array {
+        $neutral = static function () use ($ctxInterval): array {
             return [
                 'coin_trend_context_status'      => 'ok',
                 'coin_trend_context_score'       => 10.0,
@@ -1916,6 +1930,8 @@ final class DoubleBottomLongService
                 'setup_context_type'             => 'standard',
                 'reversal_context_score'         => 0.0,
                 'entry_context_score'            => 10.0,
+                'ctx_interval'                   => $ctxInterval,
+                'ctx_candles_count'              => 0,
             ];
         };
 
@@ -1923,8 +1939,13 @@ final class DoubleBottomLongService
             return $neutral();
         }
 
+        // If no short-TF candles were fetched successfully, fall back to H4.
+        $ctxCandlesUsed = count($ctxCandles) >= 5 ? $ctxCandles : $candles;
+        $ctxUsedInterval = count($ctxCandles) >= 5 ? $ctxInterval : self::H4_INTERVAL;
+
         $n = count($candles);
 
+        // --- Slope calculations: always on H4 candles ----------------------
         $shortLb = min((int)($config['trend_lookback_short_candles'] ?? 60),  $n);
         $midLb   = min((int)($config['trend_lookback_mid_candles']   ?? 240), $n);
         $longLb  = min((int)($config['trend_lookback_long_candles']  ?? 720), $n);
@@ -1937,13 +1958,23 @@ final class DoubleBottomLongService
         $midSlopePct   = $this->computeSlopePct($midSlice);
         $longSlopePct  = $this->computeSlopePct($longSlice);
 
-        $recentLowerLowCount  = $this->countRecentLowerLows($shortSlice);
-        $recentLowerHighCount = $this->countRecentLowerHighs($shortSlice);
+        // --- Intraday checks: on context candles ----------------------------
+        $ctxN = count($ctxCandlesUsed);
+        $ctxShortLb = min((int)($config['trend_lookback_short_candles'] ?? 60), $ctxN);
+        $ctxShortSlice = array_slice($ctxCandlesUsed, $ctxN - $ctxShortLb);
 
-        $recentDump15mPct = $this->estimateRecentDump($candles, 2);
-        $recentDump1hPct  = $this->estimateRecentDump($candles, 4);
+        $recentLowerLowCount  = $this->countRecentLowerLows($ctxShortSlice);
+        $recentLowerHighCount = $this->countRecentLowerHighs($ctxShortSlice);
 
-        [$distFromHighPct, $distFromLowPct] = $this->distanceFromRecentHighLow($candles, $shortLb);
+        // Compute how many bars approximate 15 min and 1 h on the context interval.
+        $ctxIntervalMinUsed = count($ctxCandles) >= 5 ? $ctxIntervalMin : (int)self::H4_INTERVAL;
+        $dump15mBars = max(1, (int)round(15 / $ctxIntervalMinUsed));
+        $dump1hBars  = max(1, (int)round(60 / $ctxIntervalMinUsed));
+
+        $recentDump15mPct = $this->estimateRecentDump($ctxCandlesUsed, $dump15mBars);
+        $recentDump1hPct  = $this->estimateRecentDump($ctxCandlesUsed, $dump1hBars);
+
+        [$distFromHighPct, $distFromLowPct] = $this->distanceFromRecentHighLow($ctxCandlesUsed, $ctxN);
 
         $maxLowerLows = (int)($config['max_recent_lower_low_count'] ?? 2);
         $maxDownSlope = (float)($config['max_recent_down_slope_pct'] ?? -1.5);
@@ -1973,7 +2004,7 @@ final class DoubleBottomLongService
         ];
 
         $postDumpResult = (bool)($config['post_dump_stabilization_enabled'] ?? true)
-            ? $this->detectPostDumpStabilization($candles, $config, $pdCtx)
+            ? $this->detectPostDumpStabilization($ctxCandlesUsed, $config, $pdCtx)
             : ['post_dump_detected' => false, 'post_dump_drop_pct' => 0.0,
                'stabilization_detected' => false, 'stabilization_bars' => 0,
                'stabilization_range_width_pct' => 0.0, 'stabilization_slope_pct' => 0.0,
@@ -1981,20 +2012,20 @@ final class DoubleBottomLongService
                'stabilization_reason' => 'disabled', 'stabilization_warnings' => []];
 
         $flatBaseResult = (bool)($config['flat_base_enabled'] ?? true)
-            ? $this->detectFlatBaseAfterDump($candles, $config, $postDumpResult)
+            ? $this->detectFlatBaseAfterDump($ctxCandlesUsed, $config, $postDumpResult)
             : ['flat_base_detected' => false, 'flat_base_low' => null, 'flat_base_high' => null,
                'flat_base_mid' => null, 'flat_base_width_pct' => 0.0, 'flat_base_touches' => 0,
                'flat_base_score' => 0.0, 'flat_base_reason' => 'disabled'];
 
         $reclaimResult = (bool)($config['reclaim_after_flat_required'] ?? true)
-            ? $this->detectReclaimAfterFlatBase($candles, $config, $flatBaseResult)
+            ? $this->detectReclaimAfterFlatBase($ctxCandlesUsed, $config, $flatBaseResult)
             : ['reclaim_after_flat_detected' => false, 'reclaim_level' => null,
                'reclaim_confirmed_bars' => 0, 'reclaim_strength_pct' => 0.0,
                'reclaim_score' => 0.0, 'entry_distance_from_reclaim_pct' => 0.0,
                'reclaim_reason' => 'disabled'];
 
         $srResult = (bool)($config['support_resistance_enabled'] ?? true)
-            ? $this->detectSupportResistanceLevels($candles, $config)
+            ? $this->detectSupportResistanceLevels($ctxCandlesUsed, $config)
             : ['support_level' => null, 'resistance_level' => null, 'neckline_level' => null,
                'base_low' => null, 'base_high' => null, 'base_mid' => null, 'base_width_pct' => 0.0,
                'support_touches' => 0, 'resistance_touches' => 0,
@@ -2096,6 +2127,8 @@ final class DoubleBottomLongService
             'setup_context_type'             => $setupContextType,
             'reversal_context_score'         => round($reversalScore, 2),
             'entry_context_score'            => round($entryContextScore, 2),
+            'ctx_interval'                   => $ctxUsedInterval,
+            'ctx_candles_count'              => count($ctxCandlesUsed),
         ];
     }
 
@@ -2943,6 +2976,81 @@ final class DoubleBottomLongService
         }
 
         return $candles;
+    }
+
+    /**
+     * Fetch candles for any Bybit kline interval.
+     *
+     * Unlike fetchCandles() which is hard-coded to H4, this method accepts an
+     * arbitrary $interval string (e.g. '1', '5', '15', '60', '240') and a
+     * $limit so it can be used for entry-context short-timeframe candle fetching.
+     */
+    private function fetchCandlesForInterval(string $symbol, string $interval, int $limit, array $config): array
+    {
+        $baseUrl    = (string)($config['bybit_base_url']    ?? 'https://api.bybit.com');
+        $timeoutSec = (int)($config['bybit_timeout_sec']    ?? 10);
+
+        $url = sprintf(
+            '%s/v5/market/kline?category=linear&symbol=%s&interval=%s&limit=%d',
+            rtrim($baseUrl, '/'),
+            urlencode($symbol),
+            urlencode($interval),
+            $limit
+        );
+
+        $ctx  = stream_context_create(['http' => ['timeout' => $timeoutSec]]);
+        $raw  = @file_get_contents($url, false, $ctx);
+        $json = $raw ? json_decode($raw, true) : null;
+
+        if (!$json || ($json['retCode'] ?? -1) !== 0) {
+            return [];
+        }
+
+        $list = $json['result']['list'] ?? [];
+        $list = array_reverse($list);
+
+        $candles = [];
+        foreach ($list as $bar) {
+            $candles[] = [
+                'ts'     => (int)($bar[0] ?? 0),
+                'open'   => (float)($bar[1] ?? 0),
+                'high'   => (float)($bar[2] ?? 0),
+                'low'    => (float)($bar[3] ?? 0),
+                'close'  => (float)($bar[4] ?? 0),
+                'volume' => (float)($bar[5] ?? 0),
+            ];
+        }
+
+        return $candles;
+    }
+
+    /**
+     * Fetch entry-context candles using the short-timeframe config.
+     *
+     * Tries entry_context_interval first; on failure (empty result or API error)
+     * falls back to entry_context_fallback_interval.  Returns empty array if
+     * both fail so callers can gracefully degrade to H4.
+     */
+    private function fetchEntryContextCandles(string $symbol, array $config): array
+    {
+        if (!(bool)($config['entry_context_enabled'] ?? true)) {
+            return [];
+        }
+
+        $interval = (string)($config['entry_context_interval']          ?? '1');
+        $limit    = (int)($config['entry_context_lookback_candles']     ?? 180);
+
+        $candles = $this->fetchCandlesForInterval($symbol, $interval, $limit, $config);
+
+        if (count($candles) >= 5) {
+            return $candles;
+        }
+
+        // Primary fetch failed — try fallback interval
+        $fbInterval = (string)($config['entry_context_fallback_interval']          ?? '5');
+        $fbLimit    = (int)($config['entry_context_fallback_lookback_candles']     ?? 180);
+
+        return $this->fetchCandlesForInterval($symbol, $fbInterval, $fbLimit, $config);
     }
 
     private function requireBootstrap(): void

@@ -181,6 +181,19 @@ return [
     'entry_context_fetch_for_rejected_diagnostics' => false,  // also fetch for already-rejected symbols
     'entry_context_max_symbols_per_tick'           => 50,     // max ctx fetches per cron tick
 
+    // Cheap entry-context prefilter: score H4 signals to decide whether a symbol
+    // is a plausible reversal candidate before paying for the 1m/5m API call.
+    // Bearish regime alone must NOT trigger a fetch — only concrete H4 signals do.
+    'entry_context_prefilter_enabled'                        => true,
+    'entry_context_prefilter_min_score'                      => 2.0,
+    'entry_context_prefilter_allow_bullish_trend'            => true,
+    'entry_context_prefilter_allow_corridor_bottom'          => true,
+    'entry_context_prefilter_allow_corrective_wave'          => true,
+    'entry_context_prefilter_allow_h4_dump_candidate'        => true,
+    'entry_context_prefilter_max_distance_from_corridor_low_pct' => 8.0,
+    'entry_context_prefilter_min_h4_drop_from_recent_high_pct'   => 3.0,
+    'entry_context_prefilter_h4_dump_lookback_candles'       => 24,
+
     'max_runtime_seconds'  => 55,
 
     // Candle data

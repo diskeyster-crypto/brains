@@ -792,6 +792,10 @@ final class DoubleBottomLongService
             'entry_context_fetch_skipped_prefilter_total' => $this->ctxFetchSkippedPrefilterThisTick,
             'entry_context_fetch_skipped_limit_total'   => $this->ctxFetchSkippedLimitThisTick,
             'entry_context_fetch_limit'                 => (int)($config['entry_context_max_symbols_per_tick'] ?? 50),
+            // Entry-context prefilter cycle counters
+            'entry_context_prefilter_checked_total' => (int)($cycleStats['entry_context_prefilter_checked_total'] ?? 0),
+            'entry_context_prefilter_pass_total'    => (int)($cycleStats['entry_context_prefilter_pass_total']    ?? 0),
+            'entry_context_prefilter_reject_total'  => (int)($cycleStats['entry_context_prefilter_reject_total']  ?? 0),
         ]);
 
         if ($isDone) {
@@ -844,6 +848,9 @@ final class DoubleBottomLongService
             'entry_context_fetch_success_total'             => $this->ctxFetchSuccessThisTick,
             'entry_context_fetch_skipped_prefilter_total'   => $this->ctxFetchSkippedPrefilterThisTick,
             'entry_context_fetch_skipped_limit_total'       => $this->ctxFetchSkippedLimitThisTick,
+            // Entry-context prefilter config
+            'entry_context_prefilter_enabled'       => (bool)($config['entry_context_prefilter_enabled']       ?? true),
+            'entry_context_prefilter_min_score'     => (float)($config['entry_context_prefilter_min_score']     ?? 2.0),
             // Stop — fixed_from_liq_zone model
             'stop_mode'                  => $config['stop_mode']                    ?? 'fixed_from_liq_zone',
             'stop_from_liq_buffer_value' => $config['stop_from_liq_buffer_value']   ?? 0.002,
@@ -997,15 +1004,22 @@ final class DoubleBottomLongService
         $entryCtxSkipReason = null;
 
         if ($lazyEnabled && $fetchAfterPre) {
-            // Heuristic: at least one cheap gate must be promising, OR the regime
-            // is bearish/unknown (bearish_reversal_exception might rescue the symbol).
-            $trendOk = ($trendDir === 'bullish')
-                || ($regimeStr !== 'bullish')    // bearish/unknown: reversal exception possible
-                || !(bool)($config['trend_long_require_bullish'] ?? true);
-            $corrOk  = (bool)($corridor['bucket_allowed_long'] ?? false);
-            $waveOk  = ($wave['wave_direction'] === 'up') && ($wave['wave_state'] === 'corrective');
+            $prefEnabled = (bool)($config['entry_context_prefilter_enabled'] ?? true);
 
-            $shouldFetch = $trendOk || $corrOk || $waveOk || $fetchForRejDiag;
+            if ($prefEnabled) {
+                // Score-based prefilter: only fetch if concrete H4 signals are promising.
+                // Bearish regime alone NEVER triggers a fetch.
+                $pref        = $this->cheapEntryContextPrefilter($candles, $trend, $corridor, $wave, $config);
+                $shouldFetch = $pref['should_fetch'] || $fetchForRejDiag;
+            } else {
+                // Legacy broad condition kept for backwards compatibility when prefilter=false.
+                $trendOk = ($trendDir === 'bullish')
+                    || !(bool)($config['trend_long_require_bullish'] ?? true);
+                $corrOk  = (bool)($corridor['bucket_allowed_long'] ?? false);
+                $waveOk  = ($wave['wave_direction'] === 'up') && ($wave['wave_state'] === 'corrective');
+                $pref    = ['should_fetch' => true, 'prefilter_score' => 0.0, 'prefilter_reasons' => [], 'prefilter_reject_reason' => null];
+                $shouldFetch = $trendOk || $corrOk || $waveOk || $fetchForRejDiag;
+            }
 
             if ($shouldFetch) {
                 if ($this->ctxFetchAttemptedThisTick >= $maxPerTick) {
@@ -1028,6 +1042,7 @@ final class DoubleBottomLongService
             }
         } else {
             // Lazy fetch disabled: always fetch ctx candles.
+            $pref = ['should_fetch' => true, 'prefilter_score' => 0.0, 'prefilter_reasons' => [], 'prefilter_reject_reason' => null];
             $this->ctxFetchAttemptedThisTick++;
             $fetched = $this->fetchEntryContextCandles($symbol, $config);
             if (count($fetched) >= 5) {
@@ -1122,6 +1137,10 @@ final class DoubleBottomLongService
             'entry_distance_from_neckline_pct'      => $coinCtx['entry_distance_from_neckline_pct'],
             'intraday_double_bottom_score'          => $coinCtx['intraday_double_bottom_score'],
             'intraday_double_bottom_reason'         => $coinCtx['intraday_double_bottom_reason'],
+            // Entry-context prefilter diagnostics
+            'entry_context_prefilter_score'         => $pref['prefilter_score'],
+            'entry_context_prefilter_reasons'       => $pref['prefilter_reasons'],
+            'entry_context_prefilter_reject_reason' => $pref['prefilter_reject_reason'],
         ];
 
         $longResult = $this->tryLong($symbol, $candles, $config, $regimeStr, $trendDir, $corridor, $wave, $diagBase);
@@ -1802,6 +1821,20 @@ final class DoubleBottomLongService
             }
         }
 
+        // Entry-context prefilter counters
+        $prefScore = $result['entry_context_prefilter_score'] ?? null;
+        if ($prefScore !== null) {
+            $inc($stats, 'entry_context_prefilter_checked_total');
+            if ((bool)($result['entry_context_available'] ?? false)) {
+                $inc($stats, 'entry_context_prefilter_pass_total');
+            } else {
+                $skipReason = $result['entry_context_skip_reason'] ?? null;
+                if ($skipReason === 'skipped_entry_context_due_prefilter') {
+                    $inc($stats, 'entry_context_prefilter_reject_total');
+                }
+            }
+        }
+
         return $stats;
     }
 
@@ -1941,6 +1974,10 @@ final class DoubleBottomLongService
             'bearish_reversal_exception_blocked_total' => 0,
             'double_bottom_context_pass_total'   => 0,
             'double_bottom_context_reject_total' => 0,
+            // Entry-context prefilter counters
+            'entry_context_prefilter_checked_total' => 0,
+            'entry_context_prefilter_pass_total'    => 0,
+            'entry_context_prefilter_reject_total'  => 0,
         ];
     }
 
@@ -3410,6 +3447,105 @@ final class DoubleBottomLongService
     private function requireBootstrap(): void
     {
         require_once $this->moduleDir . '/bootstrap.php';
+    }
+
+    /**
+     * Cheap H4-based prefilter to decide whether it's worth fetching 1m/5m candles.
+     *
+     * Scores each concrete H4 signal independently:
+     *   +1  trend_direction is bullish (or non-strict mode)
+     *   +1  bucket_allowed_long=true (symbol is in a bottom corridor bucket)
+     *   +1  wave is corrective+up (pullback reversal shape)
+     *   +1  H4 price has dropped >= min_h4_drop_from_recent_high_pct from recent high
+     *   +1  last close is within max_distance_from_corridor_low_pct of corridor_low
+     *
+     * Bearish regime alone NEVER adds a point — regime is not used here at all.
+     *
+     * Returns:
+     *   should_fetch         bool
+     *   prefilter_score      float (0-5)
+     *   prefilter_reasons    string[]  (signals that scored)
+     *   prefilter_reject_reason string|null
+     */
+    private function cheapEntryContextPrefilter(
+        array $candles,
+        array $trend,
+        array $corridor,
+        array $wave,
+        array $config
+    ): array {
+        $score   = 0.0;
+        $reasons = [];
+
+        // ── Signal 1: bullish trend ───────────────────────────────────────────
+        if ((bool)($config['entry_context_prefilter_allow_bullish_trend'] ?? true)) {
+            $trendDir = $trend['trend_direction'] ?? 'unknown';
+            if ($trendDir === 'bullish') {
+                $score++;
+                $reasons[] = 'bullish_trend';
+            }
+        }
+
+        // ── Signal 2: bottom corridor bucket ─────────────────────────────────
+        if ((bool)($config['entry_context_prefilter_allow_corridor_bottom'] ?? true)) {
+            if ((bool)($corridor['bucket_allowed_long'] ?? false)) {
+                $score++;
+                $reasons[] = 'corridor_bottom_bucket';
+            }
+        }
+
+        // ── Signal 3: corrective wave (pullback) ──────────────────────────────
+        if ((bool)($config['entry_context_prefilter_allow_corrective_wave'] ?? true)) {
+            $wDir   = $wave['wave_direction'] ?? 'unknown';
+            $wState = $wave['wave_state']     ?? 'unknown';
+            if ($wDir === 'up' && $wState === 'corrective') {
+                $score++;
+                $reasons[] = 'corrective_wave_up';
+            }
+        }
+
+        // ── Signal 4: H4 dump candidate — price dropped >= N% from recent high ─
+        if ((bool)($config['entry_context_prefilter_allow_h4_dump_candidate'] ?? true)) {
+            $lookback = max(1, (int)($config['entry_context_prefilter_h4_dump_lookback_candles'] ?? 24));
+            $minDrop  = (float)($config['entry_context_prefilter_min_h4_drop_from_recent_high_pct'] ?? 3.0);
+            $slice    = array_slice($candles, -$lookback);
+            if (!empty($slice)) {
+                $recentHigh = max(array_column($slice, 'high'));
+                $lastClose  = (float)(end($slice)['close'] ?? 0.0);
+                if ($recentHigh > 0) {
+                    $dropPct = (($recentHigh - $lastClose) / $recentHigh) * 100.0;
+                    if ($dropPct >= $minDrop) {
+                        $score++;
+                        $reasons[] = 'h4_drop_from_recent_high_' . round($dropPct, 1) . 'pct';
+                    }
+                }
+            }
+        }
+
+        // ── Signal 5: price near corridor low ────────────────────────────────
+        $corrLow  = (float)($corridor['corridor_low']  ?? 0.0);
+        $corrHigh = (float)($corridor['corridor_high'] ?? 0.0);
+        $lastClose = count($candles) > 0 ? (float)(end($candles)['close'] ?? 0.0) : 0.0;
+        if ($corrLow > 0 && $lastClose > 0) {
+            $corrRange = max(0.00001, $corrHigh - $corrLow);
+            $distFromLowPct = (($lastClose - $corrLow) / $corrRange) * 100.0;
+            $maxDist = (float)($config['entry_context_prefilter_max_distance_from_corridor_low_pct'] ?? 8.0);
+            if ($distFromLowPct <= $maxDist) {
+                $score++;
+                $reasons[] = 'near_corridor_low_' . round($distFromLowPct, 1) . 'pct';
+            }
+        }
+
+        $minScore    = (float)($config['entry_context_prefilter_min_score'] ?? 2.0);
+        $shouldFetch = $score >= $minScore;
+        $rejectReason = $shouldFetch ? null : 'prefilter_score_too_low_' . $score . '_min_' . $minScore;
+
+        return [
+            'should_fetch'              => $shouldFetch,
+            'prefilter_score'           => $score,
+            'prefilter_reasons'         => $reasons,
+            'prefilter_reject_reason'   => $rejectReason,
+        ];
     }
 
     private function requireLogic(string $file): void

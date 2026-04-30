@@ -3509,8 +3509,9 @@ final class DoubleBottomLongService
             $lookback = max(1, (int)($config['entry_context_prefilter_h4_dump_lookback_candles'] ?? 24));
             $minDrop  = (float)($config['entry_context_prefilter_min_h4_drop_from_recent_high_pct'] ?? 3.0);
             $slice    = array_slice($candles, -$lookback);
-            if (!empty($slice)) {
-                $recentHigh = max(array_column($slice, 'high'));
+            $highs    = array_filter(array_column($slice, 'high'), static fn($v) => is_numeric($v) && (float)$v > 0.0);
+            if (!empty($highs)) {
+                $recentHigh = (float)max($highs);
                 $lastClose  = (float)(end($slice)['close'] ?? 0.0);
                 if ($recentHigh > 0) {
                     $dropPct = (($recentHigh - $lastClose) / $recentHigh) * 100.0;
@@ -3526,8 +3527,8 @@ final class DoubleBottomLongService
         $corrLow  = (float)($corridor['corridor_low']  ?? 0.0);
         $corrHigh = (float)($corridor['corridor_high'] ?? 0.0);
         $lastClose = count($candles) > 0 ? (float)(end($candles)['close'] ?? 0.0) : 0.0;
-        if ($corrLow > 0 && $lastClose > 0) {
-            $corrRange = max(0.00001, $corrHigh - $corrLow);
+        if ($corrLow > 0 && $lastClose > 0 && $corrHigh > $corrLow) {
+            $corrRange      = $corrHigh - $corrLow;
             $distFromLowPct = (($lastClose - $corrLow) / $corrRange) * 100.0;
             $maxDist = (float)($config['entry_context_prefilter_max_distance_from_corridor_low_pct'] ?? 8.0);
             if ($distFromLowPct <= $maxDist) {

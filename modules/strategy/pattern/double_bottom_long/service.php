@@ -1175,6 +1175,12 @@ final class DoubleBottomLongService
             'entry_distance_from_neckline_pct'      => $coinCtx['entry_distance_from_neckline_pct'],
             'intraday_double_bottom_score'          => $coinCtx['intraday_double_bottom_score'],
             'intraday_double_bottom_reason'         => $coinCtx['intraday_double_bottom_reason'],
+            // Setup class
+            'setup_class'          => $coinCtx['setup_class'],
+            'setup_class_score'    => $coinCtx['setup_class_score'],
+            'setup_class_reason'   => $coinCtx['setup_class_reason'],
+            'setup_class_warnings' => $coinCtx['setup_class_warnings'],
+            'setup_signal_allowed' => $coinCtx['setup_signal_allowed'],
             // Entry-context prefilter diagnostics
             'entry_context_prefilter_score'         => $pref['prefilter_score'],
             'entry_context_prefilter_reasons'       => $pref['prefilter_reasons'],
@@ -1335,16 +1341,37 @@ final class DoubleBottomLongService
             );
         }
 
+        // ── Setup class gate ──────────────────────────────────────────────────
+        // Only A/B classes (classic_intraday_double_bottom_reclaim, post_dump_base_reclaim)
+        // may emit signals. C (diagnostic_recovery_context) is diagnostics only.
+        if ((bool)($config['intraday_setup_classification_enabled'] ?? true)) {
+            $setupClass       = (string)($diagBase['setup_class']          ?? 'none');
+            $setupSigAllowed  = (bool)($diagBase['setup_signal_allowed']   ?? false);
+            $allowedClasses   = (array)($config['setup_class_handoff_allowed'] ?? ['classic_intraday_double_bottom_reclaim', 'post_dump_base_reclaim']);
+            if (!$setupSigAllowed || !in_array($setupClass, $allowedClasses, true)) {
+                $specificReason = $this->resolveDoubleBottomRejectReason($diagBase, $config);
+                return $this->reject($diagBase, $symbol, 'double_bottom', $specificReason);
+            }
+        }
+
         $this->requireLogic('double_bottom');
         $candidate = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternDoubleBottom())->detect($candles, $config);
         if (!$candidate['candidate_found']) {
-            return $this->reject($diagBase, $symbol, 'double_bottom', $candidate['reject_reason'] ?? 'no_double_bottom', true, [
-                'neckline_value'       => $candidate['neckline']              ?? 0.0,
-                'low1_value'           => $candidate['low1_price']            ?? 0.0,
-                'low2_value'           => $candidate['low2_price']            ?? 0.0,
-                'pattern_window_size'  => $candidate['window_size']           ?? 0,
-                'similarity_delta_pct' => $candidate['similarity_delta_pct'] ?? 0.0,
-            ]);
+            // Allow B-class (post_dump_base_reclaim) to proceed without strict H4 double-bottom.
+            $allowWithoutClassic = (bool)($config['allow_post_dump_base_reclaim_without_classic_double_bottom'] ?? true);
+            $currentSetupClass   = (string)($diagBase['setup_class'] ?? 'none');
+            if ($allowWithoutClassic && $currentSetupClass === 'post_dump_base_reclaim') {
+                // B-class: skip H4 pattern requirement; continue to quality check with mock candidate.
+                $candidate = array_merge($candidate, ['candidate_found' => true]);
+            } else {
+                return $this->reject($diagBase, $symbol, 'double_bottom', $candidate['reject_reason'] ?? 'no_double_bottom', true, [
+                    'neckline_value'       => $candidate['neckline']              ?? 0.0,
+                    'low1_value'           => $candidate['low1_price']            ?? 0.0,
+                    'low2_value'           => $candidate['low2_price']            ?? 0.0,
+                    'pattern_window_size'  => $candidate['window_size']           ?? 0,
+                    'similarity_delta_pct' => $candidate['similarity_delta_pct'] ?? 0.0,
+                ]);
+            }
         }
 
         $this->requireLogic('candidate_quality');
@@ -1922,13 +1949,47 @@ final class DoubleBottomLongService
                 'flat_base_too_wide'                          => 'reject_flat_base_too_wide_total',
                 'base_support_broken'                         => 'reject_base_support_broken_total',
                 'reclaim_after_flat_not_confirmed'            => 'reject_reclaim_after_flat_not_confirmed_total',
+                'neckline_reclaim_not_confirmed'              => 'reject_neckline_reclaim_not_confirmed_total',
+                'entry_too_far_after_neckline_reclaim'        => 'reject_entry_too_far_after_neckline_reclaim_total',
                 'entry_too_far_after_reclaim'                 => 'reject_entry_too_far_after_reclaim_total',
                 'no_post_dump_flat_reclaim'                   => 'reject_no_post_dump_flat_reclaim_total',
                 'no_intraday_double_bottom'                   => 'reject_no_intraday_double_bottom_total',
+                'setup_class_not_signal_allowed'              => 'reject_setup_class_not_signal_allowed_total',
                 'classic_double_bottom_not_confirmed'         => 'reject_classic_double_bottom_not_confirmed_total',
             ];
             if (isset($specificCounterMap[$primaryRej])) {
                 $inc($stats, $specificCounterMap[$primaryRej]);
+            }
+        }
+
+        // Intraday double-bottom classification counters
+        if ((bool)($result['entry_context_available'] ?? false)) {
+            $inc($stats, 'intraday_double_bottom_checked_total');
+            if ((bool)($result['intraday_double_bottom_detected'] ?? false)) {
+                $inc($stats, 'intraday_double_bottom_detected_total');
+                if ((bool)($result['neckline_reclaim_confirmed'] ?? false)) {
+                    $inc($stats, 'intraday_double_bottom_reclaim_confirmed_total');
+                }
+            } else {
+                $inc($stats, 'intraday_double_bottom_reject_total');
+            }
+        }
+
+        // Setup class counters
+        $setupClass = (string)($result['setup_class'] ?? 'none');
+        if ($setupClass !== 'none' && $setupClass !== '') {
+            $inc($stats, 'setup_class_checked_total');
+            if ($setupClass === 'classic_intraday_double_bottom_reclaim') {
+                $inc($stats, 'setup_class_classic_double_bottom_total');
+            } elseif ($setupClass === 'post_dump_base_reclaim') {
+                $inc($stats, 'setup_class_post_dump_base_reclaim_total');
+            } elseif ($setupClass === 'diagnostic_recovery_context') {
+                $inc($stats, 'setup_class_diagnostic_recovery_total');
+            }
+            if ((bool)($result['setup_signal_allowed'] ?? false)) {
+                $inc($stats, 'setup_class_signal_allowed_total');
+            } else {
+                $inc($stats, 'setup_class_signal_blocked_total');
             }
         }
 
@@ -2093,6 +2154,22 @@ final class DoubleBottomLongService
             'reject_no_post_dump_flat_reclaim_total'         => 0,
             'reject_no_intraday_double_bottom_total'         => 0,
             'reject_classic_double_bottom_not_confirmed_total' => 0,
+            // Intraday double-bottom classification counters
+            'intraday_double_bottom_checked_total'           => 0,
+            'intraday_double_bottom_detected_total'          => 0,
+            'intraday_double_bottom_reclaim_confirmed_total' => 0,
+            'intraday_double_bottom_reject_total'            => 0,
+            // Setup class counters
+            'setup_class_checked_total'                      => 0,
+            'setup_class_classic_double_bottom_total'        => 0,
+            'setup_class_post_dump_base_reclaim_total'       => 0,
+            'setup_class_diagnostic_recovery_total'          => 0,
+            'setup_class_signal_allowed_total'               => 0,
+            'setup_class_signal_blocked_total'               => 0,
+            // Additional specific reject reason counters
+            'reject_neckline_reclaim_not_confirmed_total'       => 0,
+            'reject_entry_too_far_after_neckline_reclaim_total' => 0,
+            'reject_setup_class_not_signal_allowed_total'       => 0,
         ];
     }
 
@@ -2223,6 +2300,12 @@ final class DoubleBottomLongService
                 'entry_distance_from_neckline_pct'      => 0.0,
                 'intraday_double_bottom_score'          => 0.0,
                 'intraday_double_bottom_reason'         => 'disabled',
+                // Setup class
+                'setup_class'          => 'none',
+                'setup_class_score'    => 0.0,
+                'setup_class_reason'   => 'disabled',
+                'setup_class_warnings' => [],
+                'setup_signal_allowed' => false,
             ];
         };
 
@@ -2337,6 +2420,18 @@ final class DoubleBottomLongService
         // ── Intraday double-bottom detection on entry-context candles ─────────
         $intradayDbResult = $this->detectIntradayDoubleBottom($ctxCandlesUsed, $config);
 
+        // ── Setup class classification ────────────────────────────────────────
+        // Build a flat context for classifyReversalSetup (merge all sub-results).
+        $classifyCtx = array_merge(
+            $postDumpResult, $flatBaseResult, $reclaimResult, $srResult,
+            [
+                'active_falling_knife_detected'   => $activeFallingKnife,
+                'entry_context_score'             => $entryContextScore,
+            ],
+            $intradayDbResult
+        );
+        $setupClass = $this->classifyReversalSetup($classifyCtx, $config);
+
         // Determine status
         $status = 'ok';
         $reason = 'ok';
@@ -2438,6 +2533,120 @@ final class DoubleBottomLongService
             'entry_distance_from_neckline_pct'      => (float)($intradayDbResult['entry_distance_from_neckline_pct'] ?? 0.0),
             'intraday_double_bottom_score'          => (float)($intradayDbResult['intraday_double_bottom_score'] ?? 0.0),
             'intraday_double_bottom_reason'         => (string)($intradayDbResult['intraday_double_bottom_reason'] ?? 'not_run'),
+            // Setup class
+            'setup_class'          => $setupClass['setup_class'],
+            'setup_class_score'    => $setupClass['setup_class_score'],
+            'setup_class_reason'   => $setupClass['setup_class_reason'],
+            'setup_class_warnings' => $setupClass['setup_class_warnings'],
+            'setup_signal_allowed' => $setupClass['setup_signal_allowed'],
+        ];
+    }
+
+    /**
+     * Classify the intraday reversal setup into an explicit setup class.
+     *
+     * A — classic_intraday_double_bottom_reclaim
+     * B — post_dump_base_reclaim
+     * C — diagnostic_recovery_context (no signal permitted)
+     * none — no recovery context at all
+     *
+     * @param array $ctx Merged coin-trend context (from pipelineCoinTrendContext).
+     * @param array $config Strategy configuration.
+     */
+    private function classifyReversalSetup(array $ctx, array $config): array
+    {
+        $disabled = [
+            'setup_class'          => 'none',
+            'setup_class_score'    => 0.0,
+            'setup_class_reason'   => 'disabled',
+            'setup_class_warnings' => [],
+            'setup_signal_allowed' => false,
+        ];
+
+        if (!(bool)($config['intraday_setup_classification_enabled'] ?? true)) {
+            return $disabled;
+        }
+
+        $knife         = (bool)($ctx['active_falling_knife_detected'] ?? false);
+        $supportBroken = (bool)($ctx['support_broken']                ?? false);
+
+        // ── A-class: classic_intraday_double_bottom_reclaim ───────────────────
+        $idbDetected   = (bool)($ctx['intraday_double_bottom_detected'] ?? false);
+        $idbScore      = (float)($ctx['intraday_double_bottom_score']   ?? 0.0);
+        $idbMinScore   = (float)($config['intraday_double_bottom_min_score'] ?? 7.5);
+        $neckReclaim   = (bool)($ctx['neckline_reclaim_confirmed']      ?? false);
+        $entryDistNeck = (float)($ctx['entry_distance_from_neckline_pct'] ?? 0.0);
+        $maxDistNeck   = (float)($config['double_bottom_max_entry_distance_from_neckline_pct'] ?? 3.0);
+
+        if ($idbDetected && $neckReclaim && !$knife && !$supportBroken
+            && ($maxDistNeck <= 0.0 || $entryDistNeck <= $maxDistNeck)
+            && $idbScore >= $idbMinScore
+        ) {
+            return [
+                'setup_class'          => 'classic_intraday_double_bottom_reclaim',
+                'setup_class_score'    => round($idbScore, 2),
+                'setup_class_reason'   => 'pass',
+                'setup_class_warnings' => [],
+                'setup_signal_allowed' => true,
+            ];
+        }
+
+        // ── B-class: post_dump_base_reclaim ───────────────────────────────────
+        $bEnabled       = (bool)($config['post_dump_base_reclaim_enabled']               ?? true);
+        $bMinScore      = (float)($config['post_dump_base_reclaim_min_score']            ?? 7.5);
+        $bReqSupport    = (bool)($config['post_dump_base_reclaim_requires_support_hold'] ?? true);
+        $bReqReclaim    = (bool)($config['post_dump_base_reclaim_requires_reclaim']      ?? true);
+        $bMaxEntryDst   = (float)($config['max_entry_distance_from_reclaim_pct']         ?? 2.5);
+
+        $postDump   = (bool)($ctx['post_dump_detected']         ?? false);
+        $stab       = (bool)($ctx['stabilization_detected']     ?? false);
+        $flatBase   = (bool)($ctx['flat_base_detected']         ?? false);
+        $reclaim    = (bool)($ctx['reclaim_after_flat_detected'] ?? false);
+        $entryDist  = (float)($ctx['entry_distance_from_reclaim_pct'] ?? 0.0);
+        $ctxScore   = (float)($ctx['entry_context_score']       ?? 0.0);
+
+        $supportHoldOk = !$bReqSupport || !$supportBroken;
+        $reclaimOk     = !$bReqReclaim || $reclaim;
+
+        if ($bEnabled && $postDump && $stab && $flatBase && $supportHoldOk && $reclaimOk
+            && !$knife
+            && ($bMaxEntryDst <= 0.0 || $entryDist <= $bMaxEntryDst)
+            && $ctxScore >= $bMinScore
+        ) {
+            return [
+                'setup_class'          => 'post_dump_base_reclaim',
+                'setup_class_score'    => round($ctxScore, 2),
+                'setup_class_reason'   => 'pass',
+                'setup_class_warnings' => [],
+                'setup_signal_allowed' => true,
+            ];
+        }
+
+        // ── C-class: diagnostic_recovery_context ─────────────────────────────
+        if ($postDump || $stab || $idbDetected) {
+            $cReason = $knife ? 'falling_knife'
+                : (!$postDump ? 'no_post_dump'
+                : (!$stab ? 'no_stabilization'
+                : (!$flatBase ? 'no_flat_base'
+                : (!$reclaimOk ? 'no_reclaim'
+                : ($supportBroken ? 'support_broken'
+                : ($ctxScore < $bMinScore ? 'score_too_low'
+                : 'conditions_not_met'))))));
+            return [
+                'setup_class'          => 'diagnostic_recovery_context',
+                'setup_class_score'    => round($ctxScore, 2),
+                'setup_class_reason'   => $cReason,
+                'setup_class_warnings' => [],
+                'setup_signal_allowed' => false,
+            ];
+        }
+
+        return [
+            'setup_class'          => 'none',
+            'setup_class_score'    => 0.0,
+            'setup_class_reason'   => 'no_recovery_context',
+            'setup_class_warnings' => [],
+            'setup_signal_allowed' => false,
         ];
     }
 
@@ -3752,7 +3961,23 @@ final class DoubleBottomLongService
             return 'reclaim_failed_back_below_level';
         }
 
-        // 12. Entry too far after reclaim
+        // 12. Intraday neckline reclaim not confirmed
+        if ((bool)($ctx['intraday_double_bottom_detected'] ?? false)
+            && !(bool)($ctx['neckline_reclaim_confirmed'] ?? false)
+        ) {
+            return 'neckline_reclaim_not_confirmed';
+        }
+
+        // 13. Entry too far after intraday neckline reclaim
+        $maxNeckDst = (float)($config['double_bottom_max_entry_distance_from_neckline_pct'] ?? 0.0);
+        if ($maxNeckDst > 0.0
+            && (bool)($ctx['neckline_reclaim_confirmed'] ?? false)
+            && (float)($ctx['entry_distance_from_neckline_pct'] ?? 0.0) > $maxNeckDst
+        ) {
+            return 'entry_too_far_after_neckline_reclaim';
+        }
+
+        // 14. Entry too far after reclaim
         $maxEntryDist = (float)($config['max_entry_distance_from_reclaim_pct'] ?? 0.0);
         if ($maxEntryDist > 0.0
             && (float)($ctx['entry_distance_from_reclaim_pct'] ?? 0.0) > $maxEntryDist
@@ -3760,7 +3985,7 @@ final class DoubleBottomLongService
             return 'entry_too_far_after_reclaim';
         }
 
-        // 13. Missing dump → flat → reclaim chain
+        // 15. Missing dump → flat → reclaim chain
         $hasDump   = (bool)($ctx['post_dump_detected']         ?? false);
         $hasFlat   = (bool)($ctx['flat_base_detected']         ?? false);
         $hasReclaim = (bool)($ctx['reclaim_after_flat_detected'] ?? false);
@@ -3768,19 +3993,24 @@ final class DoubleBottomLongService
             return 'no_post_dump_flat_reclaim';
         }
 
-        // 14. No intraday double bottom
+        // 16. No intraday double bottom
         if (!(bool)($ctx['intraday_double_bottom_detected'] ?? false)) {
             return 'no_intraday_double_bottom';
         }
 
-        // 15. Classic double bottom not confirmed
+        // 17. Setup class not signal-allowed
+        if (!(bool)($ctx['setup_signal_allowed'] ?? true)) {
+            return 'setup_class_not_signal_allowed';
+        }
+
+        // 18. Classic double bottom not confirmed
         if ((bool)($ctx['double_bottom_checked'] ?? false)
             && !(bool)($ctx['candidate_found'] ?? false)
         ) {
             return 'classic_double_bottom_not_confirmed';
         }
 
-        // 16. Generic bearish block (fallback — nothing more specific found)
+        // 19. Generic bearish block (fallback — nothing more specific found)
         return 'regime_bearish_long_hard_block';
     }
 
@@ -3795,6 +4025,7 @@ final class DoubleBottomLongService
             $reason === 'entry_context_unavailable'                  => 'entry_context',
             $reason === 'skipped_entry_context_due_prefilter'        => 'prefilter',
             $reason === 'entry_too_far_after_reclaim'                => 'entry_distance',
+            $reason === 'entry_too_far_after_neckline_reclaim'       => 'entry_distance',
             str_starts_with($reason, 'entry_context_')               => 'entry_context',
             $reason === 'no_post_dump_detected'                      => 'post_dump',
             $reason === 'active_downtrend_no_stabilization'          => 'stabilization',
@@ -3804,8 +4035,10 @@ final class DoubleBottomLongService
             $reason === 'base_support_broken'                        => 'support',
             $reason === 'reclaim_after_flat_not_confirmed'           => 'reclaim',
             $reason === 'reclaim_failed_back_below_level'            => 'reclaim',
+            $reason === 'neckline_reclaim_not_confirmed'             => 'intraday_reclaim',
             $reason === 'no_post_dump_flat_reclaim'                  => 'post_dump_flat_reclaim',
             $reason === 'no_intraday_double_bottom'                  => 'intraday_pattern',
+            $reason === 'setup_class_not_signal_allowed'             => 'setup_class',
             $reason === 'classic_double_bottom_not_confirmed'        => 'classic_pattern',
             $reason === 'regime_bearish_long_hard_block'             => 'regime',
             str_starts_with($reason, 'trend_')                       => 'trend',

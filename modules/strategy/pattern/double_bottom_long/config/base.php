@@ -152,6 +152,32 @@ return [
     'min_reversal_context_score'         => 7.0,
     'min_entry_context_score'            => 7.5,
 
+    // ── Intraday setup classification ────────────────────────────────────────
+    // Classifies each symbol into one of three setup classes:
+    //   A: classic_intraday_double_bottom_reclaim — IDB + neckline reclaim
+    //   B: post_dump_base_reclaim                — dump → stab → flat → support hold → reclaim
+    //   C: diagnostic_recovery_context           — recovery context but no confirmed reclaim/IDB
+    // Signal eligibility is controlled by setup_class_handoff_allowed (see below).
+    // C-class symbols are always in diagnostic_setup_classes and never emit signals.
+    'intraday_setup_classification_enabled'              => true,
+    // Only symbols whose setup_class is in this list may emit signals.
+    'setup_class_handoff_allowed'                        => ['classic_intraday_double_bottom_reclaim', 'post_dump_base_reclaim'],
+    // Classes that are diagnostic only (never allowed to emit signals, regardless of other config).
+    'diagnostic_setup_classes'                           => ['diagnostic_recovery_context'],
+
+    // A-class score threshold (reuses intraday double-bottom score)
+    'intraday_double_bottom_min_score'                   => 7.5,
+
+    // B-class: post-dump base reclaim requirements
+    'post_dump_base_reclaim_enabled'                     => true,
+    'post_dump_base_reclaim_min_score'                   => 7.5,
+    'post_dump_base_reclaim_requires_support_hold'       => true,
+    'post_dump_base_reclaim_requires_reclaim'            => true,
+    // max entry distance reuses max_entry_distance_from_reclaim_pct = 2.5
+
+    // Allow B-class signal without a strict classic double-bottom pattern on H4
+    'allow_post_dump_base_reclaim_without_classic_double_bottom' => true,
+
     // ── Intraday double-bottom detection on entry-context candles ────────────
     // Detects: dump → bottom_1 → neckline bounce → bottom_2/low hold → reclaim
     'intraday_double_bottom_enabled'                     => true,

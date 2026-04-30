@@ -675,10 +675,10 @@ function renderDashboardHub(): string
                 $_dblRound     = (int)($stratLastRun['full_registry_scan_round'] ?? 0);
                 if ($_dblRegTotal > 0) {
                     // "в окне" qualifier immediately after the rsCursor/rsTotal ratio
-                    // so the reader sees "50/50 в окне · окно 50–99 из 562 · cursor 100 · круг 1"
+                    // so the reader sees "50/50 в окне · окно 50–99 из 562 · следующий cursor 100 · круг 1"
                     $rsRuntimeExtra = ' в окне · окно ' . $_dblWinStart . '–' . $_dblWinEnd
                         . ' из ' . $_dblRegTotal
-                        . ' · cursor ' . $_dblNextCurs
+                        . ' · следующий cursor ' . $_dblNextCurs
                         . ' · круг ' . $_dblRound;
                 }
             }
@@ -1565,6 +1565,15 @@ ROWS;
         'no_post_dump_flat_reclaim'                 => 'Нет: падение → база → возврат',
         'no_post_dump_detected'                     => 'Нет предварительного слива',
         'no_intraday_double_bottom'                 => 'Нет intraday double bottom',
+        'double_bottom_lows_too_far_apart'          => 'Донышки слишком далеко друг от друга',
+        'second_low_broke_too_deep'                 => 'Второе дно пробито слишком глубоко',
+        'neckline_bounce_too_weak'                  => 'Слабый отскок до neckline',
+        'neckline_reclaim_not_confirmed'            => 'Neckline reclaim не подтверждён',
+        'entry_too_far_after_neckline_reclaim'      => 'Вход далеко после neckline reclaim',
+        'setup_class_not_signal_allowed'            => 'Класс setup не разрешён для сигнала',
+        'classic_intraday_double_bottom_reclaim'    => 'Intraday double bottom + reclaim',
+        'post_dump_base_reclaim'                    => 'Слив + база + reclaim',
+        'diagnostic_recovery_context'              => 'Recovery context только диагностика',
         'classic_double_bottom_not_confirmed'       => 'Классическое двойное дно не подтверждено',
         'entry_context_unavailable'                 => 'Нет entry-context свечей',
         'skipped_entry_context_due_prefilter'       => 'Entry-context пропущен префильтром',

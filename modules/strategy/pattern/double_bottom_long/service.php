@@ -433,6 +433,8 @@ final class DoubleBottomLongService
                     $sig = $result['signal'];
                     // Tag signal with setup_allowed so applySignalFilters() can track final_eligibility per setup.
                     $sig['_setup_signal_allowed'] = (bool)($result['setup_signal_allowed'] ?? false);
+                    // Carry setup_class so applySignalFilters() can apply the adaptive stop-width gate.
+                    $sig['setup_class'] = $result['setup_class'] ?? null;
                     $newlyEmitted[] = $sig;
                     $emittedCandidates = $this->mergeCandidateRecord(
                         $emittedCandidates,
@@ -942,6 +944,11 @@ final class DoubleBottomLongService
             'pending_confirmation_invalidated_total' => $pendingConfirmationStats['invalidated_total'],
             'pending_confirmation_expired_total'     => $pendingConfirmationStats['expired_total'],
             'pending_confirmation_active_total'      => $pendingConfirmationStats['active_total'],
+            // Adaptive stop-width gate counters
+            'final_stop_width_warning_total'                    => (int)($cycleStats['final_stop_width_warning_total']                    ?? 0),
+            'final_stop_width_hard_reject_total'                => (int)($cycleStats['final_stop_width_hard_reject_total']                ?? 0),
+            'final_stop_width_bypassed_for_synthetic_total'     => (int)($cycleStats['final_stop_width_bypassed_for_synthetic_total']     ?? 0),
+            'final_stop_missing_for_synthetic_total'            => (int)($cycleStats['final_stop_missing_for_synthetic_total']            ?? 0),
             // Diagnostic examples: last 5 synthetic quality failures in this tick
             'synthetic_quality_failed_examples'                  => $synQFailedExamples,
         ]);
@@ -2107,7 +2114,24 @@ final class DoubleBottomLongService
         $waveRequired     = (bool)($config['wave_required']                ?? true);
         $allowedLong      = (array)($config['allowed_long_buckets']        ?? [1, 2]);
         $maxStopLossPct   = (float)($config['max_stop_loss_pct']           ?? 0.0);
+
+        // Adaptive stop-width gate config
+        $stopGateMode        = (string)($config['final_stop_width_gate_mode']        ?? 'adaptive');
+        $stopWarnPct         = (float)($config['final_stop_width_warning_pct']       ?? 0.05);
+        $stopHardPct         = (float)($config['final_stop_width_hard_pct']          ?? 0.12);
+        $stopWarnForSynth    = (bool)($config['final_stop_width_warning_for_synthetic_setup']    ?? true);
+        $stopHardForSynth    = (bool)($config['final_stop_width_hard_block_for_synthetic_setup'] ?? true);
+        $stopWarnClasses     = (array)($config['final_stop_width_warn_setup_classes'] ?? [
+            'classic_intraday_double_bottom_reclaim', 'post_dump_base_reclaim',
+        ]);
+
         $finalRejectDist  = [];
+
+        // New stop-width diagnostic counters
+        $stopWidthWarningTotal           = 0;
+        $stopWidthHardRejectTotal        = 0;
+        $stopWidthBypassedForSynthTotal  = 0;
+        $stopMissingForSynthTotal        = 0;
 
         $merged = [];
         foreach ($existingSignals as $s) {
@@ -2173,17 +2197,59 @@ final class DoubleBottomLongService
                 continue;
             }
 
-            // 1b2. Stop-loss width guard: reject signals where the pattern-derived SL
-            //      is null (lows were missing) or exceeds max_stop_loss_pct of entry.
-            //      A null stop_loss means the SL was already computed to be > max inside
-            //      PatternSignal::computeStopLoss() — both cases are a risk rejection.
-            if ($maxStopLossPct > 0.0) {
-                $slPct = isset($s['stop_loss_pct']) ? (float)$s['stop_loss_pct'] : null;
-                if ($slPct === null || $slPct > $maxStopLossPct) {
-                    $rejectedFinalLowNeckline++;
-                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_stop_too_wide'];
-                    $finalRejectDist['final_stop_too_wide'] = ($finalRejectDist['final_stop_too_wide'] ?? 0) + 1;
-                    continue;
+            // 1b2. Stop-loss width guard: adaptive behaviour for synthetic/intraday A/B setups.
+            //      For classic/non-synthetic signals: keep the old hard-reject at max_stop_loss_pct.
+            //      For A/B synthetic setups: warn-only between warning_pct and hard_pct; hard block above hard_pct.
+            if ($maxStopLossPct > 0.0 || ($stopGateMode === 'adaptive' && $stopHardForSynth)) {
+                $slPct      = isset($s['stop_loss_pct']) ? (float)$s['stop_loss_pct'] : null;
+                $setupClass = (string)($s['setup_class'] ?? '');
+                $isSynthAdaptive = $stopGateMode === 'adaptive'
+                    && $stopWarnForSynth
+                    && $setupClass !== ''
+                    && in_array($setupClass, $stopWarnClasses, true);
+
+                if ($isSynthAdaptive) {
+                    // Adaptive path for A/B synthetic setups
+                    if ($slPct === null) {
+                        // Missing SL: record diagnostic warning but allow through (SL will be managed by Stop Manager)
+                        $stopMissingForSynthTotal++;
+                        $stopWidthBypassedForSynthTotal++;
+                        $s['final_stop_width_warning']        = true;
+                        $s['final_stop_width_warning_reason'] = 'final_stop_missing_for_synthetic_setup';
+                        $s['final_stop_width_gate_bypassed_for_synthetic_setup'] = true;
+                        // keep eligible
+                    } elseif ($stopHardForSynth && $slPct > $stopHardPct) {
+                        // Exceeds emergency hard cap → reject
+                        $stopWidthHardRejectTotal++;
+                        $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_stop_too_wide'];
+                        $finalRejectDist['final_stop_too_wide'] = ($finalRejectDist['final_stop_too_wide'] ?? 0) + 1;
+                        continue;
+                    } elseif ($slPct > $stopWarnPct) {
+                        // Moderately wide: warning only, still eligible
+                        $stopWidthWarningTotal++;
+                        $stopWidthBypassedForSynthTotal++;
+                        $s['final_stop_width_warning']        = true;
+                        $s['final_stop_width_warning_reason'] = 'final_stop_width_above_warning_threshold';
+                        $s['final_stop_width_gate_bypassed_for_synthetic_setup'] = true;
+                        // keep eligible
+                    } else {
+                        // Within warning threshold: no issue
+                        $s['final_stop_width_warning'] = false;
+                        $s['final_stop_width_gate_bypassed_for_synthetic_setup'] = false;
+                    }
+                    // Always stamp gate-mode diagnostics
+                    $s['final_stop_width_gate_mode']    = $stopGateMode;
+                    $s['final_stop_width_hard_pct']     = $stopHardPct;
+                    $s['final_stop_width_warning_pct']  = $stopWarnPct;
+                    $s['stop_loss_pct']                 = $slPct;
+                } elseif ($maxStopLossPct > 0.0) {
+                    // Classic hard-reject path
+                    if ($slPct === null || $slPct > $maxStopLossPct) {
+                        $stopWidthHardRejectTotal++;
+                        $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_stop_too_wide'];
+                        $finalRejectDist['final_stop_too_wide'] = ($finalRejectDist['final_stop_too_wide'] ?? 0) + 1;
+                        continue;
+                    }
                 }
             }
 
@@ -2304,6 +2370,11 @@ final class DoubleBottomLongService
             // Setup-allowed final_eligibility tracking
             'setup_allowed_before_final_eligibility' => $setupAllowedBeforeElig,
             'setup_allowed_after_final_eligibility'  => $setupAllowedAfterElig,
+            // Stop-width gate adaptive counters
+            'final_stop_width_warning_total'          => $stopWidthWarningTotal,
+            'final_stop_width_hard_reject_total'      => $stopWidthHardRejectTotal,
+            'final_stop_width_bypassed_for_synthetic_total' => $stopWidthBypassedForSynthTotal,
+            'final_stop_missing_for_synthetic_total'  => $stopMissingForSynthTotal,
         ];
 
         return [array_values($winnerSignals), $filterStats, $signalOutcomeMap];
@@ -2695,6 +2766,15 @@ final class DoubleBottomLongService
             ($s['setup_allowed_final_eligibility_pass_total'] ?? 0) + $saAfterElig;
         $s['setup_allowed_final_eligibility_failed_total'] =
             ($s['setup_allowed_final_eligibility_failed_total'] ?? 0) + max(0, $saBeforeElig - $saAfterElig);
+        // Stop-width gate adaptive counters (additive running totals)
+        $s['final_stop_width_warning_total'] =
+            ($s['final_stop_width_warning_total'] ?? 0) + (int)($filterStats['final_stop_width_warning_total'] ?? 0);
+        $s['final_stop_width_hard_reject_total'] =
+            ($s['final_stop_width_hard_reject_total'] ?? 0) + (int)($filterStats['final_stop_width_hard_reject_total'] ?? 0);
+        $s['final_stop_width_bypassed_for_synthetic_total'] =
+            ($s['final_stop_width_bypassed_for_synthetic_total'] ?? 0) + (int)($filterStats['final_stop_width_bypassed_for_synthetic_total'] ?? 0);
+        $s['final_stop_missing_for_synthetic_total'] =
+            ($s['final_stop_missing_for_synthetic_total'] ?? 0) + (int)($filterStats['final_stop_missing_for_synthetic_total'] ?? 0);
         return $s;
     }
 
@@ -2868,6 +2948,11 @@ final class DoubleBottomLongService
             'synthetic_quality_post_dump_base_reclaim_pass_total' => 0,
             'reject_synthetic_candidate_quality_failed_total'    => 0,
             'reject_quality_weak_structure_total'                => 0,
+            // Adaptive stop-width gate counters
+            'final_stop_width_warning_total'                     => 0,
+            'final_stop_width_hard_reject_total'                 => 0,
+            'final_stop_width_bypassed_for_synthetic_total'      => 0,
+            'final_stop_missing_for_synthetic_total'             => 0,
         ];
     }
 

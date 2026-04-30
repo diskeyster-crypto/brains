@@ -80,8 +80,23 @@ return [
     'stop_from_liq_buffer_type'    => 'percent',   // absolute | percent
     // Pattern-based SL: place stop this fraction below the lower of the two lows
     'stop_buffer_pct_below_lows'   => 0.005,  // 0.5% below the lowest low
-    // Maximum allowed SL as % of entry; reject signals whose pattern SL is too wide
-    'max_stop_loss_pct'            => 0.05,   // skip entries where SL > 5% from entry
+    // Maximum allowed SL as % of entry; reject signals whose pattern SL is too wide (classic/non-synthetic).
+    // For synthetic/intraday A/B setups, the adaptive gate below is used instead.
+    'max_stop_loss_pct'            => 0.05,   // skip entries where SL > 5% from entry (classic path)
+
+    // Final stop-width gate — adaptive mode for synthetic/intraday A/B setup classes.
+    // 'adaptive' = warn-only for moderate excess; hard-block only at emergency cap.
+    // 'strict'   = use max_stop_loss_pct as hard cap for all setups (legacy behaviour).
+    'final_stop_width_gate_mode'                       => 'adaptive',
+    'final_stop_width_warning_pct'                     => 0.05,   // > this → warning (not reject) for A/B synthetic
+    'final_stop_width_hard_pct'                        => 0.12,   // > this → hard reject for all classes
+    'final_stop_width_warning_for_synthetic_setup'     => true,
+    'final_stop_width_hard_block_for_synthetic_setup'  => true,
+    // Set of setup classes that use the adaptive (warn-then-cap) stop-width gate.
+    'final_stop_width_warn_setup_classes' => [
+        'classic_intraday_double_bottom_reclaim',
+        'post_dump_base_reclaim',
+    ],
     'reverse_pattern_close_enabled'=> false,
     'tp_enabled'                   => true,   // take-profit enabled
     'tp_mode'                      => 'fixed_r',   // fixed_r | fixed_price

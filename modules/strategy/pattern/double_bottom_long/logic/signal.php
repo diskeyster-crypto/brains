@@ -162,11 +162,11 @@ final class PatternSignal
             $slPct   = ($slPrice - $entryPrice) / $entryPrice;
         }
 
-        // If the natural SL distance exceeds the configured max, return null
-        // (the signal_filter in service.php will later use max_stop_loss_pct to reject)
-        if ($maxSlPct > 0.0 && $slPct > $maxSlPct) {
-            return [null, null];
-        }
+        // If the natural SL distance exceeds the configured max, still return computed values.
+        // The stop-width gate in service.php applySignalFilters() enforces the limit there,
+        // with adaptive behaviour for synthetic/intraday A/B setup classes.
+        // (Returning null here would lose the actual distance, preventing the adaptive gate
+        //  from distinguishing "slightly wide" from "absurdly wide".)
 
         return [$slPrice, $slPct];
     }

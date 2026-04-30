@@ -976,6 +976,7 @@ final class DoubleBottomLongService
             // H4 final gate warning counters
             'setup_allowed_final_trend_warning_total'           => (int)($cycleStats['setup_allowed_final_trend_warning_total']           ?? 0),
             'setup_allowed_final_context_warning_total'         => (int)($cycleStats['setup_allowed_final_context_warning_total']         ?? 0),
+            'setup_allowed_final_quality_warning_total'         => (int)($cycleStats['setup_allowed_final_quality_warning_total']         ?? 0),
             'setup_allowed_old_h4_final_gates_bypassed_total'   => (int)($cycleStats['setup_allowed_old_h4_final_gates_bypassed_total']   ?? 0),
             // Late good setup counters
             'late_good_setup_detected_total'                    => (int)($cycleStats['late_good_setup_detected_total']                    ?? 0),
@@ -2435,6 +2436,7 @@ final class DoubleBottomLongService
         // Counters for H4 final gate warnings
         $setupAllowedFinalTrendWarningTotal   = 0;
         $setupAllowedFinalContextWarningTotal = 0;
+        $setupAllowedFinalQualityWarningTotal = 0;
         $setupAllowedOldH4FinalGatesBypassedTotal = 0;
 
         // Adaptive stop-width gate config
@@ -2637,10 +2639,31 @@ final class DoubleBottomLongService
 
             // 1e. Final quality composite floor
             if ($minFinalQuality > 0.0 && (float)($s['candidate_quality_score'] ?? 0.0) < $minFinalQuality) {
-                $rejectedFinalLowQuality++;
-                $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_low_quality'];
-                $finalRejectDist['final_low_quality'] = ($finalRejectDist['final_low_quality'] ?? 0) + 1;
-                continue;
+                // For setup_allowed A/B synthetic signals that already passed the dedicated synthetic
+                // quality scorer, the old generic candidate_quality_score gate is a legacy H4 gate
+                // that must not hard-kill the signal.  Convert to warning in the same way as
+                // final_trend_mismatch / final_context_inconsistent above.
+                $signalSetupClass     = (string)($s['setup_class'] ?? '');
+                $isSetupAllowedAB     = $isSetupAllowed && in_array($signalSetupClass, $h4GateWarnSetupClasses, true);
+                $synthQualityPassed   = (bool)($s['synthetic_quality_pass'] ?? false)
+                    || (float)($s['synthetic_quality_score'] ?? 0.0) > 0.0;
+                $minSynthThreshold    = (float)($config['synthetic_quality_min_composite_score'] ?? 0.6);
+                $synthScoreAboveMin   = (float)($s['synthetic_quality_score'] ?? 0.0) >= $minSynthThreshold;
+                $finalQualityGateMode = (string)($config['final_old_h4_gates_mode_for_setup_allowed'] ?? 'warning');
+                if ($finalQualityGateMode === 'warning' && $isSetupAllowedAB && ($synthQualityPassed || $synthScoreAboveMin)) {
+                    // Warning-only: do not reject, stamp diagnostic fields.
+                    $s['final_low_quality_warning_for_setup_allowed'] = true;
+                    $s['legacy_candidate_quality_score']              = (float)($s['candidate_quality_score'] ?? 0.0);
+                    $s['final_low_quality_min_threshold']             = $minFinalQuality;
+                    $setupAllowedFinalQualityWarningTotal++;
+                    $setupAllowedOldH4FinalGatesBypassedTotal++;
+                    // Fall through to eligible (do not continue/reject)
+                } else {
+                    $rejectedFinalLowQuality++;
+                    $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_low_quality'];
+                    $finalRejectDist['final_low_quality'] = ($finalRejectDist['final_low_quality'] ?? 0) + 1;
+                    continue;
+                }
             }
 
             if ($isSetupAllowed) {
@@ -2722,6 +2745,7 @@ final class DoubleBottomLongService
             // H4 final gate warning counters for setup_allowed A/B signals
             'setup_allowed_final_trend_warning_total'         => $setupAllowedFinalTrendWarningTotal,
             'setup_allowed_final_context_warning_total'       => $setupAllowedFinalContextWarningTotal,
+            'setup_allowed_final_quality_warning_total'       => $setupAllowedFinalQualityWarningTotal,
             'setup_allowed_old_h4_final_gates_bypassed_total' => $setupAllowedOldH4FinalGatesBypassedTotal,
         ];
 
@@ -3136,6 +3160,8 @@ final class DoubleBottomLongService
             ($s['setup_allowed_final_trend_warning_total'] ?? 0) + (int)($filterStats['setup_allowed_final_trend_warning_total'] ?? 0);
         $s['setup_allowed_final_context_warning_total'] =
             ($s['setup_allowed_final_context_warning_total'] ?? 0) + (int)($filterStats['setup_allowed_final_context_warning_total'] ?? 0);
+        $s['setup_allowed_final_quality_warning_total'] =
+            ($s['setup_allowed_final_quality_warning_total'] ?? 0) + (int)($filterStats['setup_allowed_final_quality_warning_total'] ?? 0);
         $s['setup_allowed_old_h4_final_gates_bypassed_total'] =
             ($s['setup_allowed_old_h4_final_gates_bypassed_total'] ?? 0) + (int)($filterStats['setup_allowed_old_h4_final_gates_bypassed_total'] ?? 0);
         return $s;
@@ -3319,6 +3345,7 @@ final class DoubleBottomLongService
             // H4 final gate warning counters
             'setup_allowed_final_trend_warning_total'            => 0,
             'setup_allowed_final_context_warning_total'          => 0,
+            'setup_allowed_final_quality_warning_total'          => 0,
             'setup_allowed_old_h4_final_gates_bypassed_total'    => 0,
             // Late good setup counters
             'late_good_setup_detected_total'                     => 0,

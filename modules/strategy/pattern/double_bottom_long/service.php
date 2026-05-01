@@ -6255,8 +6255,10 @@ final class DoubleBottomLongService
 
     /**
      * TTL map for stable non-technical reject reasons (in minutes).
+     * Returns the scan suppression TTL (minutes) for a given stable reject reason.
      * Only reasons listed here will trigger suppression.
      * Technical failures and temporary data errors are never suppressed.
+     * Returns 0 when the reason should not trigger suppression.
      */
     private function scanSuppressionTtlForReason(string $reason, array $config): int
     {

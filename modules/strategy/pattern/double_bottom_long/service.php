@@ -1452,6 +1452,14 @@ final class DoubleBottomLongService
             'handoff_removed_stale_queue_entries_total'                 => $handoffStats['removed_stale_queue_entries_total'] ?? 0,
             'stale_handoff_block_examples'                              => $handoffStats['stale_block_examples']             ?? [],
             'revalidation_required_examples'                            => $handoffStats['revalidation_required_examples']   ?? [],
+            // ── Queue entry normalization counters (explicit non-executable flags) ──
+            'queue_entries_normalized_total'              => $handoffStats['queue_entries_normalized_total']              ?? 0,
+            'queue_entries_marked_non_executable_total'   => $handoffStats['queue_entries_marked_non_executable_total']   ?? 0,
+            'queue_entries_executable_total'              => $handoffStats['queue_entries_executable_total']              ?? 0,
+            'queue_entries_blocked_not_current_run_total' => $handoffStats['queue_entries_blocked_not_current_run_total'] ?? 0,
+            'queue_entries_blocked_blacklist_total'       => $handoffStats['queue_entries_blocked_blacklist_total']       ?? 0,
+            'queue_entries_blocked_freeze_total'          => $handoffStats['queue_entries_blocked_freeze_total']          ?? 0,
+            'queue_non_executable_examples'              => $handoffStats['queue_non_executable_examples']               ?? [],
             // ── Scan suppression cache diagnostics (Task 7) ──────────────────────
             'scan_suppression_enabled'                   => $suppressionEnabled,
             'scan_suppression_entries_total'             => $suppressionEnabled ? count($this->scanSuppressionCache) : 0,
@@ -6561,7 +6569,20 @@ final class DoubleBottomLongService
                             'reason'      => 'handoff_blocked_not_current_run',
                         ];
                     }
-                    // Do not update the queue entry; let existing state remain
+                    // Mark existing queue entry as blocked-not-current-run if it exists
+                    if (isset($existingMap[$id])) {
+                        $blocked = $existingMap[$id];
+                        $blocked['handoff_status']    = 'withdrawn';
+                        $blocked['withdrawn_at']      = date('c');
+                        $blocked['last_change_reason'] = 'not_current_run';
+                        $blocked['handoff_ready']     = false;
+                        $blocked['stale']             = true;
+                        $blocked['stale_reason']      = 'handoff_blocked_not_current_run';
+                        $blocked['block_reason']      = 'handoff_blocked_not_current_run';
+                        $blocked['executable']        = false;
+                        $result[$id] = $blocked;
+                        $removedStaleQueueEntriesTotal++;
+                    }
                     $activeIds[$id] = true;
                     continue;
                 }
@@ -6604,7 +6625,8 @@ final class DoubleBottomLongService
             }
             $prevStatus = (string)($prev['handoff_status'] ?? 'active');
             if (in_array($prevStatus, ['expired', 'withdrawn'], true)) {
-                // Keep already-finalised records for audit trail
+                // Keep already-finalised records for audit trail; non-executable flags
+                // are set in the normalization pass below.
                 $result[$id] = $prev;
                 continue;
             }
@@ -6614,41 +6636,122 @@ final class DoubleBottomLongService
             $status = ($ts > 0 && ($nowTs - $ts) > $ttlSec) ? 'expired' : 'withdrawn';
             $prev['handoff_status'] = $status;
             $prev['withdrawn_at']   = date('c');
+            $prev['handoff_ready']  = false;
+            $prev['executable']     = false;
+            $prev['block_reason']   = ($status === 'expired')
+                ? 'handoff_blocked_expired_signal'
+                : 'handoff_blocked_withdrawn';
             $result[$id] = $prev;
             $expiredTotal++;
         }
 
-        $this->writeJson('storage/bot_handoff_queue.json', array_values($result));
+        // ── Normalization pass: ensure every entry has explicit lifecycle flags ──
+        // This covers all statuses including entries kept for audit trail that
+        // may carry stale executable=true from an earlier run.
+        $queueNormalizedTotal           = 0;
+        $queueMarkedNonExecutableTotal  = 0;
+        $queueExecutableTotal           = 0;
+        $queueBlockedNcrTotal           = 0;  // blocked_not_current_run
+        $queueBlockedBlTotal            = 0;  // blocked_by_blacklist (strategy-side: always 0)
+        $queueBlockedFrTotal            = 0;  // blocked_by_freeze (strategy-side: always 0)
+        $queueNonExecutableExamples     = [];
 
-        $readyTotal = 0;
-        foreach ($result as $r) {
-            if (in_array($r['handoff_status'] ?? '', ['new', 'refreshed'], true)) {
-                $readyTotal++;
-            }
-            // Count queue entries that need revalidation after a symbol guard block
-            if (($r['needs_revalidation_after_unblock'] ?? false) === true) {
-                $blockedNeedsRevalidationTotal++;
-                if (count($revalidationRequiredExamples) < 5) {
-                    $revalidationRequiredExamples[] = [
-                        'symbol'      => $r['symbol']    ?? null,
-                        'side'        => $r['side']      ?? 'long',
-                        'strategy'    => 'double_bottom_long',
-                        'signal_id'   => $r['signal_id'] ?? null,
-                        'detected_at' => $r['detected_at'] ?? null,
-                        'blocked_source' => $r['symbol_guard_block_source'] ?? 'unknown',
-                        'reason'      => 'handoff_blocked_needs_revalidation_after_symbol_block',
-                        'needs_revalidation_after_unblock' => true,
+        foreach ($result as $id => $r) {
+            $status       = (string)($r['handoff_status'] ?? '');
+            $isActive     = in_array($status, ['new', 'refreshed'], true);
+            $needsRevalid = (bool)($r['needs_revalidation_after_unblock'] ?? false);
+            $prevReady    = $r['handoff_ready'] ?? null;
+            $prevExec     = $r['executable']    ?? null;
+            $changed      = false;
+
+            if ($isActive && !$needsRevalid) {
+                // Fully executable
+                if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
+                if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
+                if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
+                if (($r['stale_reason'] ?? null) !== null)  { $result[$id]['stale_reason'] = null;  $changed = true; }
+                if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
+                $queueExecutableTotal++;
+            } else {
+                // Non-executable: determine most-specific block reason
+                $blockReason = $r['block_reason'] ?? $r['stale_reason'] ?? null;
+                if ($needsRevalid && $blockReason === null) {
+                    $blockReason = 'handoff_blocked_needs_revalidation_after_symbol_block';
+                } elseif ($status === 'expired' && $blockReason === null) {
+                    $blockReason = 'handoff_blocked_expired_signal';
+                } elseif ($status === 'withdrawn' && $blockReason === null) {
+                    $blockReason = 'handoff_blocked_withdrawn';
+                }
+
+                if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
+                if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
+                if ($needsRevalid && ($r['blocked_by_symbol_guard'] ?? false) !== true) {
+                    $result[$id]['blocked_by_symbol_guard'] = true;
+                    $changed = true;
+                }
+                if ($blockReason !== null && ($r['block_reason'] ?? null) !== $blockReason) {
+                    $result[$id]['block_reason'] = $blockReason;
+                    $changed = true;
+                }
+
+                if ($changed) {
+                    $queueMarkedNonExecutableTotal++;
+                }
+                if ($blockReason === 'handoff_blocked_not_current_run') {
+                    $queueBlockedNcrTotal++;
+                }
+                // Count revalidation-needed entries separately for the existing counter
+                if ($needsRevalid) {
+                    $blockedNeedsRevalidationTotal++;
+                    if (count($revalidationRequiredExamples) < 5) {
+                        $revalidationRequiredExamples[] = [
+                            'symbol'      => $r['symbol']    ?? null,
+                            'side'        => $r['side']      ?? 'long',
+                            'strategy'    => 'double_bottom_long',
+                            'signal_id'   => $r['signal_id'] ?? null,
+                            'detected_at' => $r['detected_at'] ?? null,
+                            'blocked_source' => $r['symbol_guard_block_source'] ?? 'unknown',
+                            'reason'      => 'handoff_blocked_needs_revalidation_after_symbol_block',
+                            'needs_revalidation_after_unblock' => true,
+                        ];
+                    }
+                }
+
+                // Collect examples for entries that changed to non-executable
+                if ($changed && count($queueNonExecutableExamples) < 5) {
+                    $detTs = isset($r['detected_at']) ? strtotime($r['detected_at']) : 0;
+                    $queueNonExecutableExamples[] = [
+                        'symbol'                  => $r['symbol']     ?? null,
+                        'signal_id'               => $id,
+                        'previous_handoff_ready'  => $prevReady,
+                        'previous_executable'     => $prevExec,
+                        'new_handoff_ready'       => false,
+                        'new_executable'          => false,
+                        'reason'                  => $blockReason,
+                        'detected_at'             => $r['detected_at'] ?? null,
+                        'age_minutes'             => ($detTs > 0)
+                            ? round(($nowTs - $detTs) / 60, 1)
+                            : null,
                     ];
                 }
             }
+
+            if ($changed) {
+                $queueNormalizedTotal++;
+            }
         }
+
+        // Compute readyTotal from normalized result
+        $readyTotal = $queueExecutableTotal;
+
+        $this->writeJson('storage/bot_handoff_queue.json', array_values($result));
 
         return [
             'ready_total'     => $readyTotal,
             'new_total'       => $newTotal,
             'refreshed_total' => $refreshedTotal,
             'expired_total'   => $expiredTotal,
-            // Freshness gate counters (Task 4)
+            // Freshness gate counters
             'blocked_stale_total'                        => $blockedStaleTotal,
             'blocked_not_current_run_total'              => $blockedNotCurrentRunTotal,
             'removed_stale_queue_entries_total'          => $removedStaleQueueEntriesTotal,
@@ -6656,10 +6759,18 @@ final class DoubleBottomLongService
             'revalidated_after_unblock_total'            => $revalidatedAfterUnblockTotal,
             'stale_block_examples'                       => $staleBlockExamples,
             'revalidation_required_examples'             => $revalidationRequiredExamples,
-            // Active records (new/refreshed) for trace diagnostics
+            // Queue normalization counters (Task: explicit non-executable flags)
+            'queue_entries_normalized_total'              => $queueNormalizedTotal,
+            'queue_entries_marked_non_executable_total'   => $queueMarkedNonExecutableTotal,
+            'queue_entries_executable_total'              => $queueExecutableTotal,
+            'queue_entries_blocked_not_current_run_total' => $queueBlockedNcrTotal,
+            'queue_entries_blocked_blacklist_total'       => $queueBlockedBlTotal,
+            'queue_entries_blocked_freeze_total'          => $queueBlockedFrTotal,
+            'queue_non_executable_examples'              => $queueNonExecutableExamples,
+            // Active records (new/refreshed/executable) for trace diagnostics
             'active_records'  => array_values(array_filter(
                 $result,
-                fn($r) => in_array($r['handoff_status'] ?? '', ['new', 'refreshed'], true)
+                fn($r) => ($r['executable'] ?? false) === true
             )),
         ];
     }

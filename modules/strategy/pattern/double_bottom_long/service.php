@@ -811,31 +811,8 @@ final class DoubleBottomLongService
             }
         }
 
-        // Compute handoff trace counters from the active signals pool (Task 4)
-        foreach ($signals as $s) {
-            $sqCtx = $s['strategy_signal_context'] ?? null;
-            $hasSqCtx = is_array($sqCtx)
-                && ($sqCtx['setup_class'] ?? null) !== null
-                && ($sqCtx['synthetic_quality_score'] ?? null) !== null;
-            if ($hasSqCtx) {
-                $handoffEntriesWithTraceTotal++;
-            } else {
-                $handoffEntriesMissingTraceTotal++;
-                if (count($missingTraceExamples) < 5) {
-                    $missingTraceExamples[] = [
-                        'symbol'         => $s['symbol']    ?? null,
-                        'signal_id'      => $s['signal_id'] ?? null,
-                        'missing_fields' => array_filter([
-                            ($sqCtx === null) ? 'strategy_signal_context' : null,
-                            (($sqCtx['setup_class'] ?? null) === null) ? 'setup_class' : null,
-                            (($sqCtx['synthetic_quality_score'] ?? null) === null) ? 'synthetic_quality_score' : null,
-                        ]),
-                        'setup_class'    => $s['setup_class'] ?? null,
-                        'reason'         => 'missing_in_active_pool',
-                    ];
-                }
-            }
-        }
+        // Handoff trace counters are computed from the actual written handoff records
+        // after updateBotHandoff() runs below — see post-handoff section.
 
         $stats      = $this->applyFilterStatsDelta($stats,      $filterStats);
         $cycleStats = $this->applyFilterStatsDelta($cycleStats, $filterStats);
@@ -988,6 +965,47 @@ final class DoubleBottomLongService
         $state['bot_handoff_new_total']       = $handoffStats['new_total'];
         $state['bot_handoff_refreshed_total'] = $handoffStats['refreshed_total'];
         $state['bot_handoff_expired_total']   = $handoffStats['expired_total'];
+
+        // ── Handoff trace counters from actual written queue records ─────────
+        // Check trace completeness from the real handoff entries (new/refreshed),
+        // accepting either top-level fields OR nested strategy_signal_context.
+        // Required for "with trace": signal_id, symbol, side, strategy_id/owner_strategy,
+        // setup_class (either location), quality_source (either location),
+        // at least one quality score.
+        foreach ($handoffStats['active_records'] as $hr) {
+            $ctx      = is_array($hr['strategy_signal_context'] ?? null) ? $hr['strategy_signal_context'] : [];
+            $setupCls = $hr['setup_class'] ?? $ctx['setup_class'] ?? null;
+            $qualSrc  = $hr['quality_source'] ?? $ctx['quality_source'] ?? null;
+            $anyScore = ($hr['candidate_quality_score']  ?? $ctx['candidate_quality_score']  ?? null) !== null
+                     || ($hr['synthetic_quality_score']  ?? $ctx['synthetic_quality_score']  ?? null) !== null
+                     || ($hr['setup_class_score']        ?? $ctx['setup_class_score']        ?? null) !== null;
+            $hasId    = (string)($hr['signal_id'] ?? '') !== '';
+            $hasSym   = (string)($hr['symbol']    ?? '') !== '';
+            $hasSide  = (string)($hr['side']      ?? '') !== '';
+            $hasStrat = (string)($hr['strategy_id'] ?? $hr['owner_strategy'] ?? '') !== '';
+            $missingF = [];
+            if (!$hasId)    $missingF[] = 'signal_id';
+            if (!$hasSym)   $missingF[] = 'symbol';
+            if (!$hasSide)  $missingF[] = 'side';
+            if (!$hasStrat) $missingF[] = 'strategy_id';
+            if ($setupCls === null) $missingF[] = 'setup_class';
+            if ($qualSrc  === null) $missingF[] = 'quality_source';
+            if (!$anyScore)         $missingF[] = 'quality_score(any)';
+            if (empty($missingF)) {
+                $handoffEntriesWithTraceTotal++;
+            } else {
+                $handoffEntriesMissingTraceTotal++;
+                if (count($missingTraceExamples) < 5) {
+                    $missingTraceExamples[] = [
+                        'symbol'         => $hr['symbol']    ?? null,
+                        'signal_id'      => $hr['signal_id'] ?? null,
+                        'missing_fields' => $missingF,
+                        'setup_class'    => $setupCls,
+                        'reason'         => 'missing_in_handoff_record',
+                    ];
+                }
+            }
+        }
 
         $this->writeJson('storage/run_state.json', $state);
 
@@ -6142,6 +6160,11 @@ final class DoubleBottomLongService
             'new_total'       => $newTotal,
             'refreshed_total' => $refreshedTotal,
             'expired_total'   => $expiredTotal,
+            // Active records (new/refreshed) for trace diagnostics
+            'active_records'  => array_values(array_filter(
+                $result,
+                fn($r) => in_array($r['handoff_status'] ?? '', ['new', 'refreshed'], true)
+            )),
         ];
     }
 

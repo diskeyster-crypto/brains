@@ -893,6 +893,36 @@ final class BotService
             }
         }
 
+        // ── 7g. Signal trace diagnostics for closed trades ──────────────────
+        $closedTradesWithTrace    = 0;
+        $closedTradesMissingTrace = 0;
+        $closedTraceMissingExamples = [];
+        $closedTradesForDiag = $this->readJson('storage/trades/closed_trades.json', []);
+        foreach ($closedTradesForDiag as $ct) {
+            $hasTrace = (string)($ct['signal_id'] ?? '') !== ''
+                && (string)($ct['strategy_id']    ?? '') !== '';
+            if ($hasTrace) {
+                $closedTradesWithTrace++;
+            } else {
+                $closedTradesMissingTrace++;
+                if (count($closedTraceMissingExamples) < 5) {
+                    $missingF = [];
+                    if ((string)($ct['signal_id']   ?? '') === '') $missingF[] = 'signal_id';
+                    if ((string)($ct['strategy_id'] ?? '') === '') $missingF[] = 'strategy_id';
+                    $closedTraceMissingExamples[] = [
+                        'symbol'       => $ct['symbol']       ?? null,
+                        'side'         => $ct['side']         ?? null,
+                        'strategy_id'  => $ct['strategy_id']  ?? null,
+                        'signal_id'    => $ct['signal_id']    ?? null,
+                        'closed_at'    => $ct['closed_at']    ?? null,
+                        'close_reason' => $ct['close_reason'] ?? null,
+                        'missing_fields' => $missingF,
+                        'reason'       => 'no_signal_trace_in_closed_trade',
+                    ];
+                }
+            }
+        }
+
         $lastRun = [
             'status'      => 'ok',
             'tick_at'     => $tickAt,
@@ -1087,6 +1117,10 @@ final class BotService
             'positions_opened_with_signal_trace_total'    => $positionsOpenedWithTrace,
             'positions_opened_missing_signal_trace_total' => $positionsOpenedMissingTrace,
             'signal_trace_missing_examples'               => $signalTraceMissingExamples,
+            // ── Signal trace diagnostics for closed trades (Task 4 fix) ──────────
+            'closed_trades_with_signal_trace_total'       => $closedTradesWithTrace,
+            'closed_trades_missing_signal_trace_total'    => $closedTradesMissingTrace,
+            'closed_trades_signal_trace_missing_examples' => $closedTraceMissingExamples,
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -4553,6 +4587,12 @@ final class BotService
                 'exchange_opened_at'         => $exchangeOpenedAt,
                 'bot_submitted_at'           => $botSubmittedAt,
                 'bot_confirmed_at'           => $botConfirmedAt,
+                // ── Signal trace attribution (traceability, not outcome data) ──
+                'signal_id'              => (string)($pos['signal_id']    ?? '') !== '' ? (string)$pos['signal_id']    : null,
+                'owner_strategy'         => (string)($pos['owner_strategy'] ?? '') !== '' ? (string)$pos['owner_strategy'] : null,
+                'pattern_algorithm'      => (string)($pos['pattern_algorithm'] ?? '') !== '' ? (string)$pos['pattern_algorithm'] : null,
+                'setup_class'            => $pos['setup_class']            ?? null,
+                'strategy_signal_context'=> $pos['strategy_signal_context'] ?? null,
             ];
 
             // ── Write individual per-trade file ───────────────────────────────

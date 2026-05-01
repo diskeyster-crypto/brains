@@ -1,0 +1,14 @@
+{
+    "bot_enabled": false,
+    "execution_mode": "smoke",
+    "queue_depth": 0,
+    "active_orders": 0,
+    "active_positions": 0,
+    "signals_enqueued": 0,
+    "intents_processed": 0,
+    "orders_accepted": 0,
+    "orders_rejected": 0,
+    "last_tick": "2026-05-01 16:25:13",
+    "last_error": null,
+    "status": "disabled"
+}

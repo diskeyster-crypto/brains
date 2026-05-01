@@ -313,6 +313,13 @@ return [
     // Cheap H4/ticker prefilters may inspect larger batches; only ctx fetches are capped.
     'max_entry_context_fetch_per_run'      => 35,
 
+    // bad_accept diagnostics: detect high-score emitted signals that moved adversely.
+    // Reads the active bot_handoff_queue entries and compares current H4 close vs entry_price.
+    // This is diagnostic-only — does not affect signal emission or suppression.
+    'bad_accept_diagnostic_enabled'        => true,
+    'bad_accept_adverse_pct_threshold'     => 3.0,   // current price < entry_price * (1 - threshold/100)
+    'bad_accept_quality_score_threshold'   => 0.6,   // minimum candidate_quality_score or pattern_score
+
     // Candle data
     'lookback_candles'  => 120,
     'bybit_base_url'    => 'https://api.bybit.com',

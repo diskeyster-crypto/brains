@@ -408,6 +408,18 @@ final class DoubleBottomLongService
         $foundCandidates   = (array)$this->readJson('storage/candidates_found.json', []);
         $emittedCandidates = (array)$this->readJson('storage/candidates_emitted.json', []);
         $synQFailedExamples = [];  // accumulated per tick, max 5
+        // bad_accept diagnostics: emitted signals with adverse price moves
+        $badAcceptExamples = [];
+        $activeHandoffBySymbol = [];
+        if ((bool)($config['bad_accept_diagnostic_enabled'] ?? true)) {
+            $hqRaw = (array)$this->readJson('storage/bot_handoff_queue.json', []);
+            foreach ($hqRaw as $hq) {
+                $s = strtolower((string)($hq['symbol'] ?? ''));
+                if ($s !== '' && in_array($hq['handoff_status'] ?? '', ['new', 'refreshed'], true)) {
+                    $activeHandoffBySymbol[$s] = $hq;
+                }
+            }
+        }
         // Calibration example arrays — accumulated per tick for last_run.json (Task 6)
         $normalSignalExamples             = [];
         $rejectedSignalExamples           = [];
@@ -899,6 +911,43 @@ final class DoubleBottomLongService
             // ── Write scan suppression after stable non-technical rejects ─────
             if ($suppressionEnabled && isset($result)) {
                 $this->updateScanSuppression($symLower, $result, $config);
+            }
+
+            // ── bad_accept diagnostic: high-score signal with adverse price move ─
+            if (isset($result)
+                && count($badAcceptExamples) < 10
+                && (bool)($config['bad_accept_diagnostic_enabled'] ?? true)
+                && isset($activeHandoffBySymbol[$symLower])
+            ) {
+                $hqEntry    = $activeHandoffBySymbol[$symLower];
+                $curPrice   = (float)($result['scan_suppression_last_price'] ?? 0.0);
+                $entryPrice = (float)($hqEntry['entry_price'] ?? 0.0);
+                $adversePct = (float)($config['bad_accept_adverse_pct_threshold'] ?? 3.0) / 100.0;
+                $qualityMin = (float)($config['bad_accept_quality_score_threshold'] ?? 0.6);
+                $qScore     = max(
+                    (float)($hqEntry['candidate_quality_score'] ?? 0.0),
+                    (float)($hqEntry['pattern_score'] ?? 0.0)
+                );
+                if ($curPrice > 0.0
+                    && $entryPrice > 0.0
+                    && $curPrice < $entryPrice * (1.0 - $adversePct)
+                    && $qScore >= $qualityMin
+                ) {
+                    $movePct = round((($curPrice - $entryPrice) / $entryPrice) * 100.0, 2);
+                    $badAcceptExamples[] = [
+                        'symbol'                  => $symbol,
+                        'signal_id'               => $hqEntry['signal_id'] ?? null,
+                        'detected_at'             => $hqEntry['detected_at'] ?? null,
+                        'entry_price'             => $entryPrice,
+                        'current_price'           => $curPrice,
+                        'adverse_move_pct'        => $movePct,
+                        'candidate_quality_score' => $qScore,
+                        'pattern_score'           => (float)($hqEntry['pattern_score'] ?? 0.0) ?: null,
+                        'setup_class'             => $hqEntry['strategy_signal_context']['setup_class'] ?? null,
+                        'daily_change_pct'        => $result['scan_suppression_daily_change_pct'] ?? null,
+                        'reason'                  => 'bad_accept_adverse_move',
+                    ];
+                }
             }
         }
 
@@ -1430,6 +1479,8 @@ final class DoubleBottomLongService
             'late_good_setup_examples'                 => $lateGoodSetupExamples,
             // Diagnostic examples: last 5 synthetic quality failures in this tick
             'synthetic_quality_failed_examples'                  => $synQFailedExamples,
+            // bad_accept diagnostics: high-score signals with adverse price move since emission
+            'bad_accept_examples'                                => $badAcceptExamples,
         ]);
 
         if ($isDone) {
@@ -2025,6 +2076,12 @@ final class DoubleBottomLongService
 
         $this->requireLogic('corridor');
         $lastClose = (float)(end($candles)['close'] ?? 0.0);
+        // Compute 24h price change from H4 candles (6 H4 bars = 24h)
+        $n = count($candles);
+        $close24hAgo = ($n >= 7) ? (float)($candles[$n - 7]['close'] ?? 0.0) : 0.0;
+        $dailyChangePct = ($close24hAgo > 0.0)
+            ? round((($lastClose - $close24hAgo) / $close24hAgo) * 100.0, 2)
+            : null;
         $corridor  = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternCorridor())->compute($candles, $lastClose, $config);
 
         $this->requireLogic('wave');
@@ -2218,6 +2275,10 @@ final class DoubleBottomLongService
             'entry_context_prefilter_reasons'       => $pref['prefilter_reasons'],
             'entry_context_prefilter_reject_reason' => $pref['prefilter_reject_reason'],
         ];
+
+        // Carry current price and 24h change for scan suppression early-expire checks.
+        $diagBase['scan_suppression_last_price']       = $lastClose > 0.0 ? $lastClose : null;
+        $diagBase['scan_suppression_daily_change_pct'] = $dailyChangePct;
 
         // ── Precompute entry_setup_allowed (A/B intraday allowance) ──────────
         // Evaluated after entry context / setup class classification but BEFORE
@@ -6365,7 +6426,8 @@ final class DoubleBottomLongService
         $suppressedAt = date('c', $nowTs);
         $suppressUntil = date('c', $untilTs);
 
-        $lastPrice   = (float)($result['last_price'] ?? $result['entry_price'] ?? 0.0);
+        $lastPrice      = (float)($result['scan_suppression_last_price'] ?? $result['last_price'] ?? $result['entry_price'] ?? 0.0);
+        $dailyChangePct = $result['scan_suppression_daily_change_pct'] ?? null;
         $lastRunId   = null;  // not available at this level; can be enriched later if needed
 
         $isNew = !isset($this->scanSuppressionCache[$symLower]);
@@ -6380,7 +6442,7 @@ final class DoubleBottomLongService
             'suppress_until'       => $suppressUntil,
             'ttl_minutes'          => $ttlMin,
             'last_price'           => $lastPrice > 0.0 ? $lastPrice : null,
-            'last_daily_change_pct'=> null,   // not available at this level
+            'last_daily_change_pct'=> $dailyChangePct,
             'last_seen_run_id'     => $lastRunId,
             'observations_count'   => $obsCount,
         ];
@@ -6396,7 +6458,7 @@ final class DoubleBottomLongService
                     'failed_stage'   => $entry['failed_stage'],
                     'suppress_until' => $suppressUntil,
                     'ttl_minutes'    => $ttlMin,
-                    'daily_change_pct' => null,
+                    'daily_change_pct' => $dailyChangePct,
                     'price'          => $entry['last_price'],
                     'action'         => 'added',
                 ];
@@ -6466,9 +6528,13 @@ final class DoubleBottomLongService
                 // Mark existing queue entry as stale-withdrawn if it exists
                 if (isset($existingMap[$id])) {
                     $staleEntry = $existingMap[$id];
-                    $staleEntry['handoff_status']   = 'withdrawn';
-                    $staleEntry['withdrawn_at']     = date('c');
+                    $staleEntry['handoff_status']    = 'withdrawn';
+                    $staleEntry['withdrawn_at']      = date('c');
                     $staleEntry['last_change_reason'] = 'stale_signal_age_exceeded';
+                    $staleEntry['handoff_ready']     = false;
+                    $staleEntry['stale']             = true;
+                    $staleEntry['stale_reason']      = 'handoff_blocked_stale_signal';
+                    $staleEntry['executable']        = false;
                     $result[$id] = $staleEntry;
                     $removedStaleQueueEntriesTotal++;
                 }
@@ -6626,9 +6692,13 @@ final class DoubleBottomLongService
             'timeframe'       => (string)($config['timeframe'] ?? 'H4'),
 
             // Lifecycle (handoff_status is overwritten by the caller)
-            'detected_at'  => $detectedAt,
-            'expires_at'   => $expiresAt,
+            'detected_at'    => $detectedAt,
+            'expires_at'     => $expiresAt,
             'handoff_status' => 'active',
+            'handoff_ready'  => true,
+            'executable'     => true,
+            'stale'          => false,
+            'stale_reason'   => null,
 
             // Entry geometry
             'entry_mode'      => (string)($config['entry_mode']          ?? 'limit'),

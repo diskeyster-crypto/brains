@@ -1,8 +1,8 @@
 [
     {
         "strategy_id": "fish",
-        "module_path": "modules/strategy/fish",
-        "manifest_path": "modules/strategy/fish/manifest.json",
+        "module_path": "modules\/strategy\/fish",
+        "manifest_path": "modules\/strategy\/fish\/manifest.json",
         "title": "Fish Strategy",
         "category": "strategy",
         "enabled_by_default": true,
@@ -10,19 +10,45 @@
         "supports_long": true,
         "supports_short": true,
         "status": "discovered",
-        "discovered_at": "2026-04-24T05:09:58+00:00"
+        "discovered_at": "2026-05-01T16:24:06+01:00"
+    },
+    {
+        "strategy_id": "controlled_daily_momentum_long",
+        "module_path": "modules\/strategy\/pattern\/controlled_daily_momentum_long",
+        "manifest_path": "modules\/strategy\/pattern\/controlled_daily_momentum_long\/manifest.json",
+        "title": "Controlled Daily Momentum Long · Контролируемый дневной моментум лонг",
+        "category": "strategy",
+        "enabled_by_default": true,
+        "handoff_queue_path": "modules\/strategy\/pattern\/controlled_daily_momentum_long\/storage\/bot_handoff_queue.json",
+        "supports_long": true,
+        "supports_short": false,
+        "status": "bot_ready",
+        "discovered_at": "2026-05-01T16:24:06+01:00"
+    },
+    {
+        "strategy_id": "corridor_bottom_long",
+        "module_path": "modules\/strategy\/pattern\/corridor_bottom_long",
+        "manifest_path": "modules\/strategy\/pattern\/corridor_bottom_long\/manifest.json",
+        "title": "Corridor Bottom Long · 24h corridor bottom reversal strategy",
+        "category": "strategy",
+        "enabled_by_default": false,
+        "handoff_queue_path": "modules\/strategy\/pattern\/corridor_bottom_long\/storage\/bot_handoff_queue.json",
+        "supports_long": true,
+        "supports_short": false,
+        "status": "bot_ready",
+        "discovered_at": "2026-05-01T16:24:06+01:00"
     },
     {
         "strategy_id": "double_bottom_long",
-        "module_path": "modules/strategy/pattern/double_bottom_long",
-        "manifest_path": "modules/strategy/pattern/double_bottom_long/manifest.json",
+        "module_path": "modules\/strategy\/pattern\/double_bottom_long",
+        "manifest_path": "modules\/strategy\/pattern\/double_bottom_long\/manifest.json",
         "title": "Double Bottom Long · Лонг-модуль по двойному дну",
         "category": "strategy",
         "enabled_by_default": true,
-        "handoff_queue_path": null,
+        "handoff_queue_path": "modules\/strategy\/pattern\/double_bottom_long\/storage\/bot_handoff_queue.json",
         "supports_long": true,
         "supports_short": false,
-        "status": "storage_not_initialized",
-        "discovered_at": "2026-04-24T05:09:58+00:00"
+        "status": "bot_ready",
+        "discovered_at": "2026-05-01T16:24:06+01:00"
     }
 ]

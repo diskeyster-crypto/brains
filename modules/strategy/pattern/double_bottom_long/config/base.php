@@ -300,6 +300,19 @@ return [
     // before it can become handoff-ready again.
     'require_revalidation_after_symbol_block'  => true,
 
+    // Strategy-local scan suppression cache.
+    // Skips expensive 1m entry-context fetches for symbols recently confirmed as bad setups.
+    // This is NOT a trading blacklist — it only reduces repeated API load for unsuitable symbols.
+    'scan_suppression_enabled'             => true,
+    'scan_suppression_default_ttl_minutes' => 60,
+    'scan_suppression_short_ttl_minutes'   => 15,
+    'scan_suppression_medium_ttl_minutes'  => 30,
+    'scan_suppression_long_ttl_minutes'    => 60,
+    'scan_suppression_storage_file'        => 'storage/scan_suppression.json',
+    // Per-run hard cap on expensive 1m entry-context fetches.
+    // Cheap H4/ticker prefilters may inspect larger batches; only ctx fetches are capped.
+    'max_entry_context_fetch_per_run'      => 35,
+
     // Candle data
     'lookback_candles'  => 120,
     'bybit_base_url'    => 'https://api.bybit.com',

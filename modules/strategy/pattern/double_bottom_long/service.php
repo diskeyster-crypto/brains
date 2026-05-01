@@ -37,6 +37,23 @@ final class DoubleBottomLongService
     private int $ctxFetchSkippedPrefilterThisTick = 0;
     private int $ctxFetchSkippedLimitThisTick     = 0;
 
+    // ── Per-tick scan suppression counters (reset at start of each tickBatch) ──
+    private int $scanSuppressionSkippedThisTick  = 0;
+    private int $scanSuppressionAddedThisTick    = 0;
+    private int $scanSuppressionRefreshedThisTick = 0;
+    private int $scanSuppressionExpiredThisTick  = 0;
+    private int $ctxFetchCapReachedThisTick      = 0;
+    /** @var array<string,mixed> Loaded from storage at start of batch, persisted after */
+    private array $scanSuppressionCache           = [];
+    /** @var list<array<string,mixed>> */
+    private array $scanSuppressionSkipExamples   = [];
+    /** @var list<array<string,mixed>> */
+    private array $scanSuppressionAddedExamples  = [];
+    /** @var list<array<string,mixed>> */
+    private array $scanSuppressionExpiredExamples = [];
+    /** @var list<array<string,mixed>> */
+    private array $ctxFetchCapExamples           = [];
+
     public function __construct(?string $moduleDir = null)
     {
         if ($moduleDir !== null) {
@@ -334,6 +351,16 @@ final class DoubleBottomLongService
         $this->ctxFetchFailedThisTick           = 0;
         $this->ctxFetchSkippedPrefilterThisTick = 0;
         $this->ctxFetchSkippedLimitThisTick     = 0;
+        // Reset per-tick scan suppression counters.
+        $this->scanSuppressionSkippedThisTick   = 0;
+        $this->scanSuppressionAddedThisTick     = 0;
+        $this->scanSuppressionRefreshedThisTick = 0;
+        $this->scanSuppressionExpiredThisTick   = 0;
+        $this->ctxFetchCapReachedThisTick       = 0;
+        $this->scanSuppressionSkipExamples      = [];
+        $this->scanSuppressionAddedExamples     = [];
+        $this->scanSuppressionExpiredExamples   = [];
+        $this->ctxFetchCapExamples              = [];
 
         $symbols = (array)($state['symbols']  ?? []);
         $cursor  = (int)($state['cursor']      ?? 0);
@@ -446,10 +473,106 @@ final class DoubleBottomLongService
         $completedCycleId = null;
         $finishedAt       = null;
 
+        // ── Load scan suppression cache ───────────────────────────────────────
+        $suppressionEnabled = (bool)($config['scan_suppression_enabled'] ?? true);
+        if ($suppressionEnabled) {
+            $suppRelFile = (string)($config['scan_suppression_storage_file'] ?? 'storage/scan_suppression.json');
+            $suppRaw  = (array)$this->readJson($suppRelFile, []);
+            $this->scanSuppressionCache = [];
+            foreach ($suppRaw as $entry) {
+                $sym = strtolower((string)($entry['symbol'] ?? ''));
+                if ($sym !== '') {
+                    $this->scanSuppressionCache[$sym] = $entry;
+                }
+            }
+            // Expire stale cache entries on load
+            $nowTs = time();
+            foreach ($this->scanSuppressionCache as $sym => $entry) {
+                $untilTs = strtotime((string)($entry['suppress_until'] ?? '')) ?: 0;
+                if ($untilTs > 0 && $nowTs >= $untilTs) {
+                    $this->scanSuppressionExpiredThisTick++;
+                    if (count($this->scanSuppressionExpiredExamples) < 5) {
+                        $this->scanSuppressionExpiredExamples[] = [
+                            'symbol'        => $sym,
+                            'reason'        => $entry['reason']       ?? null,
+                            'failed_stage'  => $entry['failed_stage'] ?? null,
+                            'suppress_until'=> $entry['suppress_until'] ?? null,
+                            'ttl_minutes'   => $entry['ttl_minutes']  ?? null,
+                            'daily_change_pct' => $entry['last_daily_change_pct'] ?? null,
+                            'price'         => $entry['last_price']   ?? null,
+                            'action'        => 'expired_ttl',
+                        ];
+                    }
+                    unset($this->scanSuppressionCache[$sym]);
+                }
+            }
+        }
+
+        // Build lookup sets for early-expire conditions.
+        $pendingSymbolSet = [];
+        $pendingConfAll   = (array)$this->readJson($this->moduleDir . '/storage/pending_confirmations.json', []);
+        foreach ($pendingConfAll as $pe) {
+            $ps = strtolower((string)($pe['symbol'] ?? ''));
+            if ($ps !== '') {
+                $pendingSymbolSet[$ps] = true;
+            }
+        }
+
         while ($cursor < $total && $processed < $batchSz && (time() - $tStart) < $maxSec) {
             $symbol = $symbols[$cursor];
             $cursor++;
             $processed++;
+
+            // ── Scan suppression check ────────────────────────────────────────
+            $symLower = strtolower($symbol);
+            if ($suppressionEnabled && isset($this->scanSuppressionCache[$symLower])) {
+                $suppEntry = $this->scanSuppressionCache[$symLower];
+                $earlyExpire = false;
+                $earlyExpireReason = null;
+
+                // Early-expire: symbol is in pending confirmations
+                if (!$earlyExpire && isset($pendingSymbolSet[$symLower])) {
+                    $earlyExpire = true;
+                    $earlyExpireReason = 'scan_suppression_expired_pending_exists';
+                }
+
+                if ($earlyExpire) {
+                    $this->scanSuppressionExpiredThisTick++;
+                    if (count($this->scanSuppressionExpiredExamples) < 5) {
+                        $this->scanSuppressionExpiredExamples[] = [
+                            'symbol'        => $symLower,
+                            'reason'        => $earlyExpireReason,
+                            'failed_stage'  => $suppEntry['failed_stage'] ?? null,
+                            'suppress_until'=> $suppEntry['suppress_until'] ?? null,
+                            'ttl_minutes'   => $suppEntry['ttl_minutes']  ?? null,
+                            'daily_change_pct' => $suppEntry['last_daily_change_pct'] ?? null,
+                            'price'         => $suppEntry['last_price']   ?? null,
+                            'action'        => $earlyExpireReason,
+                        ];
+                    }
+                    unset($this->scanSuppressionCache[$symLower]);
+                    // Do NOT skip — let the symbol be processed normally since early-expire cleared it
+                } else {
+                    // Still suppressed — skip expensive processSymbol
+                    $this->scanSuppressionSkippedThisTick++;
+                    if (count($this->scanSuppressionSkipExamples) < 5) {
+                        $this->scanSuppressionSkipExamples[] = [
+                            'symbol'        => $symLower,
+                            'reason'        => $suppEntry['reason']       ?? null,
+                            'failed_stage'  => $suppEntry['failed_stage'] ?? null,
+                            'suppress_until'=> $suppEntry['suppress_until'] ?? null,
+                            'ttl_minutes'   => $suppEntry['ttl_minutes']  ?? null,
+                            'daily_change_pct' => $suppEntry['last_daily_change_pct'] ?? null,
+                            'price'         => $suppEntry['last_price']   ?? null,
+                            'action'        => 'skipped_by_scan_suppression',
+                        ];
+                    }
+                    // Update observations_count in cache
+                    $this->scanSuppressionCache[$symLower]['observations_count'] =
+                        ((int)($suppEntry['observations_count'] ?? 0)) + 1;
+                    continue;
+                }
+            }
 
             try {
                 $result = $this->processSymbol($symbol, $config, $regimeStr);
@@ -772,6 +895,11 @@ final class DoubleBottomLongService
             } catch (\Throwable $e) {
                 $state['errors'][] = $symbol . ': ' . $e->getMessage();
             }
+
+            // ── Write scan suppression after stable non-technical rejects ─────
+            if ($suppressionEnabled && isset($result)) {
+                $this->updateScanSuppression($symLower, $result, $config);
+            }
         }
 
         [$signals, $filterStats, $signalOutcomeMap] =
@@ -956,6 +1084,12 @@ final class DoubleBottomLongService
         $this->writeJson('storage/signals.json',   array_values($signals));
         $this->writeJson('storage/candidates_found.json',   array_values($foundCandidates));
         $this->writeJson('storage/candidates_emitted.json', array_values($emittedCandidates));
+
+        // ── Persist scan suppression cache ────────────────────────────────────
+        if ($suppressionEnabled) {
+            $suppRelFile = (string)($config['scan_suppression_storage_file'] ?? 'storage/scan_suppression.json');
+            $this->writeJson($suppRelFile, array_values($this->scanSuppressionCache));
+        }
 
         // Refresh bot handoff queue with the current active-pool winner signals.
         $handoffStats = $this->updateBotHandoff($signals, $config, $tickAt);
@@ -1269,6 +1403,23 @@ final class DoubleBottomLongService
             'handoff_removed_stale_queue_entries_total'                 => $handoffStats['removed_stale_queue_entries_total'] ?? 0,
             'stale_handoff_block_examples'                              => $handoffStats['stale_block_examples']             ?? [],
             'revalidation_required_examples'                            => $handoffStats['revalidation_required_examples']   ?? [],
+            // ── Scan suppression cache diagnostics (Task 7) ──────────────────────
+            'scan_suppression_enabled'                   => $suppressionEnabled,
+            'scan_suppression_entries_total'             => $suppressionEnabled ? count($this->scanSuppressionCache) : 0,
+            'scan_suppression_active_total'              => $suppressionEnabled ? count($this->scanSuppressionCache) : 0,
+            'skipped_by_scan_suppression_total'          => $this->scanSuppressionSkippedThisTick,
+            'scan_suppression_added_total'               => $this->scanSuppressionAddedThisTick,
+            'scan_suppression_refreshed_total'           => $this->scanSuppressionRefreshedThisTick,
+            'scan_suppression_expired_total'             => $this->scanSuppressionExpiredThisTick,
+            'scan_suppression_expired_market_changed_total' => 0,
+            'scan_suppression_expired_prefilter_passed_total' => 0,
+            'entry_context_fetch_budget_total'           => (int)($config['max_entry_context_fetch_per_run'] ?? $config['entry_context_max_symbols_per_tick'] ?? 35),
+            'entry_context_fetch_used_total'             => $this->ctxFetchAttemptedThisTick,
+            'entry_context_fetch_cap_reached_total'      => $this->ctxFetchCapReachedThisTick,
+            'scan_suppression_skip_examples'             => $this->scanSuppressionSkipExamples,
+            'scan_suppression_added_examples'            => $this->scanSuppressionAddedExamples,
+            'scan_suppression_expired_examples'          => $this->scanSuppressionExpiredExamples,
+            'entry_context_fetch_cap_examples'           => $this->ctxFetchCapExamples,
             // ── Calibration example arrays (Task 6) ──────────────────────────────
             'normal_signal_examples'                   => $normalSignalExamples,
             'rejected_signal_examples'                 => $rejectedSignalExamples,
@@ -1885,7 +2036,8 @@ final class DoubleBottomLongService
         $lazyEnabled     = (bool)($config['entry_context_lazy_fetch_enabled']             ?? true);
         $fetchAfterPre   = (bool)($config['entry_context_fetch_after_prefilters']         ?? true);
         $fetchForRejDiag = (bool)($config['entry_context_fetch_for_rejected_diagnostics'] ?? false);
-        $maxPerTick      = max(1, (int)($config['entry_context_max_symbols_per_tick']     ?? 50));
+        // max_entry_context_fetch_per_run takes precedence; fall back to legacy entry_context_max_symbols_per_tick
+        $maxPerTick      = max(1, (int)($config['max_entry_context_fetch_per_run'] ?? $config['entry_context_max_symbols_per_tick'] ?? 35));
 
         $ctxCandles         = [];
         $entryCtxAvailable  = false;
@@ -1911,8 +2063,18 @@ final class DoubleBottomLongService
 
             if ($shouldFetch) {
                 if ($this->ctxFetchAttemptedThisTick >= $maxPerTick) {
-                    $entryCtxSkipReason = 'entry_context_fetch_limit_reached';
+                    $entryCtxSkipReason = 'entry_context_fetch_cap_reached';
                     $this->ctxFetchSkippedLimitThisTick++;
+                    $this->ctxFetchCapReachedThisTick++;
+                    if (count($this->ctxFetchCapExamples) < 5) {
+                        $this->ctxFetchCapExamples[] = [
+                            'symbol'         => $symbol,
+                            'reason'         => 'entry_context_fetch_cap_reached',
+                            'fetch_budget'   => $maxPerTick,
+                            'fetch_used'     => $this->ctxFetchAttemptedThisTick,
+                            'action'         => 'skipped_cap',
+                        ];
+                    }
                 } else {
                     $this->ctxFetchAttemptedThisTick++;
                     $fetched = $this->fetchEntryContextCandles($symbol, $config);
@@ -6087,6 +6249,161 @@ final class DoubleBottomLongService
      * @return array {ready_total, new_total, refreshed_total, expired_total}
      * @param string $tickAt ISO-8601 timestamp for the current run (used for freshness gate)
      */
+    // =========================================================================
+    // Scan suppression helpers
+    // =========================================================================
+
+    /**
+     * TTL map for stable non-technical reject reasons (in minutes).
+     * Only reasons listed here will trigger suppression.
+     * Technical failures and temporary data errors are never suppressed.
+     */
+    private function scanSuppressionTtlForReason(string $reason, array $config): int
+    {
+        $short  = max(1, (int)($config['scan_suppression_short_ttl_minutes']   ?? 15));
+        $medium = max(1, (int)($config['scan_suppression_medium_ttl_minutes']  ?? 30));
+        $long   = max(1, (int)($config['scan_suppression_long_ttl_minutes']    ?? 60));
+
+        return match($reason) {
+            'no_post_dump_detected'                  => $long,
+            'active_downtrend_no_stabilization'      => $long,
+            'no_flat_base_after_dump'                => $medium,
+            'base_support_broken'                    => $long,
+            'reclaim_after_flat_not_confirmed'       => $short,
+            'pending_invalidated_fresh_dump'         => $long,
+            'pending_invalidated_reclaim_lost'       => $medium,
+            'pending_invalidated_context_deteriorated' => $medium,
+            default                                  => 0,   // 0 = do not suppress
+        };
+    }
+
+    /**
+     * Non-suppressible reasons: technical failures and temporary data errors.
+     * These must NEVER result in a suppression entry.
+     */
+    private function isSuppressibleRejectReason(string $reason): bool
+    {
+        return !in_array($reason, [
+            'candles_unavailable',
+            'http_fetch_failed',
+            'entry_context_unavailable',
+            'parser_registry_empty',
+            'temporary_data_error',
+            'entry_context_fetch_cap_reached',
+            'entry_context_fetch_limit_reached',
+            'skipped_entry_context_due_prefilter',
+        ], true);
+    }
+
+    /**
+     * After processSymbol() returns, evaluate whether to write/update/clear
+     * a scan suppression entry for the symbol.
+     *
+     * Suppression is only written for stable, non-technical reject reasons.
+     * Signals emitted, late_good_setup, or pending_confirmation are never suppressed.
+     * Technical errors are never suppressed.
+     */
+    private function updateScanSuppression(string $symLower, array $result, array $config): void
+    {
+        $fss         = (string)($result['final_signal_status'] ?? '');
+        $rejectReason = (string)($result['primary_reject_reason'] ?? $result['reject_reason'] ?? '');
+        $pendingInvReason = (string)($result['pending_invalidated_reason'] ?? '');
+
+        // Never suppress if a signal was emitted or the setup is still active
+        if (in_array($fss, ['emitted', 'late_good_setup', 'pending_confirmation'], true)) {
+            // If we had a suppression entry, remove it since this symbol is now viable
+            if (isset($this->scanSuppressionCache[$symLower])) {
+                $this->scanSuppressionExpiredThisTick++;
+                if (count($this->scanSuppressionExpiredExamples) < 5) {
+                    $prev = $this->scanSuppressionCache[$symLower];
+                    $this->scanSuppressionExpiredExamples[] = [
+                        'symbol'         => $symLower,
+                        'reason'         => 'scan_suppression_expired_prefilter_passed',
+                        'failed_stage'   => $prev['failed_stage'] ?? null,
+                        'suppress_until' => $prev['suppress_until'] ?? null,
+                        'ttl_minutes'    => $prev['ttl_minutes']  ?? null,
+                        'daily_change_pct' => $prev['last_daily_change_pct'] ?? null,
+                        'price'          => $prev['last_price']   ?? null,
+                        'action'         => 'scan_suppression_expired_prefilter_passed',
+                    ];
+                }
+                unset($this->scanSuppressionCache[$symLower]);
+            }
+            return;
+        }
+
+        // Resolve effective reject reason (pending invalidation reasons use their own key)
+        $effectiveReason = $rejectReason;
+        if ($pendingInvReason !== '') {
+            // Map pending invalidation reasons to their suppressible equivalents
+            $pendingMap = [
+                'fresh_dump'            => 'pending_invalidated_fresh_dump',
+                'reclaim_lost'          => 'pending_invalidated_reclaim_lost',
+                'context_deteriorated'  => 'pending_invalidated_context_deteriorated',
+            ];
+            foreach ($pendingMap as $k => $v) {
+                if (str_contains($pendingInvReason, $k)) {
+                    $effectiveReason = $v;
+                    break;
+                }
+            }
+        }
+
+        if ($effectiveReason === '' || !$this->isSuppressibleRejectReason($effectiveReason)) {
+            return;
+        }
+
+        $ttlMin = $this->scanSuppressionTtlForReason($effectiveReason, $config);
+        if ($ttlMin <= 0) {
+            return;
+        }
+
+        $nowTs       = time();
+        $untilTs     = $nowTs + ($ttlMin * 60);
+        $suppressedAt = date('c', $nowTs);
+        $suppressUntil = date('c', $untilTs);
+
+        $lastPrice   = (float)($result['last_price'] ?? $result['entry_price'] ?? 0.0);
+        $lastRunId   = null;  // not available at this level; can be enriched later if needed
+
+        $isNew = !isset($this->scanSuppressionCache[$symLower]);
+        $obsCount = (int)(($this->scanSuppressionCache[$symLower]['observations_count'] ?? 0)) + 1;
+
+        $entry = [
+            'symbol'               => $symLower,
+            'strategy'             => 'double_bottom_long',
+            'reason'               => $effectiveReason,
+            'failed_stage'         => $result['failed_stage'] ?? null,
+            'suppressed_at'        => $suppressedAt,
+            'suppress_until'       => $suppressUntil,
+            'ttl_minutes'          => $ttlMin,
+            'last_price'           => $lastPrice > 0.0 ? $lastPrice : null,
+            'last_daily_change_pct'=> null,   // not available at this level
+            'last_seen_run_id'     => $lastRunId,
+            'observations_count'   => $obsCount,
+        ];
+
+        $this->scanSuppressionCache[$symLower] = $entry;
+
+        if ($isNew) {
+            $this->scanSuppressionAddedThisTick++;
+            if (count($this->scanSuppressionAddedExamples) < 5) {
+                $this->scanSuppressionAddedExamples[] = [
+                    'symbol'         => $symLower,
+                    'reason'         => $effectiveReason,
+                    'failed_stage'   => $entry['failed_stage'],
+                    'suppress_until' => $suppressUntil,
+                    'ttl_minutes'    => $ttlMin,
+                    'daily_change_pct' => null,
+                    'price'          => $entry['last_price'],
+                    'action'         => 'added',
+                ];
+            }
+        } else {
+            $this->scanSuppressionRefreshedThisTick++;
+        }
+    }
+
     private function updateBotHandoff(array $activeSignals, array $config, string $tickAt): array
     {
         // ── Freshness gate config ────────────────────────────────────────────

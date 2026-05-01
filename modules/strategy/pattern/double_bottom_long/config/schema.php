@@ -99,6 +99,15 @@ return [
     'signal_requires_current_run_for_handoff'  => 'bool',
     'require_revalidation_after_symbol_block'  => 'bool',
 
+    // Scan suppression cache
+    'scan_suppression_enabled'             => 'bool',
+    'scan_suppression_default_ttl_minutes' => 'int',
+    'scan_suppression_short_ttl_minutes'   => 'int',
+    'scan_suppression_medium_ttl_minutes'  => 'int',
+    'scan_suppression_long_ttl_minutes'    => 'int',
+    'scan_suppression_storage_file'        => 'string',
+    'max_entry_context_fetch_per_run'      => 'int',
+
     // Candle data
     'lookback_candles'  => 'int',
     'bybit_base_url'    => 'string',

@@ -1264,10 +1264,11 @@ final class DoubleBottomLongService
             // ── Handoff lifecycle freshness diagnostics (Task 4 new) ─────────────
             'handoff_blocked_stale_signal_total'                        => $handoffStats['blocked_stale_total']              ?? 0,
             'handoff_blocked_not_current_run_total'                     => $handoffStats['blocked_not_current_run_total']    ?? 0,
-            'handoff_blocked_needs_revalidation_after_symbol_block_total' => 0,
-            'handoff_revalidated_after_unblock_total'                   => 0,
+            'handoff_blocked_needs_revalidation_after_symbol_block_total' => $handoffStats['blocked_needs_revalidation_total'] ?? 0,
+            'handoff_revalidated_after_unblock_total'                   => $handoffStats['revalidated_after_unblock_total']  ?? 0,
             'handoff_removed_stale_queue_entries_total'                 => $handoffStats['removed_stale_queue_entries_total'] ?? 0,
             'stale_handoff_block_examples'                              => $handoffStats['stale_block_examples']             ?? [],
+            'revalidation_required_examples'                            => $handoffStats['revalidation_required_examples']   ?? [],
             // ── Calibration example arrays (Task 6) ──────────────────────────────
             'normal_signal_examples'                   => $normalSignalExamples,
             'rejected_signal_examples'                 => $rejectedSignalExamples,
@@ -6113,7 +6114,10 @@ final class DoubleBottomLongService
         $blockedStaleTotal                           = 0;
         $blockedNotCurrentRunTotal                   = 0;
         $removedStaleQueueEntriesTotal               = 0;
+        $revalidatedAfterUnblockTotal                = 0;
+        $blockedNeedsRevalidationTotal               = 0;
         $staleBlockExamples                          = [];
+        $revalidationRequiredExamples                = [];
         $result                                      = [];
 
         // Process currently-active signals: new or refreshed
@@ -6192,6 +6196,7 @@ final class DoubleBottomLongService
                 if ($requireRevalidAfterBlock && ($prev['needs_revalidation_after_unblock'] ?? false)) {
                     $record['needs_revalidation_after_unblock'] = false;
                     $record['revalidated_at'] = date('c');
+                    $revalidatedAfterUnblockTotal++;
                 }
                 $refreshedTotal++;
             } else {
@@ -6235,6 +6240,22 @@ final class DoubleBottomLongService
             if (in_array($r['handoff_status'] ?? '', ['new', 'refreshed'], true)) {
                 $readyTotal++;
             }
+            // Count queue entries that need revalidation after a symbol guard block
+            if (($r['needs_revalidation_after_unblock'] ?? false) === true) {
+                $blockedNeedsRevalidationTotal++;
+                if (count($revalidationRequiredExamples) < 5) {
+                    $revalidationRequiredExamples[] = [
+                        'symbol'      => $r['symbol']    ?? null,
+                        'side'        => $r['side']      ?? 'long',
+                        'strategy'    => 'double_bottom_long',
+                        'signal_id'   => $r['signal_id'] ?? null,
+                        'detected_at' => $r['detected_at'] ?? null,
+                        'blocked_source' => $r['symbol_guard_block_source'] ?? 'unknown',
+                        'reason'      => 'handoff_blocked_needs_revalidation_after_symbol_block',
+                        'needs_revalidation_after_unblock' => true,
+                    ];
+                }
+            }
         }
 
         return [
@@ -6243,10 +6264,13 @@ final class DoubleBottomLongService
             'refreshed_total' => $refreshedTotal,
             'expired_total'   => $expiredTotal,
             // Freshness gate counters (Task 4)
-            'blocked_stale_total'                => $blockedStaleTotal,
-            'blocked_not_current_run_total'      => $blockedNotCurrentRunTotal,
-            'removed_stale_queue_entries_total'  => $removedStaleQueueEntriesTotal,
-            'stale_block_examples'               => $staleBlockExamples,
+            'blocked_stale_total'                        => $blockedStaleTotal,
+            'blocked_not_current_run_total'              => $blockedNotCurrentRunTotal,
+            'removed_stale_queue_entries_total'          => $removedStaleQueueEntriesTotal,
+            'blocked_needs_revalidation_total'           => $blockedNeedsRevalidationTotal,
+            'revalidated_after_unblock_total'            => $revalidatedAfterUnblockTotal,
+            'stale_block_examples'                       => $staleBlockExamples,
+            'revalidation_required_examples'             => $revalidationRequiredExamples,
             // Active records (new/refreshed) for trace diagnostics
             'active_records'  => array_values(array_filter(
                 $result,

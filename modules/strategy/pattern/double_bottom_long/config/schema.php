@@ -94,6 +94,11 @@ return [
     'max_symbols_per_run'  => 'int',
     'max_runtime_seconds'  => 'int',
 
+    // Handoff signal freshness gates
+    'handoff_signal_max_age_minutes'           => 'int',
+    'signal_requires_current_run_for_handoff'  => 'bool',
+    'require_revalidation_after_symbol_block'  => 'bool',
+
     // Candle data
     'lookback_candles'  => 'int',
     'bybit_base_url'    => 'string',

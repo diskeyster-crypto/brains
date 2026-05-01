@@ -291,6 +291,15 @@ return [
 
     'max_runtime_seconds'  => 55,
 
+    // Handoff signal freshness gates
+    // Signals older than this many minutes will not be written to bot_handoff_queue.
+    'handoff_signal_max_age_minutes'           => 10,
+    // Only signals produced or revalidated in the current run window (5-min) are handoff-eligible.
+    'signal_requires_current_run_for_handoff'  => true,
+    // A signal blocked by Symbol Freeze / Symbol Blacklist must be revalidated by a fresh run
+    // before it can become handoff-ready again.
+    'require_revalidation_after_symbol_block'  => true,
+
     // Candle data
     'lookback_candles'  => 120,
     'bybit_base_url'    => 'https://api.bybit.com',

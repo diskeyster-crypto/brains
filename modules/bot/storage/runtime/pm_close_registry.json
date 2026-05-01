@@ -1,0 +1,19 @@
+{
+    "UBUSDT_long": {
+        "mode": "demo",
+        "symbol": "UBUSDT",
+        "side": "long",
+        "signal_id": "dbl_ubusdt_1309_long",
+        "strategy_id": "double_bottom_long",
+        "owner_strategy": "double_bottom_long",
+        "close_source": "profit_manager",
+        "close_reason": "lock_touch",
+        "close_order_id": "a3148f24-faea-4af5-8656-7b40742db3e1",
+        "position_opened_at": "2026-05-01T16:07:11+01:00",
+        "bot_submitted_at": "2026-05-01T16:07:11+01:00",
+        "ts": 1777648507,
+        "suppress_reentry_until": 1777652107,
+        "close_attribution_consumed": true,
+        "close_attribution_consumed_at": "2026-05-01T16:17:05+01:00"
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "PEAQUSDT_long_bybit_demo": {
+        "symbol": "PEAQUSDT",
+        "side": "long",
+        "account": "bybit_demo",
+        "execution_mode": "demo",
+        "runtime_age_minutes": 101,
+        "first_seen_at": "2026-05-01T13:29:11+01:00",
+        "last_seen_at": "2026-05-01T16:24:06+01:00"
+    },
+    "ZEREBROUSDT_long_bybit_demo": {
+        "symbol": "ZEREBROUSDT",
+        "side": "long",
+        "account": "bybit_demo",
+        "execution_mode": "demo",
+        "runtime_age_minutes": 8,
+        "first_seen_at": "2026-05-01T16:11:05+01:00",
+        "last_seen_at": "2026-05-01T16:24:06+01:00"
+    }
+}

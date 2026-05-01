@@ -757,6 +757,11 @@ final class BotService
         $ordersBlockedByAutoBl    = ((int)($result['blocked_by_auto_blacklist_total']   ?? 0)) + $fbQueueResult['blocked_by_auto_blacklist'];
         $freezeBlockExamples      = (array)($result['freeze_block_examples']    ?? []);
         $blacklistBlockExamples   = (array)($result['blacklist_block_examples'] ?? []);
+        // Handoff-specific freeze/blacklist diagnostic counters (Task 4)
+        $handoffBlockedFreezeTotal       = (int)($result['handoff_blocked_symbol_freeze_total']      ?? 0);
+        $handoffBlockedBlacklistTotal    = (int)($result['handoff_blocked_symbol_blacklist_total']   ?? 0);
+        $handoffFreezeBlockExamples      = (array)($result['handoff_blocked_symbol_freeze_examples']    ?? []);
+        $handoffBlacklistBlockExamples   = (array)($result['handoff_blocked_symbol_blacklist_examples'] ?? []);
 
         // ── 4b. Reconcile stale submitted queue items ─────────────────────────
         $reconResult = $this->reconcileSubmittedQueue($orderQueue, $activeOrders, $activePositions, $tickAt, $config);
@@ -1073,6 +1078,11 @@ final class BotService
             'orders_blocked_by_auto_blacklist_total'   => $ordersBlockedByAutoBl,
             'freeze_block_examples'               => $freezeBlockExamples,
             'blacklist_block_examples'            => $blacklistBlockExamples,
+            // ── Handoff-specific freeze/blacklist diagnostic counters (Task 4) ────
+            'handoff_blocked_symbol_freeze_total'       => $handoffBlockedFreezeTotal,
+            'handoff_blocked_symbol_blacklist_total'    => $handoffBlockedBlacklistTotal,
+            'handoff_blocked_symbol_freeze_examples'    => $handoffFreezeBlockExamples,
+            'handoff_blocked_symbol_blacklist_examples' => $handoffBlacklistBlockExamples,
             // ── Signal trace diagnostics for open positions (Task 5) ─────────────
             'positions_opened_with_signal_trace_total'    => $positionsOpenedWithTrace,
             'positions_opened_missing_signal_trace_total' => $positionsOpenedMissingTrace,
@@ -1663,6 +1673,8 @@ final class BotService
         $blockedByAutoBlTotal               = 0;
         $freezeBlockExamples                = [];
         $blacklistBlockExamples             = [];
+        $handoffFreezeBlockExamples         = [];
+        $handoffBlacklistBlockExamples      = [];
         $result                             = [];
         $activeKeys                         = [];
 
@@ -1750,6 +1762,17 @@ final class BotService
                             'frozen_until' => $fbGate['frozen_until'],
                         ];
                     }
+                    if (count($handoffFreezeBlockExamples) < 5) {
+                        $handoffFreezeBlockExamples[] = [
+                            'symbol'        => $sigSymbol,
+                            'side'          => $sigSide,
+                            'strategy'      => $stratId,
+                            'signal_id'     => $signalId,
+                            'blocked_until' => $fbGate['frozen_until'],
+                            'block_source'  => 'symbol_freeze',
+                            'reason'        => $fbReason,
+                        ];
+                    }
                 } else {
                     if ($fbReason === 'symbol_blacklisted_manual') {
                         $blockedByManualBlTotal++;
@@ -1764,6 +1787,17 @@ final class BotService
                             'signal_id'     => $signalId,
                             'reason'        => $fbReason,
                             'blocked_until' => $fbGate['blocked_until'],
+                        ];
+                    }
+                    if (count($handoffBlacklistBlockExamples) < 5) {
+                        $handoffBlacklistBlockExamples[] = [
+                            'symbol'        => $sigSymbol,
+                            'side'          => $sigSide,
+                            'strategy'      => $stratId,
+                            'signal_id'     => $signalId,
+                            'blocked_until' => $fbGate['blocked_until'],
+                            'block_source'  => 'symbol_blacklist',
+                            'reason'        => $fbReason,
                         ];
                     }
                 }
@@ -1896,6 +1930,11 @@ final class BotService
             'blocked_by_auto_blacklist_total'      => $blockedByAutoBlTotal,
             'freeze_block_examples'                => $freezeBlockExamples,
             'blacklist_block_examples'             => $blacklistBlockExamples,
+            // Handoff-specific freeze/blacklist diagnostic counters (Task 4)
+            'handoff_blocked_symbol_freeze_total'      => $blockedByFreezeTotal,
+            'handoff_blocked_symbol_blacklist_total'   => $blockedByManualBlTotal + $blockedByAutoBlTotal,
+            'handoff_blocked_symbol_freeze_examples'   => $handoffFreezeBlockExamples,
+            'handoff_blocked_symbol_blacklist_examples'=> $handoffBlacklistBlockExamples,
         ];
     }
 

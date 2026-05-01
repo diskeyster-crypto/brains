@@ -1121,6 +1121,12 @@ final class BotService
             'closed_trades_with_signal_trace_total'       => $closedTradesWithTrace,
             'closed_trades_missing_signal_trace_total'    => $closedTradesMissingTrace,
             'closed_trades_signal_trace_missing_examples' => $closedTraceMissingExamples,
+            // ── Handoff freshness/lifecycle diagnostics (new) ────────────────────
+            'handoff_blocked_stale_signal_total'                          => $result['handoff_blocked_stale_signal_total']                        ?? 0,
+            'stale_handoff_ignored_total'                                 => $result['stale_handoff_ignored_total']                               ?? 0,
+            'handoff_blocked_needs_revalidation_after_symbol_block_total' => $result['handoff_blocked_needs_revalidation_after_symbol_block_total'] ?? 0,
+            'stale_handoff_block_examples'                                => $result['stale_handoff_block_examples']                              ?? [],
+            'revalidation_required_examples'                              => $result['revalidation_required_examples']                            ?? [],
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -1709,6 +1715,11 @@ final class BotService
         $blacklistBlockExamples             = [];
         $handoffFreezeBlockExamples         = [];
         $handoffBlacklistBlockExamples      = [];
+        $staleHandoffIgnoredTotal           = 0;
+        $handoffBlockedStaleTotal           = 0;
+        $handoffNeedsRevalidationTotal      = 0;
+        $staleHandoffBlockExamples          = [];
+        $revalidationRequiredExamples       = [];
         $result                             = [];
         $activeKeys                         = [];
 
@@ -1739,6 +1750,21 @@ final class BotService
             if ($maxAgeSec > 0) {
                 $detectedTs = strtotime((string)($signal['detected_at'] ?? ''));
                 if ($detectedTs !== false && (time() - $detectedTs) > $maxAgeSec) {
+                    $staleHandoffIgnoredTotal++;
+                    $handoffBlockedStaleTotal++;
+                    if (count($staleHandoffBlockExamples) < 5) {
+                        $staleHandoffBlockExamples[] = [
+                            'symbol'      => (string)($signal['symbol']    ?? ''),
+                            'side'        => (string)($signal['side']      ?? ''),
+                            'strategy'    => $stratId,
+                            'signal_id'   => $signalId,
+                            'detected_at' => (string)($signal['detected_at'] ?? ''),
+                            'age_minutes' => round((time() - $detectedTs) / 60, 1),
+                            'blocked_source' => 'age_gate',
+                            'reason'      => 'handoff_blocked_stale_signal',
+                            'needs_revalidation_after_unblock' => false,
+                        ];
+                    }
                     continue;
                 }
             }
@@ -1835,14 +1861,19 @@ final class BotService
                         ];
                     }
                 }
-                // If existing queued/ready item — mark it skipped
+                // If existing queued/ready item — mark it skipped + needs revalidation after unblock
                 if (isset($queueMap[$key])) {
                     $prevBlocked    = $queueMap[$key];
                     $prevStatusBl   = (string)($prevBlocked['queue_status'] ?? 'queued');
                     if (in_array($prevStatusBl, ['queued', 'ready'], true)) {
-                        $prevBlocked['queue_status']       = 'skipped';
-                        $prevBlocked['exit_at']            = $tickAt;
-                        $prevBlocked['last_change_reason'] = $fbReason;
+                        $prevBlocked['queue_status']                  = 'skipped';
+                        $prevBlocked['exit_at']                       = $tickAt;
+                        $prevBlocked['last_change_reason']            = $fbReason;
+                        $prevBlocked['blocked_by_symbol_guard']       = true;
+                        $prevBlocked['symbol_guard_block_source']     = ($fbReason === 'symbol_frozen_after_close') ? 'freeze' : 'blacklist';
+                        $prevBlocked['blocked_at']                    = $tickAt;
+                        $prevBlocked['needs_revalidation_after_unblock'] = true;
+                        $prevBlocked['handoff_ready']                 = false;
                         if ($fbGate['frozen_until'] !== null) {
                             $prevBlocked['frozen_until'] = $fbGate['frozen_until'];
                         }
@@ -1850,6 +1881,19 @@ final class BotService
                             $prevBlocked['blocked_until'] = $fbGate['blocked_until'];
                         }
                         $result[$key] = $prevBlocked;
+                        $handoffNeedsRevalidationTotal++;
+                        if (count($revalidationRequiredExamples) < 5) {
+                            $revalidationRequiredExamples[] = [
+                                'symbol'      => $sigSymbol,
+                                'side'        => $sigSide,
+                                'strategy'    => $stratId,
+                                'signal_id'   => $signalId,
+                                'detected_at' => (string)($signal['detected_at'] ?? ''),
+                                'blocked_source' => $prevBlocked['symbol_guard_block_source'],
+                                'reason'      => 'handoff_blocked_needs_revalidation_after_symbol_block',
+                                'needs_revalidation_after_unblock' => true,
+                            ];
+                        }
                     }
                 }
                 continue;
@@ -1969,6 +2013,12 @@ final class BotService
             'handoff_blocked_symbol_blacklist_total'   => $blockedByManualBlTotal + $blockedByAutoBlTotal,
             'handoff_blocked_symbol_freeze_examples'   => $handoffFreezeBlockExamples,
             'handoff_blocked_symbol_blacklist_examples'=> $handoffBlacklistBlockExamples,
+            // Handoff freshness/lifecycle diagnostics (Task 4 new)
+            'handoff_blocked_stale_signal_total'                        => $handoffBlockedStaleTotal,
+            'stale_handoff_ignored_total'                               => $staleHandoffIgnoredTotal,
+            'handoff_blocked_needs_revalidation_after_symbol_block_total' => $handoffNeedsRevalidationTotal,
+            'stale_handoff_block_examples'                              => $staleHandoffBlockExamples,
+            'revalidation_required_examples'                            => $revalidationRequiredExamples,
         ];
     }
 

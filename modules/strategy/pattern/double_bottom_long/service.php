@@ -958,7 +958,7 @@ final class DoubleBottomLongService
         $this->writeJson('storage/candidates_emitted.json', array_values($emittedCandidates));
 
         // Refresh bot handoff queue with the current active-pool winner signals.
-        $handoffStats = $this->updateBotHandoff($signals, $config);
+        $handoffStats = $this->updateBotHandoff($signals, $config, $tickAt);
 
         // Update state with real handoff counters before writing run_state.json.
         $state['bot_handoff_ready_total']     = $handoffStats['ready_total'];
@@ -1261,6 +1261,13 @@ final class DoubleBottomLongService
             'handoff_entries_with_trace_total'    => $handoffEntriesWithTraceTotal,
             'handoff_entries_missing_trace_total' => $handoffEntriesMissingTraceTotal,
             'missing_trace_examples'              => $missingTraceExamples,
+            // ── Handoff lifecycle freshness diagnostics (Task 4 new) ─────────────
+            'handoff_blocked_stale_signal_total'                        => $handoffStats['blocked_stale_total']              ?? 0,
+            'handoff_blocked_not_current_run_total'                     => $handoffStats['blocked_not_current_run_total']    ?? 0,
+            'handoff_blocked_needs_revalidation_after_symbol_block_total' => 0,
+            'handoff_revalidated_after_unblock_total'                   => 0,
+            'handoff_removed_stale_queue_entries_total'                 => $handoffStats['removed_stale_queue_entries_total'] ?? 0,
+            'stale_handoff_block_examples'                              => $handoffStats['stale_block_examples']             ?? [],
             // ── Calibration example arrays (Task 6) ──────────────────────────────
             'normal_signal_examples'                   => $normalSignalExamples,
             'rejected_signal_examples'                 => $rejectedSignalExamples,
@@ -6077,9 +6084,18 @@ final class DoubleBottomLongService
      * @param array $activeSignals Current filtered winner signals (signals.json pool)
      * @param array $config        Module config (for stop/tp/budget/ttl params)
      * @return array {ready_total, new_total, refreshed_total, expired_total}
+     * @param string $tickAt ISO-8601 timestamp for the current run (used for freshness gate)
      */
-    private function updateBotHandoff(array $activeSignals, array $config): array
+    private function updateBotHandoff(array $activeSignals, array $config, string $tickAt): array
     {
+        // ── Freshness gate config ────────────────────────────────────────────
+        $maxAgeMinutes          = (int)($config['handoff_signal_max_age_minutes']          ?? 10);
+        $requireCurrentRun      = (bool)($config['signal_requires_current_run_for_handoff'] ?? true);
+        $requireRevalidAfterBlock = (bool)($config['require_revalidation_after_symbol_block'] ?? true);
+        $maxAgeSec              = $maxAgeMinutes > 0 ? $maxAgeMinutes * 60 : 0;
+        $nowTs                  = time();
+        $tickTs                 = strtotime($tickAt);
+
         $existing = (array)$this->readJson('storage/bot_handoff_queue.json', []);
 
         $existingMap = [];
@@ -6090,11 +6106,15 @@ final class DoubleBottomLongService
             }
         }
 
-        $activeIds      = [];
-        $newTotal       = 0;
-        $refreshedTotal = 0;
-        $expiredTotal   = 0;
-        $result         = [];
+        $activeIds                                   = [];
+        $newTotal                                    = 0;
+        $refreshedTotal                              = 0;
+        $expiredTotal                                = 0;
+        $blockedStaleTotal                           = 0;
+        $blockedNotCurrentRunTotal                   = 0;
+        $removedStaleQueueEntriesTotal               = 0;
+        $staleBlockExamples                          = [];
+        $result                                      = [];
 
         // Process currently-active signals: new or refreshed
         foreach ($activeSignals as $signal) {
@@ -6102,6 +6122,62 @@ final class DoubleBottomLongService
             if ($id === '') {
                 continue;
             }
+
+            // ── Age freshness gate ───────────────────────────────────────────
+            $detectedAt = (string)($signal['detected_at'] ?? '');
+            $detectedTs = $detectedAt !== '' ? strtotime($detectedAt) : 0;
+            if ($maxAgeSec > 0 && $detectedTs > 0 && ($nowTs - $detectedTs) > $maxAgeSec) {
+                $ageMin = round(($nowTs - $detectedTs) / 60, 1);
+                $blockedStaleTotal++;
+                if (count($staleBlockExamples) < 5) {
+                    $staleBlockExamples[] = [
+                        'symbol'      => $signal['symbol']    ?? null,
+                        'side'        => $signal['side']      ?? 'long',
+                        'strategy'    => 'double_bottom_long',
+                        'signal_id'   => $id,
+                        'detected_at' => $detectedAt,
+                        'age_minutes' => $ageMin,
+                        'reason'      => 'handoff_blocked_stale_signal',
+                    ];
+                }
+                // Mark existing queue entry as stale-withdrawn if it exists
+                if (isset($existingMap[$id])) {
+                    $staleEntry = $existingMap[$id];
+                    $staleEntry['handoff_status']   = 'withdrawn';
+                    $staleEntry['withdrawn_at']     = date('c');
+                    $staleEntry['last_change_reason'] = 'stale_signal_age_exceeded';
+                    $result[$id] = $staleEntry;
+                    $removedStaleQueueEntriesTotal++;
+                }
+                $activeIds[$id] = true; // mark as processed so we don't also expire it below
+                continue;
+            }
+
+            // ── Current-run freshness gate ───────────────────────────────────
+            // A signal is "current-run" if its detected_at is within the current run tick
+            // or if it was emitted in this tick's batch (detected within ~5 min of tickTs).
+            if ($requireCurrentRun && $tickTs !== false) {
+                $signalAge = $nowTs - ($detectedTs > 0 ? $detectedTs : $nowTs);
+                if ($detectedTs === 0 || $signalAge > 300) {
+                    // Signal was not produced or refreshed in the current run window.
+                    $blockedNotCurrentRunTotal++;
+                    if (count($staleBlockExamples) < 5) {
+                        $staleBlockExamples[] = [
+                            'symbol'      => $signal['symbol']    ?? null,
+                            'side'        => $signal['side']      ?? 'long',
+                            'strategy'    => 'double_bottom_long',
+                            'signal_id'   => $id,
+                            'detected_at' => $detectedAt,
+                            'age_minutes' => round($signalAge / 60, 1),
+                            'reason'      => 'handoff_blocked_not_current_run',
+                        ];
+                    }
+                    // Do not update the queue entry; let existing state remain
+                    $activeIds[$id] = true;
+                    continue;
+                }
+            }
+
             $activeIds[$id] = true;
             $record = $this->buildBotHandoffRecord($signal, $config);
 
@@ -6111,6 +6187,12 @@ final class DoubleBottomLongService
                 $record['first_seen_at'] = $prev['first_seen_at'] ?? ($prev['detected_at'] ?? $record['detected_at']);
                 $record['seen_count']    = (int)($prev['seen_count'] ?? 0) + 1;
                 $record['handoff_status'] = 'refreshed';
+                // If this entry was previously marked as needing revalidation, clear it
+                // since the signal is being refreshed in the current run.
+                if ($requireRevalidAfterBlock && ($prev['needs_revalidation_after_unblock'] ?? false)) {
+                    $record['needs_revalidation_after_unblock'] = false;
+                    $record['revalidated_at'] = date('c');
+                }
                 $refreshedTotal++;
             } else {
                 $record['first_seen_at'] = $record['detected_at'];
@@ -6139,7 +6221,7 @@ final class DoubleBottomLongService
             // Determine exit cause: TTL elapsed → expired, otherwise → withdrawn
             $detectedAt = $prev['detected_at'] ?? '';
             $ts = $detectedAt !== '' ? strtotime($detectedAt) : 0;
-            $status = ($ts > 0 && (time() - $ts) > $ttlSec) ? 'expired' : 'withdrawn';
+            $status = ($ts > 0 && ($nowTs - $ts) > $ttlSec) ? 'expired' : 'withdrawn';
             $prev['handoff_status'] = $status;
             $prev['withdrawn_at']   = date('c');
             $result[$id] = $prev;
@@ -6160,6 +6242,11 @@ final class DoubleBottomLongService
             'new_total'       => $newTotal,
             'refreshed_total' => $refreshedTotal,
             'expired_total'   => $expiredTotal,
+            // Freshness gate counters (Task 4)
+            'blocked_stale_total'                => $blockedStaleTotal,
+            'blocked_not_current_run_total'      => $blockedNotCurrentRunTotal,
+            'removed_stale_queue_entries_total'  => $removedStaleQueueEntriesTotal,
+            'stale_block_examples'               => $staleBlockExamples,
             // Active records (new/refreshed) for trace diagnostics
             'active_records'  => array_values(array_filter(
                 $result,

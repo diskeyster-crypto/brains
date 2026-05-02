@@ -684,13 +684,19 @@ final class StopManagerService
                     }
                     if ($skipReason !== '' && count($efSkippedExamples) < 5) {
                         $efSkippedExamples[] = [
-                            'symbol'      => $pos['symbol']    ?? null,
-                            'side'        => $pos['side']      ?? null,
-                            'signal_id'   => $pos['signal_id'] ?? null,
-                            'skip_reason' => $skipReason,
-                            'roi'         => $efResult['roi']         ?? null,
-                            'age_minutes' => $efResult['age_minutes'] ?? null,
-                            'diagnostic'  => $efResult['diagnostic']  ?? null,
+                            'symbol'           => $pos['symbol']    ?? null,
+                            'side'             => $pos['side']      ?? null,
+                            'signal_id'        => $pos['signal_id'] ?? null,
+                            'skip_reason'      => $skipReason,
+                            'roi'              => $efResult['roi']           ?? null,
+                            'age_minutes'      => $efResult['age_minutes']   ?? null,
+                            'current_price'    => $efResult['current_price'] ?? null,
+                            'entry_price'      => isset($pos['entry_price']) ? (float)$pos['entry_price'] : null,
+                            'neckline_level'   => $efResult['neckline_level'] ?? null,
+                            'reclaim_level'    => $efResult['reclaim_level']  ?? null,
+                            'adverse_roi_soft' => (float)($config['double_bottom_early_fail_adverse_roi_soft'] ?? -20.0),
+                            'adverse_roi_hard' => (float)($config['double_bottom_early_fail_adverse_roi_hard'] ?? -35.0),
+                            'diagnostic'       => $efResult['diagnostic']   ?? null,
                         ];
                     }
                     continue;
@@ -747,6 +753,9 @@ final class StopManagerService
 
                     if ($closeOk) {
                         $efClosedTotal++;
+                        // Write early-fail close registry so the bot can preserve attribution
+                        // in closed_trades.json when it detects the position has disappeared.
+                        $this->writeEfCloseRegistry($pos, $closeResult, $efResult, $closeReason, $config, $tickAt);
                     }
 
                     $this->appendActionLog([
@@ -1633,6 +1642,94 @@ final class StopManagerService
             'note'     => $ok ? 'close_submitted' : 'close_failed',
             'order_id' => $ok ? ($resp['result']['orderId'] ?? null) : null,
         ];
+    }
+
+    /**
+     * Write an early-fail close registry entry so the bot's recordClosedTrade()
+     * can preserve Stop Manager attribution instead of falling back to
+     * exchange_disappeared when the position disappears from Bybit Demo.
+     *
+     * Registry is written to the bot module's runtime directory so the bot can
+     * read it without any cross-module import.  Path mirrors pm_close_registry.json.
+     *
+     * TTL: 2 hours (7200 s).  Entry is marked consumed after first attribution read.
+     */
+    private function writeEfCloseRegistry(
+        array  $pos,
+        array  $closeResult,
+        array  $efResult,
+        string $closeReason,
+        array  $config,
+        string $tickAt
+    ): void {
+        try {
+            $botRelDir = (string)($config['bot_module_dir'] ?? 'modules/bot');
+            $botDir    = str_starts_with($botRelDir, '/')
+                ? rtrim($botRelDir, '/')
+                : $this->repoRoot . '/' . rtrim($botRelDir, '/');
+
+            $registryPath = $botDir . '/storage/runtime/ef_close_registry.json';
+
+            $registryDir = dirname($registryPath);
+            if (!is_dir($registryDir)) {
+                mkdir($registryDir, 0755, true);
+            }
+
+            $registry = [];
+            if (is_file($registryPath)) {
+                $raw = @file_get_contents($registryPath);
+                if ($raw !== false && $raw !== '') {
+                    $dec = @json_decode($raw, true);
+                    if (is_array($dec)) {
+                        $registry = $dec;
+                    }
+                }
+            }
+
+            $symbol   = (string)($pos['symbol']    ?? '');
+            $side     = (string)($pos['side']      ?? 'long');
+            $signalId = (string)($pos['signal_id'] ?? '');
+            $key      = $symbol . '_' . $side;
+            $nowTs    = time();
+            $ttl      = 7200; // 2 hours
+
+            // Prune expired entries before writing
+            foreach ($registry as $k => $entry) {
+                $entryTs = (int)($entry['ts'] ?? 0);
+                if ($entryTs > 0 && ($nowTs - $entryTs) > $ttl) {
+                    unset($registry[$k]);
+                }
+            }
+
+            $registry[$key] = [
+                'symbol'                     => $symbol,
+                'side'                       => $side,
+                'signal_id'                  => $signalId,
+                'strategy_id'               => 'double_bottom_long',
+                'close_source'              => 'stop_manager',
+                'close_guard'               => 'double_bottom_early_fail',
+                'close_reason'              => $closeReason,
+                'close_order_id'            => $closeResult['order_id'] ?? null,
+                'close_submitted_at'        => $tickAt,
+                'close_ok'                  => $closeResult['ok'] ?? false,
+                'close_ret_code'            => $closeResult['ret_code'] ?? null,
+                'close_ret_msg'             => $closeResult['ret_msg']  ?? null,
+                'roi_at_close'              => $efResult['roi']              ?? null,
+                'setup_break_reason'        => $efResult['setup_break_reason'] ?? null,
+                'strategy_signal_context'   => $pos['strategy_signal_context'] ?? null,
+                'ts'                        => $nowTs,
+                'expires_at'               => date('c', $nowTs + $ttl),
+                'close_attribution_consumed'=> false,
+            ];
+
+            @file_put_contents(
+                $registryPath,
+                json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n",
+                LOCK_EX
+            );
+        } catch (\Throwable) {
+            // Never crash the tick over registry write failures
+        }
     }
 
     private function writeRuntimeSnapshot(array $config, array $lastRun, int $stopsActiveTotal): void

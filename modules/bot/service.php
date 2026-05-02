@@ -1078,6 +1078,69 @@ final class BotService
             }
         }
 
+        // ── 7j. Missed early-fail diagnostics for double_bottom_long ──────────
+        // Scan closed_trades.json for double_bottom_long trades that look like
+        // they should have been caught by the early-fail guard but were not.
+        // Criteria: ROI <= -15, duration_minutes <= 45, close_guard != double_bottom_early_fail.
+        // This is diagnostics only — no thresholds are changed.
+        $efMissedTotal            = 0;
+        $efMissedWithTrace        = 0;
+        $efMissedMissingTrace     = 0;
+        $efMissedExamples         = [];
+        $efMissedRoiThreshold     = -15.0;
+        $efMissedDurationMinutes  = 45;
+
+        foreach ($closedTradesForDiag as $ct) {
+            if ((string)($ct['strategy_id'] ?? '') !== 'double_bottom_long') {
+                continue;
+            }
+            // Skip trades already attributed to the early-fail guard
+            if ((string)($ct['close_guard'] ?? '') === 'double_bottom_early_fail') {
+                continue;
+            }
+            $roiRaw = $ct['roi'] ?? $ct['roi_pct'] ?? null;
+            $roi    = $roiRaw !== null ? (float)$roiRaw : null;
+            if ($roi === null || $roi > $efMissedRoiThreshold) {
+                continue;
+            }
+            // Duration filter
+            $openedTsEf  = isset($ct['opened_at']) ? strtotime($ct['opened_at']) : 0;
+            $closedTsEf  = isset($ct['closed_at']) ? strtotime($ct['closed_at']) : 0;
+            $durationMinEf = ($openedTsEf > 0 && $closedTsEf > 0)
+                ? round(($closedTsEf - $openedTsEf) / 60, 1)
+                : null;
+            if ($durationMinEf !== null && $durationMinEf > $efMissedDurationMinutes) {
+                continue;
+            }
+            $efMissedTotal++;
+            $hasTraceEf = (string)($ct['signal_id'] ?? '') !== '';
+            if ($hasTraceEf) {
+                $efMissedWithTrace++;
+            } else {
+                $efMissedMissingTrace++;
+            }
+            if (count($efMissedExamples) < 10) {
+                $ctxEf = is_array($ct['strategy_signal_context'] ?? null) ? $ct['strategy_signal_context'] : [];
+                $efMissedExamples[] = [
+                    'symbol'                           => $ct['symbol']       ?? null,
+                    'signal_id'                        => $ct['signal_id']    ?? null,
+                    'roi'                              => $roi,
+                    'duration_minutes'                 => $durationMinEf,
+                    'close_reason'                     => $ct['close_reason'] ?? null,
+                    'close_source'                     => $ct['close_source'] ?? null,
+                    'leverage'                         => $ct['leverage']     ?? null,
+                    'setup_class'                      => $ct['setup_class']        ?? $ctxEf['setup_class']        ?? null,
+                    'synthetic_quality_score'          => $ct['synthetic_quality_score']   ?? $ctxEf['synthetic_quality_score']   ?? null,
+                    'setup_class_score'                => $ct['setup_class_score']         ?? $ctxEf['setup_class_score']         ?? null,
+                    'intraday_double_bottom_score'     => $ct['intraday_double_bottom_score'] ?? $ctxEf['intraday_double_bottom_score'] ?? null,
+                    'candidate_quality_score'          => $ct['candidate_quality_score']   ?? $ctxEf['candidate_quality_score']   ?? null,
+                    'entry_distance_from_neckline_pct' => $ct['entry_distance_from_neckline_pct'] ?? $ctxEf['entry_distance_from_neckline_pct'] ?? null,
+                    'warnings'                         => $ct['warnings']      ?? $ctxEf['warnings']      ?? null,
+                    'reason_codes'                     => $ct['reason_codes']  ?? $ctxEf['reason_codes']  ?? null,
+                ];
+            }
+        }
+
         $lastRun = [
             'status'      => 'ok',
             'tick_at'     => $tickAt,
@@ -1294,6 +1357,11 @@ final class BotService
             'double_bottom_deep_loss_with_trace_total'       => $deepLossWithTrace,
             'double_bottom_deep_loss_missing_trace_total'    => $deepLossMissingTrace,
             'double_bottom_deep_loss_examples'               => $deepLossExamples,
+            // ── Missed early-fail diagnostics for double_bottom_long ─────────────
+            'double_bottom_early_fail_missed_total'              => $efMissedTotal,
+            'double_bottom_early_fail_missed_with_trace_total'   => $efMissedWithTrace,
+            'double_bottom_early_fail_missed_missing_trace_total'=> $efMissedMissingTrace,
+            'double_bottom_early_fail_missed_examples'           => $efMissedExamples,
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -4732,6 +4800,7 @@ final class BotService
             // intact for the full TTL window.
             $closeOrderId   = null;
             $executionType  = 'inferred_close';
+            $closeGuard     = null;
             $pmRegistryPath = $this->moduleDir . '/storage/runtime/pm_close_registry.json';
             $pmRegistryKey  = $symbol . '_' . $side;
             // Default suppression TTL mirrors PM config default (1 hour).
@@ -4793,6 +4862,64 @@ final class BotService
                 // Never crash over registry read/write failures
             }
 
+            // ── EF close registry lookup ──────────────────────────────────────
+            // If Stop Manager's early-fail guard closed this position it will have
+            // written an entry to ef_close_registry.json.  Prefer this attribution
+            // over exchange_disappeared for double_bottom_long positions.
+            // TTL mirrors the registry write TTL (2 hours / 7200 s).
+            $efRegistryPath = $this->moduleDir . '/storage/runtime/ef_close_registry.json';
+            $efRegistryKey  = $symbol . '_' . $side;
+            $efRegistryTtl  = 7200;
+
+            try {
+                if (is_file($efRegistryPath)) {
+                    $efRegRaw = @file_get_contents($efRegistryPath);
+                    if ($efRegRaw !== false && $efRegRaw !== '') {
+                        $efRegistry = @json_decode($efRegRaw, true);
+                        if (is_array($efRegistry) && isset($efRegistry[$efRegistryKey])) {
+                            $efEntry   = $efRegistry[$efRegistryKey];
+                            $efEntryTs = (int)($efEntry['ts'] ?? 0);
+                            $efNowTs   = time();
+                            $efExpiry  = $efEntryTs > 0 ? $efEntryTs + $efRegistryTtl : 0;
+                            $efAlreadyConsumed = (bool)($efEntry['close_attribution_consumed'] ?? false);
+
+                            if (!$efAlreadyConsumed && $efEntryTs > 0 && $efExpiry >= $efNowTs) {
+                                // Verify signal_id matches when both sides have one (extra safety)
+                                $efSignalId  = (string)($efEntry['signal_id'] ?? '');
+                                $posSignalId = (string)($pos['signal_id']     ?? '');
+                                $signalIdOk  = ($efSignalId === '' || $posSignalId === '' || $efSignalId === $posSignalId);
+
+                                if ($signalIdOk) {
+                                    // Registry hit — override close attribution with guard values
+                                    $closeSource           = (string)($efEntry['close_source'] ?? 'stop_manager');
+                                    $closeReason           = (string)($efEntry['close_reason'] ?? $closeReason);
+                                    $closeOrderId          = ($efEntry['close_order_id'] ?? null) !== null
+                                        ? (string)$efEntry['close_order_id']
+                                        : null;
+                                    $closeGuard            = (string)($efEntry['close_guard'] ?? 'double_bottom_early_fail');
+                                    $executionType         = 'ef_guard_market_close';
+                                    $closeSourceConfidence = 'direct_guard_registry';
+                                    $closedAtIsEstimated   = false;
+                                    $closedAtSource        = 'ef_close_registry';
+
+                                    // Mark consumed so a second position-gone event does not re-attribute
+                                    $efRegistry[$efRegistryKey]['close_attribution_consumed']    = true;
+                                    $efRegistry[$efRegistryKey]['close_attribution_consumed_at'] = $tickAt;
+
+                                    @file_put_contents(
+                                        $efRegistryPath,
+                                        json_encode($efRegistry, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+                                        LOCK_EX
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (\Throwable) {
+                // Never crash over registry read/write failures
+            }
+
             // Normalise legacy 'unknown' source — when no explicit source was found,
             // the position disappeared from the exchange without a clear PM/Stop hit.
             if ($closeSource === 'unknown') {
@@ -4835,6 +4962,7 @@ final class BotService
                 'close_source'               => $closeSource,
                 'close_reason'               => $closeReason,
                 'close_order_id'             => $closeOrderId,
+                'close_guard'                => $closeGuard,
                 'execution_type'             => $executionType,
                 'close_source_confidence'    => $closeSourceConfidence !== '' ? $closeSourceConfidence : null,
                 'closed_at_source'           => $closedAtSource         !== '' ? $closedAtSource         : null,

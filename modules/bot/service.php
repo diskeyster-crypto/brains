@@ -923,6 +923,161 @@ final class BotService
             }
         }
 
+        // ── 7h. Order queue diagnostics for double_bottom_long (Task 3) ─────────
+        // Build a lookup of all handoff queue entries keyed by signal_id for source checks.
+        $dbHandoffMap = [];
+        foreach ($enabledStrategies as $stratRec) {
+            if ((string)($stratRec['strategy_id'] ?? '') !== 'double_bottom_long') {
+                continue;
+            }
+            $hqPath = $stratRec['handoff_queue_path'] ?? null;
+            if ($hqPath === null) {
+                break;
+            }
+            $hqAbsPath = str_starts_with($hqPath, '/') ? $hqPath : $this->repoRoot . '/' . $hqPath;
+            if (!file_exists($hqAbsPath)) {
+                break;
+            }
+            $hqRaw = @file_get_contents($hqAbsPath);
+            if ($hqRaw !== false && $hqRaw !== '') {
+                $hqDec = @json_decode($hqRaw, true);
+                if (is_array($hqDec)) {
+                    foreach ($hqDec as $hqEntry) {
+                        $hSid = (string)($hqEntry['signal_id'] ?? '');
+                        if ($hSid !== '') {
+                            $dbHandoffMap[$hSid] = $hqEntry;
+                        }
+                    }
+                }
+            }
+            break;
+        }
+
+        $dbqTotal             = 0;
+        $dbqStaleSourceTotal  = 0;
+        $dbqMissingSourceTotal= 0;
+        $dbqExecSourceTotal   = 0;
+        $dbqStaleSourceExamples  = [];
+        $dbqMissingSourceExamples= [];
+        $nowTsBot = time();
+
+        foreach ($orderQueue as $qItem) {
+            $qStratId = (string)($qItem['strategy_id'] ?? '');
+            if ($qStratId !== 'double_bottom_long') {
+                continue;
+            }
+            $dbqTotal++;
+            $qSigId   = (string)($qItem['signal_id'] ?? '');
+            $qSym     = (string)($qItem['symbol']    ?? '');
+            $qStatus  = (string)($qItem['queue_status'] ?? '');
+            $qCreated = $qItem['first_queued_at'] ?? $qItem['created_at'] ?? null;
+            $qUpdated = $qItem['last_refreshed_at'] ?? $qItem['updated_at'] ?? null;
+
+            if ($qSigId === '' || !isset($dbHandoffMap[$qSigId])) {
+                $dbqMissingSourceTotal++;
+                if (count($dbqMissingSourceExamples) < 5) {
+                    $dbqMissingSourceExamples[] = [
+                        'symbol'          => $qSym,
+                        'side'            => $qItem['side']  ?? null,
+                        'signal_id'       => $qSigId,
+                        'queue_status'    => $qStatus,
+                        'queue_created_at' => $qCreated,
+                        'queue_updated_at' => $qUpdated,
+                        'source_found'    => false,
+                        'source_executable' => null,
+                        'source_stale'    => null,
+                        'source_age_minutes' => null,
+                        'reason'          => 'source_handoff_not_found',
+                    ];
+                }
+                continue;
+            }
+
+            $src     = $dbHandoffMap[$qSigId];
+            $srcExec = ($src['executable'] ?? null) === true;
+            $srcStale= ($src['stale'] ?? false) === true;
+            $srcDetectedAt = $src['detected_at'] ?? null;
+            $srcDetTs = $srcDetectedAt !== null ? strtotime($srcDetectedAt) : 0;
+            $srcAge   = ($srcDetTs > 0) ? round(($nowTsBot - $srcDetTs) / 60, 1) : null;
+
+            if ($srcExec) {
+                $dbqExecSourceTotal++;
+            } else {
+                $dbqStaleSourceTotal++;
+                if (count($dbqStaleSourceExamples) < 5) {
+                    $dbqStaleSourceExamples[] = [
+                        'symbol'             => $qSym,
+                        'side'               => $qItem['side'] ?? null,
+                        'signal_id'          => $qSigId,
+                        'queue_status'       => $qStatus,
+                        'queue_created_at'   => $qCreated,
+                        'queue_updated_at'   => $qUpdated,
+                        'source_found'       => true,
+                        'source_executable'  => false,
+                        'source_stale'       => $srcStale,
+                        'source_age_minutes' => $srcAge,
+                        'reason'             => $src['block_reason'] ?? 'source_non_executable',
+                    ];
+                }
+            }
+        }
+
+        // ── 7i. Deep loss diagnostics for double_bottom_long (Task 5) ─────────
+        $deepLossDiagEnabled  = (bool)($config['deep_loss_diagnostic_enabled'] ?? true);
+        $deepLossThreshold    = (float)($config['deep_loss_roi_threshold'] ?? -30.0);
+        $deepLossFilter       = (string)($config['deep_loss_strategy_filter'] ?? 'double_bottom_long');
+        $deepLossTotal        = 0;
+        $deepLossWithTrace    = 0;
+        $deepLossMissingTrace = 0;
+        $deepLossExamples     = [];
+
+        if ($deepLossDiagEnabled) {
+            foreach ($closedTradesForDiag as $ct) {
+                if ((string)($ct['strategy_id'] ?? '') !== $deepLossFilter) {
+                    continue;
+                }
+                $roiRaw = $ct['roi'] ?? $ct['roi_pct'] ?? null;
+                $roi    = $roiRaw !== null ? (float)$roiRaw : null;
+                if ($roi === null || $roi > $deepLossThreshold) {
+                    continue;
+                }
+                $deepLossTotal++;
+                $hasTrace = (string)($ct['signal_id'] ?? '') !== '';
+                if ($hasTrace) {
+                    $deepLossWithTrace++;
+                } else {
+                    $deepLossMissingTrace++;
+                }
+                if (count($deepLossExamples) < 10) {
+                    // Prefer nested strategy_signal_context for quality fields
+                    $ctx = is_array($ct['strategy_signal_context'] ?? null) ? $ct['strategy_signal_context'] : [];
+                    $detTs = isset($ct['opened_at']) ? strtotime($ct['opened_at']) : 0;
+                    $closedTs = isset($ct['closed_at']) ? strtotime($ct['closed_at']) : 0;
+                    $durationMin = ($detTs > 0 && $closedTs > 0) ? round(($closedTs - $detTs) / 60, 1) : null;
+                    $deepLossExamples[] = [
+                        'symbol'                           => $ct['symbol']       ?? null,
+                        'signal_id'                        => $ct['signal_id']    ?? null,
+                        'roi'                              => $roi,
+                        'pnl'                              => $ct['pnl']          ?? $ct['realized_pnl'] ?? null,
+                        'entry_price'                      => $ct['entry_price']  ?? null,
+                        'exit_price'                       => $ct['exit_price']   ?? $ct['close_price'] ?? null,
+                        'leverage'                         => $ct['leverage']     ?? null,
+                        'close_reason'                     => $ct['close_reason'] ?? null,
+                        'duration_minutes'                 => $durationMin,
+                        'setup_class'                      => $ct['setup_class']        ?? $ctx['setup_class']        ?? null,
+                        'synthetic_quality_score'          => $ct['synthetic_quality_score']   ?? $ctx['synthetic_quality_score']   ?? null,
+                        'setup_class_score'                => $ct['setup_class_score']         ?? $ctx['setup_class_score']         ?? null,
+                        'intraday_double_bottom_score'     => $ct['intraday_double_bottom_score'] ?? $ctx['intraday_double_bottom_score'] ?? null,
+                        'candidate_quality_score'          => $ct['candidate_quality_score']   ?? $ctx['candidate_quality_score']   ?? null,
+                        'entry_distance_from_neckline_pct' => $ct['entry_distance_from_neckline_pct'] ?? $ctx['entry_distance_from_neckline_pct'] ?? null,
+                        'quality_source'                   => $ct['quality_source'] ?? $ctx['quality_source'] ?? null,
+                        'reason_codes'                     => $ct['reason_codes']  ?? $ctx['reason_codes']  ?? null,
+                        'warnings'                         => $ct['warnings']      ?? $ctx['warnings']      ?? null,
+                    ];
+                }
+            }
+        }
+
         $lastRun = [
             'status'      => 'ok',
             'tick_at'     => $tickAt,
@@ -1127,6 +1282,18 @@ final class BotService
             'handoff_blocked_needs_revalidation_after_symbol_block_total' => $result['handoff_blocked_needs_revalidation_after_symbol_block_total'] ?? 0,
             'stale_handoff_block_examples'                                => $result['stale_handoff_block_examples']                              ?? [],
             'revalidation_required_examples'                              => $result['revalidation_required_examples']                            ?? [],
+            // ── Task 3: Order queue diagnostics for double_bottom_long ───────────
+            'order_queue_double_bottom_items_total'          => $dbqTotal,
+            'order_queue_double_bottom_stale_source_total'   => $dbqStaleSourceTotal,
+            'order_queue_double_bottom_missing_source_total' => $dbqMissingSourceTotal,
+            'order_queue_double_bottom_executable_source_total' => $dbqExecSourceTotal,
+            'order_queue_stale_source_examples'              => $dbqStaleSourceExamples,
+            'order_queue_missing_source_examples'            => $dbqMissingSourceExamples,
+            // ── Task 5: Deep loss diagnostics for double_bottom_long ─────────────
+            'double_bottom_deep_loss_total'                  => $deepLossTotal,
+            'double_bottom_deep_loss_with_trace_total'       => $deepLossWithTrace,
+            'double_bottom_deep_loss_missing_trace_total'    => $deepLossMissingTrace,
+            'double_bottom_deep_loss_examples'               => $deepLossExamples,
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -1769,12 +1936,52 @@ final class BotService
                 }
             }
 
-            // ── PM close re-entry suppression ─────────────────────────────────
-            // If a recent PM close registry entry matches this handoff signal by
-            // symbol + side + mode + signal_id (when available), suppress it until TTL expires.
+            // ── Stale-source block: do not refresh items with non-executable source ──
+            // When the strategy's handoff queue has already normalized this signal
+            // as non-executable (executable=false / handoff_ready=false), the bot
+            // must not re-queue or refresh an existing order_queue item from it.
+            // Applies regardless of bot-side age gate to ensure queue hygiene.
             $sigSymbol = (string)($signal['symbol'] ?? '');
             $sigSide   = (string)($signal['side']   ?? '');
             $sigMode   = (string)($signal['execution_mode'] ?? $signal['mode'] ?? $botMode);
+            if (($signal['executable'] ?? null) === false
+                || ($signal['handoff_ready'] ?? null) === false
+            ) {
+                // If an existing queued/ready item exists, preserve it with a diagnostic reason
+                if (isset($queueMap[$key])) {
+                    $prevBlocked  = $queueMap[$key];
+                    $prevStatusBl = (string)($prevBlocked['queue_status'] ?? 'queued');
+                    if (in_array($prevStatusBl, ['queued', 'ready'], true)) {
+                        $prevBlocked['queue_status']      = 'skipped';
+                        $prevBlocked['exit_at']           = $tickAt;
+                        $prevBlocked['last_change_reason']= 'source_handoff_stale_or_non_executable';
+                        $prevBlocked['handoff_ready']     = false;
+                        $prevBlocked['block_reason']      = $signal['block_reason'] ?? $signal['stale_reason'] ?? 'source_handoff_stale_or_non_executable';
+                        $result[$key]                     = $prevBlocked;
+                        $staleHandoffIgnoredTotal++;
+                        $handoffBlockedStaleTotal++;
+                        if (count($staleHandoffBlockExamples) < 5) {
+                            $detectedTs = strtotime((string)($signal['detected_at'] ?? ''));
+                            $staleHandoffBlockExamples[] = [
+                                'symbol'      => $sigSymbol,
+                                'side'        => $sigSide,
+                                'strategy'    => $stratId,
+                                'signal_id'   => $signalId,
+                                'detected_at' => (string)($signal['detected_at'] ?? ''),
+                                'age_minutes' => $detectedTs !== false ? round((time() - $detectedTs) / 60, 1) : null,
+                                'blocked_source' => 'source_handoff_non_executable',
+                                'reason'      => $signal['block_reason'] ?? $signal['stale_reason'] ?? 'source_handoff_stale_or_non_executable',
+                                'needs_revalidation_after_unblock' => (bool)($signal['needs_revalidation_after_unblock'] ?? false),
+                            ];
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // ── PM close re-entry suppression ─────────────────────────────────
+            // If a recent PM close registry entry matches this handoff signal by
+            // symbol + side + mode + signal_id (when available), suppress it until TTL expires.
             $pmRegKey  = $sigSymbol . '_' . $sigSide;
 
             if ($sigSymbol !== '' && $sigSide !== '' && isset($pmCloseRegistry[$pmRegKey])) {

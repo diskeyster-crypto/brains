@@ -1192,7 +1192,81 @@ final class DoubleBottomLongService
 
         $this->writeJson('storage/run_state.json', $state);
 
-        $stats      = $this->finalizeStats($stats,      $total, $totalProcessed, $batchSz, count($signals));
+        // ── Task 1: Align signals.json lifecycle with queue normalization ────────
+        // After the queue normalization pass, any signal whose handoff entry is
+        // non-executable must be marked stale in signals.json so it no longer
+        // appears as active_final=true.  Diagnostic fields are preserved.
+        $blockedSigIds          = $handoffStats['blocked_signal_ids'] ?? [];
+        $sigMarkedStale         = 0;
+        $sigActiveNow           = 0;
+        $sigStaleCurrent        = 0;
+        $sigNonExec             = 0;
+        $sigMarkedStaleExamples = [];
+        $nowTsSignal            = time();
+
+        foreach ($signals as &$sig) {
+            $sid = (string)($sig['signal_id'] ?? '');
+            if ($sid === '') {
+                continue;
+            }
+            $prevActiveF = $sig['active_final'] ?? null;
+            $prevStale   = (bool)($sig['stale'] ?? false);
+
+            if (isset($blockedSigIds[$sid])) {
+                $blockReason = $blockedSigIds[$sid];
+                $isAgeIssue  = in_array($blockReason, [
+                    'handoff_blocked_stale_signal',
+                    'handoff_blocked_not_current_run',
+                    'handoff_blocked_expired_signal',
+                ], true);
+                $wasAlreadyMarked = ($sig['active_final'] ?? null) === false
+                    && ($sig['stale_reason'] ?? '') === $blockReason;
+                if (!$wasAlreadyMarked) {
+                    $sig['active_final']             = false;
+                    if ($isAgeIssue) {
+                        $sig['stale'] = true;
+                    }
+                    $sig['stale_reason']             = $blockReason;
+                    $sig['handoff_ready']            = false;
+                    $sig['executable']               = false;
+                    $sig['last_lifecycle_update_at'] = date('c');
+                    $sig['last_lifecycle_reason']    = $blockReason;
+                    $sigMarkedStale++;
+                    if (count($sigMarkedStaleExamples) < 5) {
+                        $detTs = isset($sig['detected_at']) ? strtotime($sig['detected_at']) : 0;
+                        $sigMarkedStaleExamples[] = [
+                            'symbol'                => $sig['symbol']  ?? null,
+                            'signal_id'             => $sid,
+                            'previous_active_final' => $prevActiveF,
+                            'new_active_final'      => false,
+                            'stale_reason'          => $blockReason,
+                            'detected_at'           => $sig['detected_at'] ?? null,
+                            'age_minutes'           => ($detTs > 0)
+                                ? round(($nowTsSignal - $detTs) / 60, 1)
+                                : null,
+                        ];
+                    }
+                }
+                $sigNonExec++;
+                $sigStaleCurrent++;
+            } else {
+                if ($prevStale || ($sig['active_final'] ?? null) === false) {
+                    $sigStaleCurrent++;
+                } else {
+                    $sigActiveNow++;
+                }
+            }
+        }
+        unset($sig);
+
+        // Compute final signal lifecycle totals (Task 2 counters)
+        $sigActiveTotal    = $sigActiveNow;
+        $sigStaleTotal     = $sigStaleCurrent;
+        $sigNonExecTotal   = $sigNonExec;
+        $sigHistoricalTotal = count(array_filter($signals, fn($s) => ($s['active_final'] ?? null) === false));
+
+        // Re-write signals.json with updated lifecycle flags
+        $this->writeJson('storage/signals.json', array_values($signals));
         $cycleStats = $this->finalizeStats($cycleStats, $total, $totalProcessed, $batchSz, count($signals));
         $this->writeJson('storage/stats.json',       $stats);
         $this->writeJson('storage/cycle_stats.json', $cycleStats);
@@ -1244,6 +1318,13 @@ final class DoubleBottomLongService
             'current_cycle_signals_emitted_total' => (int)($cycleStats['signals_emitted_total'] ?? 0),
             'current_cycle_final_signals_total'   => $cycleNewWinnerCount,
             'active_pool_signals_total'           => count($signals),
+            // Task 2: Signal lifecycle counters
+            'signals_marked_stale_total'      => $sigMarkedStale,
+            'signals_active_current_total'    => $sigActiveTotal,
+            'signals_active_historical_total' => $sigHistoricalTotal,
+            'signals_stale_total'             => $sigStaleTotal,
+            'signals_non_executable_total'    => $sigNonExecTotal,
+            'signals_marked_stale_examples'   => $sigMarkedStaleExamples,
             'bot_handoff_ready_total'     => $handoffStats['ready_total'],
             'bot_handoff_new_total'       => $handoffStats['new_total'],
             'bot_handoff_refreshed_total' => $handoffStats['refreshed_total'],
@@ -6655,6 +6736,9 @@ final class DoubleBottomLongService
         $queueBlockedBlTotal            = 0;  // blocked_by_blacklist (strategy-side: always 0)
         $queueBlockedFrTotal            = 0;  // blocked_by_freeze (strategy-side: always 0)
         $queueNonExecutableExamples     = [];
+        // Map of signal_id → block_reason for non-executable queue entries;
+        // used by caller to align signals.json lifecycle flags.
+        $blockedSignalIds               = [];
 
         foreach ($result as $id => $r) {
             $status       = (string)($r['handoff_status'] ?? '');
@@ -6699,6 +6783,11 @@ final class DoubleBottomLongService
                 }
                 if ($blockReason === 'handoff_blocked_not_current_run') {
                     $queueBlockedNcrTotal++;
+                }
+                // Record in the signal_id → block_reason map for signals.json alignment
+                $sigIdInQueue = (string)($r['signal_id'] ?? $id);
+                if ($sigIdInQueue !== '') {
+                    $blockedSignalIds[$sigIdInQueue] = $blockReason ?? 'handoff_blocked_non_executable';
                 }
                 // Count revalidation-needed entries separately for the existing counter
                 if ($needsRevalid) {
@@ -6767,6 +6856,8 @@ final class DoubleBottomLongService
             'queue_entries_blocked_blacklist_total'       => $queueBlockedBlTotal,
             'queue_entries_blocked_freeze_total'          => $queueBlockedFrTotal,
             'queue_non_executable_examples'              => $queueNonExecutableExamples,
+            // Map of signal_id → block_reason for non-executable entries (for signals.json alignment)
+            'blocked_signal_ids'                          => $blockedSignalIds,
             // Active records (new/refreshed/executable) for trace diagnostics
             'active_records'  => array_values(array_filter(
                 $result,

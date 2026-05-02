@@ -1090,8 +1090,17 @@ final class BotService
         $efMissedExamples        = [];
         $efMissedRoiThreshold    = (float)($config['double_bottom_early_fail_missed_roi_threshold']      ?? -15.0);
         $efMissedDurationMinutes = (int)($config['double_bottom_early_fail_missed_duration_minutes']     ?? 45);
+        // Count closed trades where Stop Manager ef guard attribution was successfully preserved.
+        $closedTradesStopGuardAttributedTotal = 0;
 
         foreach ($closedTradesForDiag as $ct) {
+            // Count trades correctly attributed to the Stop Manager early-fail guard.
+            if ((string)($ct['close_source'] ?? '') === 'stop_manager'
+                && (string)($ct['close_guard'] ?? '') === 'double_bottom_early_fail'
+            ) {
+                $closedTradesStopGuardAttributedTotal++;
+            }
+
             if ((string)($ct['strategy_id'] ?? '') !== 'double_bottom_long') {
                 continue;
             }
@@ -1363,6 +1372,8 @@ final class BotService
             'double_bottom_early_fail_missed_with_trace_total'   => $efMissedWithTrace,
             'double_bottom_early_fail_missed_missing_trace_total'=> $efMissedMissingTrace,
             'double_bottom_early_fail_missed_examples'           => $efMissedExamples,
+            // ── Stop Manager ef guard attribution diagnostics ─────────────────────
+            'closed_trades_stop_guard_attributed_total'          => $closedTradesStopGuardAttributedTotal,
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);

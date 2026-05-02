@@ -201,6 +201,7 @@ final class StopManagerService
         $stats['ef_checked_total']            += $result['ef_checked_total']         ?? 0;
         $stats['ef_triggered_total']          += $result['ef_triggered_total']       ?? 0;
         $stats['ef_closed_total']             += $result['ef_closed_total']          ?? 0;
+        $stats['ef_registry_written_total']   += $result['ef_registry_written_total'] ?? 0;
         $stats['ef_skipped_missing_trace_total']   += $result['ef_skipped_missing_trace']  ?? 0;
         $stats['ef_skipped_no_setup_break_total']  += $result['ef_skipped_no_setup_break'] ?? 0;
         $stats['ef_skipped_too_young_total']       += $result['ef_skipped_too_young']      ?? 0;
@@ -241,6 +242,7 @@ final class StopManagerService
             'double_bottom_early_fail_checked_total'             => $result['ef_checked_total']            ?? 0,
             'double_bottom_early_fail_triggered_total'           => $result['ef_triggered_total']          ?? 0,
             'double_bottom_early_fail_closed_total'              => $result['ef_closed_total']             ?? 0,
+            'registry_written_total'                             => $result['ef_registry_written_total']   ?? 0,
             'double_bottom_early_fail_skipped_missing_trace_total'  => $result['ef_skipped_missing_trace'] ?? 0,
             'double_bottom_early_fail_skipped_no_setup_break_total' => $result['ef_skipped_no_setup_break'] ?? 0,
             'double_bottom_early_fail_skipped_too_young_total'   => $result['ef_skipped_too_young']        ?? 0,
@@ -251,6 +253,7 @@ final class StopManagerService
             'double_bottom_early_fail_checked_cumulative'        => (int)($stats['ef_checked_total']            ?? 0),
             'double_bottom_early_fail_triggered_cumulative'      => (int)($stats['ef_triggered_total']          ?? 0),
             'double_bottom_early_fail_closed_cumulative'         => (int)($stats['ef_closed_total']             ?? 0),
+            'registry_written_cumulative'                        => (int)($stats['ef_registry_written_total']   ?? 0),
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -653,6 +656,7 @@ final class StopManagerService
         $efEnabled  = (bool)($config['double_bottom_early_fail_enabled']  ?? true);
         $efMode     = (string)($config['double_bottom_early_fail_mode']   ?? 'demo');
         $efStrategy = (string)($config['double_bottom_early_fail_strategy'] ?? 'double_bottom_long');
+        $efRegistryWrittenTotal = 0;
 
         // Guard: only execute in demo mode, never live
         if ($efEnabled && $mode === 'demo' && $efMode === 'demo' && $isActiveMode) {
@@ -756,6 +760,7 @@ final class StopManagerService
                         // Write early-fail close registry so the bot can preserve attribution
                         // in closed_trades.json when it detects the position has disappeared.
                         $this->writeEfCloseRegistry($pos, $closeResult, $efResult, $closeReason, $config, $tickAt);
+                        $efRegistryWrittenTotal++;
                     }
 
                     $this->appendActionLog([
@@ -820,6 +825,7 @@ final class StopManagerService
             'ef_checked_total'                             => $efCheckedTotal,
             'ef_triggered_total'                           => $efTriggeredTotal,
             'ef_closed_total'                              => $efClosedTotal,
+            'ef_registry_written_total'                    => $efRegistryWrittenTotal,
             'ef_skipped_missing_trace'                     => $efSkippedMissingTrace,
             'ef_skipped_no_setup_break'                    => $efSkippedNoSetupBreak,
             'ef_skipped_too_young'                         => $efSkippedTooYoung,
@@ -1319,6 +1325,7 @@ final class StopManagerService
             'ef_checked_total'                    => 0,
             'ef_triggered_total'                  => 0,
             'ef_closed_total'                     => 0,
+            'ef_registry_written_total'           => 0,
             'ef_skipped_missing_trace_total'      => 0,
             'ef_skipped_no_setup_break_total'     => 0,
             'ef_skipped_too_young_total'           => 0,

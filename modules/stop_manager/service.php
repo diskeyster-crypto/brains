@@ -1689,7 +1689,10 @@ final class StopManagerService
             $symbol   = (string)($pos['symbol']    ?? '');
             $side     = (string)($pos['side']      ?? 'long');
             $signalId = (string)($pos['signal_id'] ?? '');
-            $key      = $symbol . '_' . $side;
+            // Include normalized mode in the registry key so demo and live entries
+            // never collide, and so the bot can look up by the same mode+symbol+side key.
+            $posMode  = $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo'));
+            $key      = $posMode . '_' . $symbol . '_' . $side;
             $nowTs    = time();
             $ttl      = 7200; // 2 hours
 
@@ -1702,24 +1705,28 @@ final class StopManagerService
             }
 
             $registry[$key] = [
+                'mode'                       => $posMode,
                 'symbol'                     => $symbol,
                 'side'                       => $side,
                 'signal_id'                  => $signalId,
-                'strategy_id'               => 'double_bottom_long',
-                'close_source'              => 'stop_manager',
-                'close_guard'               => 'double_bottom_early_fail',
-                'close_reason'              => $closeReason,
-                'close_order_id'            => $closeResult['order_id'] ?? null,
-                'close_submitted_at'        => $tickAt,
-                'close_ok'                  => $closeResult['ok'] ?? false,
-                'close_ret_code'            => $closeResult['ret_code'] ?? null,
-                'close_ret_msg'             => $closeResult['ret_msg']  ?? null,
-                'roi_at_close'              => $efResult['roi']              ?? null,
-                'setup_break_reason'        => $efResult['setup_break_reason'] ?? null,
-                'strategy_signal_context'   => $pos['strategy_signal_context'] ?? null,
-                'ts'                        => $nowTs,
-                'expires_at'               => date('c', $nowTs + $ttl),
-                'close_attribution_consumed'=> false,
+                'strategy_id'                => 'double_bottom_long',
+                'owner_strategy'             => (string)($pos['owner_strategy'] ?? 'double_bottom_long'),
+                'close_source'               => 'stop_manager',
+                'close_guard'                => 'double_bottom_early_fail',
+                'close_reason'               => $closeReason,
+                'setup_break_reason'         => $efResult['setup_break_reason'] ?? null,
+                'close_order_id'             => $closeResult['order_id'] ?? null,
+                'close_submitted_at'         => $tickAt,
+                'close_ok'                   => $closeResult['ok'] ?? false,
+                'close_ret_code'             => $closeResult['ret_code'] ?? null,
+                'close_ret_msg'              => $closeResult['ret_msg']  ?? null,
+                'roi_at_close'               => $efResult['roi']         ?? null,
+                'entry_price'                => isset($pos['entry_price'])   ? (float)$pos['entry_price']   : null,
+                'current_price'              => $efResult['current_price']   ?? null,
+                'strategy_signal_context'    => $pos['strategy_signal_context'] ?? null,
+                'ts'                         => $nowTs,
+                'expires_at'                 => date('c', $nowTs + $ttl),
+                'close_attribution_consumed' => false,
             ];
 
             @file_put_contents(

@@ -4868,9 +4868,17 @@ final class BotService
             // written an entry to ef_close_registry.json.  Prefer this attribution
             // over exchange_disappeared for double_bottom_long positions.
             // TTL mirrors the registry write TTL (2 hours / 7200 s).
-            $efRegistryPath = $this->moduleDir . '/storage/runtime/ef_close_registry.json';
-            $efRegistryKey  = $symbol . '_' . $side;
-            $efRegistryTtl  = 7200;
+            //
+            // The registry key is {mode}_{symbol}_{side} where mode is normalized
+            // to 'demo' or 'live' (same logic as writeEfCloseRegistry in stop_manager).
+            $efRegistryPath   = $this->moduleDir . '/storage/runtime/ef_close_registry.json';
+            $efModeNorm       = in_array($mode, ['live', 'demo'], true) ? $mode : 'demo';
+            $efRegistryKey    = $efModeNorm . '_' . $symbol . '_' . $side;
+            $efRegistryTtl    = 7200;
+            // Augment fields sourced from ef registry when the position record is missing them.
+            $efSetupBreakReason  = null;
+            $efSignalIdAugment   = null;
+            $efStratCtxAugment   = null;
 
             try {
                 if (is_file($efRegistryPath)) {
@@ -4885,7 +4893,7 @@ final class BotService
                             $efAlreadyConsumed = (bool)($efEntry['close_attribution_consumed'] ?? false);
 
                             if (!$efAlreadyConsumed && $efEntryTs > 0 && $efExpiry >= $efNowTs) {
-                                // Verify signal_id matches when both sides have one (extra safety)
+                                // Verify signal_id matches when both sides carry one (extra safety).
                                 $efSignalId  = (string)($efEntry['signal_id'] ?? '');
                                 $posSignalId = (string)($pos['signal_id']     ?? '');
                                 $signalIdOk  = ($efSignalId === '' || $posSignalId === '' || $efSignalId === $posSignalId);
@@ -4899,11 +4907,25 @@ final class BotService
                                         : null;
                                     $closeGuard            = (string)($efEntry['close_guard'] ?? 'double_bottom_early_fail');
                                     $executionType         = 'ef_guard_market_close';
-                                    $closeSourceConfidence = 'direct_guard_registry';
+                                    $closeSourceConfidence = 'stop_manager_close_guard_registry';
                                     $closedAtIsEstimated   = false;
                                     $closedAtSource        = 'ef_close_registry';
 
-                                    // Mark consumed so a second position-gone event does not re-attribute
+                                    // Carry over setup_break_reason into the closed trade record.
+                                    $efSetupBreakReason = ($efEntry['setup_break_reason'] ?? null) !== null
+                                        ? (string)$efEntry['setup_break_reason']
+                                        : null;
+
+                                    // Use ef registry as fallback source for signal_id and
+                                    // strategy_signal_context when the bot's position copy is missing them.
+                                    if ($posSignalId === '' && $efSignalId !== '') {
+                                        $efSignalIdAugment = $efSignalId;
+                                    }
+                                    if (!isset($pos['strategy_signal_context']) && isset($efEntry['strategy_signal_context'])) {
+                                        $efStratCtxAugment = $efEntry['strategy_signal_context'];
+                                    }
+
+                                    // Mark consumed so a second position-gone event does not re-attribute.
                                     $efRegistry[$efRegistryKey]['close_attribution_consumed']    = true;
                                     $efRegistry[$efRegistryKey]['close_attribution_consumed_at'] = $tickAt;
 
@@ -4964,6 +4986,7 @@ final class BotService
                 'close_reason'               => $closeReason,
                 'close_order_id'             => $closeOrderId,
                 'close_guard'                => $closeGuard,
+                'setup_break_reason'         => $efSetupBreakReason,
                 'execution_type'             => $executionType,
                 'close_source_confidence'    => $closeSourceConfidence !== '' ? $closeSourceConfidence : null,
                 'closed_at_source'           => $closedAtSource         !== '' ? $closedAtSource         : null,
@@ -4974,11 +4997,15 @@ final class BotService
                 'bot_submitted_at'           => $botSubmittedAt,
                 'bot_confirmed_at'           => $botConfirmedAt,
                 // ── Signal trace attribution (traceability, not outcome data) ──
-                'signal_id'              => (string)($pos['signal_id']    ?? '') !== '' ? (string)$pos['signal_id']    : null,
+                // When the ef registry has a richer signal_id or strategy_signal_context
+                // (e.g. the position record was trimmed after entry), fall back to registry values.
+                'signal_id'              => (string)($pos['signal_id'] ?? '') !== ''
+                    ? (string)$pos['signal_id']
+                    : ($efSignalIdAugment ?: null),
                 'owner_strategy'         => (string)($pos['owner_strategy'] ?? '') !== '' ? (string)$pos['owner_strategy'] : null,
                 'pattern_algorithm'      => (string)($pos['pattern_algorithm'] ?? '') !== '' ? (string)$pos['pattern_algorithm'] : null,
                 'setup_class'            => $pos['setup_class']            ?? null,
-                'strategy_signal_context'=> $pos['strategy_signal_context'] ?? null,
+                'strategy_signal_context'=> $pos['strategy_signal_context'] ?? $efStratCtxAugment,
             ];
 
             // ── Write individual per-trade file ───────────────────────────────

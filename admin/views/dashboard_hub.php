@@ -1433,6 +1433,45 @@ ROWS;
     $smDemoLastErrMsg       = (string)($smLastRun['demo_last_stop_error_msg'] ?? '');
     $smDemoLastSymbol       = (string)($smLastRun['demo_last_stop_symbol']    ?? '');
 
+    // Early fail guard diagnostics (from last_run.json when available)
+    $smEfEnabled   = (bool)($smConfig['double_bottom_early_fail_enabled'] ?? true);
+    $smEfChecked   = (int)($smLastRun['double_bottom_early_fail_checked_total']             ?? 0);
+    $smEfTriggered = (int)($smLastRun['double_bottom_early_fail_triggered_total']           ?? 0);
+    $smEfClosed    = (int)($smLastRun['double_bottom_early_fail_closed_total']              ?? 0);
+    $smEfSkipTrace = (int)($smLastRun['double_bottom_early_fail_skipped_missing_trace_total'] ?? 0);
+    $smEfSkipNoBreak = (int)($smLastRun['double_bottom_early_fail_skipped_no_setup_break_total'] ?? 0);
+    $smEfSkipYoung = (int)($smLastRun['double_bottom_early_fail_skipped_too_young_total']  ?? 0);
+    $smEfCumTrigger = (int)($smLastRun['double_bottom_early_fail_triggered_cumulative']    ?? 0);
+    $smEfCumClosed  = (int)($smLastRun['double_bottom_early_fail_closed_cumulative']       ?? 0);
+
+    // Build early fail diagnostics row (shown when feature is enabled in demo mode)
+    $smEarlyFailHtml = '';
+    if ($smEfEnabled && ($smMode === 'demo' || $smMode === 'live')) {
+        $efTriggeredColor = $smEfTriggered > 0 ? '#f0883e' : 'inherit';
+        $efClosedColor    = $smEfClosed    > 0 ? '#3fb950' : 'inherit';
+        $smEarlyFailHtml  = '<div class="card" style="margin-bottom:16px;">'
+            . '<div class="card-header">double_bottom_long — ранний выход (early fail guard)</div>'
+            . '<div class="card-body">'
+            . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:220px;">Проверено (тик)</td>'
+            . '<td><code>' . $e($smEfChecked) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Сработало (тик)</td>'
+            . '<td><code style="color:' . $efTriggeredColor . ';">' . $e($smEfTriggered) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Закрыто (тик)</td>'
+            . '<td><code style="color:' . $efClosedColor . ';">' . $e($smEfClosed) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Пропущено без следа</td>'
+            . '<td><code>' . $e($smEfSkipTrace) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Пропущено (нет структ. слома)</td>'
+            . '<td><code>' . $e($smEfSkipNoBreak) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Пропущено (слишком молодая)</td>'
+            . '<td><code>' . $e($smEfSkipYoung) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Всего сработало (накопл.)</td>'
+            . '<td><code>' . $e($smEfCumTrigger) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Всего закрыто (накопл.)</td>'
+            . '<td><code>' . $e($smEfCumClosed) . '</code></td></tr>'
+            . '</table></div></div>';
+    }
+
     // Build demo stop diagnostics card (shown in demo/live mode)
     if ($smMode === 'demo' || $smMode === 'live') {
         $smDemoErrRow = $smDemoLastErrCode !== null
@@ -4908,6 +4947,7 @@ BLCK;
     </div>
   </div>
   {$smDemoExecHtml}
+  {$smEarlyFailHtml}
 </div>
 
 <!-- ── Profit Manager pane ──────────────────────────────────────────── -->

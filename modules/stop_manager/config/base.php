@@ -64,4 +64,47 @@ return [
     // Cron / batch
     'tick_interval_sec'   => 60,
     'max_runtime_seconds' => 25,
+
+    // ── double_bottom_long early-fail guard ───────────────────────────────────
+    //
+    // Closes demo positions from the double_bottom_long strategy early when the
+    // original setup breaks after entry, preventing deep losses without touching
+    // the normal stop profile.
+    //
+    // This guard is DEMO-ONLY. It never affects live positions.
+    // It only closes when price action confirms the setup is broken — adverse ROI
+    // alone is not sufficient when require_setup_break = true.
+    //
+    // Setup failure conditions (any one triggers):
+    //   A) Neckline or reclaim level lost by neckline_break_pct / reclaim_break_pct
+    //   B) Price below entry by entry_break_pct AND adverse ROI <= soft threshold
+    //   C) Fast dump >= fast_drop_pct within fast_drop_window_minutes AND ROI <= soft
+    //      (requires per-tick price history; skipped when history unavailable)
+    //   D) Adverse ROI <= hard threshold AND signal trace contains a known warning
+    //
+    // Override individual values in active.php without touching this file.
+    'double_bottom_early_fail_enabled'             => true,
+    'double_bottom_early_fail_mode'                => 'demo',           // enforcement in service: only 'demo' is accepted; live is never used
+    'double_bottom_early_fail_strategy'            => 'double_bottom_long',
+
+    // Timing
+    'double_bottom_early_fail_watch_minutes'       => 30,   // only check within this window after entry
+    'double_bottom_early_fail_min_age_seconds'     => 60,   // skip positions younger than this
+
+    // ROI thresholds (negative; long position adverse move expressed as ROI%)
+    'double_bottom_early_fail_adverse_roi_soft'    => -20.0, // soft threshold for conditions B/C
+    'double_bottom_early_fail_adverse_roi_hard'    => -35.0, // hard threshold for condition D
+
+    // Structure break thresholds (percent of the level price)
+    'double_bottom_early_fail_neckline_break_pct'  => 0.35,  // % below neckline_level to confirm loss
+    'double_bottom_early_fail_reclaim_break_pct'   => 0.35,  // % below reclaim_level to confirm loss
+    'double_bottom_early_fail_entry_break_pct'     => 1.8,   // % below entry_price for condition B
+
+    // Fast dump thresholds (condition C — requires per-tick price history in position record)
+    'double_bottom_early_fail_fast_drop_pct'               => 1.2,  // % price drop over the window
+    'double_bottom_early_fail_fast_drop_window_minutes'    => 3,    // look-back window in minutes
+
+    // Safety
+    'double_bottom_early_fail_require_setup_break' => true,  // adverse ROI alone must not close
+    'double_bottom_early_fail_close_reason'        => 'double_bottom_setup_failed_after_entry',
 ];

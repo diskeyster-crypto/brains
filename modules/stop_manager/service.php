@@ -197,6 +197,14 @@ final class StopManagerService
         $stats['demo_stops_already_set_total']   += $result['demo_stops_already_set']   ?? 0;
         $stats['demo_stops_failed_total']        += $result['demo_stops_failed']        ?? 0;
         $stats['demo_stops_skipped_no_gw_total'] += $result['demo_stops_skipped_no_gw'] ?? 0;
+        // Early fail guard cumulative counters
+        $stats['ef_checked_total']            += $result['ef_checked_total']         ?? 0;
+        $stats['ef_triggered_total']          += $result['ef_triggered_total']       ?? 0;
+        $stats['ef_closed_total']             += $result['ef_closed_total']          ?? 0;
+        $stats['ef_skipped_missing_trace_total']   += $result['ef_skipped_missing_trace']  ?? 0;
+        $stats['ef_skipped_no_setup_break_total']  += $result['ef_skipped_no_setup_break'] ?? 0;
+        $stats['ef_skipped_too_young_total']       += $result['ef_skipped_too_young']      ?? 0;
+        $stats['ef_skipped_not_db_total']          += $result['ef_skipped_not_db']         ?? 0;
 
         // ── 4. Persist ─────────────────────────────────────────────────────────
         $this->writeJson('storage/stops.json', array_values($stops));
@@ -229,6 +237,20 @@ final class StopManagerService
             'demo_last_stop_error_code'    => $result['demo_last_stop_error_code'] ?? null,
             'demo_last_stop_error_msg'     => $result['demo_last_stop_error_msg']  ?? null,
             'demo_last_stop_symbol'        => $result['demo_last_stop_symbol']     ?? null,
+            // Early fail guard diagnostics (this tick)
+            'double_bottom_early_fail_checked_total'             => $result['ef_checked_total']            ?? 0,
+            'double_bottom_early_fail_triggered_total'           => $result['ef_triggered_total']          ?? 0,
+            'double_bottom_early_fail_closed_total'              => $result['ef_closed_total']             ?? 0,
+            'double_bottom_early_fail_skipped_missing_trace_total'  => $result['ef_skipped_missing_trace'] ?? 0,
+            'double_bottom_early_fail_skipped_no_setup_break_total' => $result['ef_skipped_no_setup_break'] ?? 0,
+            'double_bottom_early_fail_skipped_too_young_total'   => $result['ef_skipped_too_young']        ?? 0,
+            'double_bottom_early_fail_skipped_not_double_bottom_total' => $result['ef_skipped_not_db']     ?? 0,
+            'double_bottom_early_fail_triggered_examples'        => $result['ef_triggered_examples']       ?? [],
+            'double_bottom_early_fail_skipped_examples'          => $result['ef_skipped_examples']         ?? [],
+            // Cumulative early fail totals from stats
+            'double_bottom_early_fail_checked_cumulative'        => (int)($stats['ef_checked_total']            ?? 0),
+            'double_bottom_early_fail_triggered_cumulative'      => (int)($stats['ef_triggered_total']          ?? 0),
+            'double_bottom_early_fail_closed_cumulative'         => (int)($stats['ef_closed_total']             ?? 0),
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -247,6 +269,8 @@ final class StopManagerService
      * Credentials are sourced from the bot module config. If credentials are absent,
      * execution falls back to local-only computation (same as paper mode).
      *
+     * Also runs the double_bottom_long early-fail guard when enabled and mode=demo.
+     *
      * @return array{
      *   stops: array,
      *   positions_seen: int,
@@ -264,6 +288,15 @@ final class StopManagerService
      *   demo_last_stop_error_code: int|null,
      *   demo_last_stop_error_msg: string|null,
      *   demo_last_stop_symbol: string|null,
+     *   ef_checked_total: int,
+     *   ef_triggered_total: int,
+     *   ef_closed_total: int,
+     *   ef_skipped_missing_trace: int,
+     *   ef_skipped_no_setup_break: int,
+     *   ef_skipped_too_young: int,
+     *   ef_skipped_not_db: int,
+     *   ef_triggered_examples: array,
+     *   ef_skipped_examples: array,
      * }
      */
     private function processStops(
@@ -290,6 +323,17 @@ final class StopManagerService
         $demoLastStopErrCode    = null;
         $demoLastStopErrMsg     = null;
         $demoLastStopSymbol     = null;
+
+        // Early fail guard counters
+        $efCheckedTotal           = 0;
+        $efTriggeredTotal         = 0;
+        $efClosedTotal            = 0;
+        $efSkippedMissingTrace    = 0;
+        $efSkippedNoSetupBreak    = 0;
+        $efSkippedTooYoung        = 0;
+        $efSkippedNotDB           = 0;
+        $efTriggeredExamples      = [];
+        $efSkippedExamples        = [];
 
         $isActiveMode = in_array($mode, ['demo', 'live'], true);
 
@@ -605,23 +649,174 @@ final class StopManagerService
             }
         }
 
+        // ── Early fail guard for double_bottom_long (demo only) ──────────────
+        $efEnabled  = (bool)($config['double_bottom_early_fail_enabled']  ?? true);
+        $efMode     = (string)($config['double_bottom_early_fail_mode']   ?? 'demo');
+        $efStrategy = (string)($config['double_bottom_early_fail_strategy'] ?? 'double_bottom_long');
+
+        // Guard: only execute in demo mode, never live
+        if ($efEnabled && $mode === 'demo' && $efMode === 'demo' && $isActiveMode) {
+            foreach ($posMap as $key => $pos) {
+                $posStratId = (string)($pos['strategy_id'] ?? $pos['owner_strategy'] ?? '');
+
+                // Not a double_bottom_long position — count and skip
+                if ($posStratId !== $efStrategy) {
+                    $efSkippedNotDB++;
+                    continue;
+                }
+
+                // Is a double_bottom_long position — count as checked
+                $efCheckedTotal++;
+
+                $efResult = $this->checkDoubleBottomEarlyFail($pos, $config, $tickAt);
+
+                if (!$efResult['triggered']) {
+                    $skipReason = $efResult['skip_reason'] ?? '';
+                    if ($skipReason === 'early_fail_skipped_missing_trace') {
+                        $efSkippedMissingTrace++;
+                    } elseif ($skipReason === 'too_young') {
+                        $efSkippedTooYoung++;
+                    } elseif (in_array($skipReason, [
+                        'no_setup_break_detected',
+                        'adverse_roi_only_no_setup_break',
+                    ], true)) {
+                        $efSkippedNoSetupBreak++;
+                    }
+                    if ($skipReason !== '' && count($efSkippedExamples) < 5) {
+                        $efSkippedExamples[] = [
+                            'symbol'      => $pos['symbol']    ?? null,
+                            'side'        => $pos['side']      ?? null,
+                            'signal_id'   => $pos['signal_id'] ?? null,
+                            'skip_reason' => $skipReason,
+                            'roi'         => $efResult['roi']         ?? null,
+                            'age_minutes' => $efResult['age_minutes'] ?? null,
+                            'diagnostic'  => $efResult['diagnostic']  ?? null,
+                        ];
+                    }
+                    continue;
+                }
+
+                // Setup failure confirmed
+                $efTriggeredTotal++;
+
+                if (count($efTriggeredExamples) < 5) {
+                    $ctx = is_array($pos['strategy_signal_context'] ?? null)
+                        ? $pos['strategy_signal_context']
+                        : [];
+                    $efTriggeredExamples[] = [
+                        'symbol'                           => $pos['symbol']      ?? null,
+                        'side'                             => $pos['side']        ?? null,
+                        'signal_id'                        => $pos['signal_id']   ?? null,
+                        'setup_class'                      => $pos['setup_class'] ?? $ctx['setup_class'] ?? null,
+                        'entry_price'                      => $pos['entry_price'] ?? null,
+                        'current_price'                    => $efResult['current_price'] ?? null,
+                        'roi'                              => $efResult['roi'],
+                        'leverage'                         => $pos['bot_leverage'] ?? $pos['leverage'] ?? null,
+                        'opened_at'                        => $pos['opened_at']   ?? null,
+                        'age_minutes'                      => $efResult['age_minutes'],
+                        'neckline_level'                   => $efResult['neckline_level'],
+                        'reclaim_level'                    => $efResult['reclaim_level'],
+                        'setup_break_reason'               => $efResult['setup_break_reason'],
+                        'close_reason'                     => $config['double_bottom_early_fail_close_reason'] ?? 'double_bottom_setup_failed_after_entry',
+                        'synthetic_quality_score'          => $ctx['synthetic_quality_score']          ?? null,
+                        'setup_class_score'                => $ctx['setup_class_score']                ?? null,
+                        'intraday_double_bottom_score'     => $ctx['intraday_double_bottom_score']     ?? null,
+                        'entry_distance_from_neckline_pct' => $ctx['entry_distance_from_neckline_pct'] ?? null,
+                        'warnings'                         => $ctx['warnings']    ?? null,
+                        'reason_codes'                     => $ctx['reason_codes'] ?? null,
+                    ];
+                }
+
+                // Attempt demo close
+                $closeReason = (string)($config['double_bottom_early_fail_close_reason']
+                    ?? 'double_bottom_setup_failed_after_entry');
+
+                $closeAttempted = false;
+                $closeOk        = null;
+
+                if ($activeGw !== null) {
+                    $closeAttempted = true;
+                    $closeResult    = $this->submitDemoCloseOrder(
+                        $activeGw,
+                        $pos,
+                        $closeReason,
+                        'double_bottom_early_fail',
+                        $tickAt
+                    );
+                    $closeOk = $closeResult['ok'];
+
+                    if ($closeOk) {
+                        $efClosedTotal++;
+                    }
+
+                    $this->appendActionLog([
+                        'timestamp'          => $tickAt,
+                        'event_type'         => $closeOk
+                            ? 'double_bottom_early_fail_close_submitted'
+                            : 'double_bottom_early_fail_close_failed',
+                        'close_source'       => 'stop_manager',
+                        'close_guard'        => 'double_bottom_early_fail',
+                        'close_reason'       => $closeReason,
+                        'strategy_id'        => $posStratId,
+                        'signal_id'          => $pos['signal_id']   ?? '',
+                        'symbol'             => $pos['symbol']       ?? '',
+                        'side'               => $pos['side']         ?? '',
+                        'entry_price'        => (float)($pos['entry_price'] ?? 0.0),
+                        'current_price'      => $efResult['current_price'],
+                        'roi'                => $efResult['roi'],
+                        'setup_break_reason' => $efResult['setup_break_reason'],
+                        'close_attempted'    => $closeAttempted,
+                        'close_ok'           => $closeOk,
+                        'close_ret_code'     => $closeResult['ret_code'] ?? null,
+                        'close_ret_msg'      => $closeResult['ret_msg']  ?? null,
+                        'strategy_signal_context' => $pos['strategy_signal_context'] ?? null,
+                    ]);
+                } else {
+                    $this->appendActionLog([
+                        'timestamp'          => $tickAt,
+                        'event_type'         => 'double_bottom_early_fail_close_skipped_no_gw',
+                        'close_source'       => 'stop_manager',
+                        'close_guard'        => 'double_bottom_early_fail',
+                        'close_reason'       => $closeReason,
+                        'strategy_id'        => $posStratId,
+                        'signal_id'          => $pos['signal_id']   ?? '',
+                        'symbol'             => $pos['symbol']       ?? '',
+                        'side'               => $pos['side']         ?? '',
+                        'roi'                => $efResult['roi'],
+                        'setup_break_reason' => $efResult['setup_break_reason'],
+                        'reason'             => 'no_gateway_available',
+                    ]);
+                }
+            }
+        }
+
         return [
-            'stops'                       => $stopMap,
-            'positions_seen'              => $positionsSeen,
-            'positions_with_real_liq'     => $positionsWithRealLiq,
-            'positions_with_estimated_liq'=> $positionsWithEstimatedLiq,
-            'positions_without_liq'       => $positionsWithoutLiq,
-            'stops_initialized'           => $stopsInitialized,
-            'stops_recalculated'          => $stopsRecalculated,
-            'breakeven_applied'           => $breakevenApplied,
-            'stops_closed_reference'      => $stopsClosedReference,
-            'demo_stops_set'              => $demoStopsSet,
-            'demo_stops_already_set'      => $demoStopsAlreadySet,
-            'demo_stops_failed'           => $demoStopsFailed,
-            'demo_stops_skipped_no_gw'    => $demoStopsSkippedNoGw,
-            'demo_last_stop_error_code'   => $demoLastStopErrCode,
-            'demo_last_stop_error_msg'    => $demoLastStopErrMsg,
-            'demo_last_stop_symbol'       => $demoLastStopSymbol,
+            'stops'                                        => $stopMap,
+            'positions_seen'                               => $positionsSeen,
+            'positions_with_real_liq'                      => $positionsWithRealLiq,
+            'positions_with_estimated_liq'                 => $positionsWithEstimatedLiq,
+            'positions_without_liq'                        => $positionsWithoutLiq,
+            'stops_initialized'                            => $stopsInitialized,
+            'stops_recalculated'                           => $stopsRecalculated,
+            'breakeven_applied'                            => $breakevenApplied,
+            'stops_closed_reference'                       => $stopsClosedReference,
+            'demo_stops_set'                               => $demoStopsSet,
+            'demo_stops_already_set'                       => $demoStopsAlreadySet,
+            'demo_stops_failed'                            => $demoStopsFailed,
+            'demo_stops_skipped_no_gw'                     => $demoStopsSkippedNoGw,
+            'demo_last_stop_error_code'                    => $demoLastStopErrCode,
+            'demo_last_stop_error_msg'                     => $demoLastStopErrMsg,
+            'demo_last_stop_symbol'                        => $demoLastStopSymbol,
+            // Early fail guard counters
+            'ef_checked_total'                             => $efCheckedTotal,
+            'ef_triggered_total'                           => $efTriggeredTotal,
+            'ef_closed_total'                              => $efClosedTotal,
+            'ef_skipped_missing_trace'                     => $efSkippedMissingTrace,
+            'ef_skipped_no_setup_break'                    => $efSkippedNoSetupBreak,
+            'ef_skipped_too_young'                         => $efSkippedTooYoung,
+            'ef_skipped_not_db'                            => $efSkippedNotDB,
+            'ef_triggered_examples'                        => $efTriggeredExamples,
+            'ef_skipped_examples'                          => $efSkippedExamples,
         ];
     }
 
@@ -1111,6 +1306,14 @@ final class StopManagerService
             'demo_stops_already_set_total'        => 0,
             'demo_stops_failed_total'             => 0,
             'demo_stops_skipped_no_gw_total'      => 0,
+            // Early fail guard cumulative counters
+            'ef_checked_total'                    => 0,
+            'ef_triggered_total'                  => 0,
+            'ef_closed_total'                     => 0,
+            'ef_skipped_missing_trace_total'      => 0,
+            'ef_skipped_no_setup_break_total'     => 0,
+            'ef_skipped_too_young_total'           => 0,
+            'ef_skipped_not_db_total'             => 0,
         ];
     }
 
@@ -1119,6 +1322,317 @@ final class StopManagerService
         $path = $this->moduleDir . '/storage/actions_log.ndjson';
         $line = json_encode($event, JSON_UNESCAPED_UNICODE) . "\n";
         file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
+    }
+
+    // =========================================================================
+    // double_bottom_long early fail guard
+    // =========================================================================
+
+    /**
+     * Detect whether a double_bottom_long position's setup has broken after entry.
+     *
+     * Returns a diagnostic array.  Key fields:
+     *   triggered       bool   — true when a setup-failure condition was met
+     *   skip_reason     string — reason when triggered=false (empty string when triggered)
+     *   setup_break_reason string — which condition fired (when triggered=true)
+     *   roi             float  — current ROI
+     *   age_minutes     float  — position age in minutes
+     *   current_price   float  — price used for evaluation
+     *   neckline_level  float|null
+     *   reclaim_level   float|null
+     *   diagnostic      string|null — extra notes separated by ';'
+     *
+     * Setup-failure conditions evaluated (any one triggers):
+     *   A) Neckline or reclaim level lost by configured break %
+     *   B) Price below entry_price by entry_break_pct AND ROI <= soft threshold
+     *   C) Fast dump >= fast_drop_pct within fast_drop_window_minutes AND ROI <= soft
+     *      NOTE: Condition C is NOT evaluated by this implementation.  active_positions.json
+     *      carries only the latest current_price snapshot, not per-tick price history.
+     *      The diagnostic field will always contain 'condition_c_fast_dump_skipped_no_price_history'.
+     *   D) ROI <= hard threshold AND signal trace contains a known warning code
+     *
+     * This method has no side effects.  Closing is the caller's responsibility.
+     */
+    private function checkDoubleBottomEarlyFail(array $pos, array $config, string $tickAt): array
+    {
+        $base = [
+            'triggered'          => false,
+            'skip_reason'        => '',
+            'setup_break_reason' => null,
+            'roi'                => null,
+            'age_minutes'        => null,
+            'current_price'      => null,
+            'neckline_level'     => null,
+            'reclaim_level'      => null,
+            'diagnostic'         => null,
+        ];
+
+        // Only long side
+        $side = (string)($pos['side'] ?? 'long');
+        if ($side !== 'long') {
+            return array_merge($base, ['skip_reason' => 'not_long_side']);
+        }
+
+        // Only demo positions
+        $posMode = $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo'));
+        if ($posMode !== 'demo') {
+            return array_merge($base, ['skip_reason' => 'not_demo_position']);
+        }
+
+        // Minimum age gate
+        $minAgeSec  = max(0, (int)($config['double_bottom_early_fail_min_age_seconds'] ?? 60));
+        $openedAt   = (string)($pos['opened_at'] ?? '');
+        $openedTs   = $openedAt !== '' ? (int)strtotime($openedAt) : 0;
+        $nowTs      = time();
+        $ageSec     = $openedTs > 0 ? max(0, $nowTs - $openedTs) : 0;
+        $ageMinutes = round($ageSec / 60.0, 1);
+
+        if ($ageSec < $minAgeSec) {
+            return array_merge($base, [
+                'skip_reason' => 'too_young',
+                'age_minutes' => $ageMinutes,
+            ]);
+        }
+
+        // Watch window gate — only evaluate within the configured window after entry
+        $watchMinutes = max(0, (int)($config['double_bottom_early_fail_watch_minutes'] ?? 30));
+        if ($watchMinutes > 0 && $ageMinutes > $watchMinutes) {
+            return array_merge($base, [
+                'skip_reason' => 'outside_watch_window',
+                'age_minutes' => $ageMinutes,
+            ]);
+        }
+
+        // Require signal trace: signal_id OR non-empty strategy_signal_context
+        $signalId = (string)($pos['signal_id'] ?? '');
+        $ctx      = is_array($pos['strategy_signal_context'] ?? null)
+            ? $pos['strategy_signal_context']
+            : [];
+        $hasTrace = $signalId !== '' || !empty($ctx);
+        if (!$hasTrace) {
+            return array_merge($base, [
+                'skip_reason' => 'early_fail_skipped_missing_trace',
+                'age_minutes' => $ageMinutes,
+            ]);
+        }
+
+        // Price data
+        $entryPrice   = (float)($pos['entry_price']   ?? 0.0);
+        $currentPrice = isset($pos['current_price']) ? (float)$pos['current_price'] : null;
+
+        if ($currentPrice === null || $entryPrice <= 0.0) {
+            return array_merge($base, [
+                'skip_reason' => 'no_price_data',
+                'age_minutes' => $ageMinutes,
+            ]);
+        }
+
+        // ROI computation
+        $leverage = max(1, (int)($pos['bot_leverage'] ?? $pos['leverage'] ?? 1));
+        $roi      = $this->calcRoi($side, $entryPrice, $currentPrice, $leverage);
+
+        // No adverse ROI at all — nothing to guard against
+        if ($roi >= 0.0) {
+            return array_merge($base, [
+                'skip_reason'   => 'roi_not_adverse',
+                'roi'           => $roi,
+                'age_minutes'   => $ageMinutes,
+                'current_price' => $currentPrice,
+            ]);
+        }
+
+        $softThreshold = (float)($config['double_bottom_early_fail_adverse_roi_soft'] ?? -20.0);
+        $hardThreshold = (float)($config['double_bottom_early_fail_adverse_roi_hard'] ?? -35.0);
+
+        // Extract signal-context structure levels (prefer ctx over flat pos fields)
+        $necklineLevel = null;
+        $reclaimLevel  = null;
+        $rawNeck = $ctx['neckline_level']  ?? $pos['neckline_level']  ?? null;
+        $rawRecl = $ctx['reclaim_level']   ?? $pos['reclaim_level']   ?? null;
+        if ($rawNeck !== null && is_numeric($rawNeck) && (float)$rawNeck > 0.0) {
+            $necklineLevel = (float)$rawNeck;
+        }
+        if ($rawRecl !== null && is_numeric($rawRecl) && (float)$rawRecl > 0.0) {
+            $reclaimLevel = (float)$rawRecl;
+        }
+
+        $warnings    = [];
+        $reasonCodes = [];
+        $rawW = $ctx['warnings']    ?? $pos['warnings']    ?? null;
+        $rawR = $ctx['reason_codes'] ?? $pos['reason_codes'] ?? null;
+        if (is_array($rawW)) {
+            $warnings = $rawW;
+        } elseif (is_string($rawW) && $rawW !== '') {
+            $warnings = [$rawW];
+        }
+        if (is_array($rawR)) {
+            $reasonCodes = $rawR;
+        } elseif (is_string($rawR) && $rawR !== '') {
+            $reasonCodes = [$rawR];
+        }
+
+        $requireSetupBreak = (bool)($config['double_bottom_early_fail_require_setup_break'] ?? true);
+        $setupBreakReason  = null;
+        $diagnosticNotes   = [];
+
+        // ── Condition A: Neckline/reclaim level lost ──────────────────────────
+        $neckBreakPct  = (float)($config['double_bottom_early_fail_neckline_break_pct'] ?? 0.35) / 100.0;
+        $reclBreakPct  = (float)($config['double_bottom_early_fail_reclaim_break_pct']  ?? 0.35) / 100.0;
+
+        if ($setupBreakReason === null && $necklineLevel !== null) {
+            $threshold = $necklineLevel * (1.0 - $neckBreakPct);
+            if ($currentPrice < $threshold) {
+                $setupBreakReason = 'neckline_lost';
+            }
+        }
+        if ($setupBreakReason === null && $reclaimLevel !== null) {
+            $threshold = $reclaimLevel * (1.0 - $reclBreakPct);
+            if ($currentPrice < $threshold) {
+                $setupBreakReason = 'reclaim_level_lost';
+            }
+        }
+
+        // ── Condition B: Entry structure broken ───────────────────────────────
+        if ($setupBreakReason === null && $roi <= $softThreshold) {
+            $entryBreakPct = (float)($config['double_bottom_early_fail_entry_break_pct'] ?? 1.8) / 100.0;
+            $threshold     = $entryPrice * (1.0 - $entryBreakPct);
+            if ($currentPrice < $threshold) {
+                $setupBreakReason = 'entry_structure_broken';
+            }
+        }
+
+        // ── Condition C: Fast dump (requires per-tick price history — skipped) ─
+        // The stop_manager reads active_positions.json which carries the latest
+        // current_price snapshot but not historical per-tick prices.  Condition C
+        // cannot be evaluated reliably without a price history store.
+        $diagnosticNotes[] = 'condition_c_fast_dump_skipped_no_price_history';
+
+        // ── Condition D: Hard adverse ROI with trace warning ──────────────────
+        if ($setupBreakReason === null && $roi <= $hardThreshold) {
+            $adverseWarnings = [
+                'generic_entry_context_score_low',
+                'final_context_inconsistent_warning',
+                'final_trend_mismatch_warning',
+                'late_good_setup',
+                'missed_ideal_entry',
+            ];
+            $allCodes = array_merge($warnings, $reasonCodes);
+            foreach ($adverseWarnings as $aw) {
+                if (in_array($aw, $allCodes, true)) {
+                    $setupBreakReason = 'hard_roi_with_trace_warning:' . $aw;
+                    break;
+                }
+            }
+        }
+
+        // ── Evaluate result ───────────────────────────────────────────────────
+        if ($setupBreakReason === null) {
+            // No setup break found
+            $skipReason = $requireSetupBreak
+                ? 'no_setup_break_detected'
+                : 'adverse_roi_only_no_setup_break';
+            return array_merge($base, [
+                'skip_reason'   => $skipReason,
+                'roi'           => $roi,
+                'age_minutes'   => $ageMinutes,
+                'current_price' => $currentPrice,
+                'neckline_level'=> $necklineLevel,
+                'reclaim_level' => $reclaimLevel,
+                'diagnostic'    => implode(';', $diagnosticNotes),
+            ]);
+        }
+
+        // Setup failure confirmed
+        return [
+            'triggered'          => true,
+            'skip_reason'        => '',
+            'setup_break_reason' => $setupBreakReason,
+            'roi'                => $roi,
+            'age_minutes'        => $ageMinutes,
+            'current_price'      => $currentPrice,
+            'neckline_level'     => $necklineLevel,
+            'reclaim_level'      => $reclaimLevel,
+            'diagnostic'         => implode(';', $diagnosticNotes),
+        ];
+    }
+
+    /**
+     * Submit a market close order for a demo position via Bybit Demo API.
+     *
+     * For a long position this places a Sell reduceOnly market order.
+     * For a short position this places a Buy reduceOnly market order.
+     *
+     * Returns a result array with:
+     *   ok         bool    — true when the order was accepted by the exchange
+     *   symbol     string
+     *   qty        float
+     *   ret_code   int
+     *   ret_msg    string
+     *   note       string  — 'close_submitted' | 'close_failed' | 'missing_symbol_or_size' | 'exception'
+     *   order_id   string|null
+     */
+    private function submitDemoCloseOrder(
+        \Core\Gateway\Bybit $gw,
+        array $pos,
+        string $closeReason,
+        string $closeGuard,
+        string $tickAt
+    ): array {
+        $symbol = (string)($pos['symbol'] ?? '');
+        $side   = (string)($pos['side']   ?? 'long');
+        $size   = (float)($pos['size']    ?? 0.0);
+
+        if ($symbol === '' || $size <= 0.0) {
+            return [
+                'ok'       => false,
+                'symbol'   => $symbol,
+                'qty'      => $size,
+                'ret_code' => -1,
+                'ret_msg'  => 'missing_symbol_or_size',
+                'note'     => 'missing_symbol_or_size',
+                'order_id' => null,
+            ];
+        }
+
+        // Opposite side to close the long/short position
+        $closeSide = ($side === 'long') ? 'Sell' : 'Buy';
+        $qtyStr    = rtrim(rtrim(number_format($size, 8, '.', ''), '0'), '.');
+
+        try {
+            $resp = $gw->request('/v5/order/create', [
+                'category'    => 'linear',
+                'symbol'      => $symbol,
+                'side'        => $closeSide,
+                'orderType'   => 'Market',
+                'qty'         => $qtyStr,
+                'reduceOnly'  => true,
+                'positionIdx' => 0,
+            ], true);
+        } catch (\Throwable $ex) {
+            return [
+                'ok'       => false,
+                'symbol'   => $symbol,
+                'qty'      => $size,
+                'ret_code' => -1,
+                'ret_msg'  => $ex->getMessage(),
+                'note'     => 'exception',
+                'order_id' => null,
+            ];
+        }
+
+        $retCode = (int)($resp['ret_code'] ?? -1);
+        $retMsg  = (string)($resp['ret_msg'] ?? '');
+        $ok      = ($resp['success'] ?? false) && $retCode === 0;
+
+        return [
+            'ok'       => $ok,
+            'symbol'   => $symbol,
+            'qty'      => $size,
+            'ret_code' => $retCode,
+            'ret_msg'  => $retMsg,
+            'note'     => $ok ? 'close_submitted' : 'close_failed',
+            'order_id' => $ok ? ($resp['result']['orderId'] ?? null) : null,
+        ];
     }
 
     private function writeRuntimeSnapshot(array $config, array $lastRun, int $stopsActiveTotal): void

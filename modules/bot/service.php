@@ -1081,14 +1081,15 @@ final class BotService
         // ── 7j. Missed early-fail diagnostics for double_bottom_long ──────────
         // Scan closed_trades.json for double_bottom_long trades that look like
         // they should have been caught by the early-fail guard but were not.
-        // Criteria: ROI <= -15, duration_minutes <= 45, close_guard != double_bottom_early_fail.
-        // This is diagnostics only — no thresholds are changed.
-        $efMissedTotal            = 0;
-        $efMissedWithTrace        = 0;
-        $efMissedMissingTrace     = 0;
-        $efMissedExamples         = [];
-        $efMissedRoiThreshold     = -15.0;
-        $efMissedDurationMinutes  = 45;
+        // Criteria: ROI <= threshold (default -15), duration_minutes <= threshold (default 45),
+        // close_guard != double_bottom_early_fail.
+        // This is diagnostics only — no entry thresholds are changed.
+        $efMissedTotal           = 0;
+        $efMissedWithTrace       = 0;
+        $efMissedMissingTrace    = 0;
+        $efMissedExamples        = [];
+        $efMissedRoiThreshold    = (float)($config['double_bottom_early_fail_missed_roi_threshold']      ?? -15.0);
+        $efMissedDurationMinutes = (int)($config['double_bottom_early_fail_missed_duration_minutes']     ?? 45);
 
         foreach ($closedTradesForDiag as $ct) {
             if ((string)($ct['strategy_id'] ?? '') !== 'double_bottom_long') {

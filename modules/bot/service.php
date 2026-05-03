@@ -5193,10 +5193,10 @@ final class BotService
                 $shouldFreeze = true;
             } else {
                 // Check ROI for loss close
-                $roiCheck = ($trade['roi'] ?? null);
-                $pnlCheck = ($trade['pnl'] ?? null);
-                $isLoss   = ($roiCheck !== null && (float)$roiCheck < 0.0)
-                    || ($pnlCheck !== null && (float)$pnlCheck < 0.0);
+                $roi    = ($trade['roi'] ?? null);
+                $pnl    = ($trade['pnl'] ?? null);
+                $isLoss = ($roi !== null && (float)$roi < 0.0)
+                    || ($pnl !== null && (float)$pnl < 0.0);
                 if ($isLoss && $applyToLoss) {
                     $shouldFreeze = true;
                 } elseif ($applyToProfit || $applyToStop || $applyToManual) {
@@ -6027,11 +6027,6 @@ final class BotService
                         }
                     }
                 }
-
-                $estimatedSavedPnl = $blockedLosingTotal > 0
-                    ? abs(array_sum(array_map(static fn ($ct) => (float)($ct['pnl'] ?? 0.0), array_filter($dbTrades,
-                        static fn ($ct) => isset($ct['roi']) && (float)$ct['roi'] < 0.0))))
-                    : 0.0;
 
                 $durationStats[(string)$durationMin] = [
                     'duration_minutes'             => $durationMin,

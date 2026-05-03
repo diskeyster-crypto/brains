@@ -1,0 +1,20 @@
+[
+    {
+        "context_type": "falling_knife_reject",
+        "count": 1,
+        "candidates": 0,
+        "passed_confirmation": 0,
+        "failed_confirmation": 0,
+        "skipped_candles": 1,
+        "avg_forward_5m_roi_10x": null,
+        "avg_forward_15m_roi_10x": null,
+        "avg_forward_30m_roi_10x": null,
+        "avg_max_favorable_roi_10x": null,
+        "avg_max_adverse_roi_10x": null,
+        "stop_20roi_hit_rate": null,
+        "stop_30roi_hit_rate": null,
+        "profit_10roi_hit_rate": null,
+        "profit_20roi_hit_rate": null,
+        "recommendation": "observe_more"
+    }
+]

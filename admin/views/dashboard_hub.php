@@ -747,6 +747,13 @@ function renderDashboardHub(): string
                 $_dsShadowLabel  = $_dsShadowOnly
                     ? '<span style="font-size:10px;color:#8b949e;background:rgba(139,148,158,.12);border:1px solid #8b949e44;padding:1px 5px;border-radius:3px;margin-left:4px;">shadow</span>'
                     : '';
+                // Source adapter diagnostics
+                $_dsSrcLoaded  = (int)($stratLastRun['source_contexts_loaded_total'] ?? 0);
+                $_dsSrcLine    = '';
+                if ($_dsSrcLoaded > 0) {
+                    $_dsSrcLine = '<br><span style="font-size:11px;color:#8b949e;">sources:</span>'
+                        . ' загружено <code>' . $_dsSrcLoaded . '</code>';
+                }
                 // Replay stats (shown when replay has run at least once)
                 $_dsReplayEnabled     = (bool)($stratLastRun['replay_enabled']                          ?? false);
                 $_dsReplayUseful      = (int)($stratLastRun['replay_useful_contexts_total']             ?? 0);
@@ -774,6 +781,7 @@ function renderDashboardHub(): string
                     . ' · кандидатов <code>' . $_dsCandidates . '</code>'
                     . ' · сигналов <code>' . $_dsShadow . '</code>'
                     . ' · handoff-ready <code>' . $_dsHandoffReady . '</code>'
+                    . $_dsSrcLine
                     . $_dsReplayLine;
             } else {
                 $cycleLineHtml = 'статус <code>' . $slrStatus . '</code>'

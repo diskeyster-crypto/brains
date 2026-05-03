@@ -10,15 +10,17 @@ declare(strict_types=1);
  *
  * Pipeline:
  *   1. load config
- *   2. load input_contexts.json
- *   3. filter stale + dedupe contexts
- *   4. classify contexts (useful vs noise)
- *   5. group by symbol
- *   6. evaluate dynamic rules per symbol
- *   7. score candidates
- *   8. build signals from high-confidence candidates
- *   9. build bot_handoff_queue (empty unless handoff_enabled + !shadow_only + emit_bot_handoff)
- *  10. write all storage files + last_run.json
+ *   2. load source adapters → collect contexts from source strategy artifacts
+ *   3. merge collected contexts with any externally-written input_contexts.json
+ *   4. write merged result back to input_contexts.json (internal cache)
+ *   5. filter stale + dedupe contexts
+ *   6. classify contexts (useful vs noise)
+ *   7. group by symbol
+ *   8. evaluate dynamic rules per symbol
+ *   9. score candidates
+ *  10. build signals from high-confidence candidates
+ *  11. build bot_handoff_queue (empty unless handoff_enabled + !shadow_only + emit_bot_handoff)
+ *  12. write all storage files + last_run.json
  *
  * SAFETY RULES:
  *   - shadow_only = true  → no executable signals, no handoff queue entries
@@ -27,9 +29,17 @@ declare(strict_types=1);
  *   - Does NOT scan market data directly
  *   - Does NOT modify source strategy storage
  *   - Does NOT open real orders
+ *   - Source adapters are read-only consumers of existing artifacts
  */
 
 namespace Modules\Strategy\DynamicStrategies;
+
+require_once __DIR__ . '/sources/DynamicSourceAdapterInterface.php';
+require_once __DIR__ . '/sources/AbstractDynamicSourceAdapter.php';
+require_once __DIR__ . '/sources/DoubleBottomLongSourceAdapter.php';
+
+use Modules\Strategy\DynamicStrategies\Sources\DynamicSourceAdapterInterface;
+use Modules\Strategy\DynamicStrategies\Sources\DoubleBottomLongSourceAdapter;
 
 final class DynamicStrategiesStrategy
 {
@@ -157,7 +167,12 @@ final class DynamicStrategiesStrategy
         $maxAgeMinutes = (int)($config['context_max_age_minutes'] ?? 180);
         $maxContexts   = (int)($config['max_contexts_per_run']    ?? 100);
 
-        // ── 1. Load input contexts ─────────────────────────────────────────────
+        // ── 1. Collect contexts from source adapters ───────────────────────────
+        // Source adapters read existing artifacts from source strategies (read-only).
+        // They never modify source strategy storage.
+        $sourceStats = $this->collectSourceContexts($config);
+
+        // ── 2. Load existing input_contexts.json (external or prior-run cache) ─
         $ctxFile = $this->repoRoot . '/' . ltrim((string)($config['input_contexts_file'] ?? ''), '/');
         if ($ctxFile === $this->repoRoot . '/') {
             $ctxFile = $this->moduleDir . '/storage/input_contexts.json';
@@ -167,9 +182,63 @@ final class DynamicStrategiesStrategy
         if (!is_array($allContexts)) {
             $allContexts = [];
         }
+
+        // ── 3. Merge source adapter contexts with loaded contexts ──────────────
+        // Adapter contexts take precedence for their own context_ids; existing
+        // external contexts are preserved for backward compatibility.
+        $adapterContexts = $sourceStats['all_contexts'] ?? [];
+        if (!empty($adapterContexts)) {
+            // Build index of existing context_ids for fast dedupe
+            $existingIds = [];
+            foreach ($allContexts as $ctx) {
+                $cid = (string)($ctx['context_id'] ?? '');
+                if ($cid !== '') {
+                    $existingIds[$cid] = true;
+                }
+            }
+            foreach ($adapterContexts as $ctx) {
+                $cid = (string)($ctx['context_id'] ?? '');
+                if ($cid === '' || !isset($existingIds[$cid])) {
+                    $allContexts[] = $ctx;
+                    if ($cid !== '') {
+                        $existingIds[$cid] = true;
+                    }
+                }
+            }
+        }
+
+        // ── 4. Write merged contexts back to input_contexts.json ───────────────
+        // input_contexts.json is now Dynamic's internal context cache.
+        // Cap before writing to avoid unbounded file growth.
+        $writeContexts = $allContexts;
+        $cacheMaxAge   = max($maxAgeMinutes, (int)($config['replay_context_max_age_minutes'] ?? 480));
+        $writeCutoff   = $now - ($cacheMaxAge * 60);
+        $writeContexts = array_values(array_filter($writeContexts, static function (array $ctx) use ($writeCutoff): bool {
+            $oa = $ctx['observed_at'] ?? null;
+            if ($oa === null) {
+                return true; // keep if no timestamp
+            }
+            $ts = is_int($oa) ? $oa : (int)strtotime((string)$oa);
+            return $ts <= 0 || $ts >= $writeCutoff;
+        }));
+        $cacheWriteMax = max(
+            (int)($config['max_contexts_per_run'] ?? 100),
+            (int)($config['replay_max_contexts']  ?? 500)
+        ) * 2;
+        if (count($writeContexts) > $cacheWriteMax) {
+            // Keep most recent
+            usort($writeContexts, static function (array $a, array $b): int {
+                $ta = isset($a['observed_at']) ? (int)strtotime((string)$a['observed_at']) : 0;
+                $tb = isset($b['observed_at']) ? (int)strtotime((string)$b['observed_at']) : 0;
+                return $tb - $ta;
+            });
+            $writeContexts = array_slice($writeContexts, 0, $cacheWriteMax);
+        }
+        $this->writeJson('storage/input_contexts.json', array_values($writeContexts));
+
         $loadedTotal = count($allContexts);
 
-        // ── 2. Filter stale contexts ───────────────────────────────────────────
+        // ── 5. Filter stale contexts ───────────────────────────────────────────
         $cutoff      = $now - ($maxAgeMinutes * 60);
         $staleSkipped = 0;
         $recentContexts = [];
@@ -188,7 +257,7 @@ final class DynamicStrategiesStrategy
             $recentContexts[] = $ctx;
         }
 
-        // ── 3. Dedupe by context_id ────────────────────────────────────────────
+        // ── 6. Dedupe by context_id ────────────────────────────────────────────
         $seen      = [];
         $deduped   = [];
         foreach ($recentContexts as $ctx) {
@@ -208,7 +277,7 @@ final class DynamicStrategiesStrategy
         }
         $recentTotal = count($deduped);
 
-        // ── 4. Classify contexts ───────────────────────────────────────────────
+        // ── 7. Classify contexts ───────────────────────────────────────────────
         $usefulContexts  = [];
         $noiseSkipped    = 0;
         foreach ($deduped as $ctx) {
@@ -231,7 +300,7 @@ final class DynamicStrategiesStrategy
             $bySymbol[$sym][] = $ctx;
         }
 
-        // ── 6. Evaluate dynamic rules + 7. Score ──────────────────────────────
+        // ── 8. Evaluate dynamic rules + 9. Score ──────────────────────────────
         $candidates      = [];
         $rejectItems     = [];
         $minConf         = (int)($config['min_confirmations_for_shadow_candidate'] ?? 2);
@@ -416,6 +485,18 @@ final class DynamicStrategiesStrategy
             'shadow_only'                     => $shadowOnly,
             'handoff_enabled'                 => $handoffEnabled,
             'live_enabled'                    => $liveEnabled,
+            // ── Source adapter diagnostics ────────────────────────────────────
+            'source_adapters_total'           => $sourceStats['adapters_total']           ?? 0,
+            'source_adapters_enabled_total'   => $sourceStats['adapters_enabled_total']   ?? 0,
+            'source_contexts_loaded_total'    => $sourceStats['contexts_loaded_total']    ?? 0,
+            'source_contexts_useful_total'    => $sourceStats['contexts_useful_total']    ?? 0,
+            'source_contexts_skipped_noise_total' => $sourceStats['contexts_skipped_noise_total'] ?? 0,
+            'source_contexts_deduped_total'   => $sourceStats['contexts_deduped_total']   ?? 0,
+            'source_contexts_written_total'   => count($writeContexts),
+            'source_stats'                    => $sourceStats['per_source']               ?? [],
+            'source_context_examples'         => array_slice($sourceStats['all_contexts'] ?? [], 0, 3),
+            'source_adapter_error_examples'   => $sourceStats['errors'] ?? [],
+            // ── Input context pipeline ────────────────────────────────────────
             'input_contexts_loaded_total'     => $loadedTotal,
             'input_contexts_recent_total'     => $recentTotal,
             'input_contexts_skipped_stale_total' => $staleSkipped,
@@ -465,6 +546,109 @@ final class DynamicStrategiesStrategy
         return [
             'ok'    => true,
             'stats' => $stats,
+        ];
+    }
+
+    // ── Source adapter collection ──────────────────────────────────────────────
+
+    /**
+     * Instantiate all enabled source adapters and collect contexts.
+     *
+     * Returns a combined stats array:
+     *   adapters_total           int
+     *   adapters_enabled_total   int
+     *   contexts_loaded_total    int
+     *   contexts_useful_total    int
+     *   contexts_skipped_noise_total int
+     *   contexts_deduped_total   int
+     *   per_source               array  keyed by adapter id
+     *   all_contexts             array  flat list of collected contexts
+     *   errors                   array  non-fatal error messages
+     */
+    private function collectSourceContexts(array $config): array
+    {
+        /** @var DynamicSourceAdapterInterface[] $adapters */
+        $adapters = [
+            new DoubleBottomLongSourceAdapter($this->repoRoot),
+            // Future adapters registered here
+        ];
+
+        $totalAdapters   = count($adapters);
+        $enabledAdapters = 0;
+        $allContexts     = [];
+        $perSource       = [];
+        $allErrors       = [];
+
+        foreach ($adapters as $adapter) {
+            if (!$adapter->enabled($config)) {
+                $perSource[$adapter->id()] = ['enabled' => false];
+                continue;
+            }
+            $enabledAdapters++;
+
+            try {
+                $result = $adapter->collect($config);
+            } catch (\Throwable $e) {
+                $perSource[$adapter->id()] = [
+                    'enabled'               => true,
+                    'contexts_loaded_total' => 0,
+                    'contexts_useful_total' => 0,
+                    'errors_total'          => 1,
+                    'error'                 => $e->getMessage(),
+                ];
+                $allErrors[] = '[' . $adapter->id() . '] ' . $e->getMessage();
+                continue;
+            }
+
+            $adapterContexts = (array)($result['contexts'] ?? []);
+            $adapterStats    = (array)($result['stats']    ?? []);
+            $adapterErrors   = (array)($result['errors']   ?? []);
+
+            $allContexts = array_merge($allContexts, $adapterContexts);
+            $perSource[$adapter->id()] = $adapterStats;
+            foreach ($adapterErrors as $err) {
+                $allErrors[] = '[' . $adapter->id() . '] ' . $err;
+            }
+        }
+
+        // Global dedupe by context_id across all adapters
+        $seen    = [];
+        $deduped = [];
+        $dupCount = 0;
+        foreach ($allContexts as $ctx) {
+            $cid = (string)($ctx['context_id'] ?? '');
+            if ($cid !== '' && isset($seen[$cid])) {
+                $dupCount++;
+                continue;
+            }
+            if ($cid !== '') {
+                $seen[$cid] = true;
+            }
+            $deduped[] = $ctx;
+        }
+
+        $loadedTotal       = count($allContexts);
+        $usefulTotal       = 0;
+        $noiseTotal        = 0;
+        foreach ($deduped as $ctx) {
+            $ct = (string)($ctx['context_type'] ?? '');
+            if ($ct !== '') {
+                $usefulTotal++;
+            } else {
+                $noiseTotal++;
+            }
+        }
+
+        return [
+            'adapters_total'               => $totalAdapters,
+            'adapters_enabled_total'       => $enabledAdapters,
+            'contexts_loaded_total'        => $loadedTotal,
+            'contexts_useful_total'        => $usefulTotal,
+            'contexts_skipped_noise_total' => $noiseTotal,
+            'contexts_deduped_total'       => $dupCount,
+            'per_source'                   => $perSource,
+            'all_contexts'                 => $deduped,
+            'errors'                       => $allErrors,
         ];
     }
 

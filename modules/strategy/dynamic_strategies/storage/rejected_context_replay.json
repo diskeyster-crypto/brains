@@ -1,0 +1,14 @@
+[
+    {
+        "replay_id": "rpl_74659eda547b",
+        "symbol": "BTCUSDT",
+        "context_type": "falling_knife_reject",
+        "source_strategy": "double_bottom_long",
+        "source_signal_id": null,
+        "observed_at": "2026-05-03T13:31:57+00:00",
+        "confirmation_time": "2026-05-03T13:34:57+00:00",
+        "hypothetical_side": "short",
+        "hypothetical_entry_price": null,
+        "status": "skipped_candles_unavailable"
+    }
+]

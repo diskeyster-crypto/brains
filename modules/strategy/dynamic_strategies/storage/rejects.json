@@ -1,1 +1,26 @@
-[]
+[
+    {
+        "symbol": "BTCUSDT",
+        "dynamic_rule": "falling_knife_short_watch",
+        "reject_reason": "insufficient_confirmations",
+        "confirmation_count": 1,
+        "min_required": 2,
+        "confidence_score": 0.4,
+        "source_context_ids": [
+            "ext_001"
+        ],
+        "rejected_at": "2026-05-03T13:31:57+00:00"
+    },
+    {
+        "symbol": "BTCUSDT",
+        "dynamic_rule": "failed_reclaim_short_watch",
+        "reject_reason": "insufficient_confirmations",
+        "confirmation_count": 1,
+        "min_required": 2,
+        "confidence_score": 0.4,
+        "source_context_ids": [
+            "ext_001"
+        ],
+        "rejected_at": "2026-05-03T13:31:57+00:00"
+    }
+]

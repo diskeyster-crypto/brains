@@ -70,4 +70,31 @@ return [
     'replay_pause_minutes'           => 3,    // 3-minute confirmation pause before hypothetical entry
     'replay_max_contexts'            => 500,  // max contexts processed per replay run
     'replay_candle_storage_dir'      => 'modules/parser/parser2_history_accumulator/storage',
+
+    // ── Source adapter paths ──────────────────────────────────────────────────
+    // Read-only module paths used by source adapters.
+    // Dynamic Strategies never writes to these paths.
+    'bot_module_dir'          => 'modules/bot',
+    'stop_manager_module_dir' => 'modules/stop_manager',
+
+    // ── Source adapters ───────────────────────────────────────────────────────
+    // Dynamic Strategies pulls contexts from existing source strategy artifacts.
+    // Source strategies are NOT required to export data to Dynamic Strategies.
+    // All reads are passive/read-only. Missing files are handled gracefully.
+    'sources' => [
+        'double_bottom_long' => [
+            'enabled'                   => true,
+            'module_path'               => 'modules/strategy/pattern/double_bottom_long',
+            'read_last_run'             => true,   // read storage/last_run.json examples
+            'read_rejects'              => true,   // reserved for future dedicated rejects.json
+            'read_pending'              => true,   // read storage/pending_confirmations.json
+            'read_signals'              => false,  // do not read signals (not needed)
+            'read_handoff_queue'        => false,  // do not read handoff queue
+            'read_closed_trades'        => true,   // read bot/storage/trades/closed_trades.json
+            'read_bot_last_run'         => true,   // read bot/storage/last_run.json examples
+            'read_stop_manager_last_run' => true,  // read stop_manager/storage/last_run.json examples
+            'max_items_per_run'         => 200,    // cap on contexts extracted per adapter per run
+            'context_max_age_minutes'   => 480,    // skip artifacts older than 8 hours
+        ],
+    ],
 ];

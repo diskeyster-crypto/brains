@@ -737,6 +737,22 @@ function renderDashboardHub(): string
                     . ' · кандидатов <code>' . $slrCandidates . '</code>'
                     . ' · сигналов <code>' . $slrGeneratedSig . '</code>'
                     . ' · handoff-ready <code>' . $_cdmlHandoffReady . '</code>';
+            } elseif ($stratId === 'dynamic_strategies') {
+                $_dsContexts     = (int)($stratLastRun['input_contexts_recent_total'] ?? 0);
+                $_dsUseful       = (int)($stratLastRun['useful_contexts_total']        ?? 0);
+                $_dsCandidates   = (int)($stratLastRun['candidates_total']             ?? 0);
+                $_dsShadow       = (int)($stratLastRun['shadow_signals_total']         ?? 0);
+                $_dsHandoffReady = (int)($stratLastRun['bot_handoff_ready_total']      ?? 0);
+                $_dsShadowOnly   = (bool)($stratLastRun['shadow_only']                 ?? true);
+                $_dsShadowLabel  = $_dsShadowOnly
+                    ? '<span style="font-size:10px;color:#8b949e;background:rgba(139,148,158,.12);border:1px solid #8b949e44;padding:1px 5px;border-radius:3px;margin-left:4px;">shadow</span>'
+                    : '';
+                $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>' . $_dsShadowLabel
+                    . ' · контекстов <code>' . $_dsContexts . '</code>'
+                    . ' · полезных <code>' . $_dsUseful . '</code>'
+                    . ' · кандидатов <code>' . $_dsCandidates . '</code>'
+                    . ' · сигналов <code>' . $_dsShadow . '</code>'
+                    . ' · handoff-ready <code>' . $_dsHandoffReady . '</code>';
             } else {
                 $cycleLineHtml = 'статус <code>' . $slrStatus . '</code>'
                     . ' · кандидатов <code>' . $slrCandidates . '</code>'
@@ -864,6 +880,36 @@ BTN;
                     $actionButtonsHtml = <<<BTN
       <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
         title="{$_cdmlDisabledReason}">Запуск цикла</button>
+BTN;
+                }
+            } elseif ($stratId === 'dynamic_strategies') {
+                // Buttons enabled when strategy is enabled=true
+                $_dsRunAvailable = $opEnabled;
+                if ($_dsRunAvailable) {
+                    $actionButtonsHtml = <<<BTN
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="tick_run">
+        <input type="hidden" name="active_tab" value="dh-strat">
+        <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;">
+          Запустить цикл
+        </button>
+      </form>
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
+        <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="refresh">
+        <input type="hidden" name="active_tab" value="dh-strat">
+        <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;">
+          Обновить runtime
+        </button>
+      </form>
+BTN;
+                } else {
+                    $actionButtonsHtml = <<<BTN
+      <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
+        title="Стратегия отключена — нажмите Включить">Запустить цикл</button>
 BTN;
                 }
             } else {

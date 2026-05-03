@@ -1,0 +1,22 @@
+{
+    "name": "dynamic_strategies",
+    "title": "Dynamic Strategies · Динамические стратегии",
+    "version": "0.1.0",
+    "description": "Consumes useful rejected/failed/diagnostic contexts from ordinary strategies and generates short-watch shadow candidates and demo signals. Shadow-first, no live execution by default.",
+    "author": "Tredercopis",
+    "category": "strategy",
+    "family": "dynamic",
+    "enabled_by_default": true,
+    "default_mode": "demo",
+    "handoff_supported": true,
+    "handoff_enabled_by_default": false,
+    "live_supported": true,
+    "live_enabled_by_default": false,
+    "shadow_supported": true,
+    "shadow_only_by_default": true,
+    "cron_connected": true,
+    "paths": {
+        "storage": "storage",
+        "config":  "config/base.php"
+    }
+}

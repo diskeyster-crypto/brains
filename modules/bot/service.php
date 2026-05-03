@@ -1349,6 +1349,8 @@ final class BotService
             'symbol_freeze_double_bottom_emergency_stop_total'       => $fbDiag['symbol_freeze_double_bottom_emergency_stop_total'],
             'symbol_freeze_double_bottom_missing_roi_total'          => $fbDiag['symbol_freeze_double_bottom_missing_roi_total'],
             'symbol_freeze_double_bottom_examples'                   => $fbDiag['symbol_freeze_double_bottom_examples'],
+            'symbol_freeze_double_bottom_not_applied_total'          => $fbDiag['symbol_freeze_double_bottom_not_applied_total'],
+            'symbol_freeze_double_bottom_not_applied_examples'       => $fbDiag['symbol_freeze_double_bottom_not_applied_examples'],
             // ── Handoff-specific freeze/blacklist diagnostic counters (Task 4) ────
             'handoff_blocked_symbol_freeze_total'       => $handoffBlockedFreezeTotal,
             'handoff_blocked_symbol_blacklist_total'    => $handoffBlockedBlacklistTotal,
@@ -5210,9 +5212,26 @@ final class BotService
             }
 
             // ── Determine freeze duration (adaptive vs flat) ──────────────────
+            // Strategy detection with full fallback chain to ensure double_bottom_long
+            // trades are always caught even when stored under different field names.
             $stratId       = (string)($trade['strategy_id']    ?? '');
             $ownerStrategy = (string)($trade['owner_strategy'] ?? '');
-            $isDoubleBottom = ($stratId === 'double_bottom_long' || $ownerStrategy === 'double_bottom_long');
+            $strategyField = (string)($trade['strategy']       ?? '');
+            $ctx           = is_array($trade['strategy_signal_context'] ?? null) ? $trade['strategy_signal_context'] : [];
+            $ctxOwner      = (string)($ctx['owner_strategy']  ?? '');
+            $ctxStratId    = (string)($ctx['strategy_id']     ?? '');
+            $ctxSrcStrat   = (string)($ctx['source_strategy'] ?? '');
+
+            // Derive the detected strategy name using the priority fallback chain.
+            $detectedStrategy = '';
+            foreach ([$ownerStrategy, $stratId, $strategyField, $ctxOwner, $ctxStratId, $ctxSrcStrat] as $strategyCandidate) {
+                if ($strategyCandidate !== '') {
+                    $detectedStrategy = $strategyCandidate;
+                    break;
+                }
+            }
+
+            $isDoubleBottom = ($detectedStrategy === 'double_bottom_long');
 
             $adaptiveEnabled = (bool)($config['symbol_freeze_adaptive_enabled']          ?? false);
             $dbEnabled       = (bool)($config['symbol_freeze_double_bottom_enabled']     ?? false);
@@ -5232,6 +5251,15 @@ final class BotService
                 $this->recordAdaptiveFreezeStats($trade, $profileResult, $tickAt, $config);
             } else {
                 $minutes = max(1, (int)($config['symbol_freeze_after_close_minutes'] ?? 10));
+
+                // Record not-applied diagnostic when the trade is double_bottom_long but
+                // adaptive profile was not used (disabled in config or flags not set).
+                if ($isDoubleBottom) {
+                    $notAppliedReason = !$adaptiveEnabled
+                        ? 'adaptive_disabled'
+                        : 'double_bottom_profile_disabled';
+                    $this->recordNotAppliedFreezeStats($trade, $detectedStrategy, $notAppliedReason, $tickAt);
+                }
             }
 
             $closedTs      = @strtotime($closedAt);
@@ -5243,21 +5271,23 @@ final class BotService
             $key       = $symbol . '_' . $mode . '_' . $side;
 
             $entry = [
-                'symbol'         => $symbol,
-                'side'           => $side,
-                'mode'           => $mode,
-                'strategy'       => $isDoubleBottom ? 'double_bottom_long' : ($stratId ?: ($ownerStrategy ?: null)),
-                'source'         => 'post_close',
-                'reason'         => $freezeReason,
-                'close_source'   => $closeSource,
-                'close_reason'   => (string)($trade['close_reason'] ?? '') ?: null,
-                'close_guard'    => (string)($trade['close_guard']  ?? '') ?: null,
-                'roi'            => isset($trade['roi']) ? (float)$trade['roi'] : null,
-                'signal_id'      => (string)($trade['signal_id']    ?? '') ?: null,
-                'closed_at'      => $closedAt,
-                'frozen_until'   => $frozenUntil,
-                'freeze_minutes' => $minutes,
-                'created_at'     => $tickAt,
+                'symbol'          => $symbol,
+                'side'            => $side,
+                'mode'            => $mode,
+                'strategy'        => $detectedStrategy ?: null,
+                'strategy_id'     => $stratId   ?: null,
+                'owner_strategy'  => $ownerStrategy ?: null,
+                'source'          => 'post_close',
+                'reason'          => $freezeReason,
+                'close_source'    => $closeSource,
+                'close_reason'    => (string)($trade['close_reason'] ?? '') ?: null,
+                'close_guard'     => (string)($trade['close_guard']  ?? '') ?: null,
+                'roi'             => isset($trade['roi']) ? (float)$trade['roi'] : null,
+                'signal_id'       => (string)($trade['signal_id']    ?? '') ?: null,
+                'closed_at'       => $closedAt,
+                'frozen_until'    => $frozenUntil,
+                'freeze_minutes'  => $minutes,
+                'created_at'      => $tickAt,
             ];
             if ($freezeProfile !== null) {
                 $entry['freeze_profile'] = $freezeProfile;
@@ -5425,6 +5455,48 @@ final class BotService
             }
             $stats['examples']     = $examples;
             $stats['last_updated'] = $tickAt;
+
+            $this->saveAdaptiveFreezeStats($stats);
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * Record a diagnostic entry when a double_bottom_long trade was identified but
+     * the adaptive freeze profile was not applied (e.g., adaptive flag disabled).
+     *
+     * Writes to the same symbol_freeze_adaptive_stats.json under
+     * `not_applied_total` and `not_applied_examples`.
+     */
+    private function recordNotAppliedFreezeStats(
+        array  $trade,
+        string $detectedStrategy,
+        string $reasonNotApplied,
+        string $tickAt
+    ): void {
+        try {
+            $stats = $this->loadAdaptiveFreezeStats();
+
+            $stats['not_applied_total'] = (int)($stats['not_applied_total'] ?? 0) + 1;
+
+            $example = [
+                'symbol'            => (string)($trade['symbol']         ?? ''),
+                'signal_id'         => (string)($trade['signal_id']      ?? '') ?: null,
+                'roi'               => isset($trade['roi']) ? (float)$trade['roi'] : null,
+                'strategy_id'       => (string)($trade['strategy_id']    ?? '') ?: null,
+                'owner_strategy'    => (string)($trade['owner_strategy'] ?? '') ?: null,
+                'detected_strategy' => $detectedStrategy,
+                'close_reason'      => (string)($trade['close_reason']   ?? '') ?: null,
+                'reason_not_applied'=> $reasonNotApplied,
+                'created_at'        => $tickAt,
+            ];
+            $examples   = (array)($stats['not_applied_examples'] ?? []);
+            $examples[] = $example;
+            if (count($examples) > 10) {
+                $examples = array_slice($examples, -10);
+            }
+            $stats['not_applied_examples'] = $examples;
+            $stats['last_updated']         = $tickAt;
 
             $this->saveAdaptiveFreezeStats($stats);
         } catch (\Throwable) {
@@ -5854,6 +5926,9 @@ final class BotService
             'symbol_freeze_double_bottom_emergency_stop_total'       => 0,
             'symbol_freeze_double_bottom_missing_roi_total'          => 0,
             'symbol_freeze_double_bottom_examples'                   => [],
+            // Not-applied diagnostics (double_bottom_long detected but adaptive skipped)
+            'symbol_freeze_double_bottom_not_applied_total'          => 0,
+            'symbol_freeze_double_bottom_not_applied_examples'       => [],
         ];
 
         $now = time();
@@ -5932,7 +6007,9 @@ final class BotService
                 $result['symbol_freeze_double_bottom_early_fail_total']     = (int)($adaptStats['profile_double_bottom_early_fail_total']                     ?? 0);
                 $result['symbol_freeze_double_bottom_emergency_stop_total'] = (int)($adaptStats['profile_double_bottom_emergency_stop_total']                 ?? 0);
                 $result['symbol_freeze_double_bottom_missing_roi_total']    = (int)($adaptStats['missing_roi_total']                                          ?? 0);
-                $result['symbol_freeze_double_bottom_examples']             = array_slice((array)($adaptStats['examples'] ?? []), -5);
+                $result['symbol_freeze_double_bottom_examples']             = array_slice((array)($adaptStats['examples']           ?? []), -5);
+                $result['symbol_freeze_double_bottom_not_applied_total']    = (int)($adaptStats['not_applied_total']                                          ?? 0);
+                $result['symbol_freeze_double_bottom_not_applied_examples'] = array_slice((array)($adaptStats['not_applied_examples'] ?? []), -5);
             }
         } catch (\Throwable) {
         }

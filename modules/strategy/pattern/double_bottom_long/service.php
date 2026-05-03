@@ -1293,12 +1293,49 @@ final class DoubleBottomLongService
         // Read bot closed_trades.json and compute score/warning bucket statistics
         // for double_bottom_long trades that have a strategy_signal_context trace.
         // Diagnostics only — no signal behavior is changed.
-        $calibration = $this->computeCalibration($config);
+        // Wrapped in try-catch so a calibration failure cannot block hourly stats.
+        try {
+            $calibration = $this->computeCalibration($config);
+        } catch (\Throwable) {
+            $calibration = [
+                'calibration_closed_trades_total'            => 0,
+                'calibration_closed_trades_with_trace_total' => 0,
+                'calibration_winning_trades_total'           => 0,
+                'calibration_losing_trades_total'            => 0,
+                'calibration_deep_loss_total'                => 0,
+                'calibration_entry_distance_buckets'         => [],
+                'calibration_synthetic_quality_buckets'      => [],
+                'calibration_setup_class_score_buckets'      => [],
+                'calibration_candidate_quality_buckets'      => [],
+                'calibration_warning_combo_stats'            => [],
+                'calibration_profitable_examples'            => [],
+                'calibration_losing_examples'                => [],
+                'calibration_deep_loss_examples'             => [],
+                'calibration_bad_signature_examples'         => [],
+                'calibration_candidate_rules'                => [],
+            ];
+        }
 
         // ── Hourly performance statistics ────────────────────────────────────
         // Group double_bottom_long closed trades by open hour (UTC) to surface
         // per-hour win-rate / avg-roi. Diagnostics only.
-        $hourlyStats = $this->computeHourlyStats($config);
+        // Wrapped in try-catch; errors are recorded as hourly_stats_error fields.
+        try {
+            $hourlyStats = $this->computeHourlyStats($config);
+        } catch (\Throwable $e) {
+            $hourlyStats = [
+                'hourly_stats_enabled'              => false,
+                'hourly_stats_generated_at'         => null,
+                'hourly_stats_total_trades'         => 0,
+                'hourly_stats_bad_hour_candidates'  => 0,
+                'hourly_stats_good_hour_candidates' => 0,
+                'hourly_stats_bad_block_candidates' => 0,
+                'hourly_stats_good_block_candidates'=> 0,
+                'hourly_stats_file'                 => null,
+                'hourly_stats_error'                => true,
+                'hourly_stats_error_reason'         => $e->getMessage(),
+            ];
+        }
 
         $this->writeJson('storage/last_run.json', [
             // done_retryable = empty universe (registry not yet populated, will retry)
@@ -1609,6 +1646,8 @@ final class DoubleBottomLongService
             'hourly_stats_bad_block_candidates'  => $hourlyStats['hourly_stats_bad_block_candidates'],
             'hourly_stats_good_block_candidates' => $hourlyStats['hourly_stats_good_block_candidates'],
             'hourly_stats_file'                  => $hourlyStats['hourly_stats_file'],
+            'hourly_stats_error'                 => $hourlyStats['hourly_stats_error']        ?? false,
+            'hourly_stats_error_reason'          => $hourlyStats['hourly_stats_error_reason'] ?? null,
         ]);
 
         if ($isDone) {
@@ -6693,14 +6732,16 @@ final class DoubleBottomLongService
     private function computeHourlyStats(array $config): array
     {
         $zero = [
-            'hourly_stats_enabled'           => false,
-            'hourly_stats_generated_at'      => null,
-            'hourly_stats_total_trades'      => 0,
+            'hourly_stats_enabled'              => false,
+            'hourly_stats_generated_at'         => null,
+            'hourly_stats_total_trades'         => 0,
             'hourly_stats_bad_hour_candidates'  => 0,
             'hourly_stats_good_hour_candidates' => 0,
-            'hourly_stats_bad_block_candidates'  => 0,
-            'hourly_stats_good_block_candidates' => 0,
-            'hourly_stats_file'              => null,
+            'hourly_stats_bad_block_candidates' => 0,
+            'hourly_stats_good_block_candidates'=> 0,
+            'hourly_stats_file'                 => null,
+            'hourly_stats_error'                => false,
+            'hourly_stats_error_reason'         => null,
         ];
 
         if (!(bool)($config['hourly_stats_enabled'] ?? true)) {

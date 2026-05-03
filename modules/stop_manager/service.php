@@ -1630,6 +1630,28 @@ final class StopManagerService
         $ageSec     = $openedTs > 0 ? max(0, $nowTs - $openedTs) : 0;
         $ageMinutes = round($ageSec / 60.0, 1);
 
+        // Price/ROI normalization — run before any skip branch (too_young,
+        // outside_watch_window, roi_not_adverse) so every return path carries
+        // normalized fields when source data is available in the position record.
+        $priceNorm    = $this->normalizePositionPrices($pos);
+        $currentPrice = $priceNorm['normalized_current_price'];
+        $entryPrice   = $priceNorm['normalized_entry_price'] ?? 0.0;
+        $leverage     = $priceNorm['normalized_leverage'];
+
+        // Propagate normalization metadata into $base so all subsequent return
+        // paths include it automatically via array_merge($base, [...])
+        $base['current_price_source']     = $priceNorm['current_price_source'];
+        $base['entry_price_source']       = $priceNorm['entry_price_source'];
+        $base['leverage_source']          = $priceNorm['leverage_source'];
+        $base['normalized_current_price'] = $currentPrice;
+        $base['normalized_entry_price']   = $entryPrice > 0.0 ? $entryPrice : null;
+        $base['normalized_leverage']      = $leverage;
+
+        $roiNorm = $this->normalizePositionRoi($pos, $priceNorm);
+        $roi     = $roiNorm['normalized_roi'];
+        $base['roi_source']    = $roiNorm['roi_source'];
+        $base['normalized_roi'] = $roi;
+
         if ($ageSec < $minAgeSec) {
             return array_merge($base, [
                 'skip_reason' => 'too_young',
@@ -1659,21 +1681,6 @@ final class StopManagerService
             ]);
         }
 
-        // Price/ROI normalization — use fallback chains before giving up
-        $priceNorm    = $this->normalizePositionPrices($pos);
-        $currentPrice = $priceNorm['normalized_current_price'];
-        $entryPrice   = $priceNorm['normalized_entry_price'] ?? 0.0;
-        $leverage     = $priceNorm['normalized_leverage'];
-
-        // Propagate normalization metadata into $base so all subsequent return
-        // paths include it automatically via array_merge($base, [...])
-        $base['current_price_source']     = $priceNorm['current_price_source'];
-        $base['entry_price_source']       = $priceNorm['entry_price_source'];
-        $base['leverage_source']          = $priceNorm['leverage_source'];
-        $base['normalized_current_price'] = $currentPrice;
-        $base['normalized_entry_price']   = $entryPrice > 0.0 ? $entryPrice : null;
-        $base['normalized_leverage']      = $leverage;
-
         if ($currentPrice === null || $entryPrice <= 0.0) {
             return array_merge($base, [
                 'skip_reason'   => 'no_price_data',
@@ -1682,15 +1689,8 @@ final class StopManagerService
             ]);
         }
 
-        // ROI normalization — explicit fields first, then calculate from prices
-        $roiNorm = $this->normalizePositionRoi($pos, $priceNorm);
-        $roi     = $roiNorm['normalized_roi'];
-
-        $base['roi_source']    = $roiNorm['roi_source'];
-        $base['normalized_roi'] = $roi;
-
-        // roi will always be non-null here since currentPrice and entryPrice are valid,
-        // but guard defensively to satisfy static analysis
+        // Guard defensively for null roi (roi will be non-null when price/entry
+        // are valid, but static analysis requires the check)
         if ($roi === null) {
             return array_merge($base, [
                 'skip_reason'   => 'no_roi_data',

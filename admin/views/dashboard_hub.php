@@ -752,6 +752,19 @@ function renderDashboardHub(): string
                 $_dsHandoffLabel = $_dsHandoffEn
                     ? '<span style="font-size:10px;color:#3fb950;background:rgba(63,185,80,.10);border:1px solid #3fb95044;padding:1px 5px;border-radius:3px;margin-left:4px;">handoff</span>'
                     : '<span style="font-size:10px;color:#8b949e;background:rgba(139,148,158,.12);border:1px solid #8b949e44;padding:1px 5px;border-radius:3px;margin-left:4px;">no-handoff</span>';
+                // Threshold diagnostics
+                $_dsThrPassed    = (int)($stratLastRun['candidates_threshold_passed_total']      ?? -1);
+                $_dsThrFailed    = (int)($stratLastRun['candidates_threshold_failed_total']      ?? -1);
+                $_dsThrRuleCfg   = (int)($stratLastRun['candidates_threshold_rule_config_total'] ?? 0);
+                $_dsThrLine      = '';
+                if ($_dsThrPassed >= 0) {
+                    $_dsThrLine = '<br><span style="font-size:11px;color:#8b949e;">threshold:</span>'
+                        . ' pass <code>' . $_dsThrPassed . '</code>'
+                        . ' fail <code>' . $_dsThrFailed . '</code>';
+                    if ($_dsThrRuleCfg > 0) {
+                        $_dsThrLine .= ' · rule-cfg <code>' . $_dsThrRuleCfg . '</code>';
+                    }
+                }
                 // Source adapter diagnostics
                 $_dsSrcLoaded  = (int)($stratLastRun['source_contexts_loaded_total'] ?? 0);
                 $_dsSrcLine    = '';
@@ -792,6 +805,7 @@ function renderDashboardHub(): string
                     . ' · сигналов <code>' . $_dsSignals . '</code>'
                     . ($_dsExecutable > 0 ? ' · executable <code>' . $_dsExecutable . '</code>' : '')
                     . ' · handoff-ready <code>' . $_dsHandoffReady . '</code>'
+                    . $_dsThrLine
                     . $_dsSrcLine
                     . $_dsReplayLine;
             } else {

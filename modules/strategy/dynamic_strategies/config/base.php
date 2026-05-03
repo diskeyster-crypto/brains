@@ -58,13 +58,67 @@ return [
     'min_confidence_for_demo_signal'         => 0.65,
     'min_confidence_for_live_signal'         => 0.85,
 
-    // ── Dynamic rules enabled ─────────────────────────────────────────────────
+    // ── Dynamic rules enabled (flat booleans — backward-compat aliases) ──────
     'falling_knife_short_watch'              => true,
     'failed_reclaim_short_watch'             => true,
     'base_breakdown_short_watch'             => true,
     'failed_pending_breakdown_short_watch'   => true,
     'failed_long_after_entry_short_watch'    => true,
     'late_exhaustion_short_watch'            => true,
+
+    // ── Per-rule config (preferred over flat global thresholds) ───────────────
+    // strategy.php reads $config['rules'][$ruleId] first; falls back to global
+    // min_confirmations_demo / min_confidence_demo etc. if a rule is missing here.
+    'rules' => [
+        'falling_knife_short_watch' => [
+            'enabled'                => true,
+            'side'                   => 'short',
+            'min_confirmations_demo' => 3,
+            'min_confidence_demo'    => 0.65,
+            'min_confirmations_live' => 4,
+            'min_confidence_live'    => 0.85,
+        ],
+        'failed_reclaim_short_watch' => [
+            'enabled'                => true,
+            'side'                   => 'short',
+            'min_confirmations_demo' => 2,   // lower bar — reclaim-lost patterns are high-signal
+            'min_confidence_demo'    => 0.65,
+            'min_confirmations_live' => 4,
+            'min_confidence_live'    => 0.85,
+        ],
+        'base_breakdown_short_watch' => [
+            'enabled'                => true,
+            'side'                   => 'short',
+            'min_confirmations_demo' => 2,   // lower bar — base support broken is a strong directional signal
+            'min_confidence_demo'    => 0.65,
+            'min_confirmations_live' => 4,
+            'min_confidence_live'    => 0.85,
+        ],
+        'failed_pending_breakdown_short_watch' => [
+            'enabled'                => true,
+            'side'                   => 'short',
+            'min_confirmations_demo' => 3,
+            'min_confidence_demo'    => 0.65,
+            'min_confirmations_live' => 4,
+            'min_confidence_live'    => 0.85,
+        ],
+        'failed_long_after_entry_short_watch' => [
+            'enabled'                => true,
+            'side'                   => 'short',
+            'min_confirmations_demo' => 3,
+            'min_confidence_demo'    => 0.68,  // slightly higher bar — requires more conviction
+            'min_confirmations_live' => 4,
+            'min_confidence_live'    => 0.88,
+        ],
+        'late_exhaustion_short_watch' => [
+            'enabled'                => true,
+            'side'                   => 'short',
+            'min_confirmations_demo' => 3,
+            'min_confidence_demo'    => 0.65,
+            'min_confirmations_live' => 4,
+            'min_confidence_live'    => 0.85,
+        ],
+    ],
 
     // ── Signal lifecycle ──────────────────────────────────────────────────────
     'signal_ttl_minutes'    => 120,   // shadow signals expire after 2 h

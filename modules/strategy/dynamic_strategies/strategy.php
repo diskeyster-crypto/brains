@@ -307,14 +307,11 @@ final class DynamicStrategiesStrategy
         }
 
         // ── 8. Evaluate dynamic rules + 9. Score ──────────────────────────────
-        $candidates      = [];
-        $rejectItems     = [];
-        // Per-mode thresholds (new keys preferred; legacy aliases as fallback)
-        $minConf         = (int)($config['min_confirmations_for_shadow_candidate'] ?? 2);
-        $minDemoConf     = (int)($config['min_confirmations_demo'] ?? $config['min_confirmations_for_demo_signal'] ?? 3);
-        $minDemoScore    = (float)($config['min_confidence_demo']  ?? $config['min_confidence_for_demo_signal']   ?? 0.65);
-        $minLiveConf     = (int)($config['min_confirmations_live'] ?? $minDemoConf + 1);
-        $minLiveScore    = (float)($config['min_confidence_live']  ?? $config['min_confidence_for_live_signal']   ?? 0.85);
+        $candidates    = [];
+        $rejectItems   = [];
+        // Minimum confirmations to be tracked as a candidate at all (very low bar).
+        // Per-rule and per-mode thresholds are applied later in the signals loop.
+        $minCandConf   = (int)($config['min_confirmations_for_shadow_candidate'] ?? 2);
 
         $enabledRules = [];
         foreach (array_keys(self::RULE_CONTEXT_MAP) as $rule) {
@@ -330,16 +327,16 @@ final class DynamicStrategiesStrategy
                     continue;
                 }
 
-                if ($candidate['confirmation_count'] < $minConf) {
+                if ($candidate['confirmation_count'] < $minCandConf) {
                     $rejectItems[] = [
-                        'symbol'              => $sym,
-                        'dynamic_rule'        => $rule,
-                        'reject_reason'       => 'insufficient_confirmations',
-                        'confirmation_count'  => $candidate['confirmation_count'],
-                        'min_required'        => $minConf,
-                        'confidence_score'    => $candidate['confidence_score'],
-                        'source_context_ids'  => $candidate['source_context_ids'],
-                        'rejected_at'         => date('c'),
+                        'symbol'             => $sym,
+                        'dynamic_rule'       => $rule,
+                        'reject_reason'      => 'insufficient_confirmations',
+                        'confirmation_count' => $candidate['confirmation_count'],
+                        'min_required'       => $minCandConf,
+                        'confidence_score'   => $candidate['confidence_score'],
+                        'source_context_ids' => $candidate['source_context_ids'],
+                        'rejected_at'        => date('c'),
                     ];
                     continue;
                 }
@@ -406,29 +403,87 @@ final class DynamicStrategiesStrategy
         $ttlMinutes     = (int)($config['signal_ttl_minutes']     ?? 120);
         $signalsBySymbol = [];
 
+        // Threshold diagnostics
+        $thresholdPassedTotal         = 0;
+        $thresholdFailedTotal         = 0;
+        $thresholdRuleConfigTotal     = 0;
+        $thresholdGlobalFallbackTotal = 0;
+        $thresholdPassedExamples      = [];
+        $thresholdFailedExamples      = [];
+
+        // Global thresholds (fallback when rule-specific config is missing)
+        $globalMinDemoConf  = (int)($config['min_confirmations_demo'] ?? $config['min_confirmations_for_demo_signal'] ?? 3);
+        $globalMinDemoScore = (float)($config['min_confidence_demo']  ?? $config['min_confidence_for_demo_signal']   ?? 0.65);
+        $globalMinLiveConf  = (int)($config['min_confirmations_live'] ?? $globalMinDemoConf + 1);
+        $globalMinLiveScore = (float)($config['min_confidence_live']  ?? $config['min_confidence_for_live_signal']   ?? 0.85);
+
         foreach ($candidates as $cand) {
             $sym     = $cand['symbol'];
             $score   = $cand['confidence_score'];
             $confCnt = $cand['confirmation_count'];
             $candSide = (string)($cand['side'] ?? 'short');
+            $ruleId  = (string)($cand['dynamic_rule'] ?? '');
+
+            // Per-rule threshold lookup (preferred); fall back to globals
+            $ruleCfg = $config['rules'][$ruleId] ?? [];
+            $thresholdSource = ($ruleCfg !== []) ? 'rule_config' : 'global_fallback';
+            if ($thresholdSource === 'rule_config') {
+                $thresholdRuleConfigTotal++;
+            } else {
+                $thresholdGlobalFallbackTotal++;
+            }
+
+            $minDemoConf  = isset($ruleCfg['min_confirmations_demo'])
+                ? (int)$ruleCfg['min_confirmations_demo']
+                : $globalMinDemoConf;
+            $minDemoScore = isset($ruleCfg['min_confidence_demo'])
+                ? (float)$ruleCfg['min_confidence_demo']
+                : $globalMinDemoScore;
+            $minLiveConf  = isset($ruleCfg['min_confirmations_live'])
+                ? (int)$ruleCfg['min_confirmations_live']
+                : $globalMinLiveConf;
+            $minLiveScore = isset($ruleCfg['min_confidence_live'])
+                ? (float)$ruleCfg['min_confidence_live']
+                : $globalMinLiveScore;
 
             // Use per-mode thresholds
             $qualifiesForDemo = $confCnt >= $minDemoConf && $score >= $minDemoScore;
             $qualifiesForLive = $liveEnabled && $liveHandoffEnabled && $confCnt >= $minLiveConf && $score >= $minLiveScore;
 
             if (!$qualifiesForDemo) {
-                $rejectItems[] = [
-                    'symbol'             => $sym,
-                    'dynamic_rule'       => $cand['dynamic_rule'],
-                    'reject_reason'      => 'rule_threshold_not_met',
-                    'confirmation_count' => $confCnt,
-                    'confidence_score'   => $score,
-                    'min_conf_required'  => $minDemoConf,
-                    'min_score_required' => $minDemoScore,
-                    'source_context_ids' => $cand['source_context_ids'],
-                    'rejected_at'        => date('c'),
+                $thresholdFailedTotal++;
+                $failedReject = [
+                    'symbol'                  => $sym,
+                    'dynamic_rule'            => $ruleId,
+                    'reject_reason'           => 'rule_threshold_not_met',
+                    'confirmation_count'      => $confCnt,
+                    'confidence_score'        => $score,
+                    'min_confirmations_required' => $minDemoConf,
+                    'min_confidence_required' => $minDemoScore,
+                    'min_conf_required'       => $minDemoConf,   // backward-compat alias
+                    'min_score_required'      => $minDemoScore,  // backward-compat alias
+                    'threshold_source'        => $thresholdSource,
+                    'source_context_ids'      => $cand['source_context_ids'],
+                    'rejected_at'             => date('c'),
                 ];
+                $rejectItems[] = $failedReject;
+                if (count($thresholdFailedExamples) < 5) {
+                    $thresholdFailedExamples[] = $failedReject;
+                }
                 continue;
+            }
+            $thresholdPassedTotal++;
+            if (count($thresholdPassedExamples) < 5) {
+                $thresholdPassedExamples[] = [
+                    'symbol'                  => $sym,
+                    'dynamic_rule'            => $ruleId,
+                    'confirmation_count'      => $confCnt,
+                    'confidence_score'        => $score,
+                    'min_confirmations_required' => $minDemoConf,
+                    'min_confidence_required' => $minDemoScore,
+                    'threshold_source'        => $thresholdSource,
+                    'threshold_passed'        => true,
+                ];
             }
             if (count($signals) >= $maxSigPerRun) {
                 break;
@@ -496,20 +551,24 @@ final class DynamicStrategiesStrategy
             }
 
             $signal = [
-                'signal_id'           => 'dsig_' . $cand['dynamic_rule'] . '_' . $sym . '_' . $now,
-                'symbol'              => $sym,
-                'side'                => $candSide,
-                'strategy'            => self::STRATEGY_ID,
-                'strategy_id'         => self::STRATEGY_ID,
-                'dynamic_rule'        => $cand['dynamic_rule'],
-                'confidence_score'    => $score,
-                'mode'                => $executionMode,
-                'execution_mode'      => $executionMode,
-                'side_mode'           => $sideMode,
-                'handoff_ready'       => $handoffReady,
-                'executable'          => $isExecutable,
-                'detected_at'         => date('c'),
-                'expires_at'          => date('c', $now + ($ttlMinutes * 60)),
+                'signal_id'                   => 'dsig_' . $cand['dynamic_rule'] . '_' . $sym . '_' . $now,
+                'symbol'                      => $sym,
+                'side'                        => $candSide,
+                'strategy'                    => self::STRATEGY_ID,
+                'strategy_id'                 => self::STRATEGY_ID,
+                'dynamic_rule'                => $cand['dynamic_rule'],
+                'confidence_score'            => $score,
+                'mode'                        => $executionMode,
+                'execution_mode'              => $executionMode,
+                'side_mode'                   => $sideMode,
+                'handoff_ready'               => $handoffReady,
+                'executable'                  => $isExecutable,
+                'threshold_passed'            => true,
+                'threshold_source'            => $thresholdSource,
+                'min_confirmations_required'  => $minDemoConf,
+                'min_confidence_required'     => $minDemoScore,
+                'detected_at'                 => date('c'),
+                'expires_at'                  => date('c', $now + ($ttlMinutes * 60)),
                 'source_context_ids'  => $cand['source_context_ids'],
                 'source_strategies'   => $cand['source_strategies'],
                 'source_signal_ids'   => $cand['source_signal_ids'] ?? [],
@@ -629,12 +688,17 @@ final class DynamicStrategiesStrategy
             'input_contexts_skipped_noise_total' => $noiseSkipped,
             'useful_contexts_total'           => $usefulTotal,
             // ── Candidates ───────────────────────────────────────────────────
-            'candidates_total'                => count($candidates),
-            'candidates_short_total'          => $candidatesShortTotal,
-            'candidates_long_total'           => $candidatesLongTotal,
-            'candidates_allowed_by_side_total' => count($candidates),
-            'candidates_filtered_by_side_total' => $filteredBySide,
-            'rejected_contexts_total'         => count($rejectItems),
+            'candidates_total'                         => count($candidates),
+            'candidates_short_total'                   => $candidatesShortTotal,
+            'candidates_long_total'                    => $candidatesLongTotal,
+            'candidates_allowed_by_side_total'         => count($candidates),
+            'candidates_filtered_by_side_total'        => $filteredBySide,
+            'rejected_contexts_total'                  => count($rejectItems),
+            // ── Threshold diagnostics ─────────────────────────────────────────
+            'candidates_threshold_passed_total'        => $thresholdPassedTotal,
+            'candidates_threshold_failed_total'        => $thresholdFailedTotal,
+            'candidates_threshold_rule_config_total'   => $thresholdRuleConfigTotal,
+            'candidates_threshold_global_fallback_total' => $thresholdGlobalFallbackTotal,
             // ── Signals ──────────────────────────────────────────────────────
             'signals_total'                   => count($signals),
             'demo_signals_total'              => $demoSignalsTotal,
@@ -655,6 +719,8 @@ final class DynamicStrategiesStrategy
             'handoff_examples'                => array_slice($handoffQueue, 0, 5),
             'side_filtered_examples'          => $sideFilteredExamples,
             'live_blocked_examples'           => $liveBlockedExamples,
+            'threshold_passed_examples'       => $thresholdPassedExamples,
+            'threshold_failed_examples'       => $thresholdFailedExamples,
             // Alias fields for generic dashboard display
             'found'                           => count($candidates),
             'generated_signals_count'         => count($signals),
@@ -918,9 +984,13 @@ final class DynamicStrategiesStrategy
             'confirmation_count'  => $confCount,
             'confidence_score'    => round($score, 4),
             'suggested_mode'      => 'demo',
-            'shadow_only'         => true,
+            // Pre-signal diagnostic state — executable/handoff_ready are set later
+            // after threshold evaluation in the signal-building loop.
             'executable'          => false,
             'handoff_ready'       => false,
+            'diagnostic_only'     => true,
+            // Deprecated compat field — always false; use mode/handoff_enabled instead
+            'deprecated_shadow_only' => false,
             'warnings'            => $warnings,
             'reason_codes'        => $reasonCodes,
             'evaluated_at'        => date('c'),

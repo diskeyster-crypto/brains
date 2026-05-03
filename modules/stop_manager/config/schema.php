@@ -29,4 +29,7 @@ return [
     // Cron
     'tick_interval_sec'   => 'int',
     'max_runtime_seconds' => 'int',
+
+    // Side-specific stop profiles (optional — present when overridden from UI)
+    'profiles' => 'array',
 ];

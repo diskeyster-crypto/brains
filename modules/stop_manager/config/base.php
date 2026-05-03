@@ -107,4 +107,36 @@ return [
     // Safety
     'double_bottom_early_fail_require_setup_break' => true,  // adverse ROI alone must not close
     'double_bottom_early_fail_close_reason'        => 'double_bottom_setup_failed_after_entry',
+
+    // ── Side-specific stop profiles ───────────────────────────────────────────
+    //
+    // profiles.long — controls long-side emergency stop behavior.
+    //   Currently informational; double_bottom early-fail guard is the active
+    //   long guard.  Reserved for future generic long emergency-stop logic.
+    //
+    // profiles.short — controls short-side emergency stop.
+    //   Applies a hard ROI cap to demo short positions when normalized_roi
+    //   drops to or below emergency_stop_roi.  Only 'demo' mode is supported.
+    //   applies_to_strategies accepts strategy_id / owner_strategy values plus
+    //   '*' as a wildcard that matches any strategy.
+    //
+    // Override individual values in active.php without touching this file.
+    'profiles' => [
+        'long' => [
+            'enabled'                => true,
+            'emergency_stop_enabled' => true,
+            'emergency_stop_roi'     => -30.0,   // trigger ROI% (negative)
+            'min_age_seconds'        => 60,
+            'applies_to_strategies'  => ['double_bottom_long', '*'],
+        ],
+        'short' => [
+            'enabled'                => true,
+            'emergency_stop_enabled' => true,
+            'emergency_stop_roi'     => -20.0,   // trigger ROI% (negative)
+            'min_age_seconds'        => 60,
+            'applies_to_strategies'  => ['dynamic_strategies'],
+            'close_reason'           => 'short_emergency_roi_cap',
+            'close_guard'            => 'short_emergency_stop',
+        ],
+    ],
 ];

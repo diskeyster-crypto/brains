@@ -94,6 +94,21 @@ HTML;
         $smBeTrig    = $e($config['breakeven_trigger_roi']     ?? 10.0);
         $smBeLock    = $e($config['breakeven_profit_lock_roi'] ?? 3.0);
 
+        // ── profiles ─────────────────────────────────────────────────────────
+        $longProfile  = $config['profiles']['long']  ?? [];
+        $shortProfile = $config['profiles']['short'] ?? [];
+
+        $cfgLongStopEnYes  = ($longProfile['enabled']  ?? true)  ? ' selected' : '';
+        $cfgLongStopEnNo   = !($longProfile['enabled'] ?? true)  ? ' selected' : '';
+        $cfgLongEmergRoi   = $e($longProfile['emergency_stop_roi']  ?? -30.0);
+        $cfgLongMinAge     = $e($longProfile['min_age_seconds']      ?? 60);
+
+        $cfgShortStopEnYes = ($shortProfile['enabled']  ?? true) ? ' selected' : '';
+        $cfgShortStopEnNo  = !($shortProfile['enabled'] ?? true) ? ' selected' : '';
+        $cfgShortEmergRoi  = $e($shortProfile['emergency_stop_roi'] ?? -20.0);
+        $cfgShortMinAge    = $e($shortProfile['min_age_seconds']     ?? 60);
+        $cfgShortAppliesTo = $e(implode(', ', (array)($shortProfile['applies_to_strategies'] ?? ['dynamic_strategies'])));
+
         $lrStatus    = $e($lastRun['status']     ?? 'never_run');
         $lrTickAt    = $e($lastRun['tick_at']    ?? '—');
         $lrElapsed   = $e($lastRun['elapsed_sec'] ?? 0);
@@ -421,6 +436,63 @@ HTML;
               class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
         </div>
+
+        <!-- Long stop profile settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#3fb950;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Long — настройки стопа
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long стоп включён</label>
+            <select name="long_stop_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$cfgLongStopEnYes}>Да</option>
+              <option value="0"{$cfgLongStopEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long emergency stop ROI%</label>
+            <input type="number" step="0.1" max="0" name="long_emergency_stop_roi"
+              value="{$cfgLongEmergRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long min age (сек)</label>
+            <input type="number" step="1" min="0" name="long_min_age_seconds"
+              value="{$cfgLongMinAge}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+
+        <!-- Short stop profile settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#58a6ff;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Short — настройки стопа (demo-only)
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short стоп включён</label>
+            <select name="short_stop_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$cfgShortStopEnYes}>Да</option>
+              <option value="0"{$cfgShortStopEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short emergency stop ROI%</label>
+            <input type="number" step="0.1" max="0" name="short_emergency_stop_roi"
+              value="{$cfgShortEmergRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            <div style="font-size:11px;color:var(--ui-text-muted);margin-top:3px;">Отрицательное. Шорт теряет когда цена растёт.</div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short min age (сек)</label>
+            <input type="number" step="1" min="0" name="short_min_age_seconds"
+              value="{$cfgShortMinAge}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short applies_to_strategies</label>
+            <input type="text" name="short_applies_to_strategies"
+              value="{$cfgShortAppliesTo}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;"
+              placeholder="dynamic_strategies">
+            <div style="font-size:11px;color:var(--ui-text-muted);margin-top:3px;">Через запятую. * = все.</div>
+          </div>
+        </div>
+
         <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
         <div style="margin-top:10px;font-size:11px;color:var(--ui-text-muted);">
           Изменения записываются в <code>config/active.php</code>. Источник истины для dashboard — тот же файл.
@@ -515,19 +587,62 @@ HTML;
             : System::web('admin/stop-manager');
 
         try {
-            $active = [
-                'enabled'                   => (bool)(int)($_POST['enabled']                   ?? 0),
-                'mode'                      => in_array($_POST['mode'] ?? '', ['demo', 'live'], true)
-                    ? (string)$_POST['mode']
-                    : 'demo',
-                'stop_mode'                 => 'liq_distance_percent',
-                'liq_distance_percent'      => max(1, min(99, (int)($_POST['liq_distance_percent'] ?? 90))),
-                'breakeven_enabled'         => (bool)(int)($_POST['breakeven_enabled']         ?? 0),
-                'breakeven_trigger_roi'     => max(0.0, (float)($_POST['breakeven_trigger_roi']     ?? 10.0)),
-                'breakeven_profit_lock_roi' => (float)($_POST['breakeven_profit_lock_roi'] ?? 3.0),
-            ];
+            // Load existing active config to preserve unrelated keys
+            $existing = [];
+            $activePath = $this->moduleDir . '/config/active.php';
+            if (is_file($activePath)) {
+                try {
+                    $loaded = @include $activePath;
+                    if (is_array($loaded)) {
+                        $existing = $loaded;
+                    }
+                } catch (\Throwable) {}
+            }
 
-            $this->writeActive($active);
+            // ── Core fields ────────────────────────────────────────────────
+            $existing['enabled']                   = (bool)(int)($_POST['enabled']                   ?? 0);
+            $existing['mode']                      = in_array($_POST['mode'] ?? '', ['demo', 'live'], true)
+                ? (string)$_POST['mode']
+                : 'demo';
+            $existing['stop_mode']                 = 'liq_distance_percent';
+            $existing['liq_distance_percent']      = max(1, min(99, (int)($_POST['liq_distance_percent'] ?? 90)));
+            $existing['breakeven_enabled']         = (bool)(int)($_POST['breakeven_enabled']         ?? 0);
+            $existing['breakeven_trigger_roi']     = max(0.0, (float)($_POST['breakeven_trigger_roi']     ?? 10.0));
+            $existing['breakeven_profit_lock_roi'] = (float)($_POST['breakeven_profit_lock_roi'] ?? 3.0);
+
+            // ── Long stop profile ──────────────────────────────────────────
+            $longProfile = $existing['profiles']['long'] ?? [];
+            if (isset($_POST['long_stop_enabled'])) {
+                $longProfile['enabled'] = (bool)(int)$_POST['long_stop_enabled'];
+            }
+            if (isset($_POST['long_emergency_stop_roi'])) {
+                $longProfile['emergency_stop_roi'] = min(0.0, (float)$_POST['long_emergency_stop_roi']);
+            }
+            if (isset($_POST['long_min_age_seconds'])) {
+                $longProfile['min_age_seconds'] = max(0, (int)$_POST['long_min_age_seconds']);
+            }
+            $existing['profiles']['long'] = $longProfile;
+
+            // ── Short stop profile ─────────────────────────────────────────
+            $shortProfile = $existing['profiles']['short'] ?? [];
+            if (isset($_POST['short_stop_enabled'])) {
+                $shortProfile['enabled'] = (bool)(int)$_POST['short_stop_enabled'];
+            }
+            if (isset($_POST['short_emergency_stop_roi'])) {
+                $shortProfile['emergency_stop_roi'] = min(0.0, (float)$_POST['short_emergency_stop_roi']);
+            }
+            if (isset($_POST['short_min_age_seconds'])) {
+                $shortProfile['min_age_seconds'] = max(0, (int)$_POST['short_min_age_seconds']);
+            }
+            if (isset($_POST['short_applies_to_strategies'])) {
+                $rawStr = trim((string)$_POST['short_applies_to_strategies']);
+                $shortProfile['applies_to_strategies'] = $rawStr !== ''
+                    ? array_values(array_filter(array_map('trim', explode(',', $rawStr))))
+                    : ['dynamic_strategies'];
+            }
+            $existing['profiles']['short'] = $shortProfile;
+
+            $this->writeActive($existing);
             $flashKey = $fromDash ? 'dashboard_flash' : 'sm_flash';
             $_SESSION[$flashKey] = ['type' => 'success', 'msg' => 'Конфигурация сохранена'];
         } catch (\Throwable $ex) {

@@ -1642,6 +1642,21 @@ ROWS;
     $smCfgLock  = $e($smBeLock);
     $smConfigSaveUrl = System::web('admin/dashboard');
 
+    // ── stop_manager side-specific profile config vars ────────────────────
+    $smLongProfile  = $smConfig['profiles']['long']  ?? [];
+    $smShortProfile = $smConfig['profiles']['short'] ?? [];
+
+    $smCfgLongStopEnYes  = ($smLongProfile['enabled']  ?? true)  ? ' selected' : '';
+    $smCfgLongStopEnNo   = !($smLongProfile['enabled'] ?? true)  ? ' selected' : '';
+    $smCfgLongEmergRoi   = $e($smLongProfile['emergency_stop_roi']  ?? -30.0);
+    $smCfgLongMinAge     = $e($smLongProfile['min_age_seconds']      ?? 60);
+
+    $smCfgShortStopEnYes = ($smShortProfile['enabled']  ?? true) ? ' selected' : '';
+    $smCfgShortStopEnNo  = !($smShortProfile['enabled'] ?? true) ? ' selected' : '';
+    $smCfgShortEmergRoi  = $e($smShortProfile['emergency_stop_roi'] ?? -20.0);
+    $smCfgShortMinAge    = $e($smShortProfile['min_age_seconds']     ?? 60);
+    $smCfgShortAppliesTo = $e(implode(', ', (array)($smShortProfile['applies_to_strategies'] ?? ['dynamic_strategies'])));
+
     // ── PM direct last_run.json read (for status chain + runtime note) ────
     $pmRawLastRun = [];
     $pmLastRunFile = $pmModuleDir . '/storage/runtime/last_run.json';
@@ -5532,6 +5547,63 @@ BLCK;
               value="{$smCfgLock}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
         </div>
+
+        <!-- Long stop profile settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#3fb950;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Long — настройки стопа
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long стоп включён</label>
+            <select name="long_stop_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$smCfgLongStopEnYes}>Да</option>
+              <option value="0"{$smCfgLongStopEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long emergency stop ROI%</label>
+            <input type="number" step="0.1" max="0" name="long_emergency_stop_roi"
+              value="{$smCfgLongEmergRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long min age (сек)</label>
+            <input type="number" step="1" min="0" name="long_min_age_seconds"
+              value="{$smCfgLongMinAge}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+
+        <!-- Short stop profile settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#58a6ff;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Short — настройки стопа (demo-only)
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short стоп включён</label>
+            <select name="short_stop_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$smCfgShortStopEnYes}>Да</option>
+              <option value="0"{$smCfgShortStopEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short emergency stop ROI%</label>
+            <input type="number" step="0.1" max="0" name="short_emergency_stop_roi"
+              value="{$smCfgShortEmergRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            <div style="font-size:11px;color:var(--ui-text-muted);margin-top:3px;">Отрицательное. Шорт теряет когда цена растёт.</div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short min age (сек)</label>
+            <input type="number" step="1" min="0" name="short_min_age_seconds"
+              value="{$smCfgShortMinAge}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short applies_to_strategies</label>
+            <input type="text" name="short_applies_to_strategies"
+              value="{$smCfgShortAppliesTo}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;"
+              placeholder="dynamic_strategies">
+            <div style="font-size:11px;color:var(--ui-text-muted);margin-top:3px;">Через запятую. * = все стратегии.</div>
+          </div>
+        </div>
+
         <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
       </form>
     </div>

@@ -211,12 +211,25 @@ final class StopManagerService
         $stats['db_roi_normalized_total']    += $result['db_roi_normalized_total']   ?? 0;
         $stats['db_roi_missing_total']       += $result['db_roi_missing_total']      ?? 0;
         $stats['db_price_missing_total']     += $result['db_price_missing_total']    ?? 0;
+        // Short emergency stop cumulative counters
+        $stats['short_stop_checked_total']                      += $result['short_stop_checked_total']                      ?? 0;
+        $stats['short_stop_triggered_total']                    += $result['short_stop_triggered_total']                    ?? 0;
+        $stats['short_stop_closed_total']                       += $result['short_stop_closed_total']                       ?? 0;
+        $stats['short_stop_skipped_not_demo_total']             += $result['short_stop_skipped_not_demo_total']             ?? 0;
+        $stats['short_stop_skipped_strategy_not_allowed_total'] += $result['short_stop_skipped_strategy_not_allowed_total'] ?? 0;
+        $stats['short_stop_skipped_roi_above_cap_total']        += $result['short_stop_skipped_roi_above_cap_total']        ?? 0;
+        $stats['short_stop_skipped_missing_roi_total']          += $result['short_stop_skipped_missing_roi_total']          ?? 0;
+        $stats['short_stop_skipped_too_young_total']            += $result['short_stop_skipped_too_young_total']            ?? 0;
 
         // ── 4. Persist ─────────────────────────────────────────────────────────
         $this->writeJson('storage/stops.json', array_values($stops));
         $this->writeJson('storage/stats.json', $stats);
 
         $elapsed = round(microtime(true) - $tStart, 4);
+
+        // Config snapshot for diagnostics
+        $longProfile  = $config['profiles']['long']  ?? [];
+        $shortProfile = $config['profiles']['short'] ?? [];
 
         $lastRun = [
             'status'                       => 'ok',
@@ -272,6 +285,27 @@ final class StopManagerService
             'double_bottom_position_roi_normalized_cumulative'   => (int)($stats['db_roi_normalized_total']   ?? 0),
             'double_bottom_position_roi_missing_cumulative'      => (int)($stats['db_roi_missing_total']      ?? 0),
             'double_bottom_position_price_missing_cumulative'    => (int)($stats['db_price_missing_total']    ?? 0),
+            // ── Config snapshot for diagnostics ──────────────────────────────
+            'long_stop_enabled'           => (bool)($longProfile['enabled']                ?? true),
+            'long_emergency_stop_roi'     => (float)($longProfile['emergency_stop_roi']    ?? -30.0),
+            'short_stop_enabled'          => (bool)($shortProfile['enabled']               ?? true),
+            'short_emergency_stop_roi'    => (float)($shortProfile['emergency_stop_roi']   ?? -20.0),
+            'short_stop_applies_to_strategies' => (array)($shortProfile['applies_to_strategies'] ?? ['dynamic_strategies']),
+            // ── Short emergency stop diagnostics (this tick) ─────────────────
+            'short_stop_positions_checked_total'            => $result['short_stop_checked_total']                      ?? 0,
+            'short_stop_triggered_total'                    => $result['short_stop_triggered_total']                    ?? 0,
+            'short_stop_closed_total'                       => $result['short_stop_closed_total']                       ?? 0,
+            'short_stop_skipped_not_demo_total'             => $result['short_stop_skipped_not_demo_total']             ?? 0,
+            'short_stop_skipped_strategy_not_allowed_total' => $result['short_stop_skipped_strategy_not_allowed_total'] ?? 0,
+            'short_stop_skipped_roi_above_cap_total'        => $result['short_stop_skipped_roi_above_cap_total']        ?? 0,
+            'short_stop_skipped_missing_roi_total'          => $result['short_stop_skipped_missing_roi_total']          ?? 0,
+            'short_stop_skipped_too_young_total'            => $result['short_stop_skipped_too_young_total']            ?? 0,
+            'short_stop_triggered_examples'                 => $result['short_stop_triggered_examples']                 ?? [],
+            'short_stop_skipped_examples'                   => $result['short_stop_skipped_examples']                   ?? [],
+            // ── Short emergency stop cumulative ───────────────────────────────
+            'short_stop_checked_cumulative'                      => (int)($stats['short_stop_checked_total']                      ?? 0),
+            'short_stop_triggered_cumulative'                    => (int)($stats['short_stop_triggered_total']                    ?? 0),
+            'short_stop_closed_cumulative'                       => (int)($stats['short_stop_closed_total']                       ?? 0),
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -318,6 +352,16 @@ final class StopManagerService
      *   ef_skipped_not_db: int,
      *   ef_triggered_examples: array,
      *   ef_skipped_examples: array,
+     *   short_stop_checked_total: int,
+     *   short_stop_triggered_total: int,
+     *   short_stop_closed_total: int,
+     *   short_stop_skipped_not_demo_total: int,
+     *   short_stop_skipped_strategy_not_allowed_total: int,
+     *   short_stop_skipped_roi_above_cap_total: int,
+     *   short_stop_skipped_missing_roi_total: int,
+     *   short_stop_skipped_too_young_total: int,
+     *   short_stop_triggered_examples: array,
+     *   short_stop_skipped_examples: array,
      * }
      */
     private function processStops(
@@ -364,6 +408,18 @@ final class StopManagerService
         $dbNormalizationExamples = [];
         $dbMissingPriceExamples  = [];
         $dbMissingRoiExamples    = [];
+
+        // Short emergency stop counters
+        $shortStopCheckedTotal                    = 0;
+        $shortStopTriggeredTotal                  = 0;
+        $shortStopClosedTotal                     = 0;
+        $shortStopSkippedNotDemoTotal             = 0;
+        $shortStopSkippedStratNotAllowedTotal     = 0;
+        $shortStopSkippedRoiAboveCapTotal         = 0;
+        $shortStopSkippedMissingRoiTotal          = 0;
+        $shortStopSkippedTooYoungTotal            = 0;
+        $shortStopTriggeredExamples               = [];
+        $shortStopSkippedExamples                 = [];
 
         $isActiveMode = in_array($mode, ['demo', 'live'], true);
 
@@ -916,6 +972,148 @@ final class StopManagerService
             }
         }
 
+        // ── Short emergency stop (demo only) ─────────────────────────────────
+        $shortProfile      = $config['profiles']['short'] ?? [];
+        $shortStopEnabled  = (bool)($shortProfile['enabled']                ?? true);
+        $shortEmergEnabled = (bool)($shortProfile['emergency_stop_enabled'] ?? true);
+
+        if ($shortStopEnabled && $shortEmergEnabled && $mode === 'demo' && $isActiveMode) {
+            foreach ($posMap as $key => $pos) {
+                $posSide = (string)($pos['side'] ?? '');
+                if ($posSide !== 'short') {
+                    continue;
+                }
+
+                $shortStopCheckedTotal++;
+
+                $ssResult   = $this->checkShortEmergencyStop($pos, $shortProfile, $tickAt);
+                $skipReason = (string)($ssResult['skip_reason'] ?? '');
+
+                if (!$ssResult['triggered']) {
+                    if ($skipReason === 'not_demo_position') {
+                        $shortStopSkippedNotDemoTotal++;
+                    } elseif ($skipReason === 'strategy_not_allowed') {
+                        $shortStopSkippedStratNotAllowedTotal++;
+                    } elseif ($skipReason === 'roi_above_cap') {
+                        $shortStopSkippedRoiAboveCapTotal++;
+                    } elseif ($skipReason === 'short_stop_missing_roi') {
+                        $shortStopSkippedMissingRoiTotal++;
+                    } elseif ($skipReason === 'too_young') {
+                        $shortStopSkippedTooYoungTotal++;
+                    }
+
+                    if ($skipReason !== '' && count($shortStopSkippedExamples) < 5) {
+                        $shortStopSkippedExamples[] = [
+                            'symbol'             => $pos['symbol']    ?? null,
+                            'side'               => 'short',
+                            'strategy_id'        => $pos['strategy_id'] ?? $pos['owner_strategy'] ?? null,
+                            'signal_id'          => $pos['signal_id']  ?? null,
+                            'entry_price'        => $ssResult['entry_price']   ?? null,
+                            'current_price'      => $ssResult['current_price'] ?? null,
+                            'leverage'           => $ssResult['leverage']      ?? null,
+                            'normalized_roi'     => $ssResult['normalized_roi'] ?? null,
+                            'emergency_stop_roi' => (float)($shortProfile['emergency_stop_roi'] ?? -20.0),
+                            'age_minutes'        => $ssResult['age_minutes'] ?? null,
+                            'skip_reason'        => $skipReason,
+                        ];
+                    }
+                    continue;
+                }
+
+                $shortStopTriggeredTotal++;
+
+                if (count($shortStopTriggeredExamples) < 5) {
+                    $ctx = is_array($pos['strategy_signal_context'] ?? null)
+                        ? $pos['strategy_signal_context']
+                        : [];
+                    $shortStopTriggeredExamples[] = [
+                        'symbol'             => $pos['symbol']       ?? null,
+                        'side'               => 'short',
+                        'strategy_id'        => $pos['strategy_id']  ?? $pos['owner_strategy'] ?? null,
+                        'owner_strategy'     => $pos['owner_strategy'] ?? null,
+                        'signal_id'          => $pos['signal_id']    ?? null,
+                        'entry_price'        => $ssResult['entry_price']   ?? null,
+                        'current_price'      => $ssResult['current_price'] ?? null,
+                        'leverage'           => $ssResult['leverage']      ?? null,
+                        'normalized_roi'     => $ssResult['normalized_roi'] ?? null,
+                        'emergency_stop_roi' => (float)($shortProfile['emergency_stop_roi'] ?? -20.0),
+                        'age_minutes'        => $ssResult['age_minutes'] ?? null,
+                        'close_guard'        => 'short_emergency_stop',
+                        'close_reason'       => (string)($shortProfile['close_reason'] ?? 'short_emergency_roi_cap'),
+                        'dynamic_rule'       => $ctx['dynamic_rule'] ?? null,
+                        'strategy_signal_context' => $ctx ?: null,
+                    ];
+                }
+
+                $ssCloseReason  = (string)($shortProfile['close_reason'] ?? 'short_emergency_roi_cap');
+                $ssCloseGuard   = (string)($shortProfile['close_guard']   ?? 'short_emergency_stop');
+                $ssCloseAttempted = false;
+                $ssCloseOk      = null;
+
+                if ($activeGw !== null) {
+                    $ssCloseAttempted = true;
+                    $ssCloseResult    = $this->submitDemoCloseOrder(
+                        $activeGw,
+                        $pos,
+                        $ssCloseReason,
+                        $ssCloseGuard,
+                        $tickAt
+                    );
+                    $ssCloseOk = $ssCloseResult['ok'];
+
+                    if ($ssCloseOk) {
+                        $shortStopClosedTotal++;
+                        $this->writeShortEmergencyStopRegistry(
+                            $pos,
+                            $ssCloseResult,
+                            $ssResult,
+                            $ssCloseReason,
+                            $ssCloseGuard,
+                            $config,
+                            $tickAt
+                        );
+                    }
+
+                    $this->appendActionLog([
+                        'timestamp'          => $tickAt,
+                        'event_type'         => $ssCloseOk
+                            ? 'short_emergency_stop_close_submitted'
+                            : 'short_emergency_stop_close_failed',
+                        'close_source'       => 'stop_manager',
+                        'close_guard'        => $ssCloseGuard,
+                        'close_reason'       => $ssCloseReason,
+                        'strategy_id'        => $pos['strategy_id']  ?? $pos['owner_strategy'] ?? '',
+                        'signal_id'          => $pos['signal_id']    ?? '',
+                        'symbol'             => $pos['symbol']       ?? '',
+                        'side'               => 'short',
+                        'entry_price'        => $ssResult['entry_price']   ?? null,
+                        'current_price'      => $ssResult['current_price'] ?? null,
+                        'normalized_roi'     => $ssResult['normalized_roi'] ?? null,
+                        'emergency_stop_roi' => (float)($shortProfile['emergency_stop_roi'] ?? -20.0),
+                        'close_attempted'    => $ssCloseAttempted,
+                        'close_ok'           => $ssCloseOk,
+                        'close_ret_code'     => $ssCloseResult['ret_code'] ?? null,
+                        'close_ret_msg'      => $ssCloseResult['ret_msg']  ?? null,
+                        'strategy_signal_context' => $pos['strategy_signal_context'] ?? null,
+                    ]);
+                } else {
+                    $this->appendActionLog([
+                        'timestamp'      => $tickAt,
+                        'event_type'     => 'short_emergency_stop_close_skipped_no_gw',
+                        'close_source'   => 'stop_manager',
+                        'close_guard'    => $ssCloseGuard,
+                        'close_reason'   => $ssCloseReason,
+                        'strategy_id'    => $pos['strategy_id']  ?? $pos['owner_strategy'] ?? '',
+                        'signal_id'      => $pos['signal_id']    ?? '',
+                        'symbol'         => $pos['symbol']       ?? '',
+                        'side'           => 'short',
+                        'normalized_roi' => $ssResult['normalized_roi'] ?? null,
+                        'reason'         => 'no_gateway_available',
+                    ]);
+                }
+            }
+        }
+
         return [
             'stops'                                        => $stopMap,
             'positions_seen'                               => $positionsSeen,
@@ -952,6 +1150,17 @@ final class StopManagerService
             'db_normalization_examples'                    => $dbNormalizationExamples,
             'db_missing_price_examples'                    => $dbMissingPriceExamples,
             'db_missing_roi_examples'                      => $dbMissingRoiExamples,
+            // Short emergency stop counters
+            'short_stop_checked_total'                      => $shortStopCheckedTotal,
+            'short_stop_triggered_total'                    => $shortStopTriggeredTotal,
+            'short_stop_closed_total'                       => $shortStopClosedTotal,
+            'short_stop_skipped_not_demo_total'             => $shortStopSkippedNotDemoTotal,
+            'short_stop_skipped_strategy_not_allowed_total' => $shortStopSkippedStratNotAllowedTotal,
+            'short_stop_skipped_roi_above_cap_total'        => $shortStopSkippedRoiAboveCapTotal,
+            'short_stop_skipped_missing_roi_total'          => $shortStopSkippedMissingRoiTotal,
+            'short_stop_skipped_too_young_total'            => $shortStopSkippedTooYoungTotal,
+            'short_stop_triggered_examples'                 => $shortStopTriggeredExamples,
+            'short_stop_skipped_examples'                   => $shortStopSkippedExamples,
         ];
     }
 
@@ -1561,6 +1770,15 @@ final class StopManagerService
             'db_roi_normalized_total'             => 0,
             'db_roi_missing_total'                => 0,
             'db_price_missing_total'              => 0,
+            // Short emergency stop cumulative counters
+            'short_stop_checked_total'                      => 0,
+            'short_stop_triggered_total'                    => 0,
+            'short_stop_closed_total'                       => 0,
+            'short_stop_skipped_not_demo_total'             => 0,
+            'short_stop_skipped_strategy_not_allowed_total' => 0,
+            'short_stop_skipped_roi_above_cap_total'        => 0,
+            'short_stop_skipped_missing_roi_total'          => 0,
+            'short_stop_skipped_too_young_total'            => 0,
         ];
     }
 
@@ -1996,6 +2214,200 @@ final class StopManagerService
                 'entry_price'                => isset($pos['entry_price'])   ? (float)$pos['entry_price']   : null,
                 'current_price'              => $efResult['current_price']   ?? null,
                 'strategy_signal_context'    => $pos['strategy_signal_context'] ?? null,
+                'ts'                         => $nowTs,
+                'expires_at'                 => date('c', $nowTs + $ttl),
+                'close_attribution_consumed' => false,
+            ];
+
+            @file_put_contents(
+                $registryPath,
+                json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n",
+                LOCK_EX
+            );
+        } catch (\Throwable) {
+            // Never crash the tick over registry write failures
+        }
+    }
+
+    // =========================================================================
+    // Short emergency stop guard
+    // =========================================================================
+
+    /**
+     * Check whether a short position's ROI has breached the emergency-stop cap.
+     *
+     * Demo-only.  Never affects live positions.
+     * Uses the shared normalizePositionPrices / normalizePositionRoi helpers.
+     *
+     * ROI formula for short: ((entry_price - current_price) / entry_price) * leverage * 100
+     * A short loses when price goes up, so adverse ROI is negative.
+     *
+     * @return array{
+     *   triggered: bool,
+     *   skip_reason: string,
+     *   normalized_roi: float|null,
+     *   current_price: float|null,
+     *   entry_price: float|null,
+     *   leverage: int,
+     *   age_minutes: float|null,
+     * }
+     */
+    private function checkShortEmergencyStop(array $pos, array $shortProfile, string $tickAt): array
+    {
+        $base = [
+            'triggered'      => false,
+            'skip_reason'    => '',
+            'normalized_roi' => null,
+            'current_price'  => null,
+            'entry_price'    => null,
+            'leverage'       => 1,
+            'age_minutes'    => null,
+        ];
+
+        // Only demo positions
+        $posMode = $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo'));
+        if ($posMode !== 'demo') {
+            return array_merge($base, ['skip_reason' => 'not_demo_position']);
+        }
+
+        // Strategy filter
+        $appliesTo  = (array)($shortProfile['applies_to_strategies'] ?? ['dynamic_strategies']);
+        $posStratId = (string)($pos['strategy_id'] ?? $pos['owner_strategy'] ?? '');
+        if (!in_array('*', $appliesTo, true) && !in_array($posStratId, $appliesTo, true)) {
+            return array_merge($base, ['skip_reason' => 'strategy_not_allowed']);
+        }
+
+        // Minimum age gate
+        $minAgeSec  = max(0, (int)($shortProfile['min_age_seconds'] ?? 60));
+        $openedAt   = (string)($pos['opened_at'] ?? '');
+        $openedTs   = $openedAt !== '' ? (int)strtotime($openedAt) : 0;
+        $ageSec     = $openedTs > 0 ? max(0, time() - $openedTs) : 0;
+        $ageMinutes = round($ageSec / 60.0, 1);
+
+        if ($ageSec < $minAgeSec) {
+            return array_merge($base, [
+                'skip_reason' => 'too_young',
+                'age_minutes' => $ageMinutes,
+            ]);
+        }
+
+        // Normalize prices and ROI (short-aware via calcRoi)
+        $priceNorm = $this->normalizePositionPrices($pos);
+        $roiNorm   = $this->normalizePositionRoi($pos, $priceNorm);
+        $roi       = $roiNorm['normalized_roi'];
+
+        if ($roi === null) {
+            return array_merge($base, [
+                'skip_reason' => 'short_stop_missing_roi',
+                'age_minutes' => $ageMinutes,
+                'entry_price' => $priceNorm['normalized_entry_price'],
+                'leverage'    => $priceNorm['normalized_leverage'],
+            ]);
+        }
+
+        $emergencyRoi = (float)($shortProfile['emergency_stop_roi'] ?? -20.0);
+
+        if ($roi > $emergencyRoi) {
+            return array_merge($base, [
+                'skip_reason'    => 'roi_above_cap',
+                'normalized_roi' => $roi,
+                'current_price'  => $priceNorm['normalized_current_price'],
+                'entry_price'    => $priceNorm['normalized_entry_price'],
+                'leverage'       => $priceNorm['normalized_leverage'],
+                'age_minutes'    => $ageMinutes,
+            ]);
+        }
+
+        return array_merge($base, [
+            'triggered'      => true,
+            'skip_reason'    => '',
+            'normalized_roi' => $roi,
+            'current_price'  => $priceNorm['normalized_current_price'],
+            'entry_price'    => $priceNorm['normalized_entry_price'],
+            'leverage'       => $priceNorm['normalized_leverage'],
+            'age_minutes'    => $ageMinutes,
+        ]);
+    }
+
+    /**
+     * Write a short-emergency-stop close registry entry so the bot's recordClosedTrade()
+     * can preserve Stop Manager attribution when the short position disappears from Bybit Demo.
+     *
+     * Reuses the same ef_close_registry.json file as the early-fail guard.
+     * Key format: {mode}_{symbol}_short  (e.g. demo_BTCUSDT_short).
+     * TTL: 2 hours (7200 s).
+     */
+    private function writeShortEmergencyStopRegistry(
+        array  $pos,
+        array  $closeResult,
+        array  $ssResult,
+        string $closeReason,
+        string $closeGuard,
+        array  $config,
+        string $tickAt
+    ): void {
+        try {
+            $botRelDir = (string)($config['bot_module_dir'] ?? 'modules/bot');
+            $botDir    = str_starts_with($botRelDir, '/')
+                ? rtrim($botRelDir, '/')
+                : $this->repoRoot . '/' . rtrim($botRelDir, '/');
+
+            $registryPath = $botDir . '/storage/runtime/ef_close_registry.json';
+
+            $registryDir = dirname($registryPath);
+            if (!is_dir($registryDir)) {
+                mkdir($registryDir, 0755, true);
+            }
+
+            $registry = [];
+            if (is_file($registryPath)) {
+                $raw = @file_get_contents($registryPath);
+                if ($raw !== false && $raw !== '') {
+                    $dec = @json_decode($raw, true);
+                    if (is_array($dec)) {
+                        $registry = $dec;
+                    }
+                }
+            }
+
+            $symbol   = (string)($pos['symbol']    ?? '');
+            $signalId = (string)($pos['signal_id'] ?? '');
+            $posMode  = $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo'));
+            $key      = $posMode . '_' . $symbol . '_short';
+            $nowTs    = time();
+            $ttl      = 7200; // 2 hours
+
+            // Prune expired entries before writing
+            foreach ($registry as $k => $entry) {
+                $entryTs = (int)($entry['ts'] ?? 0);
+                if ($entryTs > 0 && ($nowTs - $entryTs) > $ttl) {
+                    unset($registry[$k]);
+                }
+            }
+
+            $ctx = is_array($pos['strategy_signal_context'] ?? null)
+                ? $pos['strategy_signal_context']
+                : null;
+
+            $registry[$key] = [
+                'mode'                       => $posMode,
+                'symbol'                     => $symbol,
+                'side'                       => 'short',
+                'signal_id'                  => $signalId,
+                'strategy_id'                => (string)($pos['strategy_id']  ?? $pos['owner_strategy'] ?? ''),
+                'owner_strategy'             => (string)($pos['owner_strategy'] ?? ''),
+                'close_source'               => 'stop_manager',
+                'close_guard'                => $closeGuard,
+                'close_reason'               => $closeReason,
+                'close_order_id'             => $closeResult['order_id'] ?? null,
+                'close_submitted_at'         => $tickAt,
+                'close_ok'                   => $closeResult['ok'] ?? false,
+                'close_ret_code'             => $closeResult['ret_code'] ?? null,
+                'close_ret_msg'              => $closeResult['ret_msg']  ?? null,
+                'roi_at_close'               => $ssResult['normalized_roi'] ?? null,
+                'entry_price'                => $ssResult['entry_price']   ?? null,
+                'current_price'              => $ssResult['current_price'] ?? null,
+                'strategy_signal_context'    => $ctx,
                 'ts'                         => $nowTs,
                 'expires_at'                 => date('c', $nowTs + $ttl),
                 'close_attribution_consumed' => false,

@@ -6281,6 +6281,45 @@ function handleDashboardStrategyAction(): void
         }
     }
 
+    // ── dynamic_strategies — shadow-first, no live/handoff by default ────────
+    if ($stratId === 'dynamic_strategies') {
+        $dsModuleDir = System::path('root') . '/modules/strategy/dynamic_strategies';
+
+        if (in_array($action, ['tick_run', 'tickRun', 'queue_run'], true)) {
+            try {
+                require_once $dsModuleDir . '/service.php';
+                $dsService = new \Modules\Strategy\DynamicStrategies\DynamicStrategiesService($dsModuleDir);
+                $dsResult  = $dsService->tickRun();
+                $dsStats   = $dsResult['stats'] ?? [];
+                if ($dsResult['ok'] ?? false) {
+                    $dsMsg = 'Dynamic Strategies цикл выполнен'
+                        . ' · контекстов: '   . ($dsStats['input_contexts_recent_total'] ?? 0)
+                        . ' · кандидатов: '   . ($dsStats['candidates_total']            ?? 0)
+                        . ' · сигналов: '     . ($dsStats['signals_total']               ?? 0)
+                        . ' · handoff-ready: ' . ($dsStats['bot_handoff_ready_total']     ?? 0);
+                    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => $dsMsg];
+                } else {
+                    $dsErr = $dsResult['error'] ?? 'Неизвестная';
+                    if ($dsErr === 'strategy_disabled') {
+                        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Dynamic Strategies отключена (enabled = false)'];
+                    } else {
+                        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка Dynamic Strategies: ' . $dsErr];
+                    }
+                }
+            } catch (\Throwable $dsEx) {
+                $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка Dynamic Strategies: ' . $dsEx->getMessage()];
+            }
+            header('Location: ' . $dashUrl);
+            exit;
+        }
+
+        if ($action === 'refresh') {
+            $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Runtime обновлён'];
+            header('Location: ' . $dashUrl);
+            exit;
+        }
+    }
+
     $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => "Неизвестная стратегия или действие: {$stratId}/{$action}"];
     header('Location: ' . $dashUrl);
     exit;

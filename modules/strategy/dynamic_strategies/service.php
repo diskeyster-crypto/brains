@@ -36,8 +36,11 @@ final class DynamicStrategiesService
     /**
      * Called by CronManager every 60 seconds.
      * Runs the full dynamic-strategies evaluation cycle.
+     * Returns the strategy result array so callers (e.g. dashboard action handler)
+     * can read stats without duplicating the run logic.
+     * CronManager ignores the return value, so the void→array change is backwards-compatible.
      */
-    public function tickRun(): void
+    public function tickRun(): array
     {
         try {
             $strategy = new DynamicStrategiesStrategy($this->moduleDir);
@@ -49,7 +52,7 @@ final class DynamicStrategiesService
                 if ($error !== 'strategy_disabled') {
                     Logger::cron('dynamic_strategies tickRun error', ['error' => $error]);
                 }
-                return;
+                return $result;
             }
 
             $stats = $result['stats'] ?? [];
@@ -61,8 +64,11 @@ final class DynamicStrategiesService
                 'shadow_only'             => $stats['shadow_only']             ?? true,
                 'handoff_enabled'         => $stats['handoff_enabled']         ?? false,
             ]);
+
+            return $result;
         } catch (\Throwable $e) {
             Logger::cron('dynamic_strategies tickRun exception', ['error' => $e->getMessage()]);
+            return ['ok' => false, 'error' => $e->getMessage()];
         }
     }
 }

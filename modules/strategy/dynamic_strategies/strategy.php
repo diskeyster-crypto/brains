@@ -1333,7 +1333,7 @@ final class DynamicStrategiesStrategy
 
         // Best = highest avg_forward_15m_roi_10x; worst = lowest (or negative)
         $ranked = $summary;
-        usort($ranked, fn(array $a, array $b) => ($b['avg_forward_15m_roi_10x'] ?? PHP_INT_MIN) <=> ($a['avg_forward_15m_roi_10x'] ?? PHP_INT_MIN));
+        usort($ranked, fn(array $a, array $b) => ($b['avg_forward_15m_roi_10x'] ?? -INF) <=> ($a['avg_forward_15m_roi_10x'] ?? -INF));
         $bestTypes  = array_slice(array_map(fn(array $r) => $r['context_type'], array_filter($ranked, fn(array $r) => $r['avg_forward_15m_roi_10x'] !== null)), 0, 3);
         $worstTypes = array_slice(array_map(fn(array $r) => $r['context_type'], array_reverse($ranked)), 0, 3);
 

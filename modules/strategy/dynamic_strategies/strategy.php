@@ -411,6 +411,16 @@ final class DynamicStrategiesStrategy
         $thresholdPassedExamples      = [];
         $thresholdFailedExamples      = [];
 
+        // Entry price + handoff payload diagnostics
+        $entryPriceResolvedTotal              = 0;
+        $entryPriceMissingTotal               = 0;
+        $handoffBlockedMissingPriceTotal      = 0;
+        $handoffBlockedMissingPriceExamples   = [];
+        $botHandoffPayloadValidTotal          = 0;
+        $botHandoffPayloadInvalidTotal        = 0;
+        $botHandoffPayloadExamples            = [];
+        $botHandoffPayloadInvalidExamples     = [];
+
         // Global thresholds (fallback when rule-specific config is missing)
         $globalMinDemoConf  = (int)($config['min_confirmations_demo'] ?? $config['min_confirmations_for_demo_signal'] ?? 3);
         $globalMinDemoScore = (float)($config['min_confidence_demo']  ?? $config['min_confidence_for_demo_signal']   ?? 0.65);
@@ -494,6 +504,17 @@ final class DynamicStrategiesStrategy
 
             $warnings = (array)($cand['warnings'] ?? []);
 
+            // ── Entry price resolution ─────────────────────────────────────────
+            $entryPrice       = is_numeric($cand['entry_price'] ?? null) ? (float)$cand['entry_price'] : 0.0;
+            $entryPriceSrc    = (string)($cand['entry_price_source'] ?? '');
+            $candTrigger      = (string)($cand['candidate_trigger'] ?? '');
+
+            if ($entryPrice > 0.0) {
+                $entryPriceResolvedTotal++;
+            } else {
+                $entryPriceMissingTotal++;
+            }
+
             // Determine executability
             $isExecutable = false;
             $executionMode = $mode;
@@ -544,18 +565,67 @@ final class DynamicStrategiesStrategy
                 $warnings[]  = 'handoff_disabled';
             }
 
+            // ── Block executable handoff if entry_price is missing ─────────────
+            if ($isExecutable && $entryPrice <= 0.0) {
+                $isExecutable = false;
+                $handoffReady = false;
+                $blockReason  = 'missing_dynamic_entry_price';
+                $warnings[]   = 'missing_dynamic_entry_price';
+                $handoffBlockedMissingPriceTotal++;
+                if (count($handoffBlockedMissingPriceExamples) < 5) {
+                    $availablePriceFields = [];
+                    foreach ((array)($cand['source_prices'] ?? []) as $pField => $vals) {
+                        if (!empty($vals)) {
+                            $availablePriceFields[$pField] = $vals[0];
+                        }
+                    }
+                    $handoffBlockedMissingPriceExamples[] = [
+                        'symbol'                 => $sym,
+                        'dynamic_rule'           => $ruleId,
+                        'source_context_ids'     => $cand['source_context_ids'],
+                        'source_context_types'   => $cand['source_context_types'] ?? [],
+                        'available_price_fields' => $availablePriceFields,
+                        'reason'                 => 'missing_dynamic_entry_price',
+                    ];
+                }
+            }
+
             if ($isExecutable) {
                 $executableTotal++;
             } else {
                 $nonExecutableTotal++;
             }
 
+            // ── Build strategy_signal_context ──────────────────────────────────
+            $stratSignalCtx = [
+                'strategy_id'          => self::STRATEGY_ID,
+                'dynamic_rule'         => $ruleId,
+                'source_context_ids'   => $cand['source_context_ids'],
+                'source_strategies'    => $cand['source_strategies'],
+                'source_signal_ids'    => $cand['source_signal_ids'] ?? [],
+                'source_context_types' => $cand['source_context_types'] ?? [],
+                'confidence_score'     => $score,
+                'confirmations'        => $cand['confirmations'],
+                'confirmation_count'   => $confCnt,
+                'entry_price'          => $entryPrice > 0.0 ? $entryPrice : null,
+                'entry_price_source'   => $entryPriceSrc !== '' ? $entryPriceSrc : null,
+                'candidate_trigger'    => $candTrigger !== '' ? $candTrigger : null,
+                'source_prices'        => $cand['source_prices'] ?? [],
+                'source_levels'        => $cand['source_levels'] ?? [],
+                'source_warnings'      => $cand['source_warnings'] ?? [],
+                'source_reason_codes'  => $cand['source_reason_codes'] ?? [],
+                'warnings'             => $warnings,
+                'reason_codes'         => $cand['reason_codes'],
+            ];
+
+            $detectedAt = date('c');
             $signal = [
                 'signal_id'                   => 'dsig_' . $cand['dynamic_rule'] . '_' . $sym . '_' . $now,
                 'symbol'                      => $sym,
                 'side'                        => $candSide,
                 'strategy'                    => self::STRATEGY_ID,
                 'strategy_id'                 => self::STRATEGY_ID,
+                'owner_strategy'              => self::STRATEGY_ID,
                 'dynamic_rule'                => $cand['dynamic_rule'],
                 'confidence_score'            => $score,
                 'mode'                        => $executionMode,
@@ -567,15 +637,29 @@ final class DynamicStrategiesStrategy
                 'threshold_source'            => $thresholdSource,
                 'min_confirmations_required'  => $minDemoConf,
                 'min_confidence_required'     => $minDemoScore,
-                'detected_at'                 => date('c'),
+                // Entry geometry (bot-compatible)
+                'entry_price'                 => $entryPrice > 0.0 ? $entryPrice : null,
+                'entry_price_source'          => $entryPriceSrc !== '' ? $entryPriceSrc : null,
+                'candidate_trigger'           => $candTrigger !== '' ? $candTrigger : null,
+                'entry_mode'                  => 'limit',
+                'entry_type'                  => 'dynamic_context',
+                'timeframe'                   => 'dynamic',
+                // Freshness
+                'detected_at'                 => $detectedAt,
                 'expires_at'                  => date('c', $now + ($ttlMinutes * 60)),
-                'source_context_ids'  => $cand['source_context_ids'],
-                'source_strategies'   => $cand['source_strategies'],
-                'source_signal_ids'   => $cand['source_signal_ids'] ?? [],
-                'confirmations'       => $cand['confirmations'],
-                'confirmation_count'  => $confCnt,
-                'reason_codes'        => $cand['reason_codes'],
-                'warnings'            => $warnings,
+                // Source context data
+                'source_context_ids'          => $cand['source_context_ids'],
+                'source_strategies'           => $cand['source_strategies'],
+                'source_signal_ids'           => $cand['source_signal_ids'] ?? [],
+                'confirmations'               => $cand['confirmations'],
+                'confirmation_count'          => $confCnt,
+                'reason_codes'                => $cand['reason_codes'],
+                'warnings'                    => $warnings,
+                // Nested context for bot
+                'strategy_signal_context'     => $stratSignalCtx,
+                // Live safety
+                'live_enabled'                => false,
+                'live_forbidden'              => true,
             ];
             if ($blockReason !== null) {
                 $signal['block_reason'] = $blockReason;
@@ -597,30 +681,62 @@ final class DynamicStrategiesStrategy
         if ($handoffEnabled && $emitHandoff) {
             foreach ($signals as $sig) {
                 if ($sig['executable'] ?? false) {
-                    $handoffQueue[] = [
-                        'signal_id'          => $sig['signal_id'],
-                        'symbol'             => $sig['symbol'],
-                        'side'               => $sig['side'],
-                        'strategy'           => self::STRATEGY_ID,
-                        'strategy_id'        => self::STRATEGY_ID,
-                        'dynamic_rule'       => $sig['dynamic_rule'],
-                        'confidence_score'   => $sig['confidence_score'],
-                        'mode'               => $sig['mode'],
-                        'execution_mode'     => $sig['execution_mode'],
-                        'handoff_ready'      => true,
-                        'executable'         => true,
-                        'queued_at'          => date('c'),
-                        'expires_at'         => $sig['expires_at'],
-                        'source_context_ids' => $sig['source_context_ids'],
-                        'source_strategies'  => $sig['source_strategies'],
-                        'source_signal_ids'  => $sig['source_signal_ids'] ?? [],
-                        'confirmations'      => $sig['confirmations'],
-                        'confirmation_count' => $sig['confirmation_count'],
-                        'reason_codes'       => $sig['reason_codes'],
-                        'warnings'           => $sig['warnings'],
+                    $sigEntryPrice = (float)($sig['entry_price'] ?? 0.0);
+                    $handoffEntry = [
+                        // ── Identity ──────────────────────────────────────────
+                        'signal_id'              => $sig['signal_id'],
+                        'owner_strategy'         => self::STRATEGY_ID,
+                        'strategy'               => self::STRATEGY_ID,
+                        'strategy_id'            => self::STRATEGY_ID,
+                        'symbol'                 => $sig['symbol'],
+                        'side'                   => $sig['side'],
+                        'timeframe'              => 'dynamic',
+                        // ── Execution ─────────────────────────────────────────
+                        'mode'                   => $sig['mode'],
+                        'execution_mode'         => $sig['execution_mode'],
+                        'entry_mode'             => 'limit',
+                        'entry_type'             => 'dynamic_context',
+                        'entry_price'            => $sigEntryPrice > 0.0 ? $sigEntryPrice : null,
+                        'entry_price_source'     => $sig['entry_price_source'] ?? null,
+                        'candidate_trigger'      => $sig['candidate_trigger'] ?? null,
+                        // ── Lifecycle ─────────────────────────────────────────
+                        'handoff_ready'          => true,
+                        'executable'             => true,
+                        'handoff_status'         => 'new',
+                        'detected_at'            => $sig['detected_at'],
+                        'queued_at'              => date('c'),
+                        'expires_at'             => $sig['expires_at'],
+                        // ── Dynamic context ───────────────────────────────────
+                        'dynamic_rule'           => $sig['dynamic_rule'],
+                        'confidence_score'       => $sig['confidence_score'],
+                        'confirmations'          => $sig['confirmations'],
+                        'confirmation_count'     => $sig['confirmation_count'],
+                        'source_context_ids'     => $sig['source_context_ids'],
+                        'source_strategies'      => $sig['source_strategies'],
+                        'source_signal_ids'      => $sig['source_signal_ids'] ?? [],
+                        'reason_codes'           => $sig['reason_codes'],
+                        'warnings'               => $sig['warnings'],
+                        // ── Bot context ───────────────────────────────────────
+                        'strategy_signal_context' => $sig['strategy_signal_context'] ?? null,
+                        // ── Safety ────────────────────────────────────────────
+                        'live_enabled'           => false,
+                        'live_forbidden'         => true,
                     ];
+                    $handoffQueue[]    = $handoffEntry;
                     $handoffExecutable++;
                     $handoffReadyTotal++;
+                    $botHandoffPayloadValidTotal++;
+                    if (count($botHandoffPayloadExamples) < 5) {
+                        $botHandoffPayloadExamples[] = [
+                            'symbol'            => $sig['symbol'],
+                            'side'              => $sig['side'],
+                            'dynamic_rule'      => $sig['dynamic_rule'],
+                            'entry_price'       => $sigEntryPrice > 0.0 ? $sigEntryPrice : null,
+                            'entry_price_source' => $sig['entry_price_source'] ?? null,
+                            'handoff_ready'     => true,
+                            'executable'        => true,
+                        ];
+                    }
                     if (($sig['execution_mode'] ?? '') === 'live') {
                         $handoffQueueLiveTotal++;
                     }
@@ -630,22 +746,35 @@ final class DynamicStrategiesStrategy
             // Diagnostic non-executable rows — aids debugging without enabling handoff
             foreach ($signals as $sig) {
                 $handoffQueue[] = [
-                    'signal_id'        => $sig['signal_id'],
-                    'symbol'           => $sig['symbol'],
-                    'side'             => $sig['side'],
-                    'strategy_id'      => self::STRATEGY_ID,
-                    'dynamic_rule'     => $sig['dynamic_rule'],
-                    'confidence_score' => $sig['confidence_score'],
-                    'mode'             => $sig['mode'],
-                    'execution_mode'   => $sig['execution_mode'],
-                    'handoff_ready'    => false,
-                    'executable'       => false,
-                    'diagnostic_only'  => true,
-                    'block_reason'     => $sig['block_reason'] ?? 'handoff_disabled',
-                    'queued_at'        => date('c'),
-                    'expires_at'       => $sig['expires_at'],
-                    'source_context_ids' => $sig['source_context_ids'],
+                    'signal_id'               => $sig['signal_id'],
+                    'symbol'                  => $sig['symbol'],
+                    'side'                    => $sig['side'],
+                    'strategy_id'             => self::STRATEGY_ID,
+                    'owner_strategy'          => self::STRATEGY_ID,
+                    'dynamic_rule'            => $sig['dynamic_rule'],
+                    'confidence_score'        => $sig['confidence_score'],
+                    'mode'                    => $sig['mode'],
+                    'execution_mode'          => $sig['execution_mode'],
+                    'handoff_ready'           => false,
+                    'executable'              => false,
+                    'diagnostic_only'         => true,
+                    'block_reason'            => $sig['block_reason'] ?? 'handoff_disabled',
+                    'detected_at'             => $sig['detected_at'],
+                    'queued_at'               => date('c'),
+                    'expires_at'              => $sig['expires_at'],
+                    'source_context_ids'      => $sig['source_context_ids'],
+                    'strategy_signal_context' => $sig['strategy_signal_context'] ?? null,
+                    'live_enabled'            => false,
+                    'live_forbidden'          => true,
                 ];
+                $botHandoffPayloadInvalidTotal++;
+                if (count($botHandoffPayloadInvalidExamples) < 5) {
+                    $botHandoffPayloadInvalidExamples[] = [
+                        'symbol'       => $sig['symbol'],
+                        'dynamic_rule' => $sig['dynamic_rule'],
+                        'reason'       => $sig['block_reason'] ?? 'handoff_disabled',
+                    ];
+                }
             }
         }
         $handoffWrittenTotal = count($handoffQueue);
@@ -712,6 +841,12 @@ final class DynamicStrategiesStrategy
             'bot_handoff_queue_executable_total' => $handoffExecutable,
             'bot_handoff_queue_live_total'    => $handoffQueueLiveTotal,
             'errors_total'                    => 0,
+            // ── Entry price diagnostics ───────────────────────────────────────
+            'dynamic_entry_price_resolved_total'             => $entryPriceResolvedTotal,
+            'dynamic_entry_price_missing_total'              => $entryPriceMissingTotal,
+            'dynamic_handoff_blocked_missing_entry_price_total' => $handoffBlockedMissingPriceTotal,
+            'bot_handoff_payload_valid_total'                => $botHandoffPayloadValidTotal,
+            'bot_handoff_payload_invalid_total'              => $botHandoffPayloadInvalidTotal,
             // Examples (up to 5 each)
             'candidate_examples'              => array_slice($candidates, 0, 5),
             'rejected_context_examples'       => array_slice($rejectItems, 0, 5),
@@ -721,6 +856,9 @@ final class DynamicStrategiesStrategy
             'live_blocked_examples'           => $liveBlockedExamples,
             'threshold_passed_examples'       => $thresholdPassedExamples,
             'threshold_failed_examples'       => $thresholdFailedExamples,
+            'dynamic_handoff_blocked_missing_entry_price_examples' => $handoffBlockedMissingPriceExamples,
+            'bot_handoff_payload_examples'        => $botHandoffPayloadExamples,
+            'bot_handoff_payload_invalid_examples' => $botHandoffPayloadInvalidExamples,
             // Alias fields for generic dashboard display
             'found'                           => count($candidates),
             'generated_signals_count'         => count($signals),
@@ -973,6 +1111,13 @@ final class DynamicStrategiesStrategy
             }
         }
 
+        // ── Resolve entry price from triggering contexts ──────────────────────
+        $priceResolution    = $this->resolveCandidateEntryPrice($rule, $triggeringContexts);
+        $sourceContextTypes = array_values(array_unique(array_map(
+            static fn(array $ctx): string => (string)($ctx['context_type'] ?? ''),
+            $triggeringContexts
+        )));
+
         return [
             'symbol'              => $symbol,
             'side'                => 'short',
@@ -980,10 +1125,17 @@ final class DynamicStrategiesStrategy
             'source_context_ids'  => array_values(array_unique($sourceContextIds)),
             'source_strategies'   => array_values($sourceStrategies),
             'source_signal_ids'   => array_values($sourceSignalIds),
+            'source_context_types' => $sourceContextTypes,
             'confirmations'       => $confirmations,
             'confirmation_count'  => $confCount,
             'confidence_score'    => round($score, 4),
             'suggested_mode'      => 'demo',
+            // Entry price resolved from source contexts
+            'entry_price'         => $priceResolution['entry_price'],
+            'entry_price_source'  => $priceResolution['entry_price_source'],
+            'candidate_trigger'   => $priceResolution['candidate_trigger'],
+            'source_prices'       => $priceResolution['source_prices'],
+            'source_levels'       => $priceResolution['source_levels'],
             // Pre-signal diagnostic state — executable/handoff_ready are set later
             // after threshold evaluation in the signal-building loop.
             'executable'          => false,
@@ -1219,6 +1371,120 @@ final class DynamicStrategiesStrategy
         }
 
         return $confirmations;
+    }
+
+    // ── Entry price resolution ────────────────────────────────────────────────
+
+    /**
+     * Resolve the best entry_price for a dynamic candidate from its triggering
+     * source contexts, using a conservative fallback chain.
+     *
+     * Fallback order for short candidates:
+     *   1. current_price          — live tradable context price
+     *   2. price_at_invalidation  — price when the setup was invalidated
+     *   3. price_at_loss          — price when loss was recorded
+     *   4. hypothetical_entry_price — from replay analysis
+     *   5. entry_price            — source context entry price (original long entry)
+     *
+     * Returns an array with:
+     *   entry_price         float|null
+     *   entry_price_source  string|null
+     *   candidate_trigger   string|null   — the level/event that triggered the rule
+     *   source_prices       array         — keyed lists of all found prices per field
+     *   source_levels       array         — structural levels (neckline, reclaim, base)
+     *   source_warnings     array
+     *   source_reason_codes array
+     */
+    private function resolveCandidateEntryPrice(string $rule, array $triggeringContexts): array
+    {
+        $sourcePrices     = [];
+        $sourceLevels     = [];
+        $sourceWarnings   = [];
+        $sourceReasonCodes = [];
+
+        foreach ($triggeringContexts as $ctx) {
+            // ── price fields ──────────────────────────────────────────────────
+            $fields = [
+                'current_price',
+                'price_at_invalidation',
+                'price_at_loss',
+                'hypothetical_entry_price',
+                'entry_price',
+            ];
+            foreach ($fields as $f) {
+                $v = $ctx[$f] ?? null;
+                if ($v !== null && is_numeric($v) && (float)$v > 0.0) {
+                    $sourcePrices[$f][] = (float)$v;
+                }
+            }
+
+            // ── structural levels ─────────────────────────────────────────────
+            foreach (['neckline_level', 'reclaim_level', 'base_low', 'base_high'] as $lf) {
+                $lv = $ctx[$lf] ?? null;
+                if ($lv !== null && is_numeric($lv) && (float)$lv > 0.0) {
+                    // Keep the first non-null value per level field
+                    if (!isset($sourceLevels[$lf])) {
+                        $sourceLevels[$lf] = (float)$lv;
+                    }
+                }
+            }
+
+            // ── warnings / reason_codes from contexts ─────────────────────────
+            foreach ((array)($ctx['warnings']    ?? []) as $w) {
+                if (is_string($w) && $w !== '' && !in_array($w, $sourceWarnings, true)) {
+                    $sourceWarnings[] = $w;
+                }
+            }
+            foreach ((array)($ctx['reason_codes'] ?? []) as $rc) {
+                if (is_string($rc) && $rc !== '' && !in_array($rc, $sourceReasonCodes, true)) {
+                    $sourceReasonCodes[] = $rc;
+                }
+            }
+        }
+
+        // ── Candidate trigger ─────────────────────────────────────────────────
+        $candidateTrigger = match ($rule) {
+            'failed_reclaim_short_watch'          =>
+                isset($sourceLevels['reclaim_level'])  ? 'reclaim_level'
+                : (isset($sourceLevels['neckline_level']) ? 'neckline_level' : 'failed_reclaim'),
+            'base_breakdown_short_watch'          =>
+                isset($sourceLevels['base_low']) ? 'base_low' : 'base_support_broken',
+            'falling_knife_short_watch'           => 'active_downtrend',
+            'failed_pending_breakdown_short_watch' => 'pending_setup_invalidated',
+            'failed_long_after_entry_short_watch' => 'failed_long_entry',
+            'late_exhaustion_short_watch'         => 'late_exhaustion',
+            default                               => null,
+        };
+
+        // ── Resolve entry_price via fallback chain ────────────────────────────
+        $entryPrice       = null;
+        $entryPriceSource = null;
+
+        $fallbackChain = [
+            'current_price',
+            'price_at_invalidation',
+            'price_at_loss',
+            'hypothetical_entry_price',
+            'entry_price',
+        ];
+        foreach ($fallbackChain as $f) {
+            $v = $sourcePrices[$f][0] ?? null;
+            if ($v !== null && $v > 0.0) {
+                $entryPrice       = $v;
+                $entryPriceSource = $f;
+                break;
+            }
+        }
+
+        return [
+            'entry_price'        => $entryPrice,
+            'entry_price_source' => $entryPriceSource,
+            'candidate_trigger'  => $candidateTrigger,
+            'source_prices'      => $sourcePrices,
+            'source_levels'      => $sourceLevels,
+            'source_warnings'    => $sourceWarnings,
+            'source_reason_codes' => $sourceReasonCodes,
+        ];
     }
 
     // ── Context classification ─────────────────────────────────────────────────

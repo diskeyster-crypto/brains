@@ -123,6 +123,40 @@ return [
     'symbol_freeze_apply_to_loss_close'    => true,
     'symbol_freeze_apply_to_manual_close'  => true,
 
+    // ── Adaptive symbol freeze (strategy-specific profiles) ───────────────────
+    // When enabled, double_bottom_long (and any future configured strategy)
+    // receives a freeze duration computed from close result and ROI instead of
+    // the global symbol_freeze_after_close_minutes value.
+    // All other strategies continue to use the global flat duration.
+    'symbol_freeze_adaptive_enabled'                       => true,
+
+    // double_bottom_long profile
+    'symbol_freeze_double_bottom_enabled'                  => true,
+
+    // Profit tier durations (minutes)
+    'symbol_freeze_double_bottom_profit_small_minutes'     => 360,
+    'symbol_freeze_double_bottom_profit_normal_minutes'    => 720,
+    'symbol_freeze_double_bottom_profit_strong_minutes'    => 1080,
+    'symbol_freeze_double_bottom_profit_extreme_minutes'   => 1440,
+
+    // Profit tier ROI lower bounds
+    'symbol_freeze_double_bottom_profit_small_min_roi'     => 0.0,
+    'symbol_freeze_double_bottom_profit_normal_min_roi'    => 5.0,
+    'symbol_freeze_double_bottom_profit_strong_min_roi'    => 20.0,
+    'symbol_freeze_double_bottom_profit_extreme_min_roi'   => 40.0,
+
+    // Loss / guard profile durations (minutes)
+    'symbol_freeze_double_bottom_loss_minutes'             => 1440,
+    'symbol_freeze_double_bottom_deep_loss_minutes'        => 2880,
+    'symbol_freeze_double_bottom_early_fail_minutes'       => 1440,
+    'symbol_freeze_double_bottom_emergency_stop_minutes'   => 2880,
+
+    // ROI boundary for deep-loss classification
+    'symbol_freeze_double_bottom_deep_loss_roi'            => -30.0,
+
+    // Fallback when ROI is missing
+    'symbol_freeze_double_bottom_default_minutes'          => 720,
+
     // ── Symbol blacklist ──────────────────────────────────────────────────────
     // Blocks specific symbols from entering the order_queue.
     'symbol_blacklist_enabled'             => true,

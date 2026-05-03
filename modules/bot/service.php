@@ -1336,6 +1336,19 @@ final class BotService
             'orders_blocked_by_auto_blacklist_total'   => $ordersBlockedByAutoBl,
             'freeze_block_examples'               => $freezeBlockExamples,
             'blacklist_block_examples'            => $blacklistBlockExamples,
+            // ── Adaptive symbol freeze diagnostics ────────────────────────────
+            'symbol_freeze_adaptive_enabled'                         => $fbDiag['symbol_freeze_adaptive_enabled'],
+            'symbol_freeze_double_bottom_applied_total'              => $fbDiag['symbol_freeze_double_bottom_applied_total'],
+            'symbol_freeze_double_bottom_profit_small_total'         => $fbDiag['symbol_freeze_double_bottom_profit_small_total'],
+            'symbol_freeze_double_bottom_profit_normal_total'        => $fbDiag['symbol_freeze_double_bottom_profit_normal_total'],
+            'symbol_freeze_double_bottom_profit_strong_total'        => $fbDiag['symbol_freeze_double_bottom_profit_strong_total'],
+            'symbol_freeze_double_bottom_profit_extreme_total'       => $fbDiag['symbol_freeze_double_bottom_profit_extreme_total'],
+            'symbol_freeze_double_bottom_loss_total'                 => $fbDiag['symbol_freeze_double_bottom_loss_total'],
+            'symbol_freeze_double_bottom_deep_loss_total'            => $fbDiag['symbol_freeze_double_bottom_deep_loss_total'],
+            'symbol_freeze_double_bottom_early_fail_total'           => $fbDiag['symbol_freeze_double_bottom_early_fail_total'],
+            'symbol_freeze_double_bottom_emergency_stop_total'       => $fbDiag['symbol_freeze_double_bottom_emergency_stop_total'],
+            'symbol_freeze_double_bottom_missing_roi_total'          => $fbDiag['symbol_freeze_double_bottom_missing_roi_total'],
+            'symbol_freeze_double_bottom_examples'                   => $fbDiag['symbol_freeze_double_bottom_examples'],
             // ── Handoff-specific freeze/blacklist diagnostic counters (Task 4) ────
             'handoff_blocked_symbol_freeze_total'       => $handoffBlockedFreezeTotal,
             'handoff_blocked_symbol_blacklist_total'    => $handoffBlockedBlacklistTotal,
@@ -1377,6 +1390,7 @@ final class BotService
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
+        $this->computeSymbolFreezeDurationStats($config);
         $this->writeRuntimeSnapshot($config, $lastRun, count($registry), count($enabledStrategies));
     }
 
@@ -5136,6 +5150,11 @@ final class BotService
 
     /**
      * Register a symbol freeze after a position close.
+     *
+     * For double_bottom_long trades (when adaptive freeze is enabled) the
+     * freeze duration is determined by resolveAdaptiveFreezeProfile() based on
+     * close result type and ROI.  All other strategies continue to use the
+     * flat global symbol_freeze_after_close_minutes value.
      */
     private function registerSymbolFreeze(array $trade, array $config, string $tickAt): void
     {
@@ -5174,9 +5193,10 @@ final class BotService
                 $shouldFreeze = true;
             } else {
                 // Check ROI for loss close
-                $roi = ($trade['roi'] ?? null);
-                $pnl = ($trade['pnl'] ?? null);
-                $isLoss = ($roi !== null && (float)$roi < 0.0) || ($pnl !== null && (float)$pnl < 0.0);
+                $roiCheck = ($trade['roi'] ?? null);
+                $pnlCheck = ($trade['pnl'] ?? null);
+                $isLoss   = ($roiCheck !== null && (float)$roiCheck < 0.0)
+                    || ($pnlCheck !== null && (float)$pnlCheck < 0.0);
                 if ($isLoss && $applyToLoss) {
                     $shouldFreeze = true;
                 } elseif ($applyToProfit || $applyToStop || $applyToManual) {
@@ -5189,24 +5209,259 @@ final class BotService
                 return;
             }
 
-            $minutes   = max(1, (int)($config['symbol_freeze_after_close_minutes'] ?? 10));
-            $closedTs  = @strtotime($closedAt);
-            $baseTs    = ($closedTs !== false && $closedTs > 0) ? $closedTs : time();
+            // ── Determine freeze duration (adaptive vs flat) ──────────────────
+            $stratId       = (string)($trade['strategy_id']    ?? '');
+            $ownerStrategy = (string)($trade['owner_strategy'] ?? '');
+            $isDoubleBottom = ($stratId === 'double_bottom_long' || $ownerStrategy === 'double_bottom_long');
+
+            $adaptiveEnabled = (bool)($config['symbol_freeze_adaptive_enabled']          ?? false);
+            $dbEnabled       = (bool)($config['symbol_freeze_double_bottom_enabled']     ?? false);
+
+            $freezeProfile   = null;
+            $freezeReason    = 'position_closed';
+            $missingRoiWarn  = false;
+
+            if ($adaptiveEnabled && $dbEnabled && $isDoubleBottom) {
+                $profileResult = $this->resolveAdaptiveFreezeProfile($trade, $config);
+                $minutes       = $profileResult['minutes'];
+                $freezeProfile = $profileResult['profile'];
+                $freezeReason  = $profileResult['reason'];
+                $missingRoiWarn = $profileResult['missing_roi'] ?? false;
+
+                // Record cumulative adaptive stats
+                $this->recordAdaptiveFreezeStats($trade, $profileResult, $tickAt, $config);
+            } else {
+                $minutes = max(1, (int)($config['symbol_freeze_after_close_minutes'] ?? 10));
+            }
+
+            $closedTs      = @strtotime($closedAt);
+            $baseTs        = ($closedTs !== false && $closedTs > 0) ? $closedTs : time();
             $frozenUntilTs = $baseTs + ($minutes * 60);
             $frozenUntil   = date('c', $frozenUntilTs);
 
             $registry  = $this->loadFreezeRegistry();
             $key       = $symbol . '_' . $mode . '_' . $side;
-            $registry[$key] = [
-                'symbol'       => $symbol,
-                'side'         => $side,
-                'mode'         => $mode,
-                'reason'       => 'position_closed',
-                'close_source' => $closeSource,
-                'closed_at'    => $closedAt,
-                'frozen_until' => $frozenUntil,
+
+            $entry = [
+                'symbol'         => $symbol,
+                'side'           => $side,
+                'mode'           => $mode,
+                'strategy'       => $isDoubleBottom ? 'double_bottom_long' : ($stratId ?: ($ownerStrategy ?: null)),
+                'source'         => 'post_close',
+                'reason'         => $freezeReason,
+                'close_source'   => $closeSource,
+                'close_reason'   => (string)($trade['close_reason'] ?? '') ?: null,
+                'close_guard'    => (string)($trade['close_guard']  ?? '') ?: null,
+                'roi'            => isset($trade['roi']) ? (float)$trade['roi'] : null,
+                'signal_id'      => (string)($trade['signal_id']    ?? '') ?: null,
+                'closed_at'      => $closedAt,
+                'frozen_until'   => $frozenUntil,
+                'freeze_minutes' => $minutes,
+                'created_at'     => $tickAt,
             ];
+            if ($freezeProfile !== null) {
+                $entry['freeze_profile'] = $freezeProfile;
+            }
+            if ($missingRoiWarn) {
+                $entry['diagnostic_warning'] = 'roi_missing_used_default';
+            }
+
+            $registry[$key] = $entry;
             $this->saveFreezeRegistry($registry);
+        } catch (\Throwable) {
+        }
+    }
+
+    /**
+     * Resolve the adaptive freeze profile (duration + label) for a
+     * double_bottom_long trade based on close metadata and ROI.
+     *
+     * Priority order:
+     *   1. emergency_stop guard  → emergency_stop profile
+     *   2. early_fail guard      → early_fail profile
+     *   3. ROI > 0               → profit tier (extreme / strong / normal / small)
+     *   4. ROI <= deep_loss_roi  → deep_loss profile
+     *   5. ROI < 0               → generic loss profile
+     *   6. ROI missing           → default profile + warning flag
+     *
+     * @return array{profile: string, minutes: int, reason: string, missing_roi: bool}
+     */
+    private function resolveAdaptiveFreezeProfile(array $trade, array $config): array
+    {
+        $closeGuard = (string)($trade['close_guard'] ?? '');
+        $roi        = isset($trade['roi']) ? (float)$trade['roi'] : null;
+
+        // Guard: emergency stop (highest priority)
+        if ($closeGuard === 'double_bottom_emergency_stop') {
+            return [
+                'profile'     => 'double_bottom_emergency_stop',
+                'minutes'     => max(1, (int)($config['symbol_freeze_double_bottom_emergency_stop_minutes'] ?? 2880)),
+                'reason'      => 'double_bottom_emergency_stop_freeze',
+                'missing_roi' => false,
+            ];
+        }
+
+        // Guard: early fail (second priority)
+        if ($closeGuard === 'double_bottom_early_fail') {
+            return [
+                'profile'     => 'double_bottom_early_fail',
+                'minutes'     => max(1, (int)($config['symbol_freeze_double_bottom_early_fail_minutes'] ?? 1440)),
+                'reason'      => 'double_bottom_early_fail_freeze',
+                'missing_roi' => false,
+            ];
+        }
+
+        // ROI missing → default
+        if ($roi === null) {
+            return [
+                'profile'     => 'double_bottom_default_missing_roi',
+                'minutes'     => max(1, (int)($config['symbol_freeze_double_bottom_default_minutes'] ?? 720)),
+                'reason'      => 'double_bottom_default_missing_roi_freeze',
+                'missing_roi' => true,
+            ];
+        }
+
+        // Profit tiers (roi > 0 required)
+        if ($roi >= 0.0) {
+            $extremeMin = (float)($config['symbol_freeze_double_bottom_profit_extreme_min_roi'] ?? 40.0);
+            $strongMin  = (float)($config['symbol_freeze_double_bottom_profit_strong_min_roi']  ?? 20.0);
+            $normalMin  = (float)($config['symbol_freeze_double_bottom_profit_normal_min_roi']  ?? 5.0);
+            $smallMin   = (float)($config['symbol_freeze_double_bottom_profit_small_min_roi']   ?? 0.0);
+
+            if ($roi >= $extremeMin) {
+                return [
+                    'profile'     => 'double_bottom_profit_extreme',
+                    'minutes'     => max(1, (int)($config['symbol_freeze_double_bottom_profit_extreme_minutes'] ?? 1440)),
+                    'reason'      => 'double_bottom_profit_extreme_freeze',
+                    'missing_roi' => false,
+                ];
+            }
+            if ($roi >= $strongMin) {
+                return [
+                    'profile'     => 'double_bottom_profit_strong',
+                    'minutes'     => max(1, (int)($config['symbol_freeze_double_bottom_profit_strong_minutes'] ?? 1080)),
+                    'reason'      => 'double_bottom_profit_strong_freeze',
+                    'missing_roi' => false,
+                ];
+            }
+            if ($roi >= $normalMin) {
+                return [
+                    'profile'     => 'double_bottom_profit_normal',
+                    'minutes'     => max(1, (int)($config['symbol_freeze_double_bottom_profit_normal_minutes'] ?? 720)),
+                    'reason'      => 'double_bottom_profit_normal_freeze',
+                    'missing_roi' => false,
+                ];
+            }
+            if ($roi >= $smallMin) {
+                return [
+                    'profile'     => 'double_bottom_profit_small',
+                    'minutes'     => max(1, (int)($config['symbol_freeze_double_bottom_profit_small_minutes'] ?? 360)),
+                    'reason'      => 'double_bottom_profit_small_freeze',
+                    'missing_roi' => false,
+                ];
+            }
+        }
+
+        // Deep loss
+        $deepLossRoi = (float)($config['symbol_freeze_double_bottom_deep_loss_roi'] ?? -30.0);
+        if ($roi <= $deepLossRoi) {
+            return [
+                'profile'     => 'double_bottom_deep_loss',
+                'minutes'     => max(1, (int)($config['symbol_freeze_double_bottom_deep_loss_minutes'] ?? 2880)),
+                'reason'      => 'double_bottom_deep_loss_freeze',
+                'missing_roi' => false,
+            ];
+        }
+
+        // Generic loss
+        return [
+            'profile'     => 'double_bottom_loss',
+            'minutes'     => max(1, (int)($config['symbol_freeze_double_bottom_loss_minutes'] ?? 1440)),
+            'reason'      => 'double_bottom_loss_freeze',
+            'missing_roi' => false,
+        ];
+    }
+
+    /**
+     * Increment cumulative adaptive freeze counters and append to examples.
+     * Written to storage/symbol_freeze_adaptive_stats.json on every apply.
+     */
+    private function recordAdaptiveFreezeStats(
+        array  $trade,
+        array  $profileResult,
+        string $tickAt,
+        array  $config
+    ): void {
+        try {
+            $stats   = $this->loadAdaptiveFreezeStats();
+            $profile = (string)($profileResult['profile'] ?? 'double_bottom_default_missing_roi');
+
+            $stats['applied_total'] = (int)($stats['applied_total'] ?? 0) + 1;
+
+            $counterKey = 'profile_' . $profile . '_total';
+            $stats[$counterKey] = (int)($stats[$counterKey] ?? 0) + 1;
+
+            if ($profileResult['missing_roi'] ?? false) {
+                $stats['missing_roi_total'] = (int)($stats['missing_roi_total'] ?? 0) + 1;
+            }
+
+            // Append example (keep last 10)
+            $example = [
+                'symbol'         => (string)($trade['symbol']      ?? ''),
+                'signal_id'      => (string)($trade['signal_id']   ?? '') ?: null,
+                'roi'            => isset($trade['roi']) ? (float)$trade['roi'] : null,
+                'close_guard'    => (string)($trade['close_guard']  ?? '') ?: null,
+                'close_reason'   => (string)($trade['close_reason'] ?? '') ?: null,
+                'close_source'   => (string)($trade['close_source'] ?? '') ?: null,
+                'freeze_profile' => $profile,
+                'freeze_minutes' => (int)($profileResult['minutes'] ?? 0),
+                'strategy'       => 'double_bottom_long',
+                'created_at'     => $tickAt,
+            ];
+            $examples   = (array)($stats['examples'] ?? []);
+            $examples[] = $example;
+            if (count($examples) > 10) {
+                $examples = array_slice($examples, -10);
+            }
+            $stats['examples']     = $examples;
+            $stats['last_updated'] = $tickAt;
+
+            $this->saveAdaptiveFreezeStats($stats);
+        } catch (\Throwable) {
+        }
+    }
+
+    private function loadAdaptiveFreezeStats(): array
+    {
+        $path = $this->moduleDir . '/storage/symbol_freeze_adaptive_stats.json';
+        try {
+            if (!is_file($path)) {
+                return [];
+            }
+            $raw = @file_get_contents($path);
+            if ($raw === false || $raw === '') {
+                return [];
+            }
+            $dec = @json_decode($raw, true);
+            return is_array($dec) ? $dec : [];
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    private function saveAdaptiveFreezeStats(array $stats): void
+    {
+        $path = $this->moduleDir . '/storage/symbol_freeze_adaptive_stats.json';
+        try {
+            $dir = dirname($path);
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            @file_put_contents(
+                $path,
+                json_encode($stats, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
+                LOCK_EX
+            );
         } catch (\Throwable) {
         }
     }
@@ -5546,6 +5801,7 @@ final class BotService
      * Compute freeze/blacklist diagnostics for last_run.json.
      *
      * Performs lazy expiry cleanup of both registries.
+     * Also surfaces adaptive freeze counters from the persistent stats file.
      *
      * @return array{
      *   symbol_freeze_enabled: bool,
@@ -5558,6 +5814,18 @@ final class BotService
      *   auto_blacklist_total: int,
      *   auto_blacklist_active_total: int,
      *   auto_blacklist_expired_removed_total: int,
+     *   symbol_freeze_adaptive_enabled: bool,
+     *   symbol_freeze_double_bottom_applied_total: int,
+     *   symbol_freeze_double_bottom_profit_small_total: int,
+     *   symbol_freeze_double_bottom_profit_normal_total: int,
+     *   symbol_freeze_double_bottom_profit_strong_total: int,
+     *   symbol_freeze_double_bottom_profit_extreme_total: int,
+     *   symbol_freeze_double_bottom_loss_total: int,
+     *   symbol_freeze_double_bottom_deep_loss_total: int,
+     *   symbol_freeze_double_bottom_early_fail_total: int,
+     *   symbol_freeze_double_bottom_emergency_stop_total: int,
+     *   symbol_freeze_double_bottom_missing_roi_total: int,
+     *   symbol_freeze_double_bottom_examples: array,
      * }
      */
     private function computeFreezeBlacklistDiagnostics(array $config): array
@@ -5573,6 +5841,19 @@ final class BotService
             'auto_blacklist_total'                => 0,
             'auto_blacklist_active_total'         => 0,
             'auto_blacklist_expired_removed_total'=> 0,
+            // Adaptive freeze counters (cumulative, sourced from adaptive_stats file)
+            'symbol_freeze_adaptive_enabled'                         => (bool)($config['symbol_freeze_adaptive_enabled'] ?? false),
+            'symbol_freeze_double_bottom_applied_total'              => 0,
+            'symbol_freeze_double_bottom_profit_small_total'         => 0,
+            'symbol_freeze_double_bottom_profit_normal_total'        => 0,
+            'symbol_freeze_double_bottom_profit_strong_total'        => 0,
+            'symbol_freeze_double_bottom_profit_extreme_total'       => 0,
+            'symbol_freeze_double_bottom_loss_total'                 => 0,
+            'symbol_freeze_double_bottom_deep_loss_total'            => 0,
+            'symbol_freeze_double_bottom_early_fail_total'           => 0,
+            'symbol_freeze_double_bottom_emergency_stop_total'       => 0,
+            'symbol_freeze_double_bottom_missing_roi_total'          => 0,
+            'symbol_freeze_double_bottom_examples'                   => [],
         ];
 
         $now = time();
@@ -5637,6 +5918,145 @@ final class BotService
         } catch (\Throwable) {
         }
 
+        // ── Adaptive freeze stats ─────────────────────────────────────────────
+        try {
+            $adaptStats = $this->loadAdaptiveFreezeStats();
+            if (!empty($adaptStats)) {
+                $result['symbol_freeze_double_bottom_applied_total']        = (int)($adaptStats['applied_total']                                              ?? 0);
+                $result['symbol_freeze_double_bottom_profit_small_total']   = (int)($adaptStats['profile_double_bottom_profit_small_total']                   ?? 0);
+                $result['symbol_freeze_double_bottom_profit_normal_total']  = (int)($adaptStats['profile_double_bottom_profit_normal_total']                  ?? 0);
+                $result['symbol_freeze_double_bottom_profit_strong_total']  = (int)($adaptStats['profile_double_bottom_profit_strong_total']                  ?? 0);
+                $result['symbol_freeze_double_bottom_profit_extreme_total'] = (int)($adaptStats['profile_double_bottom_profit_extreme_total']                 ?? 0);
+                $result['symbol_freeze_double_bottom_loss_total']           = (int)($adaptStats['profile_double_bottom_loss_total']                           ?? 0);
+                $result['symbol_freeze_double_bottom_deep_loss_total']      = (int)($adaptStats['profile_double_bottom_deep_loss_total']                      ?? 0);
+                $result['symbol_freeze_double_bottom_early_fail_total']     = (int)($adaptStats['profile_double_bottom_early_fail_total']                     ?? 0);
+                $result['symbol_freeze_double_bottom_emergency_stop_total'] = (int)($adaptStats['profile_double_bottom_emergency_stop_total']                 ?? 0);
+                $result['symbol_freeze_double_bottom_missing_roi_total']    = (int)($adaptStats['missing_roi_total']                                          ?? 0);
+                $result['symbol_freeze_double_bottom_examples']             = array_slice((array)($adaptStats['examples'] ?? []), -5);
+            }
+        } catch (\Throwable) {
+        }
+
         return $result;
+    }
+
+    /**
+     * Compute simulation statistics for candidate double_bottom_long freeze durations.
+     *
+     * Reads closed_trades.json and simulates how repeat same-symbol entries
+     * would have been blocked at each candidate freeze duration.
+     * Writes storage/symbol_freeze_duration_stats.json.
+     *
+     * This is diagnostics only — does not affect any trading behavior.
+     */
+    private function computeSymbolFreezeDurationStats(array $config): void
+    {
+        if (!(bool)($config['symbol_freeze_after_close_enabled'] ?? false)) {
+            return;
+        }
+        try {
+            $allTrades = $this->readJson('storage/trades/closed_trades.json', []);
+
+            // Filter to double_bottom_long, sort by opened_at ascending
+            $dbTrades = [];
+            foreach ($allTrades as $ct) {
+                $stratId = (string)($ct['strategy_id']    ?? '');
+                $ownerS  = (string)($ct['owner_strategy'] ?? '');
+                if ($stratId === 'double_bottom_long' || $ownerS === 'double_bottom_long') {
+                    $dbTrades[] = $ct;
+                }
+            }
+
+            if (empty($dbTrades)) {
+                return;
+            }
+
+            // Sort by opened_at ascending
+            usort($dbTrades, static function (array $a, array $b): int {
+                $ta = @strtotime((string)($a['opened_at'] ?? $a['closed_at'] ?? '')) ?: 0;
+                $tb = @strtotime((string)($b['opened_at'] ?? $b['closed_at'] ?? '')) ?: 0;
+                return $ta <=> $tb;
+            });
+
+            $candidateDurations = [190, 360, 720, 1080, 1440, 2880];
+            $durationStats      = [];
+
+            foreach ($candidateDurations as $durationMin) {
+                $durationSec = $durationMin * 60;
+                // Map: symbol -> ts of last close that would trigger freeze
+                $frozenUntil = [];
+
+                $repeatEntriesTotal     = 0;
+                $blockedWinningTotal    = 0;
+                $blockedLosingTotal     = 0;
+                $blockedRoiSum          = 0.0;
+                $blockedPnlSum          = 0.0;
+
+                foreach ($dbTrades as $ct) {
+                    $symbol   = (string)($ct['symbol']    ?? '');
+                    $closedAt = (string)($ct['closed_at'] ?? '');
+                    $openedAt = (string)($ct['opened_at'] ?? $ct['entry_time'] ?? $ct['created_at'] ?? '');
+                    $roi      = isset($ct['roi']) ? (float)$ct['roi'] : null;
+                    $pnl      = isset($ct['pnl']) ? (float)$ct['pnl'] : null;
+
+                    if ($symbol === '' || $openedAt === '') {
+                        continue;
+                    }
+
+                    $openTs  = @strtotime($openedAt) ?: 0;
+                    $closeTs = $closedAt !== '' ? (@strtotime($closedAt) ?: $openTs) : $openTs;
+
+                    // Check if this entry would be blocked by a prior close freeze
+                    if (isset($frozenUntil[$symbol]) && $openTs > 0 && $frozenUntil[$symbol] >= $openTs) {
+                        // This would have been blocked
+                        $repeatEntriesTotal++;
+                        if ($roi !== null && $roi > 0.0) {
+                            $blockedWinningTotal++;
+                        } elseif ($roi !== null && $roi < 0.0) {
+                            $blockedLosingTotal++;
+                        }
+                        $blockedRoiSum += ($roi ?? 0.0);
+                        $blockedPnlSum += ($pnl ?? 0.0);
+                    }
+
+                    // Register/refresh freeze from this close
+                    if ($closeTs > 0) {
+                        $proposedUntil = $closeTs + $durationSec;
+                        if (!isset($frozenUntil[$symbol]) || $proposedUntil > $frozenUntil[$symbol]) {
+                            $frozenUntil[$symbol] = $proposedUntil;
+                        }
+                    }
+                }
+
+                $estimatedSavedPnl = $blockedLosingTotal > 0
+                    ? abs(array_sum(array_map(static fn ($ct) => (float)($ct['pnl'] ?? 0.0), array_filter($dbTrades,
+                        static fn ($ct) => isset($ct['roi']) && (float)$ct['roi'] < 0.0))))
+                    : 0.0;
+
+                $durationStats[(string)$durationMin] = [
+                    'duration_minutes'             => $durationMin,
+                    'repeat_entries_within_window_total' => $repeatEntriesTotal,
+                    'blocked_winning_repeats_total'=> $blockedWinningTotal,
+                    'blocked_losing_repeats_total' => $blockedLosingTotal,
+                    'blocked_repeat_roi_sum'       => round($blockedRoiSum, 4),
+                    'blocked_repeat_pnl_sum'       => round($blockedPnlSum, 4),
+                    'estimated_saved_pnl'          => round(max(0.0, -$blockedPnlSum), 4),
+                    'estimated_lost_pnl'           => round(max(0.0,  $blockedPnlSum), 4),
+                    'net_estimated_effect'         => round(-$blockedPnlSum, 4),
+                ];
+            }
+
+            $output = [
+                'generated_at'    => date('c'),
+                'strategy'        => 'double_bottom_long',
+                'source'          => 'closed_trades',
+                'trades_analyzed' => count($dbTrades),
+                'note'            => 'Simulation only — diagnostics, does not affect behavior',
+                'durations'       => $durationStats,
+            ];
+
+            $this->writeJson('storage/symbol_freeze_duration_stats.json', $output);
+        } catch (\Throwable) {
+        }
     }
 }

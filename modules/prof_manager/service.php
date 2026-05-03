@@ -79,7 +79,11 @@ final class ProfManagerService
             $longConfigOverrides
         );
 
-        $this->shortProfile  = new Profiles\Short\ShortProfile();
+        $shortConfigOverrides = $this->config['profiles']['short'] ?? [];
+        $this->shortProfile   = new Profiles\Short\ShortProfile(
+            $this->moduleDir . '/profiles/short',
+            $shortConfigOverrides
+        );
     }
 
     public static function instance(?string $moduleDir = null): self
@@ -120,7 +124,7 @@ final class ProfManagerService
                     'account'        => $account,
                     'active_profile' => 'auto',
                     'long_profile'   => 'legacy_safe_long',
-                    'short_profile'  => 'unavailable',
+                    'short_profile'  => 'baseline_short_lock',
                     'skipped'        => 'module_disabled',
                     'skip_reason'    => 'module_disabled',
                     'positions_total'=> 0,
@@ -148,7 +152,7 @@ final class ProfManagerService
                     'account'        => $account,
                     'active_profile' => 'auto',
                     'long_profile'   => 'legacy_safe_long',
-                    'short_profile'  => 'unavailable',
+                    'short_profile'  => 'baseline_short_lock',
                     'positions_total'=> 0,
                     'positions_long' => 0,
                     'positions_short'=> 0,
@@ -177,6 +181,23 @@ final class ProfManagerService
             $positionsShort   = 0;
             $actionsSummary   = [];
             $skipSummary      = [];
+
+            // Short-profile diagnostic counters
+            $shortCheckedTotal             = 0;
+            $shortLocksSetTotal            = 0;
+            $shortLocksMovedTotal          = 0;
+            $shortLockTouchCloseTotal      = 0;
+            $shortCloseSubmittedTotal      = 0;
+            $shortCloseFailedTotal         = 0;
+            $shortSkippedBelowInitTotal    = 0;
+            $shortSkippedBelowActivTotal   = 0;
+            $shortSkippedCannotRoiTotal    = 0;
+            $shortSkippedLockNotImprovTotal = 0;
+            $shortSkippedLockTooCloseTotal = 0;
+            $shortPositionExamples         = [];
+            $shortLockExamples             = [];
+            $shortCloseExamples            = [];
+            $shortSkipExamples             = [];
 
             foreach ($rawPositions as $pos) {
                 if (!is_array($pos)) {
@@ -270,7 +291,7 @@ final class ProfManagerService
                                 $closeReasonValue,
                                 $closeAttemptResult['close_order_id'] ?? null,
                                 'demo',
-                                $pos
+                                array_merge($pos, ['profile_used' => $profileResult['profile_used'] ?? ''])
                             );
                         }
                     } elseif ($posExecMode === 'live') {
@@ -287,7 +308,7 @@ final class ProfManagerService
                                 $closeReasonValue,
                                 $closeAttemptResult['close_order_id'] ?? null,
                                 'live',
-                                $pos
+                                array_merge($pos, ['profile_used' => $profileResult['profile_used'] ?? ''])
                             );
                         }
                     } else {
@@ -313,6 +334,63 @@ final class ProfManagerService
                 if ($action === 'skip' && !empty($profileResult['skip_reason'])) {
                     $r = (string) $profileResult['skip_reason'];
                     $skipSummary[$r] = ($skipSummary[$r] ?? 0) + 1;
+                }
+
+                // ── Short-profile diagnostic tracking ─────────────────────────
+                if ($side === 'short') {
+                    $shortCheckedTotal++;
+                    $shortSkipReason = $profileResult['skip_reason'] ?? null;
+
+                    if ($action === 'would_set_profit_lock')  { $shortLocksSetTotal++; }
+                    if ($action === 'would_move_profit_lock') { $shortLocksMovedTotal++; }
+                    if ($action === 'would_close_on_lock_touch') { $shortLockTouchCloseTotal++; }
+                    if (in_array($action, ['demo_close_submitted', 'live_close_submitted'], true)) {
+                        $shortCloseSubmittedTotal++;
+                    }
+                    if (in_array($action, ['demo_close_failed', 'live_close_failed', 'close_failed'], true)) {
+                        $shortCloseFailedTotal++;
+                    }
+                    if ($action === 'skip') {
+                        if ($shortSkipReason === 'below_init_roi')        { $shortSkippedBelowInitTotal++; }
+                        elseif ($shortSkipReason === 'below_activation_roi') { $shortSkippedBelowActivTotal++; }
+                        elseif ($shortSkipReason === 'cannot_calculate_roi') { $shortSkippedCannotRoiTotal++; }
+                        elseif (in_array($shortSkipReason, ['lock_not_improving', 'roi_step_too_small'], true)) {
+                            $shortSkippedLockNotImprovTotal++;
+                        }
+                        elseif ($shortSkipReason === 'lock_price_too_close_to_current') {
+                            $shortSkippedLockTooCloseTotal++;
+                        }
+                    }
+
+                    // Build short example record (shared shape for all example buckets)
+                    $_sc = $pos['strategy_signal_context'] ?? null;
+                    $shortEx = [
+                        'symbol'                  => $pos['symbol'] ?? '',
+                        'side'                    => 'short',
+                        'owner_strategy'          => $pos['owner_strategy'] ?? $pos['strategy_id'] ?? '',
+                        'signal_id'               => $pos['signal_id'] ?? '',
+                        'entry_price'             => (float) ($pos['entry_price'] ?? $pos['avg_price'] ?? 0.0),
+                        'current_price'           => (float) ($pos['current_price'] ?? 0.0),
+                        'leverage'                => (float) ($pos['leverage'] ?? 0.0),
+                        'roi'                     => $profileResult['roi'] ?? null,
+                        'peak_roi'                => $profileResult['peak_roi'] ?? null,
+                        'lock_price'              => $profileResult['lock_price'] ?? null,
+                        'action'                  => $action,
+                        'skip_reason'             => $shortSkipReason,
+                        'profile_used'            => $profileResult['profile_used'] ?? 'baseline_short_lock',
+                        'dynamic_rule'            => is_array($_sc) ? ($_sc['dynamic_rule'] ?? null) : null,
+                        'strategy_signal_context' => $_sc,
+                    ];
+
+                    if (in_array($action, ['would_set_profit_lock', 'would_move_profit_lock'], true)) {
+                        if (count($shortLockExamples) < 5)     { $shortLockExamples[] = $shortEx; }
+                    } elseif (in_array($action, ['demo_close_submitted', 'live_close_submitted'], true)) {
+                        if (count($shortCloseExamples) < 5)    { $shortCloseExamples[] = $shortEx; }
+                    } elseif ($action === 'skip') {
+                        if (count($shortSkipExamples) < 10)    { $shortSkipExamples[] = $shortEx; }
+                    }
+
+                    if (count($shortPositionExamples) < 5)     { $shortPositionExamples[] = $shortEx; }
                 }
 
                 // ── Build per-position runtime record ─────────────────────────
@@ -395,6 +473,15 @@ final class ProfManagerService
             }
             $cleanResult = $this->longProfile->cleanStale($activeLongKeys);
 
+            // ── Clean stale short profile state/locks ─────────────────────────
+            $activeShortKeys = [];
+            foreach ($positionsRuntime as $pr) {
+                if (($pr['side'] ?? '') === 'short') {
+                    $activeShortKeys[] = strtolower($pr['symbol']) . '_short';
+                }
+            }
+            $shortCleanResult = $this->shortProfile->cleanStale($activeShortKeys);
+
             $result = [
                 'ok'                   => true,
                 'ts'                   => $ts,
@@ -403,7 +490,8 @@ final class ProfManagerService
                 'account'              => $account,
                 'active_profile'       => 'auto',
                 'long_profile'         => 'legacy_safe_long',
-                'short_profile'        => 'unavailable',
+                'short_profile'        => 'baseline_short_lock',
+                'short_profile_enabled'=> true,
                 'positions_total'      => $positionsTotal,
                 'positions_long'       => $positionsLong,
                 'positions_short'      => $positionsShort,
@@ -422,6 +510,25 @@ final class ProfManagerService
                 'locks_active'         => $this->longProfile->getLockCount(),
                 'long_state_cleaned'   => $cleanResult['long_state_cleaned'],
                 'long_locks_cleaned'   => $cleanResult['long_locks_cleaned'],
+                // Short profile diagnostics
+                'locks_active_short'                  => $this->shortProfile->getLockCount(),
+                'short_state_cleaned'                 => $shortCleanResult['short_state_cleaned'],
+                'short_locks_cleaned'                 => $shortCleanResult['short_locks_cleaned'],
+                'short_positions_checked_total'       => $shortCheckedTotal,
+                'short_locks_set_total'               => $shortLocksSetTotal,
+                'short_locks_moved_total'             => $shortLocksMovedTotal,
+                'short_lock_touch_close_total'        => $shortLockTouchCloseTotal,
+                'short_close_submitted_total'         => $shortCloseSubmittedTotal,
+                'short_close_failed_total'            => $shortCloseFailedTotal,
+                'short_skipped_below_init_total'      => $shortSkippedBelowInitTotal,
+                'short_skipped_below_activation_total'=> $shortSkippedBelowActivTotal,
+                'short_skipped_cannot_calculate_roi_total' => $shortSkippedCannotRoiTotal,
+                'short_skipped_lock_not_improving_total'   => $shortSkippedLockNotImprovTotal,
+                'short_skipped_lock_too_close_total'       => $shortSkippedLockTooCloseTotal,
+                'short_position_examples'             => $shortPositionExamples,
+                'short_lock_examples'                 => $shortLockExamples,
+                'short_close_examples'                => $shortCloseExamples,
+                'short_skip_examples'                 => $shortSkipExamples,
             ];
 
             $this->store->writeLastRun($result);
@@ -493,7 +600,7 @@ final class ProfManagerService
             'account'                       => $account,
             'active_profile'                => 'auto',
             'long_profile'                  => 'legacy_safe_long',
-            'short_profile'                 => 'unavailable',
+            'short_profile'                 => 'baseline_short_lock',
             'last_tick'                     => $lastRun['ts'] ?? null,
             'positions_tracked'             => (int) ($lastRun['valid_positions'] ?? $lastRun['positions'] ?? 0),
             'locks_active'                  => (int) ($lastRun['locks_active'] ?? $this->longProfile->getLockCount()),
@@ -1206,6 +1313,7 @@ final class ProfManagerService
                 'close_source'           => 'profit_manager',
                 'close_reason'           => $closeReason,
                 'close_order_id'         => $closeOrderId,
+                'profile_used'           => (string)($posContext['profile_used']    ?? ''),
                 'position_opened_at'     => $posContext['opened_at']      ?? $posContext['created_at']    ?? null,
                 'bot_submitted_at'       => $posContext['bot_submitted_at']  ?? $posContext['submitted_at'] ?? null,
                 'ts'                     => $now,

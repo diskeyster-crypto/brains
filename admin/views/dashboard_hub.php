@@ -747,12 +747,34 @@ function renderDashboardHub(): string
                 $_dsShadowLabel  = $_dsShadowOnly
                     ? '<span style="font-size:10px;color:#8b949e;background:rgba(139,148,158,.12);border:1px solid #8b949e44;padding:1px 5px;border-radius:3px;margin-left:4px;">shadow</span>'
                     : '';
+                // Replay stats (shown when replay has run at least once)
+                $_dsReplayEnabled     = (bool)($stratLastRun['replay_enabled']                          ?? false);
+                $_dsReplayUseful      = (int)($stratLastRun['replay_useful_contexts_total']             ?? 0);
+                $_dsReplayCandidates  = (int)($stratLastRun['replay_short_candidates_total']            ?? 0);
+                $_dsReplayNoCandles   = (int)($stratLastRun['replay_skipped_candles_unavailable_total'] ?? 0);
+                $_dsReplayTopTypes    = (array)($stratLastRun['top_useful_rejected_context_types']      ?? []);
+                $_dsReplayBestTypes   = (array)($stratLastRun['best_replay_context_types']              ?? []);
+                $_dsReplayLine        = '';
+                if ($_dsReplayEnabled) {
+                    $_dsBestLabel = !empty($_dsReplayBestTypes)
+                        ? ' · лучший тип <code>' . $e($_dsReplayBestTypes[0]) . '</code>'
+                        : '';
+                    $_dsNoCandlesLabel = $_dsReplayNoCandles > 0
+                        ? ' · без свечей <code>' . $_dsReplayNoCandles . '</code>'
+                        : '';
+                    $_dsReplayLine = '<br><span style="font-size:11px;color:#8b949e;">replay:</span>'
+                        . ' полезных <code>' . $_dsReplayUseful . '</code>'
+                        . ' · кандидатов short <code>' . $_dsReplayCandidates . '</code>'
+                        . $_dsBestLabel
+                        . $_dsNoCandlesLabel;
+                }
                 $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>' . $_dsShadowLabel
                     . ' · контекстов <code>' . $_dsContexts . '</code>'
                     . ' · полезных <code>' . $_dsUseful . '</code>'
                     . ' · кандидатов <code>' . $_dsCandidates . '</code>'
                     . ' · сигналов <code>' . $_dsShadow . '</code>'
-                    . ' · handoff-ready <code>' . $_dsHandoffReady . '</code>';
+                    . ' · handoff-ready <code>' . $_dsHandoffReady . '</code>'
+                    . $_dsReplayLine;
             } else {
                 $cycleLineHtml = 'статус <code>' . $slrStatus . '</code>'
                     . ' · кандидатов <code>' . $slrCandidates . '</code>'

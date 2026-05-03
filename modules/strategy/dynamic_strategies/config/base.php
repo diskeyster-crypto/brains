@@ -60,4 +60,14 @@ return [
     'signal_ttl_minutes'    => 120,   // shadow signals expire after 2 h
     'max_signals_per_symbol' => 1,
     'max_signals_per_run'    => 20,
+
+    // ── Rejected-context short replay analyzer ────────────────────────────────
+    // Diagnostics-only replay — no orders, no handoff, no live signals.
+    // Analyzes directional rejected contexts from double_bottom_long to measure
+    // whether hypothetical short entries would have been profitable.
+    'replay_enabled'                 => true,
+    'replay_context_max_age_minutes' => 480,  // 8 h lookback for replay (wider than main pipeline)
+    'replay_pause_minutes'           => 3,    // 3-minute confirmation pause before hypothetical entry
+    'replay_max_contexts'            => 500,  // max contexts processed per replay run
+    'replay_candle_storage_dir'      => 'modules/parser/parser2_history_accumulator/storage',
 ];

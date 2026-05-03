@@ -84,6 +84,24 @@ final class DynamicStrategiesStrategy
         ],
     ];
 
+    // Directional context types eligible for rejected-context short replay analysis.
+    // These represent breakdown/downtrend signals that could indicate short entries.
+    private const DIRECTIONAL_CONTEXT_TYPES = [
+        'active_downtrend_no_stabilization',
+        'falling_knife_reject',
+        'fresh_dump_after_reclaim',
+        'fresh_lower_low_after_reclaim',
+        'fast_red_candle_after_setup',
+        'failed_reclaim',
+        'reclaim_lost',
+        'neckline_lost',
+        'base_support_broken',
+        'pending_invalidated_fresh_dump',
+        'pending_invalidated_reclaim_lost',
+        'pending_invalidated_base_support_broken',
+        'pending_invalidated_falling_knife',
+    ];
+
     private string $moduleDir;
     private string $repoRoot;
     private array  $config;
@@ -435,6 +453,13 @@ final class DynamicStrategiesStrategy
         if ((bool)($config['write_bot_handoff_queue'] ?? true)) {
             $this->writeJson('storage/bot_handoff_queue.json', array_values($handoffQueue));
         }
+
+        // ── Rejected-context short replay analyzer ─────────────────────────────
+        // Diagnostics-only — writes replay.json and replay_summary.json.
+        // No orders, no handoff, no live signals.
+        $replayStats = $this->computeRejectedContextReplay($config, $allContexts);
+        $stats = array_merge($stats, $replayStats);
+
         $this->writeJson('storage/last_run.json', $stats);
 
         return [
@@ -851,6 +876,698 @@ final class DynamicStrategiesStrategy
         }
 
         return 'noise';
+    }
+
+    // ── Rejected-context short replay analyzer ───────────────────────────────
+
+    /**
+     * Analyze directional rejected contexts from input_contexts.json to measure
+     * whether hypothetical short entries (with a 3-minute confirmation pause)
+     * would have been profitable.
+     *
+     * SAFETY: diagnostics/replay only.
+     * - No orders opened.
+     * - No handoff queue entries written.
+     * - No live or demo signals emitted.
+     * - Source strategy behavior unchanged.
+     *
+     * Writes:
+     *   storage/rejected_context_replay.json
+     *   storage/rejected_context_replay_summary.json
+     *
+     * Returns: stats subset merged into last_run.json by execute().
+     */
+    private function computeRejectedContextReplay(array $config, array $allContexts): array
+    {
+        if (!(bool)($config['replay_enabled'] ?? true)) {
+            return ['replay_enabled' => false];
+        }
+
+        $replayMaxAgeMin = (int)($config['replay_context_max_age_minutes'] ?? 480);
+        $replayPauseMin  = (int)($config['replay_pause_minutes']           ?? 3);
+        $replayMaxCtx    = (int)($config['replay_max_contexts']            ?? 500);
+        $now             = time();
+        $replayCutoff    = $now - ($replayMaxAgeMin * 60);
+
+        // ── 1. Filter to directional contexts within replay age window ─────────
+        $replayContexts = [];
+        $noiseSkipped   = 0;
+
+        foreach ($allContexts as $ctx) {
+            if (!is_array($ctx)) {
+                continue;
+            }
+
+            $symbol = (string)($ctx['symbol'] ?? '');
+            if ($symbol === '') {
+                $noiseSkipped++;
+                continue;
+            }
+
+            $observedAt = $ctx['observed_at'] ?? null;
+            if ($observedAt !== null) {
+                $ts = is_int($observedAt) ? $observedAt : (int)strtotime((string)$observedAt);
+                if ($ts > 0 && $ts < $replayCutoff) {
+                    continue; // older than replay window — skip silently
+                }
+            }
+
+            $ctxType       = (string)($ctx['context_type'] ?? '');
+            $isDirectional = in_array($ctxType, self::DIRECTIONAL_CONTEXT_TYPES, true)
+                || (bool)($ctx['falling_knife']                 ?? false)
+                || (bool)($ctx['reclaim_lost']                  ?? false)
+                || (bool)($ctx['neckline_lost']                 ?? false)
+                || (bool)($ctx['base_support_broken']           ?? false)
+                || (bool)($ctx['fresh_lower_low_after_reclaim'] ?? false)
+                || (bool)($ctx['fast_red_candle_after_setup']   ?? false);
+
+            if (!$isDirectional) {
+                $noiseSkipped++;
+                continue;
+            }
+
+            $replayContexts[] = $ctx;
+        }
+
+        // Cap to replay_max_contexts (take most recent)
+        if (count($replayContexts) > $replayMaxCtx) {
+            $replayContexts = array_slice($replayContexts, -$replayMaxCtx);
+        }
+
+        // ── 2. Frequency stats by context type ────────────────────────────────
+        $typeFreq = [];
+        foreach ($replayContexts as $ctx) {
+            $ctxType = (string)($ctx['context_type'] ?? 'unknown');
+            $symbol  = (string)($ctx['symbol']       ?? '');
+            if (!isset($typeFreq[$ctxType])) {
+                $typeFreq[$ctxType] = ['count' => 0, 'symbols' => [], 'examples' => []];
+            }
+            $typeFreq[$ctxType]['count']++;
+            if ($symbol !== '' && !in_array($symbol, $typeFreq[$ctxType]['symbols'], true)) {
+                $typeFreq[$ctxType]['symbols'][] = $symbol;
+            }
+            if (count($typeFreq[$ctxType]['examples']) < 3) {
+                $typeFreq[$ctxType]['examples'][] = [
+                    'symbol'     => $symbol,
+                    'context_id' => $ctx['context_id'] ?? null,
+                    'observed_at' => $ctx['observed_at'] ?? null,
+                ];
+            }
+        }
+
+        // Useful types = those in DIRECTIONAL_CONTEXT_TYPES
+        $usefulTypeFreq = array_filter(
+            $typeFreq,
+            fn(string $k) => in_array($k, self::DIRECTIONAL_CONTEXT_TYPES, true),
+            ARRAY_FILTER_USE_KEY
+        );
+
+        // Sort both by count descending
+        uasort($typeFreq,       fn(array $a, array $b) => $b['count'] - $a['count']);
+        uasort($usefulTypeFreq, fn(array $a, array $b) => $b['count'] - $a['count']);
+        $topUsefulTypes = array_slice(array_keys($usefulTypeFreq), 0, 5);
+
+        // ── 3–6. Replay each context with 3-min confirmation + trend windows ──
+        $candleStorageDir        = $this->repoRoot . '/' . ltrim(
+            (string)($config['replay_candle_storage_dir'] ?? 'modules/parser/parser2_history_accumulator/storage'),
+            '/'
+        );
+
+        $replayEntries           = [];
+        $candlesUnavailableTotal = 0;
+        $shortCandidatesTotal    = 0;
+        $shortRejectedTotal      = 0;
+
+        foreach ($replayContexts as $ctx) {
+            $symbol     = (string)($ctx['symbol']       ?? '');
+            $ctxType    = (string)($ctx['context_type'] ?? 'unknown');
+            $observedAt = $ctx['observed_at'] ?? null;
+            $observedTs = $observedAt !== null
+                ? (is_int($observedAt) ? $observedAt : (int)strtotime((string)$observedAt))
+                : 0;
+
+            if ($observedTs <= 0) {
+                continue;
+            }
+
+            $confirmationTs = $observedTs + ($replayPauseMin * 60);
+
+            // Dedupe by (symbol + ctxType + observedTs)
+            $replayId = 'rpl_' . substr(md5($symbol . '_' . $ctxType . '_' . $observedTs), 0, 12);
+
+            // Extract key levels from context
+            $reclaimLevel = (float)($ctx['reclaim_level'] ?? $ctx['neckline_level'] ?? 0.0);
+            $baseLevel    = (float)($ctx['base_low']      ?? $ctx['support_level']  ?? 0.0);
+            $entryPrice   = (float)($ctx['current_price'] ?? $ctx['price_at_rejection'] ?? 0.0);
+
+            // Load candle price points covering observed_at .. confirmation_time + 61 min
+            $candleFrom = $observedTs - 60;
+            $candleTo   = $confirmationTs + (61 * 60);
+            $candles    = $this->loadSymbolCandlePoints($symbol, $candleStorageDir, $candleFrom, $candleTo);
+
+            if (empty($candles)) {
+                $candlesUnavailableTotal++;
+                $replayEntries[] = [
+                    'replay_id'                => $replayId,
+                    'symbol'                   => $symbol,
+                    'context_type'             => $ctxType,
+                    'source_strategy'          => (string)($ctx['source_strategy']  ?? 'double_bottom_long'),
+                    'source_signal_id'         => $ctx['source_signal_id'] ?? null,
+                    'observed_at'              => date('c', $observedTs),
+                    'confirmation_time'        => date('c', $confirmationTs),
+                    'hypothetical_side'        => 'short',
+                    'hypothetical_entry_price' => $entryPrice > 0.0 ? $entryPrice : null,
+                    'status'                   => 'skipped_candles_unavailable',
+                ];
+                continue;
+            }
+
+            // Determine entry price from candles if not in context
+            if ($entryPrice <= 0.0) {
+                $entryPrice = $this->closestCandlePrice($candles, $observedTs);
+            }
+
+            // ── 3. 3-minute confirmation pause ─────────────────────────────────
+            $pauseCheck = $this->computeShortPauseConfirmation(
+                $candles, $observedTs, $confirmationTs, $reclaimLevel, $baseLevel
+            );
+
+            if (!($pauseCheck['passed'] ?? false)) {
+                $shortRejectedTotal++;
+                $replayEntries[] = [
+                    'replay_id'                => $replayId,
+                    'symbol'                   => $symbol,
+                    'context_type'             => $ctxType,
+                    'source_strategy'          => (string)($ctx['source_strategy'] ?? 'double_bottom_long'),
+                    'source_signal_id'         => $ctx['source_signal_id'] ?? null,
+                    'observed_at'              => date('c', $observedTs),
+                    'confirmation_time'        => date('c', $confirmationTs),
+                    'hypothetical_side'        => 'short',
+                    'hypothetical_entry_price' => $entryPrice > 0.0 ? round($entryPrice, 8) : null,
+                    'confirmations'            => $pauseCheck,
+                    'status'                   => 'replay_rejected',
+                    'reject_reason'            => $pauseCheck['reject_reason'] ?? 'pause_confirmation_failed',
+                ];
+                continue;
+            }
+
+            // ── 4. Trend windows ───────────────────────────────────────────────
+            $trend5m  = $this->computeShortTrendWindow($candles, $confirmationTs,  5 * 60);
+            $trend15m = $this->computeShortTrendWindow($candles, $confirmationTs, 15 * 60);
+            $trend30m = $this->computeShortTrendWindow($candles, $confirmationTs, 30 * 60);
+
+            // Short confirmation passes when trends are bearish or neutral-bearish
+            $trendConfirmed = ($trend5m['lower_close']  ?? false)
+                || ($trend15m['lower_close'] ?? false)
+                || ($trend30m['lower_close'] ?? false);
+
+            if (!$trendConfirmed) {
+                $shortRejectedTotal++;
+                $replayEntries[] = [
+                    'replay_id'                => $replayId,
+                    'symbol'                   => $symbol,
+                    'context_type'             => $ctxType,
+                    'source_strategy'          => (string)($ctx['source_strategy'] ?? 'double_bottom_long'),
+                    'source_signal_id'         => $ctx['source_signal_id'] ?? null,
+                    'observed_at'              => date('c', $observedTs),
+                    'confirmation_time'        => date('c', $confirmationTs),
+                    'hypothetical_side'        => 'short',
+                    'hypothetical_entry_price' => $entryPrice > 0.0 ? round($entryPrice, 8) : null,
+                    'confirmations'            => $pauseCheck,
+                    'trend_5m'                 => $trend5m,
+                    'trend_15m'               => $trend15m,
+                    'trend_30m'               => $trend30m,
+                    'status'                   => 'replay_rejected',
+                    'reject_reason'            => 'trend_not_bearish',
+                ];
+                continue;
+            }
+
+            // ── 5–6. Short candidate with forward outcomes ─────────────────────
+            $shortCandidatesTotal++;
+
+            $forwardOutcomes = [];
+            foreach ([5, 10, 15, 30, 60] as $minutes) {
+                $forwardOutcomes[$minutes . 'm'] = $this->computeShortForwardOutcome(
+                    $candles, $confirmationTs, $minutes * 60, $entryPrice
+                );
+            }
+
+            $keyLevels = array_filter([
+                'reclaim' => $reclaimLevel > 0.0 ? $reclaimLevel : null,
+                'base'    => $baseLevel    > 0.0 ? $baseLevel    : null,
+            ]);
+
+            $replayEntries[] = [
+                'replay_id'                => $replayId,
+                'symbol'                   => $symbol,
+                'context_type'             => $ctxType,
+                'source_strategy'          => (string)($ctx['source_strategy'] ?? 'double_bottom_long'),
+                'source_signal_id'         => $ctx['source_signal_id'] ?? null,
+                'observed_at'              => date('c', $observedTs),
+                'confirmation_time'        => date('c', $confirmationTs),
+                'hypothetical_side'        => 'short',
+                'hypothetical_entry_price' => $entryPrice > 0.0 ? round($entryPrice, 8) : null,
+                'confirmations'            => $pauseCheck,
+                'confirmation_count'       => $pauseCheck['count'] ?? 0,
+                'trend_5m'                 => $trend5m,
+                'trend_15m'               => $trend15m,
+                'trend_30m'               => $trend30m,
+                'key_levels'               => !empty($keyLevels) ? $keyLevels : null,
+                'confidence_score'         => $pauseCheck['confidence_score'] ?? 0.0,
+                'forward_outcomes'         => $forwardOutcomes,
+                'status'                   => 'replay_short_candidate',
+            ];
+        }
+
+        // ── 7. Write replay files ──────────────────────────────────────────────
+        $this->writeJson('storage/rejected_context_replay.json', $replayEntries);
+
+        // ── 8. Summary by context type ─────────────────────────────────────────
+        $summary = $this->buildReplaySummary($replayEntries);
+        $this->writeJson('storage/rejected_context_replay_summary.json', array_values($summary));
+
+        // Best = highest avg_forward_15m_roi_10x; worst = lowest (or negative)
+        $ranked = $summary;
+        usort($ranked, fn(array $a, array $b) => ($b['avg_forward_15m_roi_10x'] ?? PHP_INT_MIN) <=> ($a['avg_forward_15m_roi_10x'] ?? PHP_INT_MIN));
+        $bestTypes  = array_slice(array_map(fn(array $r) => $r['context_type'], array_filter($ranked, fn(array $r) => $r['avg_forward_15m_roi_10x'] !== null)), 0, 3);
+        $worstTypes = array_slice(array_map(fn(array $r) => $r['context_type'], array_reverse($ranked)), 0, 3);
+
+        return [
+            'replay_enabled'                          => true,
+            'replay_contexts_loaded_total'            => count($allContexts),
+            'replay_useful_contexts_total'            => count($replayContexts),
+            'replay_skipped_noise_total'              => $noiseSkipped,
+            'replay_skipped_candles_unavailable_total' => $candlesUnavailableTotal,
+            'replay_short_candidates_total'           => $shortCandidatesTotal,
+            'replay_short_rejected_total'             => $shortRejectedTotal,
+            'top_useful_rejected_context_types'       => $topUsefulTypes,
+            'best_replay_context_types'               => $bestTypes,
+            'worst_replay_context_types'              => $worstTypes,
+            'rejected_context_type_frequency'         => array_values(array_map(
+                fn(string $k, array $v) => array_merge(['context_type' => $k], $v),
+                array_keys($typeFreq), $typeFreq
+            )),
+            'useful_rejected_context_type_frequency'  => array_values(array_map(
+                fn(string $k, array $v) => array_merge(['context_type' => $k], $v),
+                array_keys($usefulTypeFreq), $usefulTypeFreq
+            )),
+        ];
+    }
+
+    /**
+     * Load price points for a symbol from parser2 NDJSON storage.
+     * Returns ascending time-sorted deduplicated [{ts_unix, price}] array.
+     * Returns empty array when storage is unavailable (graceful degradation).
+     */
+    private function loadSymbolCandlePoints(string $symbol, string $storageDir, int $fromTs, int $toTs): array
+    {
+        $symbolDir = rtrim($storageDir, '/') . '/' . strtoupper($symbol);
+        if (!is_dir($symbolDir)) {
+            return [];
+        }
+
+        $points  = [];
+        $cursor  = $fromTs;
+        $covered = [];
+
+        while ($cursor <= $toTs) {
+            $dateStr = date('Y-m-d', $cursor);
+            if (!in_array($dateStr, $covered, true)) {
+                $covered[] = $dateStr;
+                $file = $symbolDir . '/' . $dateStr . '.ndjson';
+                if (is_file($file) && is_readable($file)) {
+                    $handle = @fopen($file, 'r');
+                    if ($handle !== false) {
+                        while (($line = fgets($handle)) !== false) {
+                            $line = trim($line);
+                            if ($line === '') {
+                                continue;
+                            }
+                            $rec = json_decode($line, true);
+                            if (!is_array($rec)) {
+                                continue;
+                            }
+                            $ts = isset($rec['ts_unix']) ? (int)$rec['ts_unix'] : 0;
+                            if ($ts < $fromTs || $ts > $toTs + 60) {
+                                continue;
+                            }
+                            $price = (float)($rec['last_price'] ?? $rec['price'] ?? $rec['close'] ?? 0.0);
+                            if ($price <= 0.0) {
+                                continue;
+                            }
+                            $points[] = ['ts_unix' => $ts, 'price' => $price];
+                        }
+                        fclose($handle);
+                    }
+                }
+            }
+            $cursor += 86400;
+        }
+
+        if (empty($points)) {
+            return [];
+        }
+
+        usort($points, fn(array $a, array $b) => $a['ts_unix'] <=> $b['ts_unix']);
+
+        // Deduplicate by ts_unix, keeping last value at each timestamp
+        $deduped = [];
+        foreach ($points as $p) {
+            $deduped[$p['ts_unix']] = $p;
+        }
+        return array_values($deduped);
+    }
+
+    /**
+     * Return the price from the candle closest in time to the given timestamp.
+     * Returns 0.0 if candles is empty.
+     */
+    private function closestCandlePrice(array $candles, int $ts): float
+    {
+        $closest = 0.0;
+        $minDiff = PHP_INT_MAX;
+        foreach ($candles as $p) {
+            $diff = abs($p['ts_unix'] - $ts);
+            if ($diff < $minDiff) {
+                $minDiff = $diff;
+                $closest = (float)$p['price'];
+            }
+        }
+        return $closest;
+    }
+
+    /**
+     * Evaluate the 3-minute confirmation pause for a hypothetical short.
+     * Checks that price did not recover strongly during the pause window.
+     */
+    private function computeShortPauseConfirmation(
+        array $candles,
+        int   $observedTs,
+        int   $confirmationTs,
+        float $reclaimLevel,
+        float $baseLevel
+    ): array {
+        $priceAtObserved     = $this->closestCandlePrice($candles, $observedTs);
+        $priceAtConfirmation = $this->closestCandlePrice($candles, $confirmationTs);
+
+        if ($priceAtObserved <= 0.0 || $priceAtConfirmation <= 0.0) {
+            return [
+                'passed'           => false,
+                'reject_reason'    => 'no_price_data_at_confirmation',
+                'count'            => 0,
+                'confidence_score' => 0.0,
+            ];
+        }
+
+        $priceDelta      = ($priceAtConfirmation - $priceAtObserved) / $priceAtObserved;
+        $strongRecovery  = $priceDelta > 0.005; // +0.5% recovery during pause = not a short setup
+
+        $checks    = [];
+        $passCount = 0;
+
+        // Check 1: no strong recovery during the pause
+        $noStrongRecovery = !$strongRecovery;
+        $checks['no_strong_recovery_in_pause'] = $noStrongRecovery;
+        if ($noStrongRecovery) {
+            $passCount++;
+        }
+
+        // Check 2: price still bearish (not going up noticeably)
+        $stillBearish = $priceDelta <= 0.002; // allow at most +0.2% drift
+        $checks['still_bearish_direction'] = $stillBearish;
+        if ($stillBearish) {
+            $passCount++;
+        }
+
+        // Check 3 (optional): price still below reclaim level
+        if ($reclaimLevel > 0.0) {
+            $belowReclaim = $priceAtConfirmation < $reclaimLevel;
+            $checks['price_below_reclaim_at_confirmation'] = $belowReclaim;
+            if ($belowReclaim) {
+                $passCount++;
+            }
+        }
+
+        // Check 4 (optional): price still below base support level
+        if ($baseLevel > 0.0) {
+            $belowBase = $priceAtConfirmation < $baseLevel;
+            $checks['price_below_base_at_confirmation'] = $belowBase;
+            if ($belowBase) {
+                $passCount++;
+            }
+        }
+
+        $passed = $noStrongRecovery && $stillBearish;
+        $confidenceScore = round(min(1.0, 0.35 + $passCount * 0.15), 4);
+
+        return [
+            'passed'                => $passed,
+            'reject_reason'         => $passed ? null : ($strongRecovery ? 'strong_recovery_during_pause' : 'price_not_bearish'),
+            'count'                 => $passCount,
+            'confidence_score'      => $confidenceScore,
+            'price_at_observed'     => round($priceAtObserved, 8),
+            'price_at_confirmation' => round($priceAtConfirmation, 8),
+            'price_change_pct'      => round($priceDelta * 100, 4),
+            'checks'                => $checks,
+        ];
+    }
+
+    /**
+     * Compute short-side trend statistics for a price window starting at fromTs
+     * with the given duration in seconds.
+     */
+    private function computeShortTrendWindow(array $candles, int $fromTs, int $durationSeconds): array
+    {
+        $toTs   = $fromTs + $durationSeconds;
+        $window = array_values(array_filter($candles, fn(array $p) => $p['ts_unix'] >= $fromTs && $p['ts_unix'] <= $toTs));
+
+        if (count($window) < 2) {
+            return ['data_available' => false, 'candle_count' => count($window)];
+        }
+
+        $firstPrice = (float)$window[0]['price'];
+        $lastPrice  = (float)$window[count($window) - 1]['price'];
+        $prices     = array_column($window, 'price');
+        $highPrice  = (float)max($prices);
+        $lowPrice   = (float)min($prices);
+
+        $priceChangePct = ($lastPrice - $firstPrice) / $firstPrice * 100.0;
+        $lowerClose     = $lastPrice < $firstPrice;
+
+        // Red candle bias: fraction of steps where price declined
+        $redCount = 0;
+        $cnt      = count($window);
+        for ($i = 1; $i < $cnt; $i++) {
+            if ((float)$window[$i]['price'] < (float)$window[$i - 1]['price']) {
+                $redCount++;
+            }
+        }
+        $redCandleBias = $cnt > 1 ? ($redCount / ($cnt - 1)) > 0.5 : false;
+
+        // No strong recovery: high never exceeded first price by more than 0.3%
+        $noStrongRecovery = $highPrice <= $firstPrice * 1.003;
+
+        return [
+            'data_available'     => true,
+            'candle_count'       => $cnt,
+            'price_change_pct'   => round($priceChangePct, 4),
+            'lower_close'        => $lowerClose,
+            'no_strong_recovery' => $noStrongRecovery,
+            'red_candle_bias'    => $redCandleBias,
+            'first_price'        => round($firstPrice, 8),
+            'last_price'         => round($lastPrice, 8),
+            'high'               => round($highPrice, 8),
+            'low'                => round($lowPrice, 8),
+            'bearish'            => $lowerClose && $redCandleBias,
+        ];
+    }
+
+    /**
+     * Compute hypothetical short forward outcome metrics for a window starting
+     * at confirmationTs with the given duration in seconds.
+     *
+     * For short positions: favorable = price goes down, adverse = price goes up.
+     * ROI calculated at 5×, 10×, 15× leverage based on close-price move.
+     */
+    private function computeShortForwardOutcome(
+        array $candles,
+        int   $fromTs,
+        int   $durationSeconds,
+        float $entryPrice
+    ): array {
+        $toTs   = $fromTs + $durationSeconds;
+        $window = array_values(array_filter($candles, fn(array $p) => $p['ts_unix'] >= $fromTs && $p['ts_unix'] <= $toTs));
+
+        if (empty($window) || $entryPrice <= 0.0) {
+            return ['data_available' => false];
+        }
+
+        $prices    = array_column($window, 'price');
+        $minPrice  = (float)min($prices);
+        $maxPrice  = (float)max($prices);
+        $closePrice = (float)end($prices);
+
+        // Short: favorable move = price fell below entry
+        $maxFavorablePct = ($entryPrice - $minPrice) / $entryPrice * 100.0;
+        // Short: adverse move = price rose above entry
+        $maxAdversePct   = ($maxPrice - $entryPrice)  / $entryPrice * 100.0;
+        // Close P&L for short
+        $closePct        = ($entryPrice - $closePrice) / $entryPrice * 100.0;
+
+        // ROI at various leverages
+        $roiAt5x  = $closePct * 5.0;
+        $roiAt10x = $closePct * 10.0;
+        $roiAt15x = $closePct * 15.0;
+
+        // Stop-loss hit checks (adverse ROI thresholds at 10× leverage)
+        $wouldHitStop20roi = $maxAdversePct >= 2.0;  // 20 ROI at 10× = 2% adverse move
+        $wouldHitStop30roi = $maxAdversePct >= 3.0;  // 30 ROI at 10× = 3% adverse move
+
+        // Take-profit hit checks (favorable ROI thresholds at 10× leverage)
+        $wouldReachProfit10roi = $maxFavorablePct >= 1.0;  // 10 ROI at 10× = 1% favorable move
+        $wouldReachProfit20roi = $maxFavorablePct >= 2.0;  // 20 ROI at 10× = 2% favorable move
+
+        return [
+            'data_available'           => true,
+            'candle_count'             => count($window),
+            'max_favorable_move_pct'   => round($maxFavorablePct, 4),
+            'max_adverse_move_pct'     => round($maxAdversePct,   4),
+            'close_move_pct'           => round($closePct,        4),
+            'roi_at_5x'                => round($roiAt5x,  3),
+            'roi_at_10x'               => round($roiAt10x, 3),
+            'roi_at_15x'               => round($roiAt15x, 3),
+            'would_hit_stop_20roi'     => $wouldHitStop20roi,
+            'would_hit_stop_30roi'     => $wouldHitStop30roi,
+            'would_reach_profit_10roi' => $wouldReachProfit10roi,
+            'would_reach_profit_20roi' => $wouldReachProfit20roi,
+        ];
+    }
+
+    /**
+     * Build a summary indexed by context type from the replay entry list.
+     * Returns a keyed array of per-type stats with recommendation.
+     */
+    private function buildReplaySummary(array $entries): array
+    {
+        $byType = [];
+
+        foreach ($entries as $entry) {
+            $t = (string)($entry['context_type'] ?? 'unknown');
+            if (!isset($byType[$t])) {
+                $byType[$t] = [
+                    'context_type'        => $t,
+                    'count'               => 0,
+                    'candidates'          => 0,
+                    'passed_confirmation' => 0,
+                    'failed_confirmation' => 0,
+                    'skipped_candles'     => 0,
+                    '_roi_5m'             => [],
+                    '_roi_15m'            => [],
+                    '_roi_30m'            => [],
+                    '_max_fav'            => [],
+                    '_max_adv'            => [],
+                    '_stop20_hits'        => 0,
+                    '_stop30_hits'        => 0,
+                    '_profit10_hits'      => 0,
+                    '_profit20_hits'      => 0,
+                    '_outcome_windows'    => 0,
+                ];
+            }
+            $byType[$t]['count']++;
+
+            $status = (string)($entry['status'] ?? '');
+
+            if ($status === 'skipped_candles_unavailable') {
+                $byType[$t]['skipped_candles']++;
+                continue;
+            }
+
+            $byType[$t]['candidates']++;
+
+            if ($status === 'replay_short_candidate') {
+                $byType[$t]['passed_confirmation']++;
+                $fwd = $entry['forward_outcomes'] ?? [];
+
+                if (isset($fwd['5m']['roi_at_10x'])) {
+                    $byType[$t]['_roi_5m'][] = (float)$fwd['5m']['roi_at_10x'];
+                }
+                if (isset($fwd['15m']['roi_at_10x'])) {
+                    $byType[$t]['_roi_15m'][] = (float)$fwd['15m']['roi_at_10x'];
+                }
+                if (isset($fwd['30m']['roi_at_10x'])) {
+                    $byType[$t]['_roi_30m'][] = (float)$fwd['30m']['roi_at_10x'];
+                }
+
+                foreach ([5, 10, 15, 30, 60] as $min) {
+                    $o = $fwd[$min . 'm'] ?? [];
+                    if (!empty($o['data_available'])) {
+                        $byType[$t]['_max_fav'][]  = (float)($o['max_favorable_move_pct'] ?? 0.0);
+                        $byType[$t]['_max_adv'][]  = (float)($o['max_adverse_move_pct']   ?? 0.0);
+                        $byType[$t]['_outcome_windows']++;
+                        if ($o['would_hit_stop_20roi']     ?? false) { $byType[$t]['_stop20_hits']++; }
+                        if ($o['would_hit_stop_30roi']     ?? false) { $byType[$t]['_stop30_hits']++; }
+                        if ($o['would_reach_profit_10roi'] ?? false) { $byType[$t]['_profit10_hits']++; }
+                        if ($o['would_reach_profit_20roi'] ?? false) { $byType[$t]['_profit20_hits']++; }
+                    }
+                }
+            } else {
+                $byType[$t]['failed_confirmation']++;
+            }
+        }
+
+        // Compute derived stats + recommendation for each type
+        $result = [];
+        foreach ($byType as $t => $d) {
+            $avgRoi5m  = !empty($d['_roi_5m'])  ? round(array_sum($d['_roi_5m'])  / count($d['_roi_5m']),  3) : null;
+            $avgRoi15m = !empty($d['_roi_15m']) ? round(array_sum($d['_roi_15m']) / count($d['_roi_15m']), 3) : null;
+            $avgRoi30m = !empty($d['_roi_30m']) ? round(array_sum($d['_roi_30m']) / count($d['_roi_30m']), 3) : null;
+            $avgFav    = !empty($d['_max_fav']) ? round(array_sum($d['_max_fav']) / count($d['_max_fav']), 3) : null;
+            $avgAdv    = !empty($d['_max_adv']) ? round(array_sum($d['_max_adv']) / count($d['_max_adv']), 3) : null;
+
+            $windows = $d['_outcome_windows'];
+            $stop20Rate  = $windows > 0 ? round($d['_stop20_hits']  / $windows, 3) : null;
+            $stop30Rate  = $windows > 0 ? round($d['_stop30_hits']  / $windows, 3) : null;
+            $profit10Rate = $windows > 0 ? round($d['_profit10_hits'] / $windows, 3) : null;
+            $profit20Rate = $windows > 0 ? round($d['_profit20_hits'] / $windows, 3) : null;
+
+            // Recommendation
+            $rec = 'ignore';
+            if ($d['count'] < 2 || $d['skipped_candles'] >= $d['count']) {
+                $rec = 'observe_more'; // not enough data to conclude
+            } elseif ($d['passed_confirmation'] >= 2 && $avgRoi15m !== null) {
+                if ($avgRoi15m > 5.0) {
+                    $rec = 'possible_dynamic_short_rule';
+                } elseif ($avgRoi15m > 0.0) {
+                    $rec = 'observe_more';
+                }
+            } elseif ($d['passed_confirmation'] >= 1) {
+                $rec = 'observe_more';
+            }
+
+            $result[$t] = [
+                'context_type'            => $t,
+                'count'                   => $d['count'],
+                'candidates'              => $d['candidates'],
+                'passed_confirmation'     => $d['passed_confirmation'],
+                'failed_confirmation'     => $d['failed_confirmation'],
+                'skipped_candles'         => $d['skipped_candles'],
+                'avg_forward_5m_roi_10x'  => $avgRoi5m,
+                'avg_forward_15m_roi_10x' => $avgRoi15m,
+                'avg_forward_30m_roi_10x' => $avgRoi30m,
+                'avg_max_favorable_roi_10x' => $avgFav,
+                'avg_max_adverse_roi_10x'   => $avgAdv,
+                'stop_20roi_hit_rate'     => $stop20Rate,
+                'stop_30roi_hit_rate'     => $stop30Rate,
+                'profit_10roi_hit_rate'   => $profit10Rate,
+                'profit_20roi_hit_rate'   => $profit20Rate,
+                'recommendation'          => $rec,
+            ];
+        }
+
+        // Sort by count descending
+        uasort($result, fn(array $a, array $b) => $b['count'] - $a['count']);
+        return $result;
     }
 
     // ── Config helpers ─────────────────────────────────────────────────────────

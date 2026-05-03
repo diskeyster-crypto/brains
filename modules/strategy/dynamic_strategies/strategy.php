@@ -34,9 +34,10 @@ declare(strict_types=1);
 
 namespace Modules\Strategy\DynamicStrategies;
 
-require_once __DIR__ . '/sources/DynamicSourceAdapterInterface.php';
-require_once __DIR__ . '/sources/AbstractDynamicSourceAdapter.php';
-require_once __DIR__ . '/sources/DoubleBottomLongSourceAdapter.php';
+// file names are lowercase by project convention; PHP class names remain CamelCase
+require_once __DIR__ . '/sources/dynamic_source_adapter_interface.php';
+require_once __DIR__ . '/sources/abstract_dynamic_source_adapter.php';
+require_once __DIR__ . '/sources/double_bottom_long_source_adapter.php';
 
 use Modules\Strategy\DynamicStrategies\Sources\DynamicSourceAdapterInterface;
 use Modules\Strategy\DynamicStrategies\Sources\DoubleBottomLongSourceAdapter;

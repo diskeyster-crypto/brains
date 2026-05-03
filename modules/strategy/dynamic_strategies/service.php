@@ -34,6 +34,16 @@ final class DynamicStrategiesService
     }
 
     /**
+     * Batch tick alias — calls tickRun() and returns the same result.
+     * Dynamic Strategies does not have a separate batch registry cursor;
+     * this method exists for UI/action naming consistency with other strategy modules.
+     */
+    public function tickBatch(): array
+    {
+        return $this->tickRun();
+    }
+
+    /**
      * Called by CronManager every 60 seconds.
      * Runs the full dynamic-strategies evaluation cycle.
      * Returns the strategy result array so callers (e.g. dashboard action handler)

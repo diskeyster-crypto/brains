@@ -6315,14 +6315,15 @@ function handleDashboardStrategyAction(): void
     if ($stratId === 'dynamic_strategies') {
         $dsModuleDir = System::path('root') . '/modules/strategy/dynamic_strategies';
 
-        if (in_array($action, ['tick_run', 'tickRun', 'queue_run'], true)) {
+        if (in_array($action, ['tick_run', 'tickRun', 'queue_run', 'tick_batch'], true)) {
             try {
                 require_once $dsModuleDir . '/service.php';
                 $dsService = new \Modules\Strategy\DynamicStrategies\DynamicStrategiesService($dsModuleDir);
-                $dsResult  = $dsService->tickRun();
+                $dsResult  = $action === 'tick_batch' ? $dsService->tickBatch() : $dsService->tickRun();
                 $dsStats   = $dsResult['stats'] ?? [];
                 if ($dsResult['ok'] ?? false) {
-                    $dsMsg = 'Dynamic Strategies цикл выполнен'
+                    $dsLabel = $action === 'tick_batch' ? 'тик батча выполнен' : 'цикл выполнен';
+                    $dsMsg = 'Dynamic Strategies ' . $dsLabel
                         . ' · контекстов: '   . ($dsStats['input_contexts_recent_total'] ?? 0)
                         . ' · кандидатов: '   . ($dsStats['candidates_total']            ?? 0)
                         . ' · сигналов: '     . ($dsStats['signals_total']               ?? 0)
@@ -6333,11 +6334,13 @@ function handleDashboardStrategyAction(): void
                     if ($dsErr === 'strategy_disabled') {
                         $_SESSION['dashboard_flash'] = ['type' => 'warning', 'msg' => 'Dynamic Strategies отключена (enabled = false)'];
                     } else {
-                        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка Dynamic Strategies: ' . $dsErr];
+                        $dsErrLabel = $action === 'tick_batch' ? 'tick_batch' : 'tickRun';
+                        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка Dynamic Strategies ' . $dsErrLabel . ': ' . $dsErr];
                     }
                 }
             } catch (\Throwable $dsEx) {
-                $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка Dynamic Strategies: ' . $dsEx->getMessage()];
+                $dsErrLabel = $action === 'tick_batch' ? 'tick_batch' : 'tickRun';
+                $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка Dynamic Strategies ' . $dsErrLabel . ': ' . $dsEx->getMessage()];
             }
             header('Location: ' . $dashUrl);
             exit;

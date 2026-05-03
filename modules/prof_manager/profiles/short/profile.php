@@ -180,6 +180,16 @@ class ShortProfile
     }
 
     /**
+     * Return the effective merged config for this profile (base + overrides).
+     *
+     * @return array<string,mixed>
+     */
+    public function getConfig(): array
+    {
+        return $this->config;
+    }
+
+    /**
      * Return the count of active lock entries in this profile's storage.
      */
     public function getLockCount(): int

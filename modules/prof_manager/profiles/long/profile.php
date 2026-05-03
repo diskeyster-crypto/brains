@@ -180,6 +180,16 @@ class LongProfile
     /**
      * Return the count of active lock entries in this profile's storage.
      */
+    /**
+     * Return the effective merged config for this profile (base + overrides).
+     *
+     * @return array<string,mixed>
+     */
+    public function getConfig(): array
+    {
+        return $this->config;
+    }
+
     public function getLockCount(): int
     {
         $locks = $this->readLocks();

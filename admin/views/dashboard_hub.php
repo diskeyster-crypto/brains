@@ -180,6 +180,9 @@ function renderDashboardHub(): string
     $pmCfgProfile   = 'auto';
     $pmCfgProfileCfg = $pmCfg['profiles']['long'] ?? [];
 
+    // ── Short profile config vars ─────────────────────────────────────────
+    $pmCfgShortProfileCfg = $pmCfg['profiles']['short'] ?? [];
+
     $pmCfgEnYes = ($pmCfg['enabled'] ?? false) ? ' selected' : '';
     $pmCfgEnNo  = !($pmCfg['enabled'] ?? false) ? ' selected' : '';
     $pmCfgModeDemoSel = ((string)($pmCfg['mode'] ?? 'demo') !== 'live') ? ' selected' : '';
@@ -195,6 +198,17 @@ function renderDashboardHub(): string
     $pmCfgMinRoiStep   = (string) ($pmCfgProfileCfg['min_roi_step']           ?? 1.0);
     $pmCfgMaxUpdates   = (string) ($pmCfgProfileCfg['max_updates_per_run']    ?? 20);
     $pmCfgTickSize     = (string) ($pmCfgProfileCfg['default_tick_size']      ?? 0.0001);
+
+    $pmCfgShortInitRoi      = (string) ($pmCfgShortProfileCfg['init_roi']               ?? 2.0);
+    $pmCfgShortActivRoi     = (string) ($pmCfgShortProfileCfg['activation_roi']         ?? 8.0);
+    $pmCfgShortStepRoi      = (string) ($pmCfgShortProfileCfg['step_roi']               ?? 3.0);
+    $pmCfgShortLockBuf      = (string) ($pmCfgShortProfileCfg['lock_buffer_roi']        ?? 2.0);
+    $pmCfgShortLockFloor    = (string) ($pmCfgShortProfileCfg['lock_floor_roi']         ?? 4.0);
+    $pmCfgShortMinInterval  = (string) ($pmCfgShortProfileCfg['min_update_interval_sec']?? 30);
+    $pmCfgShortMinPriceDist = (string) ($pmCfgShortProfileCfg['min_price_distance_pct'] ?? 0.15);
+    $pmCfgShortMinRoiStep   = (string) ($pmCfgShortProfileCfg['min_roi_step']           ?? 1.0);
+    $pmCfgShortMaxUpdates   = (string) ($pmCfgShortProfileCfg['max_updates_per_run']    ?? 20);
+    $pmCfgShortTickSize     = (string) ($pmCfgShortProfileCfg['default_tick_size']      ?? 0.0001);
 
     // ── flash message ─────────────────────────────────────────────────────
     $flash = null;
@@ -1684,6 +1698,7 @@ ROWS;
         'below_activation_roi'            => 'ROI ниже порога активации lock',
         'lock_price_too_close_to_current' => 'Lock слишком близко к текущей цене',
         'lock_not_improving'              => 'Новый lock не улучшает старый',
+        'roi_step_too_small'              => 'Шаг ROI слишком мал',
         'no_price_data'                   => 'Нет текущей цены',
         'cannot_calculate_roi'            => 'Невозможно рассчитать ROI',
         'all_positions_invalid'           => 'Все позиции невалидны',
@@ -2137,6 +2152,36 @@ ROWS;
             . '<td style="color:#f0883e;font-size:12px;">' . implode('<br>', $skipSummaryParts) . '</td></tr>';
     }
 
+    // ── Short profile compact diagnostics ─────────────────────────────────
+    $_pmLong  = (int)($pmRawLastRun['positions_long']         ?? 0);
+    $_pmShort = (int)($pmRawLastRun['positions_short']        ?? 0);
+    $_pmLockL = (int)($pmRawLastRun['locks_active_long']      ?? $pmRawLastRun['locks_active'] ?? 0);
+    $_pmLockS = (int)($pmRawLastRun['locks_active_short']     ?? 0);
+    $_pmShortChecked  = (int)($pmRawLastRun['short_positions_checked_total']        ?? 0);
+    $_pmShortBelowIn  = (int)($pmRawLastRun['short_skipped_below_init_total']       ?? 0);
+    $_pmShortBelowAct = (int)($pmRawLastRun['short_skipped_below_activation_total'] ?? 0);
+    $_pmShortClosed   = (int)($pmRawLastRun['short_close_submitted_total']          ?? 0);
+    $_pmShortProfile  = (string)($pmRawLastRun['short_profile']  ?? 'baseline_short_lock');
+    $_pmShortEnabled  = (bool)($pmRawLastRun['short_profile_enabled'] ?? true);
+    $_pmShortEnLabel  = $_pmShortEnabled ? '<span style="color:#3fb950;">✓</span>' : '<span style="color:#f85149;">✗</span>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;padding-top:6px;"><strong style="font-size:11px;">Short PM</strong></td>'
+        . '<td style="padding-top:6px;">' . $_pmShortEnLabel . ' <code style="color:#58a6ff;">' . $e($_pmShortProfile) . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Поз. long / short</td>'
+        . '<td><code>' . $_pmLong . ' / ' . $_pmShort . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Локов long / short</td>'
+        . '<td><code>' . $_pmLockL . ' / ' . $_pmLockS . '</code></td></tr>';
+    if ($_pmShortChecked > 0 || $_pmShort > 0) {
+        $_skipLabel = '';
+        if ($_pmShortBelowIn > 0)  { $_skipLabel .= 'init:' . $_pmShortBelowIn . ' '; }
+        if ($_pmShortBelowAct > 0) { $_skipLabel .= 'activ:' . $_pmShortBelowAct; }
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Short проверено / закрыто</td>'
+            . '<td><code>' . $_pmShortChecked . ' / ' . $_pmShortClosed . '</code></td></tr>';
+        if ($_skipLabel !== '') {
+            $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Short skip</td>'
+                . '<td style="color:#8b949e;font-size:11px;">' . $e(trim($_skipLabel)) . '</td></tr>';
+        }
+    }
+
     // ── PM per-position runtime table HTML ───────────────────────────────
     $pmPositionsTable = '';
     if (!empty($pmPositionsRuntime)) {
@@ -2209,11 +2254,9 @@ ROWS;
             } else {
                 $distStr = '—';
             }
-            // Short positions get a special indicator
+            // Short positions get the same reason display as long (profile is now active)
             $isShort = ($pr['side'] ?? '') === 'short';
-            $reasonDisplay = $isShort
-                ? '<span style="color:#8b949e;font-style:italic;">Short not supported yet</span>'
-                : $e($reasonLabel);
+            $reasonDisplay = $e($reasonLabel);
             $lockDisplay = $lockActive
                 ? '<span style="color:#3fb950;">✓ ' . $lockPrice . '</span>'
                 : '<span style="color:#8b949e;">' . $lockPrice . '</span>';
@@ -5075,7 +5118,7 @@ BLCK;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Close execution</td><td>{$pmCloseExecHtml}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Профиль</td><td><code>AUTO</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Long профиль</td><td><code style="color:#3fb950;">{$e($pmLongProfile)}</code></td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Short профиль</td><td><code style="color:#8b949e;">{$e($pmShortProfile)}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Short профиль</td><td><code style="color:#58a6ff;">{$e($pmShortProfile)}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний тик</td><td><code>{$pmLastTick}</code></td></tr>
         </table>
       </div>
@@ -5145,7 +5188,9 @@ BLCK;
       <form method="post" action="{$pmConfigSaveUrl}">
         <input type="hidden" name="dashboard_action" value="profit_manager_config_save">
         <input type="hidden" name="active_tab" value="dh-pm">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:12px;">
+
+        <!-- Global PM controls -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:16px;">
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включён</label>
             <select name="enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
@@ -5162,59 +5207,124 @@ BLCK;
           </div>
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Профиль</label>
-            <div style="height:32px;font-size:13px;padding:4px 8px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;color:#58a6ff;">AUTO (long: legacy_safe_long · short: unavailable)</div>
+            <div style="height:32px;font-size:13px;padding:4px 8px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;color:#58a6ff;">AUTO (long: {$e($pmLongProfile)} · short: {$e($pmShortProfile)})</div>
           </div>
+        </div>
+
+        <!-- Long profile settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#3fb950;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Long профиль — {$e($pmLongProfile)}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:16px;">
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Init ROI%</label>
-            <input type="number" step="0.1" min="0" name="init_roi"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Init ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_init_roi"
               value="{$pmCfgInitRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Activation ROI%</label>
-            <input type="number" step="0.1" min="0" name="activation_roi"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Activation ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_activation_roi"
               value="{$pmCfgActivRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Step ROI%</label>
-            <input type="number" step="0.1" min="0" name="step_roi"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Step ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_step_roi"
               value="{$pmCfgStepRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Lock buffer ROI%</label>
-            <input type="number" step="0.1" min="0" name="lock_buffer_roi"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Lock buffer ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_lock_buffer_roi"
               value="{$pmCfgLockBuf}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Lock floor ROI%</label>
-            <input type="number" step="0.1" min="0" name="lock_floor_roi"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Lock floor ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_lock_floor_roi"
               value="{$pmCfgLockFloor}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min update interval (сек)</label>
-            <input type="number" step="1" min="1" name="min_update_interval_sec"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Min update interval (сек)</label>
+            <input type="number" step="1" min="1" name="long_min_update_interval_sec"
               value="{$pmCfgMinInterval}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min price distance %</label>
-            <input type="number" step="0.01" min="0" name="min_price_distance_pct"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Min price distance %</label>
+            <input type="number" step="0.01" min="0" name="long_min_price_distance_pct"
               value="{$pmCfgMinPriceDist}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min ROI step%</label>
-            <input type="number" step="0.1" min="0" name="min_roi_step"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Min ROI step%</label>
+            <input type="number" step="0.1" min="0" name="long_min_roi_step"
               value="{$pmCfgMinRoiStep}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Max updates per run</label>
-            <input type="number" step="1" min="1" name="max_updates_per_run"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Max updates per run</label>
+            <input type="number" step="1" min="1" name="long_max_updates_per_run"
               value="{$pmCfgMaxUpdates}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Default tick size</label>
-            <input type="number" step="0.00001" min="0.00001" name="default_tick_size"
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Default tick size</label>
+            <input type="number" step="0.00001" min="0.00001" name="long_default_tick_size"
               value="{$pmCfgTickSize}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
         </div>
+
+        <!-- Short profile settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#58a6ff;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Short профиль — {$e($pmShortProfile)}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short Init ROI%</label>
+            <input type="number" step="0.1" min="0" name="short_init_roi"
+              value="{$pmCfgShortInitRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short Activation ROI%</label>
+            <input type="number" step="0.1" min="0" name="short_activation_roi"
+              value="{$pmCfgShortActivRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short Step ROI%</label>
+            <input type="number" step="0.1" min="0" name="short_step_roi"
+              value="{$pmCfgShortStepRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short Lock buffer ROI%</label>
+            <input type="number" step="0.1" min="0" name="short_lock_buffer_roi"
+              value="{$pmCfgShortLockBuf}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short Lock floor ROI%</label>
+            <input type="number" step="0.1" min="0" name="short_lock_floor_roi"
+              value="{$pmCfgShortLockFloor}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short Min update interval (сек)</label>
+            <input type="number" step="1" min="1" name="short_min_update_interval_sec"
+              value="{$pmCfgShortMinInterval}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short Min price distance %</label>
+            <input type="number" step="0.01" min="0" name="short_min_price_distance_pct"
+              value="{$pmCfgShortMinPriceDist}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short Min ROI step%</label>
+            <input type="number" step="0.1" min="0" name="short_min_roi_step"
+              value="{$pmCfgShortMinRoiStep}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short Max updates per run</label>
+            <input type="number" step="1" min="1" name="short_max_updates_per_run"
+              value="{$pmCfgShortMaxUpdates}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Short Default tick size</label>
+            <input type="number" step="0.00001" min="0.00001" name="short_default_tick_size"
+              value="{$pmCfgShortTickSize}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+
         <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
       </form>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
@@ -7106,10 +7216,7 @@ function handleDashboardPmConfigSave(): void
     // Profile selection is always AUTO — no manual override
     $existing['active_profile'] = 'auto';
 
-    // ── Long profile numeric fields ───────────────────────────────────────
-    // Always writes to profiles['long'] (config key for legacy_safe_long).
-    $profile = 'long';
-
+    // ── Numeric field rule set (shared for both profiles) ─────────────────
     $numericFields = [
         'init_roi'                => ['step' => 0.1,    'min' => 0.0],
         'activation_roi'          => ['step' => 0.1,    'min' => 0.0],
@@ -7123,7 +7230,12 @@ function handleDashboardPmConfigSave(): void
         'default_tick_size'       => ['step' => 0.00001,'min' => 0.00001],
     ];
 
-    // Load long profile defaults as baseline
+    if (!isset($existing['profiles'])) {
+        $existing['profiles'] = [];
+    }
+
+    // ── Long profile numeric fields ───────────────────────────────────────
+    // Always writes to profiles['long'] (config key for legacy_safe_long).
     $longProfileConfigFile = $moduleDir . '/profiles/long/config.php';
     $baseProfileCfg = [];
     if (is_file($longProfileConfigFile)) {
@@ -7134,22 +7246,45 @@ function handleDashboardPmConfigSave(): void
             }
         } catch (\Throwable) {}
     }
-    $profileData = $existing['profiles'][$profile] ?? $baseProfileCfg;
+    $longProfileData = $existing['profiles']['long'] ?? $baseProfileCfg;
 
     foreach ($numericFields as $field => $rules) {
-        if (isset($_POST[$field])) {
-            $raw = (float) $_POST[$field];
+        $postKey = 'long_' . $field;
+        if (isset($_POST[$postKey])) {
+            $raw = (float) $_POST[$postKey];
             if ($raw < $rules['min']) {
                 $raw = (float) $rules['min'];
             }
-            $profileData[$field] = isset($rules['int']) ? (int) $raw : $raw;
+            $longProfileData[$field] = isset($rules['int']) ? (int) $raw : $raw;
         }
     }
+    $existing['profiles']['long'] = $longProfileData;
 
-    if (!isset($existing['profiles'])) {
-        $existing['profiles'] = [];
+    // ── Short profile numeric fields ──────────────────────────────────────
+    // Always writes to profiles['short'] (config key for baseline_short_lock).
+    $shortProfileConfigFile = $moduleDir . '/profiles/short/config.php';
+    $baseShortProfileCfg = [];
+    if (is_file($shortProfileConfigFile)) {
+        try {
+            $spc = include $shortProfileConfigFile;
+            if (is_array($spc)) {
+                $baseShortProfileCfg = $spc;
+            }
+        } catch (\Throwable) {}
     }
-    $existing['profiles'][$profile] = $profileData;
+    $shortProfileData = $existing['profiles']['short'] ?? $baseShortProfileCfg;
+
+    foreach ($numericFields as $field => $rules) {
+        $postKey = 'short_' . $field;
+        if (isset($_POST[$postKey])) {
+            $raw = (float) $_POST[$postKey];
+            if ($raw < $rules['min']) {
+                $raw = (float) $rules['min'];
+            }
+            $shortProfileData[$field] = isset($rules['int']) ? (int) $raw : $raw;
+        }
+    }
+    $existing['profiles']['short'] = $shortProfileData;
 
     // ── Persist ──────────────────────────────────────────────────────────
     $php  = "<?php\n\ndeclare(strict_types=1);\n\n";

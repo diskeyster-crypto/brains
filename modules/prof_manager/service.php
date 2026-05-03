@@ -116,22 +116,23 @@ final class ProfManagerService
         try {
             // ── Module enabled? ───────────────────────────────────────────────
             if (!$this->runtimeEnabled) {
-                $result = [
+                $result = array_merge([
                     'ok'             => true,
                     'ts'             => $ts,
                     'enabled'        => false,
                     'mode'           => $moduleMode,
                     'account'        => $account,
                     'active_profile' => 'auto',
-                    'long_profile'   => 'legacy_safe_long',
-                    'short_profile'  => 'baseline_short_lock',
                     'skipped'        => 'module_disabled',
                     'skip_reason'    => 'module_disabled',
                     'positions_total'=> 0,
                     'positions_long' => 0,
                     'positions_short'=> 0,
                     'positions'      => 0,
-                ];
+                    'locks_active'      => $this->longProfile->getLockCount(),
+                    'locks_active_long' => $this->longProfile->getLockCount(),
+                    'locks_active_short'=> $this->shortProfile->getLockCount(),
+                ], $this->buildConfigSnapshot());
                 $this->store->writeLastRun($result);
                 return $result;
             }
@@ -144,15 +145,13 @@ final class ProfManagerService
                 $skipReason = ($readResult['source'] === 'none')
                     ? 'no_positions_source_found'
                     : 'no_positions';
-                $result = [
+                $result = array_merge([
                     'ok'             => true,
                     'ts'             => $ts,
                     'enabled'        => true,
                     'mode'           => $moduleMode,
                     'account'        => $account,
                     'active_profile' => 'auto',
-                    'long_profile'   => 'legacy_safe_long',
-                    'short_profile'  => 'baseline_short_lock',
                     'positions_total'=> 0,
                     'positions_long' => 0,
                     'positions_short'=> 0,
@@ -169,7 +168,9 @@ final class ProfManagerService
                     'executed_count'    => 0,
                     'skipped_count'     => 0,
                     'locks_active'      => $this->longProfile->getLockCount(),
-                ];
+                    'locks_active_long' => $this->longProfile->getLockCount(),
+                    'locks_active_short'=> $this->shortProfile->getLockCount(),
+                ], $this->buildConfigSnapshot());
                 $this->store->writeLastRun($result);
                 return $result;
             }
@@ -482,16 +483,15 @@ final class ProfManagerService
             }
             $shortCleanResult = $this->shortProfile->cleanStale($activeShortKeys);
 
-            $result = [
+            $configSnapshot = $this->buildConfigSnapshot();
+
+            $result = array_merge([
                 'ok'                   => true,
                 'ts'                   => $ts,
                 'enabled'              => true,
                 'mode'                 => $moduleMode,
                 'account'              => $account,
                 'active_profile'       => 'auto',
-                'long_profile'         => 'legacy_safe_long',
-                'short_profile'        => 'baseline_short_lock',
-                'short_profile_enabled'=> true,
                 'positions_total'      => $positionsTotal,
                 'positions_long'       => $positionsLong,
                 'positions_short'      => $positionsShort,
@@ -508,6 +508,7 @@ final class ProfManagerService
                 'executed_count'       => $executedCount,
                 'skipped_count'        => $skippedCount,
                 'locks_active'         => $this->longProfile->getLockCount(),
+                'locks_active_long'    => $this->longProfile->getLockCount(),
                 'long_state_cleaned'   => $cleanResult['long_state_cleaned'],
                 'long_locks_cleaned'   => $cleanResult['long_locks_cleaned'],
                 // Short profile diagnostics
@@ -529,7 +530,7 @@ final class ProfManagerService
                 'short_lock_examples'                 => $shortLockExamples,
                 'short_close_examples'                => $shortCloseExamples,
                 'short_skip_examples'                 => $shortSkipExamples,
-            ];
+            ], $configSnapshot);
 
             $this->store->writeLastRun($result);
             return $result;
@@ -675,6 +676,30 @@ final class ProfManagerService
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    /**
+     * Build a config snapshot array for last_run diagnostics.
+     * Includes effective profile settings for both long and short profiles.
+     */
+    private function buildConfigSnapshot(): array
+    {
+        $lc = $this->longProfile->getConfig();
+        $sc = $this->shortProfile->getConfig();
+        return [
+            'long_profile'           => 'legacy_safe_long',
+            'long_profile_enabled'   => true,
+            'long_init_roi'          => (float) ($lc['init_roi']       ?? 2.0),
+            'long_activation_roi'    => (float) ($lc['activation_roi'] ?? 10.0),
+            'long_step_roi'          => (float) ($lc['step_roi']       ?? 3.0),
+            'long_lock_floor_roi'    => (float) ($lc['lock_floor_roi'] ?? 5.0),
+            'short_profile'          => 'baseline_short_lock',
+            'short_profile_enabled'  => true,
+            'short_init_roi'         => (float) ($sc['init_roi']       ?? 2.0),
+            'short_activation_roi'   => (float) ($sc['activation_roi'] ?? 8.0),
+            'short_step_roi'         => (float) ($sc['step_roi']       ?? 3.0),
+            'short_lock_floor_roi'   => (float) ($sc['lock_floor_roi'] ?? 4.0),
+        ];
+    }
 
     /**
      * Resolve the canonical module mode from config.

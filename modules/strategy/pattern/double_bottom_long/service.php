@@ -27,6 +27,7 @@ final class DoubleBottomLongService
 {
     private static ?self $instance = null;
     private string $moduleDir;
+    private string $repoRoot;
 
     private const H4_INTERVAL = '240';  // Bybit kline interval
 
@@ -64,6 +65,8 @@ final class DoubleBottomLongService
                 '/'
             );
         }
+        // Repo root is 4 levels above modules/strategy/pattern/double_bottom_long/
+        $this->repoRoot = rtrim(dirname($this->moduleDir, 4), '/');
     }
 
     public static function instance(string $moduleDir): self
@@ -1286,6 +1289,12 @@ final class DoubleBottomLongService
             'flat_ratio'       => $prevRegimeData['flat_ratio']       ?? 0.0,
         ];
 
+        // ── Closed-trade calibration diagnostics ────────────────────────────────
+        // Read bot closed_trades.json and compute score/warning bucket statistics
+        // for double_bottom_long trades that have a strategy_signal_context trace.
+        // Diagnostics only — no signal behavior is changed.
+        $calibration = $this->computeCalibration($config);
+
         $this->writeJson('storage/last_run.json', [
             // done_retryable = empty universe (registry not yet populated, will retry)
             // done           = normal cycle completion (continuous or not)
@@ -1570,6 +1579,22 @@ final class DoubleBottomLongService
             'synthetic_quality_failed_examples'                  => $synQFailedExamples,
             // bad_accept diagnostics: high-score signals with adverse price move since emission
             'bad_accept_examples'                                => $badAcceptExamples,
+            // ── Closed-trade calibration diagnostics ─────────────────────────────
+            'calibration_closed_trades_total'           => $calibration['calibration_closed_trades_total'],
+            'calibration_closed_trades_with_trace_total' => $calibration['calibration_closed_trades_with_trace_total'],
+            'calibration_winning_trades_total'           => $calibration['calibration_winning_trades_total'],
+            'calibration_losing_trades_total'            => $calibration['calibration_losing_trades_total'],
+            'calibration_deep_loss_total'                => $calibration['calibration_deep_loss_total'],
+            'calibration_entry_distance_buckets'         => $calibration['calibration_entry_distance_buckets'],
+            'calibration_synthetic_quality_buckets'      => $calibration['calibration_synthetic_quality_buckets'],
+            'calibration_setup_class_score_buckets'      => $calibration['calibration_setup_class_score_buckets'],
+            'calibration_candidate_quality_buckets'      => $calibration['calibration_candidate_quality_buckets'],
+            'calibration_warning_combo_stats'            => $calibration['calibration_warning_combo_stats'],
+            'calibration_profitable_examples'            => $calibration['calibration_profitable_examples'],
+            'calibration_losing_examples'                => $calibration['calibration_losing_examples'],
+            'calibration_deep_loss_examples'             => $calibration['calibration_deep_loss_examples'],
+            'calibration_bad_signature_examples'         => $calibration['calibration_bad_signature_examples'],
+            'calibration_candidate_rules'                => $calibration['calibration_candidate_rules'],
         ]);
 
         if ($isDone) {
@@ -6200,6 +6225,447 @@ final class DoubleBottomLongService
             str_starts_with($reason, 'wave_')                        => 'wave',
             default                                                   => 'other',
         };
+    }
+
+    // =========================================================================
+    // Closed-trade calibration diagnostics
+    // =========================================================================
+
+    /**
+     * Build closed-trade calibration diagnostics for double_bottom_long.
+     *
+     * Reads the bot's closed_trades.json, filters to double_bottom_long trades
+     * that carry a strategy_signal_context trace, then computes score/warning
+     * bucket statistics and candidate rule recommendations.
+     *
+     * Diagnostics only — no execution behavior is changed.
+     */
+    private function computeCalibration(array $config): array
+    {
+        $deepLossThreshold = (float)($config['calibration_deep_loss_threshold'] ?? -30.0);
+
+        $botRelDir   = (string)($config['bot_module_dir'] ?? 'modules/bot');
+        $botDir      = str_starts_with($botRelDir, '/')
+            ? rtrim($botRelDir, '/')
+            : $this->repoRoot . '/' . rtrim($botRelDir, '/');
+        $closedPath  = $botDir . '/storage/trades/closed_trades.json';
+
+        $zero = [
+            'calibration_closed_trades_total'            => 0,
+            'calibration_closed_trades_with_trace_total' => 0,
+            'calibration_winning_trades_total'           => 0,
+            'calibration_losing_trades_total'            => 0,
+            'calibration_deep_loss_total'                => 0,
+            'calibration_entry_distance_buckets'         => [],
+            'calibration_synthetic_quality_buckets'      => [],
+            'calibration_setup_class_score_buckets'      => [],
+            'calibration_candidate_quality_buckets'      => [],
+            'calibration_warning_combo_stats'            => [],
+            'calibration_profitable_examples'            => [],
+            'calibration_losing_examples'                => [],
+            'calibration_deep_loss_examples'             => [],
+            'calibration_bad_signature_examples'         => [],
+            'calibration_candidate_rules'                => [],
+        ];
+
+        $raw = @file_get_contents($closedPath);
+        if ($raw === false || $raw === '') {
+            return $zero;
+        }
+        $allTrades = @json_decode($raw, true);
+        if (!is_array($allTrades)) {
+            return $zero;
+        }
+
+        // Filter to double_bottom_long trades that carry a strategy_signal_context.
+        $trades = [];
+        foreach ($allTrades as $ct) {
+            if ((string)($ct['strategy_id'] ?? '') !== 'double_bottom_long') {
+                continue;
+            }
+            $ctx = is_array($ct['strategy_signal_context'] ?? null) ? $ct['strategy_signal_context'] : [];
+            if (empty($ctx)) {
+                continue;
+            }
+            $ct['_ctx'] = $ctx;
+            $trades[] = $ct;
+        }
+
+        // ── Bucket scaffolds ──────────────────────────────────────────────────
+        $mkBuckets = static function(array $defs): array {
+            $out = [];
+            foreach ($defs as $key => $label) {
+                $out[$key] = ['label' => $label, 'count' => 0, 'wins' => 0, 'losses' => 0, 'roi_sum' => 0.0, 'pnl_sum' => 0.0];
+            }
+            return $out;
+        };
+
+        $entryDistBuckets = $mkBuckets([
+            '0_0.25'   => '0–0.25',
+            '0.25_0.5' => '0.25–0.5',
+            '0.5_1.0'  => '0.5–1.0',
+            '1.0_2.0'  => '1.0–2.0',
+            'gt_2.0'   => '>2.0',
+        ]);
+        $synQBuckets = $mkBuckets([
+            'lt_0.65'   => '<0.65',
+            '0.65_0.70' => '0.65–0.70',
+            '0.70_0.80' => '0.70–0.80',
+            'gt_0.80'   => '>0.80',
+        ]);
+        $setupScoreBuckets = $mkBuckets([
+            'lt_8.5'  => '<8.5',
+            '8.5_9.5' => '8.5–9.5',
+            '9.5_10.5'=> '9.5–10.5',
+            'gt_10.5' => '>10.5',
+        ]);
+        $candQBuckets = $mkBuckets([
+            'lt_0.65'   => '<0.65',
+            '0.65_0.75' => '0.65–0.75',
+            '0.75_0.85' => '0.75–0.85',
+            'gt_0.85'   => '>0.85',
+        ]);
+
+        // Warning/flag combo trackers
+        $comboKeys = [
+            'generic_entry_context_score_low',
+            'final_context_inconsistent_warning',
+            'final_trend_mismatch_warning',
+            'late_good_setup',
+            'missed_ideal_entry',
+            'generic_entry_context_score_low+final_context_inconsistent_warning',
+            'generic_entry_context_score_low+final_trend_mismatch_warning',
+            'generic_entry_context_score_low+late_good_setup',
+            'generic_entry_context_score_low+missed_ideal_entry',
+        ];
+        $comboRequired = [
+            'generic_entry_context_score_low'                                     => ['generic_entry_context_score_low'],
+            'final_context_inconsistent_warning'                                  => ['final_context_inconsistent_warning'],
+            'final_trend_mismatch_warning'                                        => ['final_trend_mismatch_warning'],
+            'late_good_setup'                                                     => ['late_good_setup'],
+            'missed_ideal_entry'                                                  => ['missed_ideal_entry'],
+            'generic_entry_context_score_low+final_context_inconsistent_warning' => ['generic_entry_context_score_low', 'final_context_inconsistent_warning'],
+            'generic_entry_context_score_low+final_trend_mismatch_warning'       => ['generic_entry_context_score_low', 'final_trend_mismatch_warning'],
+            'generic_entry_context_score_low+late_good_setup'                    => ['generic_entry_context_score_low', 'late_good_setup'],
+            'generic_entry_context_score_low+missed_ideal_entry'                 => ['generic_entry_context_score_low', 'missed_ideal_entry'],
+        ];
+        $combos = [];
+        foreach ($comboKeys as $ck) {
+            $combos[$ck] = ['count' => 0, 'wins' => 0, 'losses' => 0, 'roi_sum' => 0.0, 'pnl_sum' => 0.0, 'deep_loss_count' => 0];
+        }
+
+        // ── Per-trade loop ────────────────────────────────────────────────────
+        $totalCount  = count($trades);
+        $withTrace   = 0;
+        $wins        = 0;
+        $losses      = 0;
+        $deepLosses  = 0;
+
+        $profitableExamples = [];
+        $losingExamples     = [];
+        $deepLossExamples   = [];
+        $badSigExamples     = [];
+
+        foreach ($trades as $ct) {
+            $ctx     = $ct['_ctx'];
+            $roiRaw  = $ct['roi'] ?? $ct['roi_pct'] ?? null;
+            $roi     = $roiRaw !== null ? (float)$roiRaw : null;
+            $pnl     = (float)($ct['pnl'] ?? $ct['realized_pnl'] ?? 0.0);
+
+            if ((string)($ct['signal_id'] ?? '') !== '') {
+                $withTrace++;
+            }
+
+            $isWin      = $roi !== null && $roi > 0;
+            $isLoss     = $roi !== null && $roi <= 0;
+            $isDeepLoss = $roi !== null && $roi <= $deepLossThreshold;
+
+            if ($isWin)      $wins++;
+            if ($isLoss)     $losses++;
+            if ($isDeepLoss) $deepLosses++;
+
+            // Quality scores (top-level preferred, fall back to ctx)
+            $entryDist = $ct['entry_distance_from_neckline_pct'] ?? $ctx['entry_distance_from_neckline_pct'] ?? null;
+            $synQ      = $ct['synthetic_quality_score']   ?? $ctx['synthetic_quality_score']   ?? null;
+            $setupSc   = $ct['setup_class_score']         ?? $ctx['setup_class_score']         ?? null;
+            $candQ     = $ct['candidate_quality_score']   ?? $ctx['candidate_quality_score']   ?? null;
+
+            // Warnings / reason codes
+            $warnings    = $ct['warnings']    ?? $ctx['warnings']    ?? [];
+            $reasonCodes = $ct['reason_codes'] ?? $ctx['reason_codes'] ?? [];
+            if (!is_array($warnings))    $warnings    = ($warnings !== null && $warnings !== '') ? [(string)$warnings] : [];
+            if (!is_array($reasonCodes)) $reasonCodes = ($reasonCodes !== null && $reasonCodes !== '') ? [(string)$reasonCodes] : [];
+
+            // Merge boolean flags into the warning set for combo matching
+            $allW = array_unique(array_merge($warnings, $reasonCodes));
+            if ((bool)($ct['late_good_setup']   ?? $ctx['late_good_setup']   ?? false)) {
+                $allW[] = 'late_good_setup';
+            }
+            if ((bool)($ct['missed_ideal_entry'] ?? $ctx['missed_ideal_entry'] ?? false)) {
+                $allW[] = 'missed_ideal_entry';
+            }
+            $allW    = array_unique($allW);
+            $allWSet = array_flip($allW);
+
+            // Build example record
+            $openedTs   = isset($ct['opened_at']) ? strtotime($ct['opened_at']) : 0;
+            $closedTs   = isset($ct['closed_at']) ? strtotime($ct['closed_at']) : 0;
+            $durMin     = ($openedTs > 0 && $closedTs > 0) ? round(($closedTs - $openedTs) / 60, 1) : null;
+            $exampleRec = [
+                'symbol'                           => $ct['symbol']      ?? null,
+                'signal_id'                        => $ct['signal_id']   ?? null,
+                'roi'                              => $roi,
+                'pnl'                              => $pnl,
+                'duration_minutes'                 => $durMin,
+                'close_reason'                     => $ct['close_reason'] ?? null,
+                'close_guard'                      => $ct['close_guard']  ?? null,
+                'setup_class'                      => $ct['setup_class']  ?? $ctx['setup_class']  ?? null,
+                'synthetic_quality_score'          => $synQ,
+                'setup_class_score'                => $setupSc,
+                'intraday_double_bottom_score'     => $ct['intraday_double_bottom_score'] ?? $ctx['intraday_double_bottom_score'] ?? null,
+                'candidate_quality_score'          => $candQ,
+                'entry_distance_from_neckline_pct' => $entryDist,
+                'quality_source'                   => $ct['quality_source'] ?? $ctx['quality_source'] ?? null,
+                'warnings'                         => $allW ?: null,
+                'reason_codes'                     => $reasonCodes ?: null,
+            ];
+
+            if ($isWin  && count($profitableExamples) < 5) $profitableExamples[] = $exampleRec;
+            if ($isLoss && count($losingExamples)     < 5) $losingExamples[]     = $exampleRec;
+            if ($isDeepLoss && count($deepLossExamples) < 5) $deepLossExamples[] = $exampleRec;
+            // Bad signature: losing trade with generic_entry_context_score_low + ≥1 other warning
+            if ($isLoss
+                && isset($allWSet['generic_entry_context_score_low'])
+                && count($allW) >= 2
+                && count($badSigExamples) < 5
+            ) {
+                $badSigExamples[] = $exampleRec;
+            }
+
+            // ── entry_distance bucket ──────────────────────────────────────
+            if ($entryDist !== null) {
+                $d  = (float)$entryDist;
+                $bk = match(true) {
+                    $d <= 0.25 => '0_0.25',
+                    $d <= 0.5  => '0.25_0.5',
+                    $d <= 1.0  => '0.5_1.0',
+                    $d <= 2.0  => '1.0_2.0',
+                    default    => 'gt_2.0',
+                };
+                $entryDistBuckets[$bk]['count']++;
+                if ($isWin)  $entryDistBuckets[$bk]['wins']++;
+                if ($isLoss) $entryDistBuckets[$bk]['losses']++;
+                if ($roi !== null) $entryDistBuckets[$bk]['roi_sum'] += $roi;
+                $entryDistBuckets[$bk]['pnl_sum'] += $pnl;
+            }
+
+            // ── synthetic_quality_score bucket ────────────────────────────
+            if ($synQ !== null) {
+                $q  = (float)$synQ;
+                $bk = match(true) {
+                    $q < 0.65 => 'lt_0.65',
+                    $q < 0.70 => '0.65_0.70',
+                    $q < 0.80 => '0.70_0.80',
+                    default   => 'gt_0.80',
+                };
+                $synQBuckets[$bk]['count']++;
+                if ($isWin)  $synQBuckets[$bk]['wins']++;
+                if ($isLoss) $synQBuckets[$bk]['losses']++;
+                if ($roi !== null) $synQBuckets[$bk]['roi_sum'] += $roi;
+                $synQBuckets[$bk]['pnl_sum'] += $pnl;
+            }
+
+            // ── setup_class_score bucket ──────────────────────────────────
+            if ($setupSc !== null) {
+                $s  = (float)$setupSc;
+                $bk = match(true) {
+                    $s < 8.5  => 'lt_8.5',
+                    $s < 9.5  => '8.5_9.5',
+                    $s < 10.5 => '9.5_10.5',
+                    default   => 'gt_10.5',
+                };
+                $setupScoreBuckets[$bk]['count']++;
+                if ($isWin)  $setupScoreBuckets[$bk]['wins']++;
+                if ($isLoss) $setupScoreBuckets[$bk]['losses']++;
+                if ($roi !== null) $setupScoreBuckets[$bk]['roi_sum'] += $roi;
+                $setupScoreBuckets[$bk]['pnl_sum'] += $pnl;
+            }
+
+            // ── candidate_quality_score bucket ────────────────────────────
+            if ($candQ !== null) {
+                $c  = (float)$candQ;
+                $bk = match(true) {
+                    $c < 0.65 => 'lt_0.65',
+                    $c < 0.75 => '0.65_0.75',
+                    $c < 0.85 => '0.75_0.85',
+                    default   => 'gt_0.85',
+                };
+                $candQBuckets[$bk]['count']++;
+                if ($isWin)  $candQBuckets[$bk]['wins']++;
+                if ($isLoss) $candQBuckets[$bk]['losses']++;
+                if ($roi !== null) $candQBuckets[$bk]['roi_sum'] += $roi;
+                $candQBuckets[$bk]['pnl_sum'] += $pnl;
+            }
+
+            // ── warning combo stats ───────────────────────────────────────
+            foreach ($comboRequired as $comboKey => $requiredFlags) {
+                $matched = true;
+                foreach ($requiredFlags as $flag) {
+                    if (!isset($allWSet[$flag])) {
+                        $matched = false;
+                        break;
+                    }
+                }
+                if ($matched) {
+                    $combos[$comboKey]['count']++;
+                    if ($isWin)      $combos[$comboKey]['wins']++;
+                    if ($isLoss)     $combos[$comboKey]['losses']++;
+                    if ($roi !== null) $combos[$comboKey]['roi_sum'] += $roi;
+                    $combos[$comboKey]['pnl_sum'] += $pnl;
+                    if ($isDeepLoss) $combos[$comboKey]['deep_loss_count']++;
+                }
+            }
+        }
+
+        // ── Finalize bucket stats ─────────────────────────────────────────────
+        $finalizeBuckets = static function(array $buckets): array {
+            $out = [];
+            foreach ($buckets as $key => $bk) {
+                $cnt = $bk['count'];
+                $out[$key] = [
+                    'label'   => $bk['label'],
+                    'count'   => $cnt,
+                    'wins'    => $bk['wins'],
+                    'losses'  => $bk['losses'],
+                    'winrate' => $cnt > 0 ? round($bk['wins'] / $cnt, 3) : null,
+                    'avg_roi' => $cnt > 0 ? round($bk['roi_sum'] / $cnt, 3) : null,
+                    'pnl_sum' => round($bk['pnl_sum'], 4),
+                ];
+            }
+            return $out;
+        };
+
+        $finSynQ   = $finalizeBuckets($synQBuckets);
+        $finSetup  = $finalizeBuckets($setupScoreBuckets);
+        $finCandQ  = $finalizeBuckets($candQBuckets);
+
+        // ── Finalize warning combo stats ──────────────────────────────────────
+        $finalCombos = [];
+        foreach ($combos as $comboKey => $cs) {
+            $cnt = $cs['count'];
+            $finalCombos[$comboKey] = [
+                'count'           => $cnt,
+                'wins'            => $cs['wins'],
+                'losses'          => $cs['losses'],
+                'winrate'         => $cnt > 0 ? round($cs['wins'] / $cnt, 3) : null,
+                'avg_roi'         => $cnt > 0 ? round($cs['roi_sum'] / $cnt, 3) : null,
+                'pnl_sum'         => round($cs['pnl_sum'], 4),
+                'deep_loss_count' => $cs['deep_loss_count'],
+            ];
+        }
+
+        return [
+            'calibration_closed_trades_total'            => $totalCount,
+            'calibration_closed_trades_with_trace_total' => $withTrace,
+            'calibration_winning_trades_total'           => $wins,
+            'calibration_losing_trades_total'            => $losses,
+            'calibration_deep_loss_total'                => $deepLosses,
+            'calibration_entry_distance_buckets'         => $finalizeBuckets($entryDistBuckets),
+            'calibration_synthetic_quality_buckets'      => $finSynQ,
+            'calibration_setup_class_score_buckets'      => $finSetup,
+            'calibration_candidate_quality_buckets'      => $finCandQ,
+            'calibration_warning_combo_stats'            => $finalCombos,
+            'calibration_profitable_examples'            => $profitableExamples,
+            'calibration_losing_examples'                => $losingExamples,
+            'calibration_deep_loss_examples'             => $deepLossExamples,
+            'calibration_bad_signature_examples'         => $badSigExamples,
+            'calibration_candidate_rules'                => $this->buildCalibrationRules($finSynQ, $finSetup, $finCandQ, $finalCombos),
+        ];
+    }
+
+    /**
+     * Build candidate rule recommendations from finalized bucket/combo stats.
+     *
+     * Diagnostics only — rules must not affect execution.
+     */
+    private function buildCalibrationRules(
+        array $finSynQ,
+        array $finSetup,
+        array $finCandQ,
+        array $finalCombos
+    ): array {
+        $rules = [];
+
+        $recommend = static function(float $winrate): string {
+            if ($winrate < 0.35) return 'consider_reject';
+            if ($winrate < 0.50) return 'demote_to_pending';
+            return 'observe';
+        };
+
+        // synthetic_quality_score < 0.65
+        $bk = $finSynQ['lt_0.65'] ?? null;
+        if ($bk !== null && $bk['count'] > 0 && $bk['winrate'] !== null) {
+            $rules[] = [
+                'rule_name'      => 'synthetic_quality_below_0.65',
+                'matched_count'  => $bk['count'],
+                'winrate'        => $bk['winrate'],
+                'avg_roi'        => $bk['avg_roi'],
+                'recommendation' => $recommend((float)$bk['winrate']),
+                'reason'         => 'synthetic_quality_score < 0.65',
+            ];
+        }
+
+        // setup_class_score < 8.5
+        $bk = $finSetup['lt_8.5'] ?? null;
+        if ($bk !== null && $bk['count'] > 0 && $bk['winrate'] !== null) {
+            $rules[] = [
+                'rule_name'      => 'setup_class_score_below_8.5',
+                'matched_count'  => $bk['count'],
+                'winrate'        => $bk['winrate'],
+                'avg_roi'        => $bk['avg_roi'],
+                'recommendation' => $recommend((float)$bk['winrate']),
+                'reason'         => 'setup_class_score < 8.5',
+            ];
+        }
+
+        // candidate_quality_score < 0.65
+        $bk = $finCandQ['lt_0.65'] ?? null;
+        if ($bk !== null && $bk['count'] > 0 && $bk['winrate'] !== null) {
+            $rules[] = [
+                'rule_name'      => 'candidate_quality_below_0.65',
+                'matched_count'  => $bk['count'],
+                'winrate'        => $bk['winrate'],
+                'avg_roi'        => $bk['avg_roi'],
+                'recommendation' => $recommend((float)$bk['winrate']),
+                'reason'         => 'candidate_quality_score < 0.65',
+            ];
+        }
+
+        // Warning-based rules
+        $warnRules = [
+            'generic_entry_context_score_low'    => 'warning present: generic_entry_context_score_low',
+            'final_context_inconsistent_warning' => 'warning present: final_context_inconsistent_warning',
+            'final_trend_mismatch_warning'       => 'warning present: final_trend_mismatch_warning',
+            'generic_entry_context_score_low+final_context_inconsistent_warning'
+                => 'combo: generic_entry_context_score_low + final_context_inconsistent_warning',
+            'generic_entry_context_score_low+final_trend_mismatch_warning'
+                => 'combo: generic_entry_context_score_low + final_trend_mismatch_warning',
+        ];
+        foreach ($warnRules as $comboKey => $reason) {
+            $cs = $finalCombos[$comboKey] ?? null;
+            if ($cs !== null && $cs['count'] > 0 && $cs['winrate'] !== null) {
+                $rules[] = [
+                    'rule_name'      => 'warning_' . str_replace('+', '_and_', $comboKey),
+                    'matched_count'  => $cs['count'],
+                    'winrate'        => $cs['winrate'],
+                    'avg_roi'        => $cs['avg_roi'],
+                    'recommendation' => $recommend((float)$cs['winrate']),
+                    'reason'         => $reason,
+                ];
+            }
+        }
+
+        return $rules;
     }
 
     private function requireLogic(string $file): void

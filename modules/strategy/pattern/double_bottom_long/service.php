@@ -6949,7 +6949,7 @@ final class DoubleBottomLongService
         $goodHourCount  = 0;
 
         foreach ($hourBuckets as $hk => $bk) {
-            $fin = $finalizeHour($bk, $hk, $minSamples, $badAvgRoi, $badWinrate, $goodAvgRoi, $goodWinrate);
+            $fin = $finalizeHour($bk, (string)$hk, $minSamples, $badAvgRoi, $badWinrate, $goodAvgRoi, $goodWinrate);
             $finalHours[$hk] = $fin;
             if ($fin['status'] === 'bad_hour_candidate')  $badHourCount++;
             if ($fin['status'] === 'good_hour_candidate') $goodHourCount++;

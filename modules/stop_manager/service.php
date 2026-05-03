@@ -704,54 +704,58 @@ final class StopManagerService
                 // ── Track price/ROI normalization for this double_bottom position ─────
                 $cpSource  = $efResult['current_price_source'] ?? null;
                 $roiSource = $efResult['roi_source']           ?? null;
-                if ($cpSource !== null) {
-                    if ($cpSource === 'missing') {
-                        $dbPriceMissingTotal++;
-                        if (count($dbMissingPriceExamples) < 5) {
-                            $dbMissingPriceExamples[] = [
-                                'symbol'               => $pos['symbol']    ?? null,
-                                'signal_id'            => $pos['signal_id'] ?? null,
-                                'current_price_source' => $cpSource,
-                                'entry_price_source'   => $efResult['entry_price_source'] ?? null,
-                                'leverage_source'      => $efResult['leverage_source']    ?? null,
-                                'roi_source'           => $roiSource,
-                                'skip_reason'          => $efResult['skip_reason'] ?? null,
-                            ];
-                        }
-                    } elseif ($cpSource !== 'current_price') {
-                        $dbPriceNormalizedTotal++;
-                        if (count($dbNormalizationExamples) < 5) {
-                            $dbNormalizationExamples[] = [
-                                'symbol'                   => $pos['symbol']    ?? null,
-                                'signal_id'                => $pos['signal_id'] ?? null,
-                                'current_price_source'     => $cpSource,
-                                'entry_price_source'       => $efResult['entry_price_source']       ?? null,
-                                'leverage_source'          => $efResult['leverage_source']           ?? null,
-                                'roi_source'               => $roiSource,
-                                'normalized_current_price' => $efResult['normalized_current_price'] ?? null,
-                                'normalized_entry_price'   => $efResult['normalized_entry_price']   ?? null,
-                                'normalized_leverage'      => $efResult['normalized_leverage']       ?? null,
-                                'normalized_roi'           => $efResult['normalized_roi']            ?? null,
-                            ];
-                        }
+                // Count as normalized when a usable normalized value was derived,
+                // regardless of the source field name. Count as missing only when
+                // no normalized value could be produced at all.
+                $normalizedCp  = $efResult['normalized_current_price'] ?? null;
+                $normalizedRoi = $efResult['normalized_roi']            ?? null;
+
+                if ($normalizedCp !== null) {
+                    $dbPriceNormalizedTotal++;
+                    // Collect examples when the price was derived from a fallback source
+                    if ($cpSource !== null && $cpSource !== 'current_price' && count($dbNormalizationExamples) < 5) {
+                        $dbNormalizationExamples[] = [
+                            'symbol'                   => $pos['symbol']    ?? null,
+                            'signal_id'                => $pos['signal_id'] ?? null,
+                            'current_price_source'     => $cpSource,
+                            'entry_price_source'       => $efResult['entry_price_source']       ?? null,
+                            'leverage_source'          => $efResult['leverage_source']           ?? null,
+                            'roi_source'               => $roiSource,
+                            'normalized_current_price' => $normalizedCp,
+                            'normalized_entry_price'   => $efResult['normalized_entry_price']   ?? null,
+                            'normalized_leverage'      => $efResult['normalized_leverage']       ?? null,
+                            'normalized_roi'           => $normalizedRoi,
+                        ];
+                    }
+                } else {
+                    $dbPriceMissingTotal++;
+                    if (count($dbMissingPriceExamples) < 5) {
+                        $dbMissingPriceExamples[] = [
+                            'symbol'               => $pos['symbol']    ?? null,
+                            'signal_id'            => $pos['signal_id'] ?? null,
+                            'current_price_source' => $cpSource,
+                            'entry_price_source'   => $efResult['entry_price_source'] ?? null,
+                            'leverage_source'      => $efResult['leverage_source']    ?? null,
+                            'roi_source'           => $roiSource,
+                            'skip_reason'          => $efResult['skip_reason'] ?? null,
+                        ];
                     }
                 }
-                if ($roiSource !== null) {
-                    if ($roiSource === 'missing') {
-                        $dbRoiMissingTotal++;
-                        if (count($dbMissingRoiExamples) < 5) {
-                            $dbMissingRoiExamples[] = [
-                                'symbol'               => $pos['symbol']    ?? null,
-                                'signal_id'            => $pos['signal_id'] ?? null,
-                                'current_price_source' => $cpSource,
-                                'entry_price_source'   => $efResult['entry_price_source'] ?? null,
-                                'leverage_source'      => $efResult['leverage_source']    ?? null,
-                                'roi_source'           => $roiSource,
-                                'skip_reason'          => $efResult['skip_reason'] ?? null,
-                            ];
-                        }
-                    } elseif ($roiSource === 'calculated') {
-                        $dbRoiNormalizedTotal++;
+
+                if ($normalizedRoi !== null) {
+                    $dbRoiNormalizedTotal++;
+                } else {
+                    $dbRoiMissingTotal++;
+                    if (count($dbMissingRoiExamples) < 5) {
+                        $dbMissingRoiExamples[] = [
+                            'symbol'               => $pos['symbol']    ?? null,
+                            'signal_id'            => $pos['signal_id'] ?? null,
+                            'current_price_source' => $cpSource,
+                            'entry_price_source'   => $efResult['entry_price_source'] ?? null,
+                            'leverage_source'      => $efResult['leverage_source']    ?? null,
+                            'roi_source'           => $roiSource,
+                            'skip_reason'          => $efResult['skip_reason'] ?? null,
+                        ];
                     }
                 }
 
@@ -768,21 +772,30 @@ final class StopManagerService
                         $efSkippedNoSetupBreak++;
                     }
                     if ($skipReason !== '' && count($efSkippedExamples) < 5) {
+                        // Use normalized values as fallbacks so examples are never
+                        // null when usable data was derived from the position record.
+                        $exRoi          = $efResult['roi']           ?? $efResult['normalized_roi']            ?? null;
+                        $exCurPrice     = $efResult['current_price'] ?? $efResult['normalized_current_price']  ?? null;
+                        $exEntryPrice   = (isset($pos['entry_price']) && (float)$pos['entry_price'] > 0)
+                            ? (float)$pos['entry_price']
+                            : ($efResult['normalized_entry_price'] ?? null);
+                        $exLeverage     = $efResult['normalized_leverage'] ?? ($pos['bot_leverage'] ?? $pos['leverage'] ?? null);
                         $efSkippedExamples[] = [
                             'symbol'                   => $pos['symbol']    ?? null,
                             'side'                     => $pos['side']      ?? null,
                             'signal_id'                => $pos['signal_id'] ?? null,
                             'skip_reason'              => $skipReason,
-                            'roi'                      => $efResult['roi']           ?? null,
+                            'roi'                      => $exRoi,
                             'age_minutes'              => $efResult['age_minutes']   ?? null,
-                            'current_price'            => $efResult['current_price'] ?? null,
-                            'entry_price'              => isset($pos['entry_price']) ? (float)$pos['entry_price'] : null,
+                            'current_price'            => $exCurPrice,
+                            'entry_price'              => $exEntryPrice,
+                            'leverage'                 => $exLeverage,
                             'neckline_level'           => $efResult['neckline_level'] ?? null,
                             'reclaim_level'            => $efResult['reclaim_level']  ?? null,
                             'adverse_roi_soft'         => (float)($config['double_bottom_early_fail_adverse_roi_soft'] ?? -20.0),
                             'adverse_roi_hard'         => (float)($config['double_bottom_early_fail_adverse_roi_hard'] ?? -35.0),
                             'diagnostic'               => $efResult['diagnostic']   ?? null,
-                            // normalization diagnostics
+                            // normalization diagnostics (kept alongside plain fields)
                             'current_price_source'     => $efResult['current_price_source']     ?? null,
                             'entry_price_source'       => $efResult['entry_price_source']       ?? null,
                             'leverage_source'          => $efResult['leverage_source']           ?? null,

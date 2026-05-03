@@ -11,9 +11,10 @@ declare(strict_types=1);
  * Handler:
  *   tickRun — execute one full evaluation cycle.
  *             Respects the 'enabled' flag in config/active.php (merged with base.php).
- *             When shadow_only = true the output is diagnostics only (no executable handoff).
- *             When handoff_enabled = true AND emit_bot_handoff = true AND shadow_only = false,
- *             the strategy may write executable rows to bot_handoff_queue.json.
+ *             When handoff_enabled = false: diagnostics only, no executable handoff.
+ *             When handoff_enabled = true AND emit_bot_handoff = true AND mode = demo:
+ *             the strategy writes executable rows to bot_handoff_queue.json.
+ *             Live execution additionally requires live_enabled = true AND live_handoff_enabled = true.
  */
 
 namespace Modules\Strategy\DynamicStrategies;
@@ -70,9 +71,11 @@ final class DynamicStrategiesService
                 'useful_contexts_total'   => $stats['useful_contexts_total']   ?? 0,
                 'candidates_total'        => $stats['candidates_total']        ?? 0,
                 'signals_total'           => $stats['signals_total']           ?? 0,
+                'executable_signals_total' => $stats['executable_signals_total'] ?? 0,
                 'bot_handoff_ready_total' => $stats['bot_handoff_ready_total'] ?? 0,
-                'shadow_only'             => $stats['shadow_only']             ?? true,
-                'handoff_enabled'         => $stats['handoff_enabled']         ?? false,
+                'mode'                    => $stats['mode']                    ?? 'demo',
+                'side_mode'               => $stats['side_mode']               ?? 'short',
+                'handoff_enabled'         => $stats['handoff_enabled']         ?? true,
             ]);
 
             return $result;

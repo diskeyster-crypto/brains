@@ -7,12 +7,13 @@ declare(strict_types=1);
  *
  * Standalone strategy-layer module that consumes useful rejected/failed/diagnostic
  * contexts from ordinary strategies (e.g. double_bottom_long) and generates
- * short-watch shadow candidates and demo signals.
+ * short-watch candidates and demo signals.
  *
  * Override individual values in active.php without touching this file.
  *
- * SAFETY: shadow_only = true, handoff_enabled = false, live_enabled = false
- * by default.  Live execution requires explicit manual enable.
+ * SAFETY: live_enabled = false, live_handoff_enabled = false by default.
+ * Live execution requires explicit manual enable.
+ * Observation-only mode: set handoff_enabled = false (no executable handoff).
  */
 
 return [
@@ -20,13 +21,18 @@ return [
     'strategy_id'     => 'dynamic_strategies',
     'enabled'         => true,
     'mode'            => 'demo',
-    'side'            => 'short',
+    'side_mode'       => 'short',   // short | long | all — filters which candidate sides are allowed
 
-    // ── Safety gates ─────────────────────────────────────────────────────────
-    'shadow_only'       => true,   // true = no executable signals regardless of other flags
-    'handoff_enabled'   => false,  // true = write executable rows to bot_handoff_queue.json
-    'live_enabled'      => false,  // must be explicitly set true to allow live signals
-    'emit_bot_handoff'  => false,  // combined gate: handoff_enabled AND emit_bot_handoff must both be true
+    // ── Execution gates ───────────────────────────────────────────────────────
+    'handoff_enabled'          => true,   // true = write executable rows to bot_handoff_queue.json
+    'emit_bot_handoff'         => true,   // combined gate: handoff_enabled AND emit_bot_handoff both required
+    'live_enabled'             => false,  // must be explicitly set true to allow live signals
+    'live_handoff_enabled'     => false,  // additional live gate; must be true to emit live handoff
+    'live_requires_manual_enable'   => true,
+    'live_requires_governor_later'  => true,
+
+    // ── Backward-compat shadow flag (deprecated; kept false; not used as execution gate) ──
+    'shadow_only'       => false,  // deprecated — use handoff_enabled=false for observation-only mode
 
     // ── Input contexts ────────────────────────────────────────────────────────
     'consume_input_contexts'   => true,
@@ -41,12 +47,16 @@ return [
     'write_bot_handoff_queue' => true,
 
     // ── Signal quality gates ──────────────────────────────────────────────────
+    // Per-mode thresholds (preferred keys)
+    'min_confirmations_demo'                 => 3,
+    'min_confidence_demo'                    => 0.65,
+    'min_confirmations_live'                 => 4,
+    'min_confidence_live'                    => 0.85,
+    // Legacy aliases kept for backward compatibility
     'min_confirmations_for_shadow_candidate' => 2,
     'min_confirmations_for_demo_signal'      => 3,
     'min_confidence_for_demo_signal'         => 0.65,
     'min_confidence_for_live_signal'         => 0.85,
-    'live_requires_manual_enable'            => true,
-    'live_requires_governor_later'           => true,
 
     // ── Dynamic rules enabled ─────────────────────────────────────────────────
     'falling_knife_short_watch'              => true,

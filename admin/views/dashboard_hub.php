@@ -741,12 +741,17 @@ function renderDashboardHub(): string
                 $_dsContexts     = (int)($stratLastRun['input_contexts_recent_total'] ?? 0);
                 $_dsUseful       = (int)($stratLastRun['useful_contexts_total']        ?? 0);
                 $_dsCandidates   = (int)($stratLastRun['candidates_total']             ?? 0);
-                $_dsShadow       = (int)($stratLastRun['shadow_signals_total']         ?? 0);
+                $_dsCandShort    = (int)($stratLastRun['candidates_short_total']       ?? $stratLastRun['short_candidates_total'] ?? 0);
+                $_dsCandLong     = (int)($stratLastRun['candidates_long_total']        ?? 0);
+                $_dsSignals      = (int)($stratLastRun['signals_total']               ?? 0);
+                $_dsExecutable   = (int)($stratLastRun['executable_signals_total']    ?? 0);
                 $_dsHandoffReady = (int)($stratLastRun['bot_handoff_ready_total']      ?? 0);
-                $_dsShadowOnly   = (bool)($stratLastRun['shadow_only']                 ?? true);
-                $_dsShadowLabel  = $_dsShadowOnly
-                    ? '<span style="font-size:10px;color:#8b949e;background:rgba(139,148,158,.12);border:1px solid #8b949e44;padding:1px 5px;border-radius:3px;margin-left:4px;">shadow</span>'
-                    : '';
+                $_dsMode         = (string)($stratLastRun['mode']                     ?? 'demo');
+                $_dsSideMode     = (string)($stratLastRun['side_mode']                ?? 'short');
+                $_dsHandoffEn    = (bool)($stratLastRun['handoff_enabled']            ?? true);
+                $_dsHandoffLabel = $_dsHandoffEn
+                    ? '<span style="font-size:10px;color:#3fb950;background:rgba(63,185,80,.10);border:1px solid #3fb95044;padding:1px 5px;border-radius:3px;margin-left:4px;">handoff</span>'
+                    : '<span style="font-size:10px;color:#8b949e;background:rgba(139,148,158,.12);border:1px solid #8b949e44;padding:1px 5px;border-radius:3px;margin-left:4px;">no-handoff</span>';
                 // Source adapter diagnostics
                 $_dsSrcLoaded  = (int)($stratLastRun['source_contexts_loaded_total'] ?? 0);
                 $_dsSrcLine    = '';
@@ -775,11 +780,17 @@ function renderDashboardHub(): string
                         . $_dsBestLabel
                         . $_dsNoCandlesLabel;
                 }
-                $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>' . $_dsShadowLabel
+                $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
+                    . ' · mode <code>' . $e($_dsMode) . '</code>'
+                    . ' · side <code>' . $e($_dsSideMode) . '</code>'
+                    . $_dsHandoffLabel
                     . ' · контекстов <code>' . $_dsContexts . '</code>'
                     . ' · полезных <code>' . $_dsUseful . '</code>'
                     . ' · кандидатов <code>' . $_dsCandidates . '</code>'
-                    . ' · сигналов <code>' . $_dsShadow . '</code>'
+                    . ($_dsCandShort > 0 ? ' (short <code>' . $_dsCandShort . '</code>)' : '')
+                    . ($_dsCandLong  > 0 ? ' (long <code>' . $_dsCandLong . '</code>)'  : '')
+                    . ' · сигналов <code>' . $_dsSignals . '</code>'
+                    . ($_dsExecutable > 0 ? ' · executable <code>' . $_dsExecutable . '</code>' : '')
                     . ' · handoff-ready <code>' . $_dsHandoffReady . '</code>'
                     . $_dsSrcLine
                     . $_dsReplayLine;
@@ -929,6 +940,15 @@ BTN;
       <form method="post" action="{$stratActUrl}" style="margin:0;">
         <input type="hidden" name="dashboard_action" value="strategy_action">
         <input type="hidden" name="strategy_id" value="{$esId}">
+        <input type="hidden" name="action" value="tick_batch">
+        <input type="hidden" name="active_tab" value="dh-strat">
+        <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.12);color:#58a6ff;border:1px solid #58a6ff55;">
+          Тик батча
+        </button>
+      </form>
+      <form method="post" action="{$stratActUrl}" style="margin:0;">
+        <input type="hidden" name="dashboard_action" value="strategy_action">
+        <input type="hidden" name="strategy_id" value="{$esId}">
         <input type="hidden" name="action" value="refresh">
         <input type="hidden" name="active_tab" value="dh-strat">
         <button type="submit" class="btn btn-sm" style="background:rgba(139,148,158,.12);color:#8b949e;border:1px solid #8b949e55;">
@@ -940,6 +960,8 @@ BTN;
                     $actionButtonsHtml = <<<BTN
       <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
         title="Стратегия отключена — нажмите Включить">Запустить цикл</button>
+      <button type="button" disabled class="btn btn-sm" style="opacity:.4;cursor:not-allowed;border:1px solid var(--ui-border);color:var(--ui-text-muted);"
+        title="Стратегия отключена — нажмите Включить">Тик батча</button>
 BTN;
                 }
             } else {

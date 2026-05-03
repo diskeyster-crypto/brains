@@ -18,14 +18,17 @@ declare(strict_types=1);
  *   7. group by symbol
  *   8. evaluate dynamic rules per symbol
  *   9. score candidates
- *  10. build signals from high-confidence candidates
- *  11. build bot_handoff_queue (empty unless handoff_enabled + !shadow_only + emit_bot_handoff)
- *  12. write all storage files + last_run.json
+ *  10. filter candidates by side_mode (short / long / all)
+ *  11. build signals from high-confidence candidates
+ *  12. build bot_handoff_queue (empty unless handoff_enabled + emit_bot_handoff + mode/live gates pass)
+ *  13. write all storage files + last_run.json
  *
  * SAFETY RULES:
- *   - shadow_only = true  → no executable signals, no handoff queue entries
- *   - handoff_enabled = false → no handoff queue entries
- *   - live_enabled = false → no live signals
+ *   - handoff_enabled = false → no handoff queue entries (observation-only mode)
+ *   - mode = demo, handoff_enabled = true → executable demo handoff
+ *   - mode = live → requires live_enabled = true AND live_handoff_enabled = true
+ *   - live_enabled = false (default) → no live signals
+ *   - side_mode = short/long/all → gates which candidate sides proceed to signals
  *   - Does NOT scan market data directly
  *   - Does NOT modify source strategy storage
  *   - Does NOT open real orders
@@ -159,11 +162,13 @@ final class DynamicStrategiesStrategy
         $config     = $this->config;
         $now        = time();
 
-        $shadowOnly     = (bool)($config['shadow_only']      ?? true);
-        $handoffEnabled = (bool)($config['handoff_enabled']  ?? false);
-        $liveEnabled    = (bool)($config['live_enabled']     ?? false);
-        $emitHandoff    = (bool)($config['emit_bot_handoff'] ?? false);
-        $mode           = (string)($config['mode']           ?? 'demo');
+        $shadowOnly          = (bool)($config['shadow_only']          ?? false);  // deprecated; kept for compat
+        $handoffEnabled      = (bool)($config['handoff_enabled']       ?? true);
+        $liveEnabled         = (bool)($config['live_enabled']          ?? false);
+        $liveHandoffEnabled  = (bool)($config['live_handoff_enabled']  ?? false);
+        $emitHandoff         = (bool)($config['emit_bot_handoff']      ?? true);
+        $mode                = (string)($config['mode']                ?? 'demo');
+        $sideMode            = (string)($config['side_mode']           ?? 'short');  // short | long | all
 
         $maxAgeMinutes = (int)($config['context_max_age_minutes'] ?? 180);
         $maxContexts   = (int)($config['max_contexts_per_run']    ?? 100);
@@ -304,10 +309,12 @@ final class DynamicStrategiesStrategy
         // ── 8. Evaluate dynamic rules + 9. Score ──────────────────────────────
         $candidates      = [];
         $rejectItems     = [];
+        // Per-mode thresholds (new keys preferred; legacy aliases as fallback)
         $minConf         = (int)($config['min_confirmations_for_shadow_candidate'] ?? 2);
-        $minDemoConf     = (int)($config['min_confirmations_for_demo_signal']      ?? 3);
-        $minDemoScore    = (float)($config['min_confidence_for_demo_signal']       ?? 0.65);
-        $minLiveScore    = (float)($config['min_confidence_for_live_signal']       ?? 0.85);
+        $minDemoConf     = (int)($config['min_confirmations_demo'] ?? $config['min_confirmations_for_demo_signal'] ?? 3);
+        $minDemoScore    = (float)($config['min_confidence_demo']  ?? $config['min_confidence_for_demo_signal']   ?? 0.65);
+        $minLiveConf     = (int)($config['min_confirmations_live'] ?? $minDemoConf + 1);
+        $minLiveScore    = (float)($config['min_confidence_live']  ?? $config['min_confidence_for_live_signal']   ?? 0.85);
 
         $enabledRules = [];
         foreach (array_keys(self::RULE_CONTEXT_MAP) as $rule) {
@@ -342,9 +349,58 @@ final class DynamicStrategiesStrategy
             }
         }
 
-        // ── 8. Build signals ───────────────────────────────────────────────────
-        $signals        = [];
-        $shadowSignals  = [];
+        // ── 9b. side_mode filtering ────────────────────────────────────────────
+        // Filter candidates to only those matching the configured side_mode.
+        // Rejected candidates go to rejects.json with reason=side_mode_filtered.
+        $sideFilteredExamples = [];
+        $candidatesShortTotal = 0;
+        $candidatesLongTotal  = 0;
+        $allowedCandidates    = [];
+        $filteredBySide       = 0;
+
+        foreach ($candidates as $cand) {
+            $candSide = (string)($cand['side'] ?? 'short');
+            if ($candSide === 'short') {
+                $candidatesShortTotal++;
+            } elseif ($candSide === 'long') {
+                $candidatesLongTotal++;
+            }
+
+            $allowed = ($sideMode === 'all')
+                || ($sideMode === 'short' && $candSide === 'short')
+                || ($sideMode === 'long'  && $candSide === 'long');
+
+            if ($allowed) {
+                $allowedCandidates[] = $cand;
+            } else {
+                $filteredBySide++;
+                $rejectEntry = [
+                    'symbol'        => $cand['symbol'],
+                    'dynamic_rule'  => $cand['dynamic_rule'],
+                    'reject_reason' => 'side_mode_filtered',
+                    'side_mode'     => $sideMode,
+                    'candidate_side' => $candSide,
+                    'confidence_score' => $cand['confidence_score'],
+                    'source_context_ids' => $cand['source_context_ids'],
+                    'rejected_at'   => date('c'),
+                ];
+                $rejectItems[] = $rejectEntry;
+                if (count($sideFilteredExamples) < 5) {
+                    $sideFilteredExamples[] = $rejectEntry;
+                }
+            }
+        }
+        $candidates = $allowedCandidates;
+
+        // ── 10. Build signals ──────────────────────────────────────────────────
+        $signals             = [];
+        $nonExecutableSignals = [];
+        $demoSignalsTotal    = 0;
+        $liveSignalsTotal    = 0;
+        $executableTotal     = 0;
+        $nonExecutableTotal  = 0;
+        $liveBlockedTotal    = 0;
+        $liveBlockedExamples = [];
         $maxSigPerRun   = (int)($config['max_signals_per_run']    ?? 20);
         $maxSigPerSym   = (int)($config['max_signals_per_symbol'] ?? 1);
         $ttlMinutes     = (int)($config['signal_ttl_minutes']     ?? 120);
@@ -354,9 +410,24 @@ final class DynamicStrategiesStrategy
             $sym     = $cand['symbol'];
             $score   = $cand['confidence_score'];
             $confCnt = $cand['confirmation_count'];
+            $candSide = (string)($cand['side'] ?? 'short');
 
+            // Use per-mode thresholds
             $qualifiesForDemo = $confCnt >= $minDemoConf && $score >= $minDemoScore;
+            $qualifiesForLive = $liveEnabled && $liveHandoffEnabled && $confCnt >= $minLiveConf && $score >= $minLiveScore;
+
             if (!$qualifiesForDemo) {
+                $rejectItems[] = [
+                    'symbol'             => $sym,
+                    'dynamic_rule'       => $cand['dynamic_rule'],
+                    'reject_reason'      => 'rule_threshold_not_met',
+                    'confirmation_count' => $confCnt,
+                    'confidence_score'   => $score,
+                    'min_conf_required'  => $minDemoConf,
+                    'min_score_required' => $minDemoScore,
+                    'source_context_ids' => $cand['source_context_ids'],
+                    'rejected_at'        => date('c'),
+                ];
                 continue;
             }
             if (count($signals) >= $maxSigPerRun) {
@@ -366,92 +437,139 @@ final class DynamicStrategiesStrategy
                 continue;
             }
 
-            $qualifiesForLive = $liveEnabled && !$shadowOnly && $score >= $minLiveScore;
             $warnings = (array)($cand['warnings'] ?? []);
 
-            // Live disabled by config
-            if ($mode === 'live' && !$liveEnabled) {
-                $warnings[] = 'live_disabled_by_config';
+            // Determine executability
+            $isExecutable = false;
+            $executionMode = $mode;
+            $handoffReady  = false;
+            $blockReason   = null;
+
+            if ($handoffEnabled && $emitHandoff) {
+                if ($mode === 'demo') {
+                    $isExecutable  = true;
+                    $handoffReady  = true;
+                    $executionMode = 'demo';
+                    $demoSignalsTotal++;
+                } elseif ($mode === 'live') {
+                    if ($liveEnabled && $liveHandoffEnabled && $qualifiesForLive) {
+                        $isExecutable  = true;
+                        $handoffReady  = true;
+                        $executionMode = 'live';
+                        $liveSignalsTotal++;
+                    } else {
+                        // Live blocked
+                        $blockReason = 'live_disabled_or_not_confirmed';
+                        if (!$liveEnabled) {
+                            $warnings[] = 'live_disabled_by_config';
+                            $blockReason = 'live_enabled=false';
+                        } elseif (!$liveHandoffEnabled) {
+                            $warnings[] = 'live_handoff_disabled_by_config';
+                            $blockReason = 'live_handoff_enabled=false';
+                        } elseif (!$qualifiesForLive) {
+                            $warnings[] = 'live_threshold_not_met';
+                            $blockReason = 'live_threshold_not_met';
+                        }
+                        $liveBlockedTotal++;
+                        if (count($liveBlockedExamples) < 5) {
+                            $liveBlockedExamples[] = [
+                                'symbol'       => $sym,
+                                'dynamic_rule' => $cand['dynamic_rule'],
+                                'block_reason' => $blockReason,
+                                'score'        => $score,
+                                'conf_count'   => $confCnt,
+                            ];
+                        }
+                        $executionMode = 'demo'; // downgrade to demo for diagnostic
+                    }
+                }
+            } else {
+                // handoff disabled — observation only
+                $blockReason = 'handoff_disabled';
+                $warnings[]  = 'handoff_disabled';
+            }
+
+            if ($isExecutable) {
+                $executableTotal++;
+            } else {
+                $nonExecutableTotal++;
             }
 
             $signal = [
                 'signal_id'           => 'dsig_' . $cand['dynamic_rule'] . '_' . $sym . '_' . $now,
                 'symbol'              => $sym,
-                'side'                => 'short',
+                'side'                => $candSide,
                 'strategy'            => self::STRATEGY_ID,
                 'strategy_id'         => self::STRATEGY_ID,
                 'dynamic_rule'        => $cand['dynamic_rule'],
                 'confidence_score'    => $score,
-                'mode'                => $shadowOnly ? 'demo' : $mode,
-                'shadow_only'         => $shadowOnly,
-                'handoff_ready'       => false,
-                'executable'          => false,
+                'mode'                => $executionMode,
+                'execution_mode'      => $executionMode,
+                'side_mode'           => $sideMode,
+                'handoff_ready'       => $handoffReady,
+                'executable'          => $isExecutable,
                 'detected_at'         => date('c'),
                 'expires_at'          => date('c', $now + ($ttlMinutes * 60)),
                 'source_context_ids'  => $cand['source_context_ids'],
                 'source_strategies'   => $cand['source_strategies'],
+                'source_signal_ids'   => $cand['source_signal_ids'] ?? [],
                 'confirmations'       => $cand['confirmations'],
                 'confirmation_count'  => $confCnt,
                 'reason_codes'        => $cand['reason_codes'],
                 'warnings'            => $warnings,
             ];
-
-            // Shadow signals — always non-executable
-            $shadow = $signal;
-            $shadow['shadow_only']    = true;
-            $shadow['handoff_ready']  = false;
-            $shadow['executable']     = false;
-            $shadowSignals[] = $shadow;
-
-            // Demo/live executable signal (only if all gates passed)
-            if (!$shadowOnly && $handoffEnabled && $emitHandoff) {
-                if ($mode === 'live' && $qualifiesForLive) {
-                    $signal['handoff_ready'] = true;
-                    $signal['executable']    = true;
-                } elseif ($mode === 'demo') {
-                    $signal['handoff_ready'] = true;
-                    $signal['executable']    = true;
-                }
+            if ($blockReason !== null) {
+                $signal['block_reason'] = $blockReason;
             }
 
             $signals[] = $signal;
             $signalsBySymbol[$sym] = ($signalsBySymbol[$sym] ?? 0) + 1;
         }
 
-        // ── 9. Build handoff queue ─────────────────────────────────────────────
-        // Queue stays empty or contains only non-executable diagnostic rows unless:
-        //   shadow_only = false AND handoff_enabled = true AND emit_bot_handoff = true
+        // ── 11. Build handoff queue ────────────────────────────────────────────
+        // Executable entries written when handoff_enabled + emit_bot_handoff + mode/live gates pass.
+        // Non-executable diagnostic rows written when handoff disabled (aids debugging).
         $handoffQueue        = [];
         $handoffExecutable   = 0;
         $handoffReadyTotal   = 0;
         $handoffWrittenTotal = 0;
+        $handoffQueueLiveTotal = 0;
 
-        if (!$shadowOnly && $handoffEnabled && $emitHandoff) {
+        if ($handoffEnabled && $emitHandoff) {
             foreach ($signals as $sig) {
                 if ($sig['executable'] ?? false) {
                     $handoffQueue[] = [
-                        'signal_id'        => $sig['signal_id'],
-                        'symbol'           => $sig['symbol'],
-                        'side'             => $sig['side'],
-                        'strategy_id'      => self::STRATEGY_ID,
-                        'dynamic_rule'     => $sig['dynamic_rule'],
-                        'confidence_score' => $sig['confidence_score'],
-                        'mode'             => $sig['mode'],
-                        'shadow_only'      => false,
-                        'executable'       => true,
-                        'queued_at'        => date('c'),
-                        'expires_at'       => $sig['expires_at'],
+                        'signal_id'          => $sig['signal_id'],
+                        'symbol'             => $sig['symbol'],
+                        'side'               => $sig['side'],
+                        'strategy'           => self::STRATEGY_ID,
+                        'strategy_id'        => self::STRATEGY_ID,
+                        'dynamic_rule'       => $sig['dynamic_rule'],
+                        'confidence_score'   => $sig['confidence_score'],
+                        'mode'               => $sig['mode'],
+                        'execution_mode'     => $sig['execution_mode'],
+                        'handoff_ready'      => true,
+                        'executable'         => true,
+                        'queued_at'          => date('c'),
+                        'expires_at'         => $sig['expires_at'],
                         'source_context_ids' => $sig['source_context_ids'],
+                        'source_strategies'  => $sig['source_strategies'],
+                        'source_signal_ids'  => $sig['source_signal_ids'] ?? [],
+                        'confirmations'      => $sig['confirmations'],
+                        'confirmation_count' => $sig['confirmation_count'],
+                        'reason_codes'       => $sig['reason_codes'],
+                        'warnings'           => $sig['warnings'],
                     ];
                     $handoffExecutable++;
                     $handoffReadyTotal++;
+                    if (($sig['execution_mode'] ?? '') === 'live') {
+                        $handoffQueueLiveTotal++;
+                    }
                 }
             }
-            $handoffWrittenTotal = count($handoffQueue);
         } else {
-            // Diagnostic non-executable rows (so the queue file is never completely empty
-            // when there are shadow signals — aids debugging without enabling handoff)
-            foreach ($shadowSignals as $sig) {
+            // Diagnostic non-executable rows — aids debugging without enabling handoff
+            foreach ($signals as $sig) {
                 $handoffQueue[] = [
                     'signal_id'        => $sig['signal_id'],
                     'symbol'           => $sig['symbol'],
@@ -459,18 +577,19 @@ final class DynamicStrategiesStrategy
                     'strategy_id'      => self::STRATEGY_ID,
                     'dynamic_rule'     => $sig['dynamic_rule'],
                     'confidence_score' => $sig['confidence_score'],
-                    'mode'             => 'demo',
-                    'shadow_only'      => true,
-                    'executable'       => false,
+                    'mode'             => $sig['mode'],
+                    'execution_mode'   => $sig['execution_mode'],
                     'handoff_ready'    => false,
+                    'executable'       => false,
                     'diagnostic_only'  => true,
+                    'block_reason'     => $sig['block_reason'] ?? 'handoff_disabled',
                     'queued_at'        => date('c'),
                     'expires_at'       => $sig['expires_at'],
                     'source_context_ids' => $sig['source_context_ids'],
                 ];
             }
-            $handoffWrittenTotal = count($handoffQueue);
         }
+        $handoffWrittenTotal = count($handoffQueue);
 
         // ── 10. Write storage files ────────────────────────────────────────────
         $finishedAt  = date('c');
@@ -483,9 +602,15 @@ final class DynamicStrategiesStrategy
             'duration_ms'                     => $durationMs,
             'enabled'                         => true,
             'mode'                            => $mode,
-            'shadow_only'                     => $shadowOnly,
+            'side_mode'                       => $sideMode,
             'handoff_enabled'                 => $handoffEnabled,
+            'emit_bot_handoff'                => $emitHandoff,
             'live_enabled'                    => $liveEnabled,
+            'live_handoff_enabled'            => $liveHandoffEnabled,
+            // Backward-compat shadow fields (deprecated; always false)
+            'shadow_only'                     => false,
+            'shadow_signals_total'            => 0,
+            'deprecated_shadow_fields'        => true,
             // ── Source adapter diagnostics ────────────────────────────────────
             'source_adapters_total'           => $sourceStats['adapters_total']           ?? 0,
             'source_adapters_enabled_total'   => $sourceStats['adapters_enabled_total']   ?? 0,
@@ -503,23 +628,37 @@ final class DynamicStrategiesStrategy
             'input_contexts_skipped_stale_total' => $staleSkipped,
             'input_contexts_skipped_noise_total' => $noiseSkipped,
             'useful_contexts_total'           => $usefulTotal,
+            // ── Candidates ───────────────────────────────────────────────────
             'candidates_total'                => count($candidates),
-            'short_candidates_total'          => count($candidates),
+            'candidates_short_total'          => $candidatesShortTotal,
+            'candidates_long_total'           => $candidatesLongTotal,
+            'candidates_allowed_by_side_total' => count($candidates),
+            'candidates_filtered_by_side_total' => $filteredBySide,
             'rejected_contexts_total'         => count($rejectItems),
+            // ── Signals ──────────────────────────────────────────────────────
             'signals_total'                   => count($signals),
-            'shadow_signals_total'            => count($shadowSignals),
+            'demo_signals_total'              => $demoSignalsTotal,
+            'live_signals_total'              => $liveSignalsTotal,
+            'executable_signals_total'        => $executableTotal,
+            'non_executable_signals_total'    => $nonExecutableTotal,
+            'live_signals_blocked_total'      => $liveBlockedTotal,
+            // ── Handoff queue ─────────────────────────────────────────────────
             'bot_handoff_ready_total'         => $handoffReadyTotal,
             'bot_handoff_queue_written_total' => $handoffWrittenTotal,
             'bot_handoff_queue_executable_total' => $handoffExecutable,
+            'bot_handoff_queue_live_total'    => $handoffQueueLiveTotal,
             'errors_total'                    => 0,
             // Examples (up to 5 each)
             'candidate_examples'              => array_slice($candidates, 0, 5),
             'rejected_context_examples'       => array_slice($rejectItems, 0, 5),
             'signal_examples'                 => array_slice($signals, 0, 5),
+            'handoff_examples'                => array_slice($handoffQueue, 0, 5),
+            'side_filtered_examples'          => $sideFilteredExamples,
+            'live_blocked_examples'           => $liveBlockedExamples,
             // Alias fields for generic dashboard display
             'found'                           => count($candidates),
             'generated_signals_count'         => count($signals),
-            'active_pool_signals_total'       => count($shadowSignals),
+            'active_pool_signals_total'       => count($signals),
             'handoff_ready'                   => $handoffReadyTotal,
         ];
 

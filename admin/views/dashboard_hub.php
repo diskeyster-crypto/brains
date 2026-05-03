@@ -5501,6 +5501,7 @@ BLCK;
       <form method="post" action="{$smConfigSaveUrl}">
         <input type="hidden" name="dashboard_action" value="stop_manager_config_save">
         <input type="hidden" name="active_tab" value="dh-ctrl">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 16px;margin-bottom:16px;">
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включён</label>
             <select name="enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
@@ -5514,37 +5515,6 @@ BLCK;
               <option value="demo"{$smCfgModeDe}>demo</option>
               <option value="live"{$smCfgModeLi}>live</option>
             </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Stop mode</label>
-            <select name="stop_mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="liq_distance_percent" selected>liq_distance_percent</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Стоп от ликвидации к входу (%)</label>
-            <input type="number" step="1" min="1" max="99" name="liq_distance_percent"
-              value="{$smCfgBuf}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-            <div style="font-size:11px;color:var(--ui-text-muted);margin-top:3px;">
-              90 = стоп близко к входу, 10% до ликвидации. 10 = стоп близко к ликвидации.
-            </div>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Breakeven</label>
-            <select name="breakeven_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="1"{$smCfgBeEnYes}>Да</option>
-              <option value="0"{$smCfgBeEnNo}>Нет</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">BE trigger ROI%</label>
-            <input type="number" step="0.1" min="0" name="breakeven_trigger_roi"
-              value="{$smCfgTrig}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">BE lock ROI%</label>
-            <input type="number" step="0.1" name="breakeven_profit_lock_roi"
-              value="{$smCfgLock}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
         </div>
 

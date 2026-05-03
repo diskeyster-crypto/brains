@@ -108,11 +108,20 @@ return [
     'double_bottom_early_fail_require_setup_break' => true,  // adverse ROI alone must not close
     'double_bottom_early_fail_close_reason'        => 'double_bottom_setup_failed_after_entry',
 
+    // Legacy stop path control.
+    //   false (default) — do NOT initialize/recalculate/set exchange stop from
+    //     liq_distance_percent; do NOT apply breakeven logic; do NOT call
+    //     setTradingStop due to legacy liq_distance logic alone.
+    //     Side-specific ROI emergency stops continue to work normally.
+    //   true — re-enable the legacy liq_distance_percent + breakeven runtime path.
+    'legacy_liq_distance_stop_enabled' => false,
+
     // ── Side-specific stop profiles ───────────────────────────────────────────
     //
-    // profiles.long — controls long-side emergency stop behavior.
-    //   Currently informational; double_bottom early-fail guard is the active
-    //   long guard.  Reserved for future generic long emergency-stop logic.
+    // profiles.long — controls long-side generic ROI emergency stop behavior.
+    //   Applies a hard ROI cap to demo long positions when normalized_roi
+    //   drops to or below emergency_stop_roi. Only 'demo' mode is supported.
+    //   The double_bottom_long early-fail guard continues to run independently.
     //
     // profiles.short — controls short-side emergency stop.
     //   Applies a hard ROI cap to demo short positions when normalized_roi
@@ -128,6 +137,8 @@ return [
             'emergency_stop_roi'     => -30.0,   // trigger ROI% (negative)
             'min_age_seconds'        => 60,
             'applies_to_strategies'  => ['double_bottom_long', '*'],
+            'close_reason'           => 'long_emergency_roi_cap',
+            'close_guard'            => 'long_emergency_stop',
         ],
         'short' => [
             'enabled'                => true,

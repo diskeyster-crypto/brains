@@ -220,6 +220,17 @@ final class StopManagerService
         $stats['short_stop_skipped_roi_above_cap_total']        += $result['short_stop_skipped_roi_above_cap_total']        ?? 0;
         $stats['short_stop_skipped_missing_roi_total']          += $result['short_stop_skipped_missing_roi_total']          ?? 0;
         $stats['short_stop_skipped_too_young_total']            += $result['short_stop_skipped_too_young_total']            ?? 0;
+        // Long emergency stop cumulative counters
+        $stats['long_stop_checked_total']                       += $result['long_stop_checked_total']                       ?? 0;
+        $stats['long_stop_triggered_total']                     += $result['long_stop_triggered_total']                     ?? 0;
+        $stats['long_stop_closed_total']                        += $result['long_stop_closed_total']                        ?? 0;
+        $stats['long_stop_skipped_not_demo_total']              += $result['long_stop_skipped_not_demo_total']              ?? 0;
+        $stats['long_stop_skipped_strategy_not_allowed_total']  += $result['long_stop_skipped_strategy_not_allowed_total']  ?? 0;
+        $stats['long_stop_skipped_roi_above_cap_total']         += $result['long_stop_skipped_roi_above_cap_total']         ?? 0;
+        $stats['long_stop_skipped_missing_roi_total']           += $result['long_stop_skipped_missing_roi_total']           ?? 0;
+        $stats['long_stop_skipped_too_young_total']             += $result['long_stop_skipped_too_young_total']             ?? 0;
+        // Legacy liq_distance path cumulative counters
+        $stats['legacy_stop_skipped_total']                     += $result['legacy_stop_skipped_total']                     ?? 0;
 
         // ── 4. Persist ─────────────────────────────────────────────────────────
         $this->writeJson('storage/stops.json', array_values($stops));
@@ -230,6 +241,7 @@ final class StopManagerService
         // Config snapshot for diagnostics
         $longProfile  = $config['profiles']['long']  ?? [];
         $shortProfile = $config['profiles']['short'] ?? [];
+        $legacyCfgEnabled = (bool)($config['legacy_liq_distance_stop_enabled'] ?? false);
 
         $lastRun = [
             'status'                       => 'ok',
@@ -237,6 +249,11 @@ final class StopManagerService
             'elapsed_sec'                  => $elapsed,
             'module_enabled'               => true,
             'module_mode'                  => $mode,
+            // Legacy liq_distance_percent path status
+            'legacy_liq_distance_stop_enabled' => $legacyCfgEnabled,
+            'legacy_stop_counters_deprecated'  => !$legacyCfgEnabled,
+            'legacy_stop_skipped_total'        => $result['legacy_stop_skipped_total'] ?? 0,
+            // Kept for backward compat (deprecated when legacy path disabled)
             'liq_distance_percent'         => max(1.0, min(99.0, (float)($config['liq_distance_percent'] ?? 90.0))),
             'positions_seen'               => $result['positions_seen'],
             'positions_with_real_liq'      => $result['positions_with_real_liq'],
@@ -291,6 +308,21 @@ final class StopManagerService
             'short_stop_enabled'          => (bool)($shortProfile['enabled']               ?? true),
             'short_emergency_stop_roi'    => (float)($shortProfile['emergency_stop_roi']   ?? -20.0),
             'short_stop_applies_to_strategies' => (array)($shortProfile['applies_to_strategies'] ?? ['dynamic_strategies']),
+            // ── Long emergency stop diagnostics (this tick) ──────────────────
+            'long_stop_positions_checked_total'             => $result['long_stop_checked_total']                       ?? 0,
+            'long_stop_triggered_total'                     => $result['long_stop_triggered_total']                     ?? 0,
+            'long_stop_closed_total'                        => $result['long_stop_closed_total']                        ?? 0,
+            'long_stop_skipped_not_demo_total'              => $result['long_stop_skipped_not_demo_total']              ?? 0,
+            'long_stop_skipped_strategy_not_allowed_total'  => $result['long_stop_skipped_strategy_not_allowed_total']  ?? 0,
+            'long_stop_skipped_roi_above_cap_total'         => $result['long_stop_skipped_roi_above_cap_total']         ?? 0,
+            'long_stop_skipped_missing_roi_total'           => $result['long_stop_skipped_missing_roi_total']           ?? 0,
+            'long_stop_skipped_too_young_total'             => $result['long_stop_skipped_too_young_total']             ?? 0,
+            'long_stop_triggered_examples'                  => $result['long_stop_triggered_examples']                  ?? [],
+            'long_stop_skipped_examples'                    => $result['long_stop_skipped_examples']                    ?? [],
+            // ── Long emergency stop cumulative ───────────────────────────────
+            'long_stop_checked_cumulative'                       => (int)($stats['long_stop_checked_total']                       ?? 0),
+            'long_stop_triggered_cumulative'                     => (int)($stats['long_stop_triggered_total']                     ?? 0),
+            'long_stop_closed_cumulative'                        => (int)($stats['long_stop_closed_total']                        ?? 0),
             // ── Short emergency stop diagnostics (this tick) ─────────────────
             'short_stop_positions_checked_total'            => $result['short_stop_checked_total']                      ?? 0,
             'short_stop_triggered_total'                    => $result['short_stop_triggered_total']                    ?? 0,
@@ -421,6 +453,22 @@ final class StopManagerService
         $shortStopTriggeredExamples               = [];
         $shortStopSkippedExamples                 = [];
 
+        // Long emergency stop counters
+        $longStopCheckedTotal                     = 0;
+        $longStopTriggeredTotal                   = 0;
+        $longStopClosedTotal                      = 0;
+        $longStopSkippedNotDemoTotal              = 0;
+        $longStopSkippedStratNotAllowedTotal      = 0;
+        $longStopSkippedRoiAboveCapTotal          = 0;
+        $longStopSkippedMissingRoiTotal           = 0;
+        $longStopSkippedTooYoungTotal             = 0;
+        $longStopTriggeredExamples                = [];
+        $longStopSkippedExamples                  = [];
+
+        // Legacy liq_distance_percent path control
+        $legacyEnabled          = (bool)($config['legacy_liq_distance_stop_enabled'] ?? false);
+        $legacyStopSkippedTotal = 0;
+
         $isActiveMode = in_array($mode, ['demo', 'live'], true);
 
         // Prepare gateway: when in demo/live mode, check bot mode to decide demo vs live
@@ -458,6 +506,14 @@ final class StopManagerService
             // ── Process active positions ─────────────────────────────────────
             foreach ($posMap as $key => $pos) {
                 $positionsSeen++;
+
+                if (!$legacyEnabled) {
+                    // Legacy liq_distance_percent path is disabled — skip stop
+                    // computation and exchange calls for this position.
+                    $legacyStopSkippedTotal++;
+                    continue;
+                }
+
                 $liqDistPct = max(1.0, min(99.0, (float)($config['liq_distance_percent'] ?? 90.0)));
                 $bufferPct  = $liqDistPct / 100.0;
 
@@ -1114,6 +1170,148 @@ final class StopManagerService
             }
         }
 
+        // ── Long emergency stop (demo only) ──────────────────────────────────
+        $longProfile      = $config['profiles']['long'] ?? [];
+        $longStopEnabled  = (bool)($longProfile['enabled']                ?? true);
+        $longEmergEnabled = (bool)($longProfile['emergency_stop_enabled'] ?? true);
+
+        if ($longStopEnabled && $longEmergEnabled && $mode === 'demo' && $isActiveMode) {
+            foreach ($posMap as $key => $pos) {
+                $posSide = (string)($pos['side'] ?? '');
+                if ($posSide !== 'long') {
+                    continue;
+                }
+
+                $longStopCheckedTotal++;
+
+                $lsResult   = $this->checkLongEmergencyStop($pos, $longProfile, $tickAt);
+                $skipReason = (string)($lsResult['skip_reason'] ?? '');
+
+                if (!$lsResult['triggered']) {
+                    if ($skipReason === 'not_demo_position') {
+                        $longStopSkippedNotDemoTotal++;
+                    } elseif ($skipReason === 'strategy_not_allowed') {
+                        $longStopSkippedStratNotAllowedTotal++;
+                    } elseif ($skipReason === 'roi_above_cap') {
+                        $longStopSkippedRoiAboveCapTotal++;
+                    } elseif ($skipReason === 'long_stop_missing_roi') {
+                        $longStopSkippedMissingRoiTotal++;
+                    } elseif ($skipReason === 'too_young') {
+                        $longStopSkippedTooYoungTotal++;
+                    }
+
+                    if ($skipReason !== '' && count($longStopSkippedExamples) < 5) {
+                        $longStopSkippedExamples[] = [
+                            'symbol'             => $pos['symbol']    ?? null,
+                            'side'               => 'long',
+                            'strategy_id'        => $pos['strategy_id'] ?? $pos['owner_strategy'] ?? null,
+                            'signal_id'          => $pos['signal_id']  ?? null,
+                            'entry_price'        => $lsResult['entry_price']   ?? null,
+                            'current_price'      => $lsResult['current_price'] ?? null,
+                            'leverage'           => $lsResult['leverage']      ?? null,
+                            'normalized_roi'     => $lsResult['normalized_roi'] ?? null,
+                            'emergency_stop_roi' => (float)($longProfile['emergency_stop_roi'] ?? -30.0),
+                            'age_minutes'        => $lsResult['age_minutes'] ?? null,
+                            'skip_reason'        => $skipReason,
+                        ];
+                    }
+                    continue;
+                }
+
+                $longStopTriggeredTotal++;
+
+                if (count($longStopTriggeredExamples) < 5) {
+                    $ctx = is_array($pos['strategy_signal_context'] ?? null)
+                        ? $pos['strategy_signal_context']
+                        : [];
+                    $longStopTriggeredExamples[] = [
+                        'symbol'             => $pos['symbol']       ?? null,
+                        'side'               => 'long',
+                        'strategy_id'        => $pos['strategy_id']  ?? $pos['owner_strategy'] ?? null,
+                        'owner_strategy'     => $pos['owner_strategy'] ?? null,
+                        'signal_id'          => $pos['signal_id']    ?? null,
+                        'entry_price'        => $lsResult['entry_price']   ?? null,
+                        'current_price'      => $lsResult['current_price'] ?? null,
+                        'leverage'           => $lsResult['leverage']      ?? null,
+                        'normalized_roi'     => $lsResult['normalized_roi'] ?? null,
+                        'emergency_stop_roi' => (float)($longProfile['emergency_stop_roi'] ?? -30.0),
+                        'age_minutes'        => $lsResult['age_minutes'] ?? null,
+                        'close_guard'        => 'long_emergency_stop',
+                        'close_reason'       => (string)($longProfile['close_reason'] ?? 'long_emergency_roi_cap'),
+                        'dynamic_rule'       => $ctx['dynamic_rule'] ?? null,
+                        'strategy_signal_context' => $ctx ?: null,
+                    ];
+                }
+
+                $lsCloseReason  = (string)($longProfile['close_reason'] ?? 'long_emergency_roi_cap');
+                $lsCloseGuard   = (string)($longProfile['close_guard']   ?? 'long_emergency_stop');
+                $lsCloseAttempted = false;
+                $lsCloseOk      = null;
+
+                if ($activeGw !== null) {
+                    $lsCloseAttempted = true;
+                    $lsCloseResult    = $this->submitDemoCloseOrder(
+                        $activeGw,
+                        $pos,
+                        $lsCloseReason,
+                        $lsCloseGuard,
+                        $tickAt
+                    );
+                    $lsCloseOk = $lsCloseResult['ok'];
+
+                    if ($lsCloseOk) {
+                        $longStopClosedTotal++;
+                        $this->writeLongEmergencyStopRegistry(
+                            $pos,
+                            $lsCloseResult,
+                            $lsResult,
+                            $lsCloseReason,
+                            $lsCloseGuard,
+                            $config,
+                            $tickAt
+                        );
+                    }
+
+                    $this->appendActionLog([
+                        'timestamp'          => $tickAt,
+                        'event_type'         => $lsCloseOk
+                            ? 'long_emergency_stop_close_submitted'
+                            : 'long_emergency_stop_close_failed',
+                        'close_source'       => 'stop_manager',
+                        'close_guard'        => $lsCloseGuard,
+                        'close_reason'       => $lsCloseReason,
+                        'strategy_id'        => $pos['strategy_id']  ?? $pos['owner_strategy'] ?? '',
+                        'signal_id'          => $pos['signal_id']    ?? '',
+                        'symbol'             => $pos['symbol']       ?? '',
+                        'side'               => 'long',
+                        'entry_price'        => $lsResult['entry_price']   ?? null,
+                        'current_price'      => $lsResult['current_price'] ?? null,
+                        'normalized_roi'     => $lsResult['normalized_roi'] ?? null,
+                        'emergency_stop_roi' => (float)($longProfile['emergency_stop_roi'] ?? -30.0),
+                        'close_attempted'    => $lsCloseAttempted,
+                        'close_ok'           => $lsCloseOk,
+                        'close_ret_code'     => $lsCloseResult['ret_code'] ?? null,
+                        'close_ret_msg'      => $lsCloseResult['ret_msg']  ?? null,
+                        'strategy_signal_context' => $pos['strategy_signal_context'] ?? null,
+                    ]);
+                } else {
+                    $this->appendActionLog([
+                        'timestamp'      => $tickAt,
+                        'event_type'     => 'long_emergency_stop_close_skipped_no_gw',
+                        'close_source'   => 'stop_manager',
+                        'close_guard'    => $lsCloseGuard,
+                        'close_reason'   => $lsCloseReason,
+                        'strategy_id'    => $pos['strategy_id']  ?? $pos['owner_strategy'] ?? '',
+                        'signal_id'      => $pos['signal_id']    ?? '',
+                        'symbol'         => $pos['symbol']       ?? '',
+                        'side'           => 'long',
+                        'normalized_roi' => $lsResult['normalized_roi'] ?? null,
+                        'reason'         => 'no_gateway_available',
+                    ]);
+                }
+            }
+        }
+
         return [
             'stops'                                        => $stopMap,
             'positions_seen'                               => $positionsSeen,
@@ -1161,6 +1359,19 @@ final class StopManagerService
             'short_stop_skipped_too_young_total'            => $shortStopSkippedTooYoungTotal,
             'short_stop_triggered_examples'                 => $shortStopTriggeredExamples,
             'short_stop_skipped_examples'                   => $shortStopSkippedExamples,
+            // Long emergency stop counters
+            'long_stop_checked_total'                       => $longStopCheckedTotal,
+            'long_stop_triggered_total'                     => $longStopTriggeredTotal,
+            'long_stop_closed_total'                        => $longStopClosedTotal,
+            'long_stop_skipped_not_demo_total'              => $longStopSkippedNotDemoTotal,
+            'long_stop_skipped_strategy_not_allowed_total'  => $longStopSkippedStratNotAllowedTotal,
+            'long_stop_skipped_roi_above_cap_total'         => $longStopSkippedRoiAboveCapTotal,
+            'long_stop_skipped_missing_roi_total'           => $longStopSkippedMissingRoiTotal,
+            'long_stop_skipped_too_young_total'             => $longStopSkippedTooYoungTotal,
+            'long_stop_triggered_examples'                  => $longStopTriggeredExamples,
+            'long_stop_skipped_examples'                    => $longStopSkippedExamples,
+            // Legacy liq_distance path counters
+            'legacy_stop_skipped_total'                     => $legacyStopSkippedTotal,
         ];
     }
 
@@ -2407,6 +2618,200 @@ final class StopManagerService
                 'roi_at_close'               => $ssResult['normalized_roi'] ?? null,
                 'entry_price'                => $ssResult['entry_price']   ?? null,
                 'current_price'              => $ssResult['current_price'] ?? null,
+                'strategy_signal_context'    => $ctx,
+                'ts'                         => $nowTs,
+                'expires_at'                 => date('c', $nowTs + $ttl),
+                'close_attribution_consumed' => false,
+            ];
+
+            @file_put_contents(
+                $registryPath,
+                json_encode($registry, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n",
+                LOCK_EX
+            );
+        } catch (\Throwable) {
+            // Never crash the tick over registry write failures
+        }
+    }
+
+    // =========================================================================
+    // Long emergency stop guard
+    // =========================================================================
+
+    /**
+     * Check whether a long position's ROI has breached the emergency-stop cap.
+     *
+     * Demo-only.  Never affects live positions.
+     * Uses the shared normalizePositionPrices / normalizePositionRoi helpers.
+     *
+     * ROI formula for long: ((current_price - entry_price) / entry_price) * leverage * 100
+     * A long loses when price goes down, so adverse ROI is negative.
+     *
+     * @return array{
+     *   triggered: bool,
+     *   skip_reason: string,
+     *   normalized_roi: float|null,
+     *   current_price: float|null,
+     *   entry_price: float|null,
+     *   leverage: int,
+     *   age_minutes: float|null,
+     * }
+     */
+    private function checkLongEmergencyStop(array $pos, array $longProfile, string $tickAt): array
+    {
+        $base = [
+            'triggered'      => false,
+            'skip_reason'    => '',
+            'normalized_roi' => null,
+            'current_price'  => null,
+            'entry_price'    => null,
+            'leverage'       => 1,
+            'age_minutes'    => null,
+        ];
+
+        // Only demo positions
+        $posMode = $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo'));
+        if ($posMode !== 'demo') {
+            return array_merge($base, ['skip_reason' => 'not_demo_position']);
+        }
+
+        // Strategy filter
+        $appliesTo  = (array)($longProfile['applies_to_strategies'] ?? ['double_bottom_long', '*']);
+        $posStratId = (string)($pos['strategy_id'] ?? $pos['owner_strategy'] ?? '');
+        if (!in_array('*', $appliesTo, true) && !in_array($posStratId, $appliesTo, true)) {
+            return array_merge($base, ['skip_reason' => 'strategy_not_allowed']);
+        }
+
+        // Minimum age gate
+        $minAgeSec  = max(0, (int)($longProfile['min_age_seconds'] ?? 60));
+        $openedAt   = (string)($pos['opened_at'] ?? '');
+        $openedTs   = $openedAt !== '' ? (int)strtotime($openedAt) : 0;
+        $ageSec     = $openedTs > 0 ? max(0, time() - $openedTs) : 0;
+        $ageMinutes = round($ageSec / 60.0, 1);
+
+        if ($ageSec < $minAgeSec) {
+            return array_merge($base, [
+                'skip_reason' => 'too_young',
+                'age_minutes' => $ageMinutes,
+            ]);
+        }
+
+        // Normalize prices and ROI (long-aware via calcRoi)
+        $priceNorm = $this->normalizePositionPrices($pos);
+        $roiNorm   = $this->normalizePositionRoi($pos, $priceNorm);
+        $roi       = $roiNorm['normalized_roi'];
+
+        if ($roi === null) {
+            return array_merge($base, [
+                'skip_reason' => 'long_stop_missing_roi',
+                'age_minutes' => $ageMinutes,
+                'entry_price' => $priceNorm['normalized_entry_price'],
+                'leverage'    => $priceNorm['normalized_leverage'],
+            ]);
+        }
+
+        $emergencyRoi = (float)($longProfile['emergency_stop_roi'] ?? -30.0);
+
+        if ($roi > $emergencyRoi) {
+            return array_merge($base, [
+                'skip_reason'    => 'roi_above_cap',
+                'normalized_roi' => $roi,
+                'current_price'  => $priceNorm['normalized_current_price'],
+                'entry_price'    => $priceNorm['normalized_entry_price'],
+                'leverage'       => $priceNorm['normalized_leverage'],
+                'age_minutes'    => $ageMinutes,
+            ]);
+        }
+
+        return array_merge($base, [
+            'triggered'      => true,
+            'skip_reason'    => '',
+            'normalized_roi' => $roi,
+            'current_price'  => $priceNorm['normalized_current_price'],
+            'entry_price'    => $priceNorm['normalized_entry_price'],
+            'leverage'       => $priceNorm['normalized_leverage'],
+            'age_minutes'    => $ageMinutes,
+        ]);
+    }
+
+    /**
+     * Write a long-emergency-stop close registry entry so the bot's recordClosedTrade()
+     * can preserve Stop Manager attribution when the long position disappears from Bybit Demo.
+     *
+     * Reuses the same ef_close_registry.json file as the early-fail guard.
+     * Key format: {mode}_{symbol}_long  (e.g. demo_BTCUSDT_long).
+     * TTL: 2 hours (7200 s).
+     */
+    private function writeLongEmergencyStopRegistry(
+        array  $pos,
+        array  $closeResult,
+        array  $lsResult,
+        string $closeReason,
+        string $closeGuard,
+        array  $config,
+        string $tickAt
+    ): void {
+        try {
+            $botRelDir = (string)($config['bot_module_dir'] ?? 'modules/bot');
+            $botDir    = str_starts_with($botRelDir, '/')
+                ? rtrim($botRelDir, '/')
+                : $this->repoRoot . '/' . rtrim($botRelDir, '/');
+
+            $registryPath = $botDir . '/storage/runtime/ef_close_registry.json';
+
+            $registryDir = dirname($registryPath);
+            if (!is_dir($registryDir)) {
+                mkdir($registryDir, 0755, true);
+            }
+
+            $registry = [];
+            if (is_file($registryPath)) {
+                $raw = @file_get_contents($registryPath);
+                if ($raw !== false && $raw !== '') {
+                    $dec = @json_decode($raw, true);
+                    if (is_array($dec)) {
+                        $registry = $dec;
+                    }
+                }
+            }
+
+            $symbol   = (string)($pos['symbol']    ?? '');
+            $signalId = (string)($pos['signal_id'] ?? '');
+            $posMode  = $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo'));
+            $key      = $posMode . '_' . $symbol . '_long';
+            $nowTs    = time();
+            $ttl      = 7200; // 2 hours
+
+            // Prune expired entries before writing
+            foreach ($registry as $k => $entry) {
+                $entryTs = (int)($entry['ts'] ?? 0);
+                if ($entryTs > 0 && ($nowTs - $entryTs) > $ttl) {
+                    unset($registry[$k]);
+                }
+            }
+
+            $ctx = is_array($pos['strategy_signal_context'] ?? null)
+                ? $pos['strategy_signal_context']
+                : null;
+
+            $registry[$key] = [
+                'mode'                       => $posMode,
+                'symbol'                     => $symbol,
+                'side'                       => 'long',
+                'signal_id'                  => $signalId,
+                'strategy_id'                => (string)($pos['strategy_id']  ?? $pos['owner_strategy'] ?? ''),
+                'owner_strategy'             => (string)($pos['owner_strategy'] ?? ''),
+                'close_source'               => 'stop_manager',
+                'close_guard'                => $closeGuard,
+                'close_reason'               => $closeReason,
+                'close_order_id'             => $closeResult['order_id'] ?? null,
+                'close_submitted_at'         => $tickAt,
+                'close_ok'                   => $closeResult['ok'] ?? false,
+                'close_ret_code'             => $closeResult['ret_code'] ?? null,
+                'close_ret_msg'              => $closeResult['ret_msg']  ?? null,
+                'roi_at_close'               => $lsResult['normalized_roi'] ?? null,
+                'entry_price'                => $lsResult['entry_price']   ?? null,
+                'current_price'              => $lsResult['current_price'] ?? null,
                 'strategy_signal_context'    => $ctx,
                 'ts'                         => $nowTs,
                 'expires_at'                 => date('c', $nowTs + $ttl),

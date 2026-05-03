@@ -604,11 +604,10 @@ HTML;
             $existing['mode']                      = in_array($_POST['mode'] ?? '', ['demo', 'live'], true)
                 ? (string)$_POST['mode']
                 : 'demo';
-            $existing['stop_mode']                 = 'liq_distance_percent';
-            $existing['liq_distance_percent']      = max(1, min(99, (int)($_POST['liq_distance_percent'] ?? 90)));
-            $existing['breakeven_enabled']         = (bool)(int)($_POST['breakeven_enabled']         ?? 0);
-            $existing['breakeven_trigger_roi']     = max(0.0, (float)($_POST['breakeven_trigger_roi']     ?? 10.0));
-            $existing['breakeven_profit_lock_roi'] = (float)($_POST['breakeven_profit_lock_roi'] ?? 3.0);
+            // Legacy stop_mode / liq_distance_percent / breakeven_* keys are NOT
+            // updated from the quick UI any more. Their existing values in active.php
+            // are preserved for backward compatibility, but the UI no longer exposes
+            // or writes them. Runtime behavior is gated by legacy_liq_distance_stop_enabled.
 
             // ── Long stop profile ──────────────────────────────────────────
             $longProfile = $existing['profiles']['long'] ?? [];

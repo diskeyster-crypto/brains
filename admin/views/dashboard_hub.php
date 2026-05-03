@@ -6301,7 +6301,7 @@ function handleDashboardStrategyAction(): void
                 } else {
                     $dsErr = $dsResult['error'] ?? 'Неизвестная';
                     if ($dsErr === 'strategy_disabled') {
-                        $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Dynamic Strategies отключена (enabled = false)'];
+                        $_SESSION['dashboard_flash'] = ['type' => 'warning', 'msg' => 'Dynamic Strategies отключена (enabled = false)'];
                     } else {
                         $_SESSION['dashboard_flash'] = ['type' => 'error', 'msg' => 'Ошибка Dynamic Strategies: ' . $dsErr];
                     }

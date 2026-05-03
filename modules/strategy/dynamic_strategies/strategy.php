@@ -525,7 +525,7 @@ final class DynamicStrategiesStrategy
             if ($observedAt !== null) {
                 $ts = is_int($observedAt) ? $observedAt : (int)strtotime((string)$observedAt);
                 $age = $now - $ts;
-                if ($age > (int)($config['context_max_age_minutes'] ?? 180) * 45) {
+                if ($age > (int)(($config['context_max_age_minutes'] ?? 180) * 60 * 0.75)) {
                     // Context is older than 75% of max age — treat as somewhat stale
                     $score -= 0.10;
                     $warnings[] = 'context_near_stale';

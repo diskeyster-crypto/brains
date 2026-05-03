@@ -206,6 +206,11 @@ final class StopManagerService
         $stats['ef_skipped_no_setup_break_total']  += $result['ef_skipped_no_setup_break'] ?? 0;
         $stats['ef_skipped_too_young_total']       += $result['ef_skipped_too_young']      ?? 0;
         $stats['ef_skipped_not_db_total']          += $result['ef_skipped_not_db']         ?? 0;
+        // Position price/ROI normalization cumulative counters
+        $stats['db_price_normalized_total']  += $result['db_price_normalized_total'] ?? 0;
+        $stats['db_roi_normalized_total']    += $result['db_roi_normalized_total']   ?? 0;
+        $stats['db_roi_missing_total']       += $result['db_roi_missing_total']      ?? 0;
+        $stats['db_price_missing_total']     += $result['db_price_missing_total']    ?? 0;
 
         // ── 4. Persist ─────────────────────────────────────────────────────────
         $this->writeJson('storage/stops.json', array_values($stops));
@@ -254,6 +259,19 @@ final class StopManagerService
             'double_bottom_early_fail_triggered_cumulative'      => (int)($stats['ef_triggered_total']          ?? 0),
             'double_bottom_early_fail_closed_cumulative'         => (int)($stats['ef_closed_total']             ?? 0),
             'registry_written_cumulative'                        => (int)($stats['ef_registry_written_total']   ?? 0),
+            // Position price/ROI normalization diagnostics (this tick)
+            'double_bottom_position_price_normalized_total'      => $result['db_price_normalized_total'] ?? 0,
+            'double_bottom_position_roi_normalized_total'        => $result['db_roi_normalized_total']   ?? 0,
+            'double_bottom_position_roi_missing_total'           => $result['db_roi_missing_total']      ?? 0,
+            'double_bottom_position_price_missing_total'         => $result['db_price_missing_total']    ?? 0,
+            'double_bottom_position_normalization_examples'      => $result['db_normalization_examples'] ?? [],
+            'double_bottom_position_missing_price_examples'      => $result['db_missing_price_examples'] ?? [],
+            'double_bottom_position_missing_roi_examples'        => $result['db_missing_roi_examples']   ?? [],
+            // Position price/ROI normalization cumulative
+            'double_bottom_position_price_normalized_cumulative' => (int)($stats['db_price_normalized_total'] ?? 0),
+            'double_bottom_position_roi_normalized_cumulative'   => (int)($stats['db_roi_normalized_total']   ?? 0),
+            'double_bottom_position_roi_missing_cumulative'      => (int)($stats['db_roi_missing_total']      ?? 0),
+            'double_bottom_position_price_missing_cumulative'    => (int)($stats['db_price_missing_total']    ?? 0),
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -337,6 +355,15 @@ final class StopManagerService
         $efSkippedNotDB           = 0;
         $efTriggeredExamples      = [];
         $efSkippedExamples        = [];
+
+        // Position price/ROI normalization counters (double_bottom_long positions only)
+        $dbPriceNormalizedTotal  = 0;
+        $dbRoiNormalizedTotal    = 0;
+        $dbRoiMissingTotal       = 0;
+        $dbPriceMissingTotal     = 0;
+        $dbNormalizationExamples = [];
+        $dbMissingPriceExamples  = [];
+        $dbMissingRoiExamples    = [];
 
         $isActiveMode = in_array($mode, ['demo', 'live'], true);
 
@@ -674,6 +701,60 @@ final class StopManagerService
 
                 $efResult = $this->checkDoubleBottomEarlyFail($pos, $config, $tickAt);
 
+                // ── Track price/ROI normalization for this double_bottom position ─────
+                $cpSource  = $efResult['current_price_source'] ?? null;
+                $roiSource = $efResult['roi_source']           ?? null;
+                if ($cpSource !== null) {
+                    if ($cpSource === 'missing') {
+                        $dbPriceMissingTotal++;
+                        if (count($dbMissingPriceExamples) < 5) {
+                            $dbMissingPriceExamples[] = [
+                                'symbol'               => $pos['symbol']    ?? null,
+                                'signal_id'            => $pos['signal_id'] ?? null,
+                                'current_price_source' => $cpSource,
+                                'entry_price_source'   => $efResult['entry_price_source'] ?? null,
+                                'leverage_source'      => $efResult['leverage_source']    ?? null,
+                                'roi_source'           => $roiSource,
+                                'skip_reason'          => $efResult['skip_reason'] ?? null,
+                            ];
+                        }
+                    } elseif ($cpSource !== 'current_price') {
+                        $dbPriceNormalizedTotal++;
+                        if (count($dbNormalizationExamples) < 5) {
+                            $dbNormalizationExamples[] = [
+                                'symbol'                   => $pos['symbol']    ?? null,
+                                'signal_id'                => $pos['signal_id'] ?? null,
+                                'current_price_source'     => $cpSource,
+                                'entry_price_source'       => $efResult['entry_price_source']       ?? null,
+                                'leverage_source'          => $efResult['leverage_source']           ?? null,
+                                'roi_source'               => $roiSource,
+                                'normalized_current_price' => $efResult['normalized_current_price'] ?? null,
+                                'normalized_entry_price'   => $efResult['normalized_entry_price']   ?? null,
+                                'normalized_leverage'      => $efResult['normalized_leverage']       ?? null,
+                                'normalized_roi'           => $efResult['normalized_roi']            ?? null,
+                            ];
+                        }
+                    }
+                }
+                if ($roiSource !== null) {
+                    if ($roiSource === 'missing') {
+                        $dbRoiMissingTotal++;
+                        if (count($dbMissingRoiExamples) < 5) {
+                            $dbMissingRoiExamples[] = [
+                                'symbol'               => $pos['symbol']    ?? null,
+                                'signal_id'            => $pos['signal_id'] ?? null,
+                                'current_price_source' => $cpSource,
+                                'entry_price_source'   => $efResult['entry_price_source'] ?? null,
+                                'leverage_source'      => $efResult['leverage_source']    ?? null,
+                                'roi_source'           => $roiSource,
+                                'skip_reason'          => $efResult['skip_reason'] ?? null,
+                            ];
+                        }
+                    } elseif ($roiSource === 'calculated') {
+                        $dbRoiNormalizedTotal++;
+                    }
+                }
+
                 if (!$efResult['triggered']) {
                     $skipReason = $efResult['skip_reason'] ?? '';
                     if ($skipReason === 'early_fail_skipped_missing_trace') {
@@ -688,19 +769,28 @@ final class StopManagerService
                     }
                     if ($skipReason !== '' && count($efSkippedExamples) < 5) {
                         $efSkippedExamples[] = [
-                            'symbol'           => $pos['symbol']    ?? null,
-                            'side'             => $pos['side']      ?? null,
-                            'signal_id'        => $pos['signal_id'] ?? null,
-                            'skip_reason'      => $skipReason,
-                            'roi'              => $efResult['roi']           ?? null,
-                            'age_minutes'      => $efResult['age_minutes']   ?? null,
-                            'current_price'    => $efResult['current_price'] ?? null,
-                            'entry_price'      => isset($pos['entry_price']) ? (float)$pos['entry_price'] : null,
-                            'neckline_level'   => $efResult['neckline_level'] ?? null,
-                            'reclaim_level'    => $efResult['reclaim_level']  ?? null,
-                            'adverse_roi_soft' => (float)($config['double_bottom_early_fail_adverse_roi_soft'] ?? -20.0),
-                            'adverse_roi_hard' => (float)($config['double_bottom_early_fail_adverse_roi_hard'] ?? -35.0),
-                            'diagnostic'       => $efResult['diagnostic']   ?? null,
+                            'symbol'                   => $pos['symbol']    ?? null,
+                            'side'                     => $pos['side']      ?? null,
+                            'signal_id'                => $pos['signal_id'] ?? null,
+                            'skip_reason'              => $skipReason,
+                            'roi'                      => $efResult['roi']           ?? null,
+                            'age_minutes'              => $efResult['age_minutes']   ?? null,
+                            'current_price'            => $efResult['current_price'] ?? null,
+                            'entry_price'              => isset($pos['entry_price']) ? (float)$pos['entry_price'] : null,
+                            'neckline_level'           => $efResult['neckline_level'] ?? null,
+                            'reclaim_level'            => $efResult['reclaim_level']  ?? null,
+                            'adverse_roi_soft'         => (float)($config['double_bottom_early_fail_adverse_roi_soft'] ?? -20.0),
+                            'adverse_roi_hard'         => (float)($config['double_bottom_early_fail_adverse_roi_hard'] ?? -35.0),
+                            'diagnostic'               => $efResult['diagnostic']   ?? null,
+                            // normalization diagnostics
+                            'current_price_source'     => $efResult['current_price_source']     ?? null,
+                            'entry_price_source'       => $efResult['entry_price_source']       ?? null,
+                            'leverage_source'          => $efResult['leverage_source']           ?? null,
+                            'roi_source'               => $efResult['roi_source']               ?? null,
+                            'normalized_current_price' => $efResult['normalized_current_price'] ?? null,
+                            'normalized_entry_price'   => $efResult['normalized_entry_price']   ?? null,
+                            'normalized_leverage'      => $efResult['normalized_leverage']       ?? null,
+                            'normalized_roi'           => $efResult['normalized_roi']            ?? null,
                         ];
                     }
                     continue;
@@ -734,6 +824,15 @@ final class StopManagerService
                         'entry_distance_from_neckline_pct' => $ctx['entry_distance_from_neckline_pct'] ?? null,
                         'warnings'                         => $ctx['warnings']    ?? null,
                         'reason_codes'                     => $ctx['reason_codes'] ?? null,
+                        // normalization diagnostics
+                        'current_price_source'             => $efResult['current_price_source']     ?? null,
+                        'entry_price_source'               => $efResult['entry_price_source']       ?? null,
+                        'leverage_source'                  => $efResult['leverage_source']           ?? null,
+                        'roi_source'                       => $efResult['roi_source']               ?? null,
+                        'normalized_current_price'         => $efResult['normalized_current_price'] ?? null,
+                        'normalized_entry_price'           => $efResult['normalized_entry_price']   ?? null,
+                        'normalized_leverage'              => $efResult['normalized_leverage']       ?? null,
+                        'normalized_roi'                   => $efResult['normalized_roi']            ?? null,
                     ];
                 }
 
@@ -832,6 +931,14 @@ final class StopManagerService
             'ef_skipped_not_db'                            => $efSkippedNotDB,
             'ef_triggered_examples'                        => $efTriggeredExamples,
             'ef_skipped_examples'                          => $efSkippedExamples,
+            // Position price/ROI normalization counters
+            'db_price_normalized_total'                    => $dbPriceNormalizedTotal,
+            'db_roi_normalized_total'                      => $dbRoiNormalizedTotal,
+            'db_roi_missing_total'                         => $dbRoiMissingTotal,
+            'db_price_missing_total'                       => $dbPriceMissingTotal,
+            'db_normalization_examples'                    => $dbNormalizationExamples,
+            'db_missing_price_examples'                    => $dbMissingPriceExamples,
+            'db_missing_roi_examples'                      => $dbMissingRoiExamples,
         ];
     }
 
@@ -956,6 +1063,112 @@ final class StopManagerService
         }
 
         return $estimate;
+    }
+
+    /**
+     * Normalize current price, entry price, and leverage for a position
+     * using safe fallback chains.
+     *
+     * current_price fallback: current_price → mark_price → last_price → price → null
+     * entry_price fallback:   entry_price   → avg_entry_price → open_price → null
+     * leverage fallback:      leverage      → bot_leverage    → config_leverage → 1 (default)
+     *
+     * @return array{
+     *   normalized_current_price: float|null,
+     *   current_price_source: string,
+     *   normalized_entry_price: float|null,
+     *   entry_price_source: string,
+     *   normalized_leverage: int,
+     *   leverage_source: string,
+     * }
+     */
+    private function normalizePositionPrices(array $pos): array
+    {
+        // Current price fallback chain
+        $currentPrice       = null;
+        $currentPriceSource = 'missing';
+        foreach (['current_price', 'mark_price', 'last_price', 'price'] as $field) {
+            $val = $pos[$field] ?? null;
+            if ($val !== null && is_numeric($val) && (float)$val > 0.0) {
+                $currentPrice       = (float)$val;
+                $currentPriceSource = $field;
+                break;
+            }
+        }
+
+        // Entry price fallback chain
+        $entryPrice       = null;
+        $entryPriceSource = 'missing';
+        foreach (['entry_price', 'avg_entry_price', 'open_price'] as $field) {
+            $val = $pos[$field] ?? null;
+            if ($val !== null && is_numeric($val) && (float)$val > 0.0) {
+                $entryPrice       = (float)$val;
+                $entryPriceSource = $field;
+                break;
+            }
+        }
+
+        // Leverage fallback chain
+        $leverage       = 1;
+        $leverageSource = 'default';
+        foreach (['leverage', 'bot_leverage', 'config_leverage'] as $field) {
+            $val = $pos[$field] ?? null;
+            if ($val !== null && is_numeric($val) && (int)$val > 0) {
+                $leverage       = (int)$val;
+                $leverageSource = $field;
+                break;
+            }
+        }
+
+        return [
+            'normalized_current_price' => $currentPrice,
+            'current_price_source'     => $currentPriceSource,
+            'normalized_entry_price'   => $entryPrice,
+            'entry_price_source'       => $entryPriceSource,
+            'normalized_leverage'      => $leverage,
+            'leverage_source'          => $leverageSource,
+        ];
+    }
+
+    /**
+     * Normalize ROI for a position.
+     *
+     * Tries explicit ROI fields first, then calculates from normalized prices.
+     * Calculation: long:  ((current − entry) / entry) × leverage × 100
+     *              short: ((entry − current) / entry) × leverage × 100
+     *
+     * @return array{normalized_roi: float|null, roi_source: string}
+     */
+    private function normalizePositionRoi(array $pos, array $priceNorm): array
+    {
+        $side = (string)($pos['side'] ?? 'long');
+
+        // Try explicit ROI fields first
+        foreach (['roi', 'roi_pct', 'unrealized_roi', 'unrealised_roi'] as $field) {
+            $val = $pos[$field] ?? null;
+            if ($val !== null && is_numeric($val)) {
+                return [
+                    'normalized_roi' => (float)$val,
+                    'roi_source'     => $field,
+                ];
+            }
+        }
+
+        // Calculate from normalized prices
+        $currentPrice = $priceNorm['normalized_current_price'];
+        $entryPrice   = $priceNorm['normalized_entry_price'];
+        $leverage     = $priceNorm['normalized_leverage'];
+        if ($currentPrice !== null && $entryPrice !== null && $entryPrice > 0.0) {
+            return [
+                'normalized_roi' => $this->calcRoi($side, $entryPrice, $currentPrice, $leverage),
+                'roi_source'     => 'calculated',
+            ];
+        }
+
+        return [
+            'normalized_roi' => null,
+            'roi_source'     => 'missing',
+        ];
     }
 
     // =========================================================================
@@ -1330,6 +1543,11 @@ final class StopManagerService
             'ef_skipped_no_setup_break_total'     => 0,
             'ef_skipped_too_young_total'           => 0,
             'ef_skipped_not_db_total'             => 0,
+            // Position price/ROI normalization cumulative counters
+            'db_price_normalized_total'           => 0,
+            'db_roi_normalized_total'             => 0,
+            'db_roi_missing_total'                => 0,
+            'db_price_missing_total'              => 0,
         ];
     }
 
@@ -1372,15 +1590,24 @@ final class StopManagerService
     private function checkDoubleBottomEarlyFail(array $pos, array $config, string $tickAt): array
     {
         $base = [
-            'triggered'          => false,
-            'skip_reason'        => '',
-            'setup_break_reason' => null,
-            'roi'                => null,
-            'age_minutes'        => null,
-            'current_price'      => null,
-            'neckline_level'     => null,
-            'reclaim_level'      => null,
-            'diagnostic'         => null,
+            'triggered'                => false,
+            'skip_reason'              => '',
+            'setup_break_reason'       => null,
+            'roi'                      => null,
+            'age_minutes'              => null,
+            'current_price'            => null,
+            'neckline_level'           => null,
+            'reclaim_level'            => null,
+            'diagnostic'               => null,
+            // position price/ROI normalization diagnostics
+            'current_price_source'     => null,
+            'entry_price_source'       => null,
+            'leverage_source'          => null,
+            'roi_source'               => null,
+            'normalized_current_price' => null,
+            'normalized_entry_price'   => null,
+            'normalized_leverage'      => null,
+            'normalized_roi'           => null,
         ];
 
         // Only long side
@@ -1432,20 +1659,45 @@ final class StopManagerService
             ]);
         }
 
-        // Price data
-        $entryPrice   = (float)($pos['entry_price']   ?? 0.0);
-        $currentPrice = isset($pos['current_price']) ? (float)$pos['current_price'] : null;
+        // Price/ROI normalization — use fallback chains before giving up
+        $priceNorm    = $this->normalizePositionPrices($pos);
+        $currentPrice = $priceNorm['normalized_current_price'];
+        $entryPrice   = $priceNorm['normalized_entry_price'] ?? 0.0;
+        $leverage     = $priceNorm['normalized_leverage'];
+
+        // Propagate normalization metadata into $base so all subsequent return
+        // paths include it automatically via array_merge($base, [...])
+        $base['current_price_source']     = $priceNorm['current_price_source'];
+        $base['entry_price_source']       = $priceNorm['entry_price_source'];
+        $base['leverage_source']          = $priceNorm['leverage_source'];
+        $base['normalized_current_price'] = $currentPrice;
+        $base['normalized_entry_price']   = $entryPrice > 0.0 ? $entryPrice : null;
+        $base['normalized_leverage']      = $leverage;
 
         if ($currentPrice === null || $entryPrice <= 0.0) {
             return array_merge($base, [
-                'skip_reason' => 'no_price_data',
-                'age_minutes' => $ageMinutes,
+                'skip_reason'   => 'no_price_data',
+                'age_minutes'   => $ageMinutes,
+                'current_price' => $currentPrice,
             ]);
         }
 
-        // ROI computation
-        $leverage = max(1, (int)($pos['bot_leverage'] ?? $pos['leverage'] ?? 1));
-        $roi      = $this->calcRoi($side, $entryPrice, $currentPrice, $leverage);
+        // ROI normalization — explicit fields first, then calculate from prices
+        $roiNorm = $this->normalizePositionRoi($pos, $priceNorm);
+        $roi     = $roiNorm['normalized_roi'];
+
+        $base['roi_source']    = $roiNorm['roi_source'];
+        $base['normalized_roi'] = $roi;
+
+        // roi will always be non-null here since currentPrice and entryPrice are valid,
+        // but guard defensively to satisfy static analysis
+        if ($roi === null) {
+            return array_merge($base, [
+                'skip_reason'   => 'no_roi_data',
+                'age_minutes'   => $ageMinutes,
+                'current_price' => $currentPrice,
+            ]);
+        }
 
         // No adverse ROI at all — nothing to guard against
         if ($roi >= 0.0) {
@@ -1559,7 +1811,7 @@ final class StopManagerService
         }
 
         // Setup failure confirmed
-        return [
+        return array_merge($base, [
             'triggered'          => true,
             'skip_reason'        => '',
             'setup_break_reason' => $setupBreakReason,
@@ -1569,7 +1821,7 @@ final class StopManagerService
             'neckline_level'     => $necklineLevel,
             'reclaim_level'      => $reclaimLevel,
             'diagnostic'         => implode(';', $diagnosticNotes),
-        ];
+        ]);
     }
 
     /**

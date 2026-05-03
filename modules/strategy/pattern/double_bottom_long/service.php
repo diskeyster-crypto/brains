@@ -1295,6 +1295,11 @@ final class DoubleBottomLongService
         // Diagnostics only — no signal behavior is changed.
         $calibration = $this->computeCalibration($config);
 
+        // ── Hourly performance statistics ────────────────────────────────────
+        // Group double_bottom_long closed trades by open hour (UTC) to surface
+        // per-hour win-rate / avg-roi. Diagnostics only.
+        $hourlyStats = $this->computeHourlyStats($config);
+
         $this->writeJson('storage/last_run.json', [
             // done_retryable = empty universe (registry not yet populated, will retry)
             // done           = normal cycle completion (continuous or not)
@@ -1595,6 +1600,15 @@ final class DoubleBottomLongService
             'calibration_deep_loss_examples'             => $calibration['calibration_deep_loss_examples'],
             'calibration_bad_signature_examples'         => $calibration['calibration_bad_signature_examples'],
             'calibration_candidate_rules'                => $calibration['calibration_candidate_rules'],
+            // ── Hourly performance statistics ─────────────────────────────────
+            'hourly_stats_enabled'               => $hourlyStats['hourly_stats_enabled'],
+            'hourly_stats_generated_at'          => $hourlyStats['hourly_stats_generated_at'],
+            'hourly_stats_total_trades'          => $hourlyStats['hourly_stats_total_trades'],
+            'hourly_stats_bad_hour_candidates'   => $hourlyStats['hourly_stats_bad_hour_candidates'],
+            'hourly_stats_good_hour_candidates'  => $hourlyStats['hourly_stats_good_hour_candidates'],
+            'hourly_stats_bad_block_candidates'  => $hourlyStats['hourly_stats_bad_block_candidates'],
+            'hourly_stats_good_block_candidates' => $hourlyStats['hourly_stats_good_block_candidates'],
+            'hourly_stats_file'                  => $hourlyStats['hourly_stats_file'],
         ]);
 
         if ($isDone) {
@@ -6666,6 +6680,337 @@ final class DoubleBottomLongService
         }
 
         return $rules;
+    }
+
+    /**
+     * Computes hourly and 4-hour-block performance statistics for
+     * double_bottom_long closed trades and writes them to hourly_stats.json.
+     *
+     * Diagnostics only — no trading behavior is affected.
+     *
+     * Returns a summary array suitable for last_run.json.
+     */
+    private function computeHourlyStats(array $config): array
+    {
+        $zero = [
+            'hourly_stats_enabled'           => false,
+            'hourly_stats_generated_at'      => null,
+            'hourly_stats_total_trades'      => 0,
+            'hourly_stats_bad_hour_candidates'  => 0,
+            'hourly_stats_good_hour_candidates' => 0,
+            'hourly_stats_bad_block_candidates'  => 0,
+            'hourly_stats_good_block_candidates' => 0,
+            'hourly_stats_file'              => null,
+        ];
+
+        if (!(bool)($config['hourly_stats_enabled'] ?? true)) {
+            return $zero;
+        }
+
+        $minSamples     = max(1, (int)($config['hourly_stats_min_samples_for_signal'] ?? 10));
+        $badAvgRoi      = (float)($config['hourly_stats_bad_avg_roi_threshold']    ?? -5.0);
+        $badWinrate     = (float)($config['hourly_stats_bad_winrate_threshold']    ?? 40.0);
+        $goodAvgRoi     = (float)($config['hourly_stats_good_avg_roi_threshold']   ?? 5.0);
+        $goodWinrate    = (float)($config['hourly_stats_good_winrate_threshold']   ?? 60.0);
+        $statsRelFile   = (string)($config['hourly_stats_file'] ?? 'storage/hourly_stats.json');
+        $deepLossThr    = (float)($config['calibration_deep_loss_threshold'] ?? -30.0);
+
+        $botRelDir  = (string)($config['bot_module_dir'] ?? 'modules/bot');
+        $botDir     = str_starts_with($botRelDir, '/')
+            ? rtrim($botRelDir, '/')
+            : $this->repoRoot . '/' . rtrim($botRelDir, '/');
+        $closedPath = $botDir . '/storage/trades/closed_trades.json';
+
+        $raw = @file_get_contents($closedPath);
+        if ($raw === false || $raw === '') {
+            return $zero;
+        }
+        $allTrades = @json_decode($raw, true);
+        if (!is_array($allTrades)) {
+            return $zero;
+        }
+
+        // Filter to double_bottom_long trades only (no ctx requirement here —
+        // we want all closed trades for a reliable hour sample).
+        $trades = [];
+        foreach ($allTrades as $ct) {
+            $sid = (string)($ct['strategy_id'] ?? $ct['owner_strategy'] ?? $ct['strategy'] ?? '');
+            if ($sid !== 'double_bottom_long') {
+                continue;
+            }
+            $trades[] = $ct;
+        }
+
+        $totalCount = count($trades);
+
+        // ── Build per-hour buckets (keys "00".."23") ─────────────────────────
+        $mkHourBucket = static function(): array {
+            return [
+                'trades' => 0, 'wins' => 0, 'losses' => 0, 'breakeven' => 0,
+                'roi_values' => [], 'pnl_sum' => 0.0, 'duration_minutes' => [],
+                'deep_loss_count' => 0, 'last_trade_ts' => 0,
+                'examples_bad' => [], 'examples_good' => [],
+            ];
+        };
+
+        $hourBuckets = [];
+        for ($h = 0; $h < 24; $h++) {
+            $hourBuckets[sprintf('%02d', $h)] = $mkHourBucket();
+        }
+
+        // 4-hour blocks
+        $blockDefs = [
+            '00_03' => ['00','01','02','03'],
+            '04_07' => ['04','05','06','07'],
+            '08_11' => ['08','09','10','11'],
+            '12_15' => ['12','13','14','15'],
+            '16_19' => ['16','17','18','19'],
+            '20_23' => ['20','21','22','23'],
+        ];
+
+        foreach ($trades as $ct) {
+            // Derive open timestamp
+            $openStr = (string)($ct['opened_at'] ?? $ct['entry_time'] ?? $ct['created_at'] ?? '');
+            $openTs  = $openStr !== '' ? strtotime($openStr) : 0;
+            if ($openTs <= 0) {
+                continue;
+            }
+
+            $hour    = (int)gmdate('G', $openTs);   // 0..23 UTC
+            $hourKey = sprintf('%02d', $hour);
+
+            $roiRaw  = $ct['roi'] ?? $ct['roi_pct'] ?? null;
+            $roi     = $roiRaw !== null ? (float)$roiRaw : null;
+            $pnl     = (float)($ct['pnl'] ?? $ct['realized_pnl'] ?? 0.0);
+
+            $closedTs = isset($ct['closed_at']) ? (int)strtotime($ct['closed_at']) : 0;
+            $durMin   = ($openTs > 0 && $closedTs > 0) ? round(($closedTs - $openTs) / 60.0, 1) : null;
+
+            $bk = &$hourBuckets[$hourKey];
+            $bk['trades']++;
+            $bk['pnl_sum'] += $pnl;
+            if ($roi !== null) {
+                $bk['roi_values'][] = $roi;
+                if ($roi > 0)           $bk['wins']++;
+                elseif ($roi < 0)       $bk['losses']++;
+                else                    $bk['breakeven']++;
+                if ($roi <= $deepLossThr) $bk['deep_loss_count']++;
+            } else {
+                $bk['breakeven']++;  // unknown roi counts as breakeven
+            }
+            if ($durMin !== null) {
+                $bk['duration_minutes'][] = $durMin;
+            }
+            if ($openTs > $bk['last_trade_ts']) {
+                $bk['last_trade_ts'] = $openTs;
+            }
+
+            // Collect examples (up to 5 per type per hour, assessed after finalization)
+            $exRec = [
+                'symbol'                           => $ct['symbol']      ?? null,
+                'signal_id'                        => $ct['signal_id']   ?? null,
+                'opened_at'                        => $ct['opened_at']   ?? null,
+                'closed_at'                        => $ct['closed_at']   ?? null,
+                'roi'                              => $roi,
+                'pnl'                              => $pnl,
+                'duration_minutes'                 => $durMin,
+                'close_reason'                     => $ct['close_reason'] ?? null,
+                'close_guard'                      => $ct['close_guard']  ?? null,
+                'setup_class'                      => $ct['setup_class']  ?? ($ct['strategy_signal_context']['setup_class'] ?? null),
+                'synthetic_quality_score'          => $ct['synthetic_quality_score']   ?? ($ct['strategy_signal_context']['synthetic_quality_score'] ?? null),
+                'setup_class_score'                => $ct['setup_class_score']         ?? ($ct['strategy_signal_context']['setup_class_score'] ?? null),
+                'candidate_quality_score'          => $ct['candidate_quality_score']   ?? ($ct['strategy_signal_context']['candidate_quality_score'] ?? null),
+                'entry_distance_from_neckline_pct' => $ct['entry_distance_from_neckline_pct'] ?? ($ct['strategy_signal_context']['entry_distance_from_neckline_pct'] ?? null),
+                'warnings'                         => $ct['warnings']    ?? ($ct['strategy_signal_context']['warnings'] ?? null),
+                'reason_codes'                     => $ct['reason_codes'] ?? ($ct['strategy_signal_context']['reason_codes'] ?? null),
+            ];
+            // Stash for later — labelled by roi for good/bad classification
+            $bk['_examples_stash'][] = [$roi, $exRec];
+        }
+        unset($bk);
+
+        // ── Finalize per-hour buckets ─────────────────────────────────────────
+        $finalizeHour = static function(array $bk, string $hourKey, int $minSamples, float $badAvgRoi, float $badWinrate, float $goodAvgRoi, float $goodWinrate): array {
+            $trades   = $bk['trades'];
+            $wins     = $bk['wins'];
+            $losses   = $bk['losses'];
+            $rois     = $bk['roi_values'];
+            $durs     = $bk['duration_minutes'];
+
+            $winratePct = $trades > 0 ? round($wins / $trades * 100.0, 2) : null;
+            $avgRoi     = count($rois) > 0 ? round(array_sum($rois) / count($rois), 4) : null;
+            $sumRoi     = count($rois) > 0 ? round(array_sum($rois), 4) : null;
+
+            // Median roi
+            $medianRoi = null;
+            if (count($rois) > 0) {
+                $sorted = $rois;
+                sort($sorted);
+                $n = count($sorted);
+                $medianRoi = round(($n % 2 === 0)
+                    ? ($sorted[$n / 2 - 1] + $sorted[$n / 2]) / 2.0
+                    : $sorted[(int)($n / 2)], 4);
+            }
+
+            $avgDur = count($durs) > 0 ? round(array_sum($durs) / count($durs), 1) : null;
+            $bestRoi  = count($rois) > 0 ? max($rois) : null;
+            $worstRoi = count($rois) > 0 ? min($rois) : null;
+
+            $deepLossRate = $trades > 0 ? round($bk['deep_loss_count'] / $trades * 100.0, 2) : null;
+            $lastTradeAt  = $bk['last_trade_ts'] > 0 ? gmdate('c', $bk['last_trade_ts']) : null;
+
+            // Status classification
+            if ($trades < $minSamples) {
+                $status = 'insufficient_data';
+            } elseif ($avgRoi !== null && $winratePct !== null && $avgRoi <= $badAvgRoi && $winratePct <= $badWinrate) {
+                $status = 'bad_hour_candidate';
+            } elseif ($avgRoi !== null && $winratePct !== null && $avgRoi >= $goodAvgRoi && $winratePct >= $goodWinrate) {
+                $status = 'good_hour_candidate';
+            } else {
+                $status = 'neutral';
+            }
+
+            // Examples: up to 5 for bad/good candidate hours
+            $examplesBad  = [];
+            $examplesGood = [];
+            foreach ($bk['_examples_stash'] ?? [] as [$roi2, $exRec]) {
+                if ($roi2 !== null && $roi2 <= 0 && count($examplesBad)  < 5) $examplesBad[]  = $exRec;
+                if ($roi2 !== null && $roi2 > 0  && count($examplesGood) < 5) $examplesGood[] = $exRec;
+            }
+
+            $out = [
+                'hour'                  => $hourKey,
+                'trades'                => $trades,
+                'wins'                  => $wins,
+                'losses'                => $losses,
+                'breakeven'             => $bk['breakeven'],
+                'winrate_pct'           => $winratePct,
+                'avg_roi'               => $avgRoi,
+                'median_roi'            => $medianRoi,
+                'sum_roi'               => $sumRoi,
+                'pnl_sum'               => round($bk['pnl_sum'], 4),
+                'avg_duration_minutes'  => $avgDur,
+                'deep_loss_count'       => $bk['deep_loss_count'],
+                'deep_loss_rate_pct'    => $deepLossRate,
+                'best_roi'              => $bestRoi,
+                'worst_roi'             => $worstRoi,
+                'last_trade_at'         => $lastTradeAt,
+                'status'                => $status,
+            ];
+            if ($status === 'bad_hour_candidate' || $status === 'good_hour_candidate') {
+                $out['examples'] = ($status === 'bad_hour_candidate') ? $examplesBad : $examplesGood;
+            }
+            return $out;
+        };
+
+        $finalHours     = [];
+        $badHourCount   = 0;
+        $goodHourCount  = 0;
+
+        foreach ($hourBuckets as $hk => $bk) {
+            $fin = $finalizeHour($bk, $hk, $minSamples, $badAvgRoi, $badWinrate, $goodAvgRoi, $goodWinrate);
+            $finalHours[$hk] = $fin;
+            if ($fin['status'] === 'bad_hour_candidate')  $badHourCount++;
+            if ($fin['status'] === 'good_hour_candidate') $goodHourCount++;
+        }
+
+        // ── Build 4-hour block stats ──────────────────────────────────────────
+        $finalBlocks    = [];
+        $badBlockCount  = 0;
+        $goodBlockCount = 0;
+
+        foreach ($blockDefs as $blockKey => $hours) {
+            $bt = 0; $bw = 0; $bl = 0; $bbe = 0;
+            $bRois = []; $bPnl = 0.0; $bDeep = 0;
+            foreach ($hours as $hk) {
+                $raw2 = $hourBuckets[$hk];
+                $bt  += $raw2['trades'];
+                $bw  += $raw2['wins'];
+                $bl  += $raw2['losses'];
+                $bbe += $raw2['breakeven'];
+                $bRois = array_merge($bRois, $raw2['roi_values']);
+                $bPnl += $raw2['pnl_sum'];
+                $bDeep += $raw2['deep_loss_count'];
+            }
+
+            $bWinratePct = $bt > 0 ? round($bw / $bt * 100.0, 2) : null;
+            $bAvgRoi     = count($bRois) > 0 ? round(array_sum($bRois) / count($bRois), 4) : null;
+            $bSumRoi     = count($bRois) > 0 ? round(array_sum($bRois), 4) : null;
+
+            $bMedianRoi  = null;
+            if (count($bRois) > 0) {
+                $sorted = $bRois;
+                sort($sorted);
+                $n = count($sorted);
+                $bMedianRoi = round(($n % 2 === 0)
+                    ? ($sorted[$n / 2 - 1] + $sorted[$n / 2]) / 2.0
+                    : $sorted[(int)($n / 2)], 4);
+            }
+
+            if ($bt < $minSamples) {
+                $bStatus = 'insufficient_data';
+            } elseif ($bAvgRoi !== null && $bWinratePct !== null && $bAvgRoi <= $badAvgRoi && $bWinratePct <= $badWinrate) {
+                $bStatus = 'bad_hour_candidate';
+            } elseif ($bAvgRoi !== null && $bWinratePct !== null && $bAvgRoi >= $goodAvgRoi && $bWinratePct >= $goodWinrate) {
+                $bStatus = 'good_hour_candidate';
+            } else {
+                $bStatus = 'neutral';
+            }
+
+            if ($bStatus === 'bad_hour_candidate')  $badBlockCount++;
+            if ($bStatus === 'good_hour_candidate') $goodBlockCount++;
+
+            $finalBlocks[$blockKey] = [
+                'hours'          => $hours,
+                'trades'         => $bt,
+                'wins'           => $bw,
+                'losses'         => $bl,
+                'breakeven'      => $bbe,
+                'winrate_pct'    => $bWinratePct,
+                'avg_roi'        => $bAvgRoi,
+                'median_roi'     => $bMedianRoi,
+                'sum_roi'        => $bSumRoi,
+                'pnl_sum'        => round($bPnl, 4),
+                'deep_loss_count'=> $bDeep,
+                'status'         => $bStatus,
+            ];
+        }
+
+        // ── Collect examples for bad/good hours ───────────────────────────────
+        $normExamples    = [];
+        $missingPrExamples = [];
+        $missingRoiExamples = [];
+        foreach ($finalHours as $hk => $fh) {
+            if (isset($fh['examples'])) {
+                foreach ($fh['examples'] as $ex) {
+                    if (count($normExamples) < 5) $normExamples[] = array_merge(['hour' => $hk], $ex);
+                }
+            }
+        }
+
+        // ── Write hourly_stats.json ───────────────────────────────────────────
+        $generatedAt = date('c');
+        $statsPayload = [
+            'generated_at'  => $generatedAt,
+            'source'        => 'closed_trades',
+            'strategy'      => 'double_bottom_long',
+            'total_trades'  => $totalCount,
+            'timezone'      => 'UTC',
+            'hours'         => $finalHours,
+            'blocks'        => $finalBlocks,
+        ];
+        $this->writeJson($statsRelFile, $statsPayload);
+
+        return [
+            'hourly_stats_enabled'            => true,
+            'hourly_stats_generated_at'       => $generatedAt,
+            'hourly_stats_total_trades'       => $totalCount,
+            'hourly_stats_bad_hour_candidates'  => $badHourCount,
+            'hourly_stats_good_hour_candidates' => $goodHourCount,
+            'hourly_stats_bad_block_candidates'  => $badBlockCount,
+            'hourly_stats_good_block_candidates' => $goodBlockCount,
+            'hourly_stats_file'               => $statsRelFile,
+        ];
     }
 
     private function requireLogic(string $file): void

@@ -324,4 +324,16 @@ return [
     'lookback_candles'  => 120,
     'bybit_base_url'    => 'https://api.bybit.com',
     'bybit_timeout_sec' => 10,
+
+    // ── Hourly performance statistics ────────────────────────────────────────
+    // Reads closed_trades.json and groups double_bottom_long trade outcomes by
+    // the hour (UTC) the trade was opened. Diagnostics only — no trading behavior
+    // is changed by this output.
+    'hourly_stats_enabled'                  => true,
+    'hourly_stats_file'                     => 'storage/hourly_stats.json',
+    'hourly_stats_min_samples_for_signal'   => 10,
+    'hourly_stats_bad_avg_roi_threshold'    => -5.0,
+    'hourly_stats_bad_winrate_threshold'    => 40.0,
+    'hourly_stats_good_avg_roi_threshold'   => 5.0,
+    'hourly_stats_good_winrate_threshold'   => 60.0,
 ];

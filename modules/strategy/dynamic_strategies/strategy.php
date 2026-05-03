@@ -620,7 +620,12 @@ final class DynamicStrategiesStrategy
 
             $detectedAt = date('c');
             $signal = [
-                'signal_id'                   => 'dsig_' . $cand['dynamic_rule'] . '_' . $sym . '_' . $now,
+                'signal_id'                   => (function () use ($cand, $sym, $candSide): string {
+                                                    $ctxIds = $cand['source_context_ids'] ?? [];
+                                                    sort($ctxIds);
+                                                    $ctxHash = substr(md5(implode(',', $ctxIds)), 0, 8);
+                                                    return 'dsig_' . $cand['dynamic_rule'] . '_' . $sym . '_' . $candSide . '_' . $ctxHash;
+                                                })(),
                 'symbol'                      => $sym,
                 'side'                        => $candSide,
                 'strategy'                    => self::STRATEGY_ID,

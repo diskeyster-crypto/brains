@@ -4628,6 +4628,7 @@ BLCK;
     // ── Precompute freeze/blacklist HTML for heredoc ──────────────────────────
     $activeFreezeCount    = count($activeFreezeEntries);
     $freezeRegistryCount  = count($freezeRegistry);
+    $expiredFreezeCount   = $freezeRegistryCount - $activeFreezeCount;
     $cfgFreezeModesStr    = $e(implode(', ', $cfgFreezeModes));
     $cfgAutoBlModesStr    = $e(implode(', ', $cfgAutoBlModes));
     $manualBlacklistHtml  = $e($manualBlacklistText);
@@ -4670,11 +4671,55 @@ BLCK;
 
     $clearFreezeFormHtml = '';
     if (!empty($freezeRegistry)) {
-        $clearFreezeFormHtml = "<form method=\"post\" action=\"{$freezeSaveUrl}\" style=\"margin:8px 0 0;\">"
+        $btnStyle = 'background:rgba(248,81,73,.1);color:#f85149;border:1px solid #f8514944;padding:4px 12px;font-size:12px;';
+        $btnStyleAll = 'background:rgba(248,81,73,.18);color:#f85149;border:1px solid #f8514955;padding:4px 12px;font-size:12px;margin-left:8px;';
+        $clearFreezeFormHtml = "<div style=\"display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0;\">"
+            . "<form method=\"post\" action=\"{$freezeSaveUrl}\" style=\"margin:0;\">"
             . "<input type=\"hidden\" name=\"dashboard_action\" value=\"clear_expired_freeze\">"
             . "<input type=\"hidden\" name=\"active_tab\" value=\"dh-ctrl\">"
-            . "<button type=\"submit\" class=\"btn btn-sm\" style=\"background:rgba(248,81,73,.1);color:#f85149;border:1px solid #f8514944;padding:4px 12px;font-size:12px;\">"
-            . "<i class=\"bi bi-trash\" style=\"margin-right:4px;\"></i>Очистить истёкшие записи freeze</button></form>";
+            . "<button type=\"submit\" class=\"btn btn-sm\" style=\"{$btnStyle}\">"
+            . "<i class=\"bi bi-trash\" style=\"margin-right:4px;\"></i>Очистить истёкшие freeze</button></form>"
+            . "<form method=\"post\" action=\"{$freezeSaveUrl}\" style=\"margin:0;\""
+            . " onsubmit=\"return confirm('Очистить весь runtime freeze реестр? Это удалит ВСЕ записи.')\">"
+            . "<input type=\"hidden\" name=\"dashboard_action\" value=\"clear_all_freeze\">"
+            . "<input type=\"hidden\" name=\"active_tab\" value=\"dh-ctrl\">"
+            . "<button type=\"submit\" class=\"btn btn-sm\" style=\"{$btnStyleAll}\">"
+            . "<i class=\"bi bi-x-circle\" style=\"margin-right:4px;\"></i>Очистить весь runtime freeze</button></form>"
+            . "</div>";
+    }
+
+    $runtimeBlacklistCount = count($runtimeBlacklist);
+    $activeBlacklistCount  = count($autoBlacklistEntries);
+    $expiredBlacklistCount = 0;
+    $nowTs = time();
+    foreach ($runtimeBlacklist as $blEnt) {
+        $expiry = null;
+        foreach (['blocked_until', 'expires_at', 'until'] as $blField) {
+            if (isset($blEnt[$blField]) && $blEnt[$blField] !== '') {
+                $t = @strtotime((string)$blEnt[$blField]);
+                if ($t !== false) { $expiry = $t; break; }
+            }
+        }
+        if ($expiry !== null && $expiry <= $nowTs) { $expiredBlacklistCount++; }
+    }
+
+    $clearBlacklistFormHtml = '';
+    if (!empty($runtimeBlacklist)) {
+        $btnBl    = 'background:rgba(248,81,73,.1);color:#f85149;border:1px solid #f8514944;padding:4px 12px;font-size:12px;';
+        $btnBlAll = 'background:rgba(248,81,73,.18);color:#f85149;border:1px solid #f8514955;padding:4px 12px;font-size:12px;';
+        $clearBlacklistFormHtml = "<div style=\"display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0;\">"
+            . "<form method=\"post\" action=\"{$blacklistSaveUrl}\" style=\"margin:0;\">"
+            . "<input type=\"hidden\" name=\"dashboard_action\" value=\"clear_expired_blacklist\">"
+            . "<input type=\"hidden\" name=\"active_tab\" value=\"dh-ctrl\">"
+            . "<button type=\"submit\" class=\"btn btn-sm\" style=\"{$btnBl}\">"
+            . "<i class=\"bi bi-trash\" style=\"margin-right:4px;\"></i>Очистить истёкшие blacklist</button></form>"
+            . "<form method=\"post\" action=\"{$blacklistSaveUrl}\" style=\"margin:0;\""
+            . " onsubmit=\"return confirm('Очистить весь runtime blacklist? Ручной blacklist в конфиге останется.')\">"
+            . "<input type=\"hidden\" name=\"dashboard_action\" value=\"clear_all_blacklist\">"
+            . "<input type=\"hidden\" name=\"active_tab\" value=\"dh-ctrl\">"
+            . "<button type=\"submit\" class=\"btn btn-sm\" style=\"{$btnBlAll}\">"
+            . "<i class=\"bi bi-x-circle\" style=\"margin-right:4px;\"></i>Очистить весь runtime blacklist</button></form>"
+            . "</div>";
     }
 
     $autoBlTableHtml = '';
@@ -5589,6 +5634,8 @@ BLCK;
           <strong style="color:#58a6ff;margin-left:4px;">{$activeFreezeCount}</strong></span>
         <span><span style="color:var(--ui-text-muted);">Всего в реестре:</span>
           <strong style="margin-left:4px;">{$freezeRegistryCount}</strong></span>
+        <span><span style="color:var(--ui-text-muted);">Истёкших:</span>
+          <strong style="color:#f0883e;margin-left:4px;">{$expiredFreezeCount}</strong></span>
       </div>
       {$activeFreezeTableHtml}
       <!-- Settings form -->
@@ -5644,7 +5691,17 @@ BLCK;
   <div class="card" style="margin-bottom:16px;border-color:#f8514944;">
     <div class="card-header"><i class="bi bi-slash-circle" style="margin-right:6px;color:#f85149;"></i>Symbol Blacklist — блокировка символов</div>
     <div class="card-body" style="padding:14px 16px;">
+      <!-- Status row -->
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;">
+        <span><span style="color:var(--ui-text-muted);">Активных (авто):</span>
+          <strong style="color:#f85149;margin-left:4px;">{$activeBlacklistCount}</strong></span>
+        <span><span style="color:var(--ui-text-muted);">Всего runtime:</span>
+          <strong style="margin-left:4px;">{$runtimeBlacklistCount}</strong></span>
+        <span><span style="color:var(--ui-text-muted);">Истёкших:</span>
+          <strong style="color:#f0883e;margin-left:4px;">{$expiredBlacklistCount}</strong></span>
+      </div>
       {$autoBlTableHtml}
+      {$clearBlacklistFormHtml}
       <!-- Settings form -->
       <form method="post" action="{$blacklistSaveUrl}" style="margin:0;">
         <input type="hidden" name="dashboard_action" value="freeze_blacklist_save">
@@ -6283,7 +6340,9 @@ function handleClearExpiredFreeze(): void
     }
 
     $path = System::path('root') . '/modules/bot/storage/runtime/symbol_freeze_registry.json';
-    $removed = 0;
+    $removed        = 0;
+    $skippedInvalid = 0;
+    $remaining      = 0;
     if (is_file($path)) {
         $raw = @file_get_contents($path);
         if ($raw !== false && $raw !== '') {
@@ -6291,18 +6350,33 @@ function handleClearExpiredFreeze(): void
             if (is_array($reg)) {
                 $now = time();
                 foreach ($reg as $key => $entry) {
-                    $ft = @strtotime((string)($entry['frozen_until'] ?? ''));
-                    if ($ft === false || $ft <= $now) {
+                    $expiry = null;
+                    foreach (['frozen_until', 'blocked_until', 'expires_at', 'suppress_until'] as $field) {
+                        if (isset($entry[$field]) && $entry[$field] !== '') {
+                            $t = @strtotime((string)$entry[$field]);
+                            if ($t !== false) {
+                                $expiry = $t;
+                                break;
+                            }
+                        }
+                    }
+                    if ($expiry === null) {
+                        $skippedInvalid++;
+                    } elseif ($expiry <= $now) {
                         unset($reg[$key]);
                         $removed++;
                     }
                 }
+                $remaining = count($reg);
                 @file_put_contents($path, json_encode($reg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n", LOCK_EX);
             }
         }
     }
 
-    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Очищено истёкших записей freeze: {$removed}"];
+    $_SESSION['dashboard_flash'] = [
+        'type' => 'success',
+        'msg'  => "Истёкшие freeze очищены: удалено {$removed}, пропущено {$skippedInvalid}, осталось {$remaining}.",
+    ];
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
     $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
     if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }
@@ -6376,6 +6450,127 @@ function handleRemoveBlacklistSymbol(): void
     exit;
 }
 } // end if (!function_exists('handleRemoveBlacklistSymbol'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: clear entire runtime freeze registry
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleClearAllFreeze')) {
+function handleClearAllFreeze(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    $path    = System::path('root') . '/modules/bot/storage/runtime/symbol_freeze_registry.json';
+    $deleted = 0;
+    if (is_file($path)) {
+        $raw = @file_get_contents($path);
+        if ($raw !== false && $raw !== '') {
+            $reg = @json_decode($raw, true);
+            if (is_array($reg)) {
+                $deleted = count($reg);
+            }
+        }
+    }
+    @file_put_contents($path, "{}\n", LOCK_EX);
+
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Runtime freeze очищен: удалено {$deleted} записей."];
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
+    exit;
+}
+} // end if (!function_exists('handleClearAllFreeze'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: clear expired runtime blacklist entries
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleClearExpiredBlacklist')) {
+function handleClearExpiredBlacklist(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    $path           = System::path('root') . '/modules/bot/storage/runtime/symbol_blacklist.json';
+    $removed        = 0;
+    $skippedInvalid = 0;
+    $remaining      = 0;
+    if (is_file($path)) {
+        $raw = @file_get_contents($path);
+        if ($raw !== false && $raw !== '') {
+            $bl = @json_decode($raw, true);
+            if (is_array($bl)) {
+                $now = time();
+                foreach ($bl as $key => $entry) {
+                    $expiry = null;
+                    foreach (['blocked_until', 'expires_at', 'until'] as $field) {
+                        if (isset($entry[$field]) && $entry[$field] !== '') {
+                            $t = @strtotime((string)$entry[$field]);
+                            if ($t !== false) {
+                                $expiry = $t;
+                                break;
+                            }
+                        }
+                    }
+                    if ($expiry === null) {
+                        $skippedInvalid++;
+                    } elseif ($expiry <= $now) {
+                        unset($bl[$key]);
+                        $removed++;
+                    }
+                }
+                $remaining = count($bl);
+                @file_put_contents($path, json_encode($bl, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n", LOCK_EX);
+            }
+        }
+    }
+
+    $_SESSION['dashboard_flash'] = [
+        'type' => 'success',
+        'msg'  => "Истёкшие blacklist очищены: удалено {$removed}, пропущено {$skippedInvalid}, осталось {$remaining}.",
+    ];
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
+    exit;
+}
+} // end if (!function_exists('handleClearExpiredBlacklist'))
+
+// ──────────────────────────────────────────────────────────────────────────────
+// POST handler: clear entire runtime blacklist
+// ──────────────────────────────────────────────────────────────────────────────
+if (!function_exists('handleClearAllBlacklist')) {
+function handleClearAllBlacklist(): void
+{
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    $path    = System::path('root') . '/modules/bot/storage/runtime/symbol_blacklist.json';
+    $deleted = 0;
+    if (is_file($path)) {
+        $raw = @file_get_contents($path);
+        if ($raw !== false && $raw !== '') {
+            $bl = @json_decode($raw, true);
+            if (is_array($bl)) {
+                $deleted = count($bl);
+            }
+        }
+    }
+    @file_put_contents($path, "{}\n", LOCK_EX);
+
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Runtime blacklist очищен: удалено {$deleted} записей."];
+    $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-ctrl'));
+    $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];
+    if (!in_array($activeTab, $validTabs, true)) { $activeTab = 'dh-ctrl'; }
+    header('Location: ' . System::web('admin/dashboard') . '?tab=' . $activeTab);
+    exit;
+}
+} // end if (!function_exists('handleClearAllBlacklist'))
+
 if (!function_exists('handleDashboardStrategyAction')) {
 function handleDashboardStrategyAction(): void
 {
@@ -7704,11 +7899,20 @@ function dispatchDashboardPost(): void
         case 'clear_expired_freeze':
             handleClearExpiredFreeze();
             break;
+        case 'clear_all_freeze':
+            handleClearAllFreeze();
+            break;
         case 'unfreeze_symbol':
             handleUnfreezeSymbol();
             break;
         case 'remove_blacklist_symbol':
             handleRemoveBlacklistSymbol();
+            break;
+        case 'clear_expired_blacklist':
+            handleClearExpiredBlacklist();
+            break;
+        case 'clear_all_blacklist':
+            handleClearAllBlacklist();
             break;
         default:
             $_SESSION['dashboard_flash'] = [

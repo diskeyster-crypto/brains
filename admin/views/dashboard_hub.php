@@ -233,6 +233,27 @@ function renderDashboardHub(): string
     $pmCfgImpulseEnYes      = ($pmCfgImpulseEnabled === '1') ? ' selected' : '';
     $pmCfgImpulseEnNo       = ($pmCfgImpulseEnabled !== '1') ? ' selected' : '';
 
+    // ── Long ROI staircase config vars ────────────────────────────────────
+    $pmCfgStaircaseEnabled  = ($pmCfgProfileCfg['roi_staircase_enabled']          ?? true) ? '1' : '0';
+    $pmCfgStaircaseStepRoi  = (string) ($pmCfgProfileCfg['roi_staircase_step_roi']         ?? 5.0);
+    $pmCfgStaircaseBase     = (string) ($pmCfgProfileCfg['roi_staircase_base_floor_roi']   ?? 5.0);
+    $pmCfgStaircaseBuffer   = (string) ($pmCfgProfileCfg['roi_staircase_floor_buffer_roi'] ?? 3.0);
+    $pmCfgStaircaseMinPeak  = (string) ($pmCfgProfileCfg['roi_staircase_min_peak_roi']     ?? 10.0);
+    $pmCfgStaircaseEnYes    = ($pmCfgStaircaseEnabled === '1') ? ' selected' : '';
+    $pmCfgStaircaseEnNo     = ($pmCfgStaircaseEnabled !== '1') ? ' selected' : '';
+
+    // ── Long chop exit config vars ────────────────────────────────────────
+    $pmCfgChopEnabled       = ($pmCfgProfileCfg['chop_exit_enabled']              ?? true) ? '1' : '0';
+    $pmCfgChopMinPeak       = (string) ($pmCfgProfileCfg['chop_exit_min_peak_roi']          ?? 8.0);
+    $pmCfgChopWindow        = (string) ($pmCfgProfileCfg['chop_exit_window_seconds']        ?? 180);
+    $pmCfgChopMinSwings     = (string) ($pmCfgProfileCfg['chop_exit_min_swings']            ?? 3);
+    $pmCfgChopSwingRoi      = (string) ($pmCfgProfileCfg['chop_exit_swing_roi']             ?? 3.0);
+    $pmCfgChopMaxSwingRoi   = (string) ($pmCfgProfileCfg['chop_exit_max_swing_roi']         ?? 5.0);
+    $pmCfgChopNoPeakSec     = (string) ($pmCfgProfileCfg['chop_exit_no_new_peak_seconds']   ?? 180);
+    $pmCfgChopMinCloseRoi   = (string) ($pmCfgProfileCfg['chop_exit_min_close_roi']         ?? 4.0);
+    $pmCfgChopEnYes         = ($pmCfgChopEnabled === '1') ? ' selected' : '';
+    $pmCfgChopEnNo          = ($pmCfgChopEnabled !== '1') ? ' selected' : '';
+
     // ── flash message ─────────────────────────────────────────────────────
     $flash = null;
     if (session_status() === PHP_SESSION_NONE) {
@@ -5444,6 +5465,89 @@ BLCK;
           </div>
         </div>
 
+        <!-- Long ROI staircase settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#3fb950;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Long ROI staircase trailing
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Staircase включён</label>
+            <select name="long_roi_staircase_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgStaircaseEnYes}>Да</option>
+              <option value="0"{$pmCfgStaircaseEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Staircase Step ROI%</label>
+            <input type="number" step="0.5" min="1" name="long_roi_staircase_step_roi"
+              value="{$pmCfgStaircaseStepRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Staircase Base floor ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_roi_staircase_base_floor_roi"
+              value="{$pmCfgStaircaseBase}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Staircase Floor buffer ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_roi_staircase_floor_buffer_roi"
+              value="{$pmCfgStaircaseBuffer}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Staircase Min peak ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_roi_staircase_min_peak_roi"
+              value="{$pmCfgStaircaseMinPeak}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+
+        <!-- Long chop exit settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#3fb950;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Long chop / indecision exit
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Chop exit включён</label>
+            <select name="long_chop_exit_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgChopEnYes}>Да</option>
+              <option value="0"{$pmCfgChopEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Chop Min peak ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_chop_exit_min_peak_roi"
+              value="{$pmCfgChopMinPeak}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Chop Window (сек)</label>
+            <input type="number" step="10" min="60" name="long_chop_exit_window_seconds"
+              value="{$pmCfgChopWindow}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Chop Min swings</label>
+            <input type="number" step="1" min="2" name="long_chop_exit_min_swings"
+              value="{$pmCfgChopMinSwings}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Chop Swing ROI% (min)</label>
+            <input type="number" step="0.5" min="0.5" name="long_chop_exit_swing_roi"
+              value="{$pmCfgChopSwingRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Chop Swing ROI% (max)</label>
+            <input type="number" step="0.5" min="1" name="long_chop_exit_max_swing_roi"
+              value="{$pmCfgChopMaxSwingRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Chop No-new-peak (сек)</label>
+            <input type="number" step="10" min="60" name="long_chop_exit_no_new_peak_seconds"
+              value="{$pmCfgChopNoPeakSec}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Chop Min close ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_chop_exit_min_close_roi"
+              value="{$pmCfgChopMinCloseRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+
         <!-- Short profile settings -->
         <div style="margin-bottom:6px;font-size:12px;color:#58a6ff;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
           Short профиль — {$e($pmShortProfile)}
@@ -7647,6 +7751,47 @@ function handleDashboardPmConfigSave(): void
         'impulse_min_open_interest_value_growth_pct' => ['min' => 0.0],
     ];
     foreach ($impulseNumeric as $field => $rules) {
+        $postKey = 'long_' . $field;
+        if (isset($_POST[$postKey])) {
+            $raw = (float) $_POST[$postKey];
+            if ($raw < $rules['min']) { $raw = (float) $rules['min']; }
+            $longProfileData[$field] = isset($rules['int']) ? (int) $raw : $raw;
+        }
+    }
+
+    // ── Long ROI staircase fields ─────────────────────────────────────────
+    if (isset($_POST['long_roi_staircase_enabled'])) {
+        $longProfileData['roi_staircase_enabled'] = (bool)(int)$_POST['long_roi_staircase_enabled'];
+    }
+    $staircaseNumeric = [
+        'roi_staircase_step_roi'         => ['min' => 1.0],
+        'roi_staircase_base_floor_roi'   => ['min' => 0.0],
+        'roi_staircase_floor_buffer_roi' => ['min' => 0.0],
+        'roi_staircase_min_peak_roi'     => ['min' => 0.0],
+    ];
+    foreach ($staircaseNumeric as $field => $rules) {
+        $postKey = 'long_' . $field;
+        if (isset($_POST[$postKey])) {
+            $raw = (float) $_POST[$postKey];
+            if ($raw < $rules['min']) { $raw = (float) $rules['min']; }
+            $longProfileData[$field] = isset($rules['int']) ? (int) $raw : $raw;
+        }
+    }
+
+    // ── Long chop exit fields ─────────────────────────────────────────────
+    if (isset($_POST['long_chop_exit_enabled'])) {
+        $longProfileData['chop_exit_enabled'] = (bool)(int)$_POST['long_chop_exit_enabled'];
+    }
+    $chopNumeric = [
+        'chop_exit_min_peak_roi'         => ['min' => 0.0],
+        'chop_exit_window_seconds'       => ['min' => 60.0, 'int' => true],
+        'chop_exit_min_swings'           => ['min' => 2.0,  'int' => true],
+        'chop_exit_swing_roi'            => ['min' => 0.5],
+        'chop_exit_max_swing_roi'        => ['min' => 1.0],
+        'chop_exit_no_new_peak_seconds'  => ['min' => 60.0, 'int' => true],
+        'chop_exit_min_close_roi'        => ['min' => 0.0],
+    ];
+    foreach ($chopNumeric as $field => $rules) {
         $postKey = 'long_' . $field;
         if (isset($_POST[$postKey])) {
             $raw = (float) $_POST[$postKey];

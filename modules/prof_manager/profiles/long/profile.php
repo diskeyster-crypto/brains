@@ -114,12 +114,44 @@ class LongProfile
             }
         }
 
+        // ── ROI staircase: raise effective lock_floor_roi ─────────────────────
+        // Computed before runLifecycle so the planner uses the raised floor.
+        $staircaseChecked  = false;
+        $staircaseActive   = false;
+        $staircaseFloorRoi = null;
+
+        if (!empty($this->config['roi_staircase_enabled'])) {
+            $staircaseMinPeak = (float) ($this->config['roi_staircase_min_peak_roi'] ?? 10.0);
+            if ($earlyPeakRoi >= $staircaseMinPeak) {
+                $staircaseChecked  = true;
+                $staircaseFloorRoi = $this->computeStaircaseFloor($earlyPeakRoi);
+                $existingFloor     = (float) ($effectiveConfig['lock_floor_roi'] ?? 5.0);
+                if ($staircaseFloorRoi > $existingFloor) {
+                    // Do not mutate config — local override only
+                    $effectiveConfig = array_merge($effectiveConfig, ['lock_floor_roi' => $staircaseFloorRoi]);
+                    $staircaseActive = true;
+                }
+            }
+        }
+
         // ── STEP 1: run legacy_safe_long lifecycle ────────────────────────────
         $runResult = $this->runLifecycle($position, $lockState, $positionState, $effectiveConfig, $nowTs);
 
         $positionState = $runResult['position_state'];
         $lockState     = $runResult['lock_state'];
         $plan          = $runResult['plan'];
+
+        // ── Track peak_at timestamp and append ROI sample ─────────────────────
+        $runPeakRoi = (float) ($plan['peak_roi'] ?? $earlyPeakRoi);
+        if ($runPeakRoi > ($earlyPeakRoi + 0.001)) {
+            $positionState['last_peak_at'] = $nowTs;
+        } elseif (!isset($positionState['last_peak_at'])) {
+            $positionState['last_peak_at'] = $nowTs;
+        }
+        $runRoi = $plan['current_roi'] ?? $earlyRoi;
+        if ($runRoi !== null && $currentPrice > 0.0) {
+            $this->appendRoiSample($positionState, (float) $runRoi, $currentPrice, $nowTs);
+        }
 
         // Update lock entry for legacy lock actions
         if (in_array($plan['action'], ['would_set_profit_lock', 'would_move_profit_lock'], true)) {
@@ -200,7 +232,63 @@ class LongProfile
             }
         }
 
-        // ── Persist impulse/grace state fields ────────────────────────────────
+        // ── Staircase floor close reason hint ─────────────────────────────────
+        // When the plan is a lock_touch close AND the staircase floor was active
+        // (i.e. the raised floor caused the close), annotate the reason.
+        // Strong impulse is not suppressed here — it was already evaluated above
+        // and can produce a hold_override_lock_touch.
+        if ($staircaseActive
+            && $staircaseFloorRoi !== null
+            && $plan['action'] === 'would_close_on_lock_touch'
+            && $lockTouchOverrideAction === null
+        ) {
+            $impulseClass = $impulseCtx !== null ? ($impulseCtx['impulse_class'] ?? 'weak') : 'weak';
+            if ($impulseClass !== 'strong' && $impulseClass !== 'very_strong') {
+                $closeReasonHint = 'roi_staircase_floor_lost';
+            }
+        }
+
+        // ── Chop / indecision exit ────────────────────────────────────────────
+        $chopChecked    = false;
+        $chopDetected   = false;
+        $chopContext    = null;
+        $chopSkipReason = null;
+
+        $chopEnabled    = !empty($this->config['chop_exit_enabled']);
+        $chopMinPeakRoi = (float) ($this->config['chop_exit_min_peak_roi'] ?? 8.0);
+        // Do not chop-close if grace/impulse already overrode to a hold
+        $alreadyHolding = ($plan['action'] === 'hold_override_lock_touch');
+
+        if ($chopEnabled && !$alreadyHolding) {
+            $chopRoi     = (float) ($plan['current_roi'] ?? $earlyRoi ?? 0.0);
+            $chopPeakRoi = (float) ($plan['peak_roi']    ?? $earlyPeakRoi ?? 0.0);
+
+            if ($chopPeakRoi >= $chopMinPeakRoi && $chopRoi > 0.0) {
+                $chopChecked = true;
+                $chopContext = $this->computeChopContext($positionState, $chopRoi, $chopPeakRoi, $nowTs);
+
+                if ($chopContext['chop_detected']) {
+                    $impulseClass = $impulseCtx !== null ? ($impulseCtx['impulse_class'] ?? 'weak') : 'weak';
+                    if ($impulseClass === 'strong' || $impulseClass === 'very_strong') {
+                        $chopSkipReason = 'strong_impulse';
+                    } else {
+                        $chopDetected        = true;
+                        $plan['action']      = 'roi_chop_indecision_exit';
+                        $plan['skip_reason'] = null;
+                        $plan['note']        = 'chop_exit:swings=' . ($chopContext['swing_count'] ?? 0);
+                    }
+                } else {
+                    $chopSkipReason = $chopContext['reason'] ?? 'not_enough_swings';
+                }
+            }
+        }
+
+        // Persist chop / staircase state
+        $positionState['chop_detected']      = $chopDetected;
+        $positionState['staircase_floor_roi'] = $staircaseFloorRoi;
+        if ($chopContext !== null) {
+            $positionState['last_chop_context'] = $chopContext;
+        }
         if ($impulseCtx !== null) {
             $positionState['impulse_score']        = $impulseCtx['impulse_score'] ?? 0;
             $positionState['impulse_class']        = $impulseCtx['impulse_class'] ?? 'weak';
@@ -290,6 +378,15 @@ class LongProfile
             'momentum_broken'                  => $momentumBroken,
             'missing_metrics'                  => !empty($impulseCtx['missing_metrics']),
             'close_reason_hint'                => $closeReasonHint,
+            // ── Staircase diagnostics ─────────────────────────────────────────
+            'staircase_checked'                => $staircaseChecked,
+            'staircase_active'                 => $staircaseActive,
+            'staircase_floor_roi'              => $staircaseFloorRoi,
+            // ── Chop exit diagnostics ─────────────────────────────────────────
+            'chop_checked'                     => $chopChecked,
+            'chop_detected'                    => $chopDetected,
+            'chop_context'                     => $chopContext,
+            'chop_skip_reason'                 => $chopSkipReason,
         ];
     }
 
@@ -352,6 +449,198 @@ class LongProfile
         return [
             'long_state_cleaned' => $statesCleaned,
             'long_locks_cleaned' => $locksCleaned,
+        ];
+    }
+
+    // =========================================================================
+    // ROI staircase — helpers
+    // =========================================================================
+
+    /**
+     * Compute the dynamic staircase floor ROI for a given peak ROI.
+     *
+     * Formula:
+     *   step  = floor(peak_roi / step_roi)
+     *   floor = max(base_floor_roi, step * step_roi - floor_buffer_roi)
+     * Clamp:
+     *   floor <= max_floor_roi
+     *   floor <  peak_roi  (always leave at least a tiny gap)
+     *
+     * @param float $peakRoi Current peak ROI observed for the position
+     * @return float         Staircase floor ROI (>= base_floor_roi)
+     */
+    private function computeStaircaseFloor(float $peakRoi): float
+    {
+        $cfg       = $this->config;
+        $stepRoi   = (float) ($cfg['roi_staircase_step_roi']         ?? 5.0);
+        $baseFloor = (float) ($cfg['roi_staircase_base_floor_roi']   ?? 5.0);
+        $buffer    = (float) ($cfg['roi_staircase_floor_buffer_roi'] ?? 3.0);
+        $maxFloor  = (float) ($cfg['roi_staircase_max_floor_roi']    ?? 50.0);
+
+        if ($stepRoi <= 0.0) {
+            return $baseFloor;
+        }
+
+        $step  = floor($peakRoi / $stepRoi);
+        $floor = max($baseFloor, $step * $stepRoi - $buffer);
+        $floor = min($floor, $maxFloor);
+        $floor = min($floor, $peakRoi - 0.1); // must remain below peak
+
+        return round($floor, 4);
+    }
+
+    // =========================================================================
+    // ROI sample tracking — helpers
+    // =========================================================================
+
+    /**
+     * Append one ROI + price sample to the per-position state for chop detection.
+     *
+     * Keeps the most recent samples within a rolling window.
+     * Mutates $positionState in-place.
+     *
+     * @param array $positionState Mutable position state (roi_samples key)
+     * @param float $roi           Current ROI %
+     * @param float $price         Current price
+     * @param int   $nowTs         Current unix timestamp
+     */
+    private function appendRoiSample(array &$positionState, float $roi, float $price, int $nowTs): void
+    {
+        $maxSamples   = 20;
+        $maxWindowSec = 1200; // keep at most 20 minutes
+
+        $samples = is_array($positionState['roi_samples'] ?? null) ? $positionState['roi_samples'] : [];
+
+        $samples[] = ['ts' => $nowTs, 'roi' => $roi, 'price' => $price];
+
+        // Prune old samples outside the rolling window
+        $cutoff  = $nowTs - $maxWindowSec;
+        $samples = array_values(array_filter($samples, static fn(array $s): bool => $s['ts'] >= $cutoff));
+
+        // Cap at max samples (keep newest)
+        if (count($samples) > $maxSamples) {
+            $samples = array_slice($samples, -$maxSamples);
+        }
+
+        $positionState['roi_samples'] = $samples;
+    }
+
+    // =========================================================================
+    // Chop / indecision exit — helpers
+    // =========================================================================
+
+    /**
+     * Detect whether a position is chopping in a narrow ROI band without making
+     * a new peak — a pattern that often precedes a dump.
+     *
+     * Returns chop_detected = true only when ALL of:
+     *   - peak ROI was reached at least chop_exit_no_new_peak_seconds ago
+     *   - within chop_exit_window_seconds the ROI made >= chop_exit_min_swings
+     *     alternating moves each between chop_exit_swing_roi and chop_exit_max_swing_roi
+     *   - current ROI >= chop_exit_min_close_roi (when require_profit = true)
+     *
+     * Fails gracefully when roi_samples is empty.
+     *
+     * @param array $positionState Per-position state (roi_samples, last_peak_at)
+     * @param float $roi           Current ROI %
+     * @param float $peakRoi       Peak ROI % for this position
+     * @param int   $nowTs         Current unix timestamp
+     * @return array{
+     *   chop_detected: bool,
+     *   reason: string,
+     *   swing_count: int,
+     *   seconds_since_peak: int|null,
+     *   roi_swings: list<float>
+     * }
+     */
+    private function computeChopContext(
+        array $positionState,
+        float $roi,
+        float $peakRoi,
+        int   $nowTs
+    ): array {
+        $cfg = $this->config;
+
+        $windowSec     = (int)   ($cfg['chop_exit_window_seconds']     ?? 180);
+        $minSwings     = (int)   ($cfg['chop_exit_min_swings']         ?? 3);
+        $swingRoi      = (float) ($cfg['chop_exit_swing_roi']          ?? 3.0);
+        $maxSwingRoi   = (float) ($cfg['chop_exit_max_swing_roi']      ?? 5.0);
+        $noPeakSec     = (int)   ($cfg['chop_exit_no_new_peak_seconds'] ?? 180);
+        $requireProfit = !empty($cfg['chop_exit_require_profit']);
+        $minCloseRoi   = (float) ($cfg['chop_exit_min_close_roi']      ?? 4.0);
+
+        $noResult = static function(string $reason, int $swings = 0, ?int $secsSincePeak = null): array {
+            return ['chop_detected' => false, 'reason' => $reason, 'swing_count' => $swings,
+                    'seconds_since_peak' => $secsSincePeak, 'roi_swings' => []];
+        };
+
+        // Check that peak was reached long enough ago
+        $lastPeakAt       = isset($positionState['last_peak_at']) ? (int) $positionState['last_peak_at'] : null;
+        $secondsSincePeak = ($lastPeakAt !== null) ? ($nowTs - $lastPeakAt) : null;
+
+        if ($secondsSincePeak === null || $secondsSincePeak < $noPeakSec) {
+            return $noResult('peak_too_recent', 0, $secondsSincePeak);
+        }
+
+        // Check minimum close ROI
+        if ($requireProfit && $roi < $minCloseRoi) {
+            return $noResult('below_min_close_roi', 0, $secondsSincePeak);
+        }
+
+        $samples = is_array($positionState['roi_samples'] ?? null) ? $positionState['roi_samples'] : [];
+
+        if (count($samples) < 3) {
+            return $noResult('insufficient_samples', 0, $secondsSincePeak);
+        }
+
+        // Filter to the observation window
+        $cutoff = $nowTs - $windowSec;
+        $window = array_values(array_filter($samples, static fn(array $s): bool => $s['ts'] >= $cutoff));
+
+        if (count($window) < 3) {
+            return $noResult('insufficient_window_samples', 0, $secondsSincePeak);
+        }
+
+        // Detect alternating swings: count direction changes where the move size
+        // falls between swingRoi and maxSwingRoi.
+        $rois      = array_column($window, 'roi');
+        $swings    = [];
+        $swingBase = $rois[0];
+        $lastDir   = 0;
+
+        for ($i = 1; $i < count($rois); $i++) {
+            $delta  = $rois[$i] - $swingBase;
+            $absD   = abs($delta);
+            $curDir = ($delta >= 0.0) ? 1 : -1;
+
+            if ($absD >= $swingRoi && $absD <= $maxSwingRoi) {
+                if ($lastDir === 0 || $curDir !== $lastDir) {
+                    // First swing, or a direction reversal — count as a new swing
+                    $swings[]  = round($delta, 4);
+                    $swingBase = $rois[$i];
+                    $lastDir   = $curDir;
+                }
+            }
+        }
+
+        $swingCount = count($swings);
+
+        if ($swingCount < $minSwings) {
+            return [
+                'chop_detected'      => false,
+                'reason'             => 'not_enough_swings',
+                'swing_count'        => $swingCount,
+                'seconds_since_peak' => $secondsSincePeak,
+                'roi_swings'         => $swings,
+            ];
+        }
+
+        return [
+            'chop_detected'      => true,
+            'reason'             => 'chop_detected',
+            'swing_count'        => $swingCount,
+            'seconds_since_peak' => $secondsSincePeak,
+            'roi_swings'         => $swings,
         ];
     }
 

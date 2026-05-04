@@ -223,6 +223,25 @@ final class ProfManagerService
             $graceOverrideExamples       = [];
             $graceCloseExamples          = [];
 
+            // Long ROI staircase diagnostic counters
+            $staircaseCheckedTotal    = 0;
+            $staircaseActiveTotal     = 0;
+            $staircaseFloorLostTotal  = 0;
+            $staircaseCloseTotal      = 0;
+            $staircaseExamples        = [];
+            $staircaseCloseExamples   = [];
+
+            // Long chop exit diagnostic counters
+            $chopCheckedTotal                  = 0;
+            $chopDetectedTotal                 = 0;
+            $chopClosedTotal                   = 0;
+            $chopSkippedStrongImpulseTotal     = 0;
+            $chopSkippedLowRoiTotal            = 0;
+            $chopSkippedNotEnoughSwingsTotal   = 0;
+            $chopExamples                      = [];
+            $chopCloseExamples                 = [];
+            $chopSkipExamples                  = [];
+
             foreach ($rawPositions as $pos) {
                 if (!is_array($pos)) {
                     continue;
@@ -264,7 +283,7 @@ final class ProfManagerService
                 }
 
                 // ── PM Close Execution ────────────────────────────────────────
-                $pmCloseActions = ['hybrid_close_confirmed', 'would_close_on_lock_touch'];
+                $pmCloseActions = ['hybrid_close_confirmed', 'would_close_on_lock_touch', 'roi_chop_indecision_exit'];
                 $pmAction       = $profileResult['action'] ?? 'skip';
                 $closeAttemptResult = null;
 
@@ -285,9 +304,13 @@ final class ProfManagerService
                     $posSize      = (float)($pos['size']    ?? 0.0);
                     // Use close_reason_hint from long profile when available (e.g. lock_touch_impulse_broken)
                     $closeReasonHint  = ($side === 'long') ? ($profileResult['close_reason_hint'] ?? null) : null;
-                    $closeReasonValue = ($pmAction === 'hybrid_close_confirmed')
-                        ? 'hybrid_confirmed'
-                        : ($closeReasonHint ?? 'lock_touch');
+                    if ($pmAction === 'hybrid_close_confirmed') {
+                        $closeReasonValue = 'hybrid_confirmed';
+                    } elseif ($pmAction === 'roi_chop_indecision_exit') {
+                        $closeReasonValue = 'roi_chop_indecision_exit';
+                    } else {
+                        $closeReasonValue = $closeReasonHint ?? 'lock_touch';
+                    }
 
                     if ($posExecMode === 'mode_mismatch') {
                         // Cross-gateway safety: position mode differs from PM module mode.
@@ -532,6 +555,95 @@ final class ProfManagerService
                             if (count($graceCloseExamples) < 5) { $graceCloseExamples[] = $graceEx; }
                         }
                     }
+
+                    // ── Long ROI staircase diagnostic tracking ────────────────
+                    if (!empty($profileResult['staircase_checked'])) {
+                        $staircaseCheckedTotal++;
+                        if (!empty($profileResult['staircase_active'])) {
+                            $staircaseActiveTotal++;
+                        }
+                        $closeReason = $closeAttemptResult['close_reason'] ?? null;
+                        if ($closeReason === 'roi_staircase_floor_lost') {
+                            $staircaseFloorLostTotal++;
+                        }
+                        if (($closeReason === 'roi_staircase_floor_lost')
+                            && in_array($action, ['demo_close_submitted', 'live_close_submitted'], true)
+                        ) {
+                            $staircaseCloseTotal++;
+                        }
+
+                        $staircaseEx = [
+                            'symbol'             => $pos['symbol'] ?? '',
+                            'side'               => 'long',
+                            'entry_price'        => (float) ($pos['entry_price'] ?? $pos['avg_price'] ?? 0.0),
+                            'current_price'      => (float) ($pos['current_price'] ?? 0.0),
+                            'roi'                => $profileResult['roi'] ?? null,
+                            'peak_roi'           => $profileResult['peak_roi'] ?? null,
+                            'staircase_floor_roi'=> $profileResult['staircase_floor_roi'] ?? null,
+                            'lock_price'         => $profileResult['lock_price'] ?? null,
+                            'impulse_class'      => $profileResult['impulse_class'] ?? null,
+                            'impulse_score'      => $profileResult['impulse_score'] ?? null,
+                            'action'             => $action,
+                            'reason'             => $closeReason,
+                        ];
+
+                        if (count($staircaseExamples) < 10) { $staircaseExamples[] = $staircaseEx; }
+                        if ($closeReason === 'roi_staircase_floor_lost'
+                            && in_array($action, ['demo_close_submitted', 'live_close_submitted'], true)
+                        ) {
+                            if (count($staircaseCloseExamples) < 5) { $staircaseCloseExamples[] = $staircaseEx; }
+                        }
+                    }
+
+                    // ── Long chop exit diagnostic tracking ───────────────────
+                    if (!empty($profileResult['chop_checked'])) {
+                        $chopCheckedTotal++;
+                        $chopCtxData = $profileResult['chop_context'] ?? [];
+                        $skipReason  = $profileResult['chop_skip_reason'] ?? null;
+
+                        if (!empty($profileResult['chop_detected'])) {
+                            $chopDetectedTotal++;
+                        }
+                        if (in_array($action, ['demo_close_submitted', 'live_close_submitted'], true)
+                            && ($closeAttemptResult['close_reason'] ?? null) === 'roi_chop_indecision_exit'
+                        ) {
+                            $chopClosedTotal++;
+                        }
+                        if ($skipReason === 'strong_impulse') {
+                            $chopSkippedStrongImpulseTotal++;
+                        } elseif ($skipReason === 'below_min_close_roi') {
+                            $chopSkippedLowRoiTotal++;
+                        } elseif ($skipReason === 'not_enough_swings') {
+                            $chopSkippedNotEnoughSwingsTotal++;
+                        }
+
+                        $chopEx = [
+                            'symbol'             => $pos['symbol'] ?? '',
+                            'side'               => 'long',
+                            'entry_price'        => (float) ($pos['entry_price'] ?? $pos['avg_price'] ?? 0.0),
+                            'current_price'      => (float) ($pos['current_price'] ?? 0.0),
+                            'roi'                => $profileResult['roi'] ?? null,
+                            'peak_roi'           => $profileResult['peak_roi'] ?? null,
+                            'staircase_floor_roi'=> $profileResult['staircase_floor_roi'] ?? null,
+                            'lock_price'         => $profileResult['lock_price'] ?? null,
+                            'impulse_class'      => $profileResult['impulse_class'] ?? null,
+                            'impulse_score'      => $profileResult['impulse_score'] ?? null,
+                            'roi_swings'         => $chopCtxData['roi_swings']         ?? [],
+                            'swing_count'        => $chopCtxData['swing_count']         ?? 0,
+                            'seconds_since_peak' => $chopCtxData['seconds_since_peak']  ?? null,
+                            'action'             => $action,
+                            'reason'             => $skipReason ?? ($chopCtxData['reason'] ?? null),
+                        ];
+
+                        if (count($chopExamples) < 10) { $chopExamples[] = $chopEx; }
+                        if (!empty($profileResult['chop_detected'])) {
+                            if (in_array($action, ['demo_close_submitted', 'live_close_submitted'], true)) {
+                                if (count($chopCloseExamples) < 5) { $chopCloseExamples[] = $chopEx; }
+                            } elseif ($skipReason !== null) {
+                                if (count($chopSkipExamples) < 5) { $chopSkipExamples[] = $chopEx; }
+                            }
+                        }
+                    }
                 }
 
                 // ── Build per-position runtime record ─────────────────────────
@@ -584,6 +696,14 @@ final class ProfManagerService
                     'grace_active'               => $profileResult['grace_active']               ?? false,
                     'grace_override_count'       => $profileResult['grace_override_count']       ?? null,
                     'momentum_broken'            => $profileResult['momentum_broken']            ?? false,
+                    // Staircase diagnostics (long only)
+                    'staircase_checked'          => $profileResult['staircase_checked']          ?? false,
+                    'staircase_active'           => $profileResult['staircase_active']           ?? false,
+                    'staircase_floor_roi'        => $profileResult['staircase_floor_roi']        ?? null,
+                    // Chop exit diagnostics (long only)
+                    'chop_checked'               => $profileResult['chop_checked']               ?? false,
+                    'chop_detected'              => $profileResult['chop_detected']              ?? false,
+                    'chop_skip_reason'           => $profileResult['chop_skip_reason']           ?? null,
                     // Close execution output (null when no close was attempted this tick)
                     'close_attempted'            => $closeAttemptResult['close_attempted']    ?? null,
                     'close_ok'                   => $closeAttemptResult['close_ok']           ?? null,
@@ -701,6 +821,23 @@ final class ProfManagerService
                 'lock_touch_grace_examples'               => $graceExamples,
                 'lock_touch_grace_override_examples'      => $graceOverrideExamples,
                 'lock_touch_grace_close_examples'         => $graceCloseExamples,
+                // Long ROI staircase diagnostics
+                'roi_staircase_checked_total'             => $staircaseCheckedTotal,
+                'roi_staircase_active_total'              => $staircaseActiveTotal,
+                'roi_staircase_floor_lost_total'          => $staircaseFloorLostTotal,
+                'roi_staircase_close_total'               => $staircaseCloseTotal,
+                'roi_staircase_examples'                  => $staircaseExamples,
+                'roi_staircase_close_examples'            => $staircaseCloseExamples,
+                // Long chop exit diagnostics
+                'chop_exit_checked_total'                       => $chopCheckedTotal,
+                'chop_exit_detected_total'                      => $chopDetectedTotal,
+                'chop_exit_closed_total'                        => $chopClosedTotal,
+                'chop_exit_skipped_strong_impulse_total'        => $chopSkippedStrongImpulseTotal,
+                'chop_exit_skipped_low_roi_total'               => $chopSkippedLowRoiTotal,
+                'chop_exit_skipped_not_enough_swings_total'     => $chopSkippedNotEnoughSwingsTotal,
+                'chop_exit_examples'                            => $chopExamples,
+                'chop_exit_close_examples'                      => $chopCloseExamples,
+                'chop_exit_skip_examples'                       => $chopSkipExamples,
             ], $configSnapshot);
 
             $this->store->writeLastRun($result);

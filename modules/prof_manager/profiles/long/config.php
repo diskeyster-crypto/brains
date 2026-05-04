@@ -150,4 +150,51 @@ return [
     'impulse_hold_widen_lock_buffer_roi'           => 5.0,
     'impulse_hold_lock_buffer_multiplier'          => 2.0,
     'impulse_hold_require_momentum_break_to_close' => true,
+
+    // ── ROI staircase trailing ────────────────────────────────────────────────
+    // When roi_staircase_enabled = true and peak_roi >= min_peak_roi, PM computes
+    // a dynamic floor ROI that increases in steps as peak ROI climbs.  The floor
+    // is applied as the effective lock_floor_roi, so the profit lock will never be
+    // placed below the current step floor.  Strong impulse (strong / very_strong)
+    // may still allow deeper hold by widening the buffer, but the floor prevents
+    // unlimited giveback at high ROI levels.
+    //
+    // Formula: staircase_floor = max(base_floor_roi, floor(peak/step)*step - buffer)
+    // Clamp  : staircase_floor <= max_floor_roi  and  staircase_floor < peak_roi
+    //
+    // Example trajectory:
+    //   peak 10–15 → floor ~6–8    peak 15–20 → floor ~10–13
+    //   peak 20–25 → floor ~13–16  peak 25–30 → floor ~16–20
+    'roi_staircase_enabled'          => true,
+    'roi_staircase_step_roi'         => 5.0,
+    'roi_staircase_base_floor_roi'   => 5.0,
+    'roi_staircase_floor_buffer_roi' => 3.0,
+    'roi_staircase_min_peak_roi'     => 10.0,
+    'roi_staircase_max_floor_roi'    => 50.0,
+
+    // ── Chop / indecision exit ────────────────────────────────────────────────
+    // Closes a profitable long position when price is chopping up and down in a
+    // roughly 3–5 ROI band after the peak without making a new high.  This pattern
+    // indicates distribution / indecision before a dump.
+    //
+    // chop_exit_enabled              — master switch
+    // chop_exit_min_peak_roi         — only active once peak ROI reached this level
+    // chop_exit_window_seconds       — observation window for swing detection (sec)
+    // chop_exit_min_swings           — minimum alternating swings inside window
+    // chop_exit_swing_roi            — minimum size (ROI%) of one swing to count
+    // chop_exit_max_swing_roi        — maximum swing size (ROI%) to count as chop
+    // chop_exit_no_new_peak_seconds  — trigger only if no new peak for this many sec
+    // chop_exit_close_reason         — close reason string written to registry
+    // chop_exit_require_profit       — only close when current ROI >= min_close_roi
+    // chop_exit_min_close_roi        — minimum ROI required to allow a chop close
+    'chop_exit_enabled'              => true,
+    'chop_exit_min_peak_roi'         => 8.0,
+    'chop_exit_window_seconds'       => 180,
+    'chop_exit_min_swings'           => 3,
+    'chop_exit_swing_roi'            => 3.0,
+    'chop_exit_max_swing_roi'        => 5.0,
+    'chop_exit_no_new_peak_seconds'  => 180,
+    'chop_exit_close_reason'         => 'roi_chop_indecision_exit',
+    'chop_exit_require_profit'       => true,
+    'chop_exit_min_close_roi'        => 4.0,
 ];

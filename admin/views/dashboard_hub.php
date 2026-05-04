@@ -100,6 +100,34 @@ function renderDashboardHub(): string
         // keep empty status
     }
 
+    // ── PM fast loop runtime data ─────────────────────────────────────────
+    $pmFastLoopData = [];
+    $pmFastRunData  = [];
+    try {
+        $flPath = $pmModuleDir . '/storage/runtime/last_fast_loop.json';
+        if (is_file($flPath)) {
+            $flRaw = @file_get_contents($flPath);
+            if ($flRaw !== false && $flRaw !== '') {
+                $dec = @json_decode($flRaw, true);
+                if (is_array($dec)) {
+                    $pmFastLoopData = $dec;
+                }
+            }
+        }
+        $frPath = $pmModuleDir . '/storage/runtime/last_fast_run.json';
+        if (is_file($frPath)) {
+            $frRaw = @file_get_contents($frPath);
+            if ($frRaw !== false && $frRaw !== '') {
+                $dec = @json_decode($frRaw, true);
+                if (is_array($dec)) {
+                    $pmFastRunData = $dec;
+                }
+            }
+        }
+    } catch (\Throwable) {
+        // keep empty
+    }
+
     $pmEnabled       = ($pmStatus['enabled']          ?? false) ? 'Вкл' : 'Выкл';
     $pmEnabledBool   = ($pmStatus['enabled']          ?? false);
     $pmMode          = (string) ($pmStatus['mode']          ?? 'demo');
@@ -253,6 +281,25 @@ function renderDashboardHub(): string
     $pmCfgChopMinCloseRoi   = (string) ($pmCfgProfileCfg['chop_exit_min_close_roi']         ?? 4.0);
     $pmCfgChopEnYes         = ($pmCfgChopEnabled === '1') ? ' selected' : '';
     $pmCfgChopEnNo          = ($pmCfgChopEnabled !== '1') ? ' selected' : '';
+
+    // ── Fast loop config display vars ─────────────────────────────────────
+    $pmCfgFastLoopEnabled      = ($pmCfg['fast_loop_enabled']                            ?? true) ? '1' : '0';
+    $pmCfgFastInterval         = (string) ($pmCfg['fast_loop_interval_seconds']               ?? 15);
+    $pmCfgFastMaxRuntime       = (string) ($pmCfg['fast_loop_max_runtime_seconds']            ?? 55);
+    $pmCfgFastMaxTicks         = (string) ($pmCfg['fast_loop_max_ticks_per_run']             ?? 4);
+    $pmCfgFastTickEnabled      = ($pmCfg['fast_tick_enabled']                             ?? true) ? '1' : '0';
+    $pmCfgFastAllowClose       = ($pmCfg['fast_tick_allow_close']                         ?? true) ? '1' : '0';
+    $pmCfgFastAllowLockMove    = ($pmCfg['fast_tick_allow_lock_move']                     ?? true) ? '1' : '0';
+    $pmCfgFastMinLockInterval  = (string) ($pmCfg['fast_tick_min_lock_update_interval_seconds'] ?? 15);
+    $pmCfgFastMinCloseInterval = (string) ($pmCfg['fast_tick_min_close_retry_interval_seconds'] ?? 15);
+    $pmCfgFastLoopEnYes        = ($pmCfgFastLoopEnabled === '1') ? ' selected' : '';
+    $pmCfgFastLoopEnNo         = ($pmCfgFastLoopEnabled !== '1') ? ' selected' : '';
+    $pmCfgFastTickEnYes        = ($pmCfgFastTickEnabled === '1') ? ' selected' : '';
+    $pmCfgFastTickEnNo         = ($pmCfgFastTickEnabled !== '1') ? ' selected' : '';
+    $pmCfgFastCloseYes         = ($pmCfgFastAllowClose === '1') ? ' selected' : '';
+    $pmCfgFastCloseNo          = ($pmCfgFastAllowClose !== '1') ? ' selected' : '';
+    $pmCfgFastLockMoveYes      = ($pmCfgFastAllowLockMove === '1') ? ' selected' : '';
+    $pmCfgFastLockMoveNo       = ($pmCfgFastAllowLockMove !== '1') ? ' selected' : '';
 
     // ── flash message ─────────────────────────────────────────────────────
     $flash = null;
@@ -2291,6 +2338,34 @@ ROWS;
             $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Short skip</td>'
                 . '<td style="color:#8b949e;font-size:11px;">' . $e(trim($_skipLabel)) . '</td></tr>';
         }
+    }
+
+    // ── Fast loop status rows ─────────────────────────────────────────────
+    if (!empty($pmFastLoopData)) {
+        $_flTs        = (string)($pmFastLoopData['started_at']             ?? $pmFastLoopData['ts'] ?? '—');
+        $_flTicks     = (int)($pmFastLoopData['ticks_completed']           ?? 0);
+        $_flCloses    = (int)($pmFastLoopData['closes_submitted_total']    ?? 0);
+        $_flLocks     = (int)($pmFastLoopData['locks_moved_total']         ?? 0);
+        $_flDuration  = (int)($pmFastLoopData['duration_ms']              ?? 0);
+        $_flSkipped   = (string)($pmFastLoopData['skip_reason']            ?? '');
+        $_flStatus    = !empty($pmFastLoopData['skipped']) ? '<span style="color:#8b949e;">' . $e($_flSkipped) . '</span>' : '<span style="color:#3fb950;">ok</span>';
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;padding-top:6px;"><strong style="font-size:11px;">Fast loop</strong></td>'
+            . '<td style="padding-top:6px;">' . $_flStatus . '</td></tr>';
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний fast-loop</td>'
+            . '<td><code style="font-size:11px;">' . $e($_flTs) . '</code></td></tr>';
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Тиков завершено</td>'
+            . '<td><code>' . $_flTicks . '</code></td></tr>';
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Закрытий (fast)</td>'
+            . '<td><code>' . $_flCloses . '</code></td></tr>';
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Локов (fast)</td>'
+            . '<td><code>' . $_flLocks . '</code></td></tr>';
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Длительность (мс)</td>'
+            . '<td><code>' . $_flDuration . '</code></td></tr>';
+    }
+    if (!empty($pmFastRunData)) {
+        $_frTs = (string)($pmFastRunData['ts'] ?? '—');
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний fast-тик</td>'
+            . '<td><code style="font-size:11px;">' . $e($_frTs) . '</code></td></tr>';
     }
 
     // ── PM per-position runtime table HTML ───────────────────────────────
@@ -5663,6 +5738,66 @@ BLCK;
           </div>
         </div>
 
+        <!-- Fast PM loop settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#f0883e;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Fast PM loop — public/cron/prof_manager_fast_loop.php
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Fast loop включён</label>
+            <select name="fast_loop_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgFastLoopEnYes}>Да</option>
+              <option value="0"{$pmCfgFastLoopEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Fast tick включён</label>
+            <select name="fast_tick_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgFastTickEnYes}>Да</option>
+              <option value="0"{$pmCfgFastTickEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Интервал тика (сек)</label>
+            <input type="number" step="1" min="5" name="fast_loop_interval_seconds"
+              value="{$pmCfgFastInterval}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Max runtime (сек)</label>
+            <input type="number" step="1" min="10" name="fast_loop_max_runtime_seconds"
+              value="{$pmCfgFastMaxRuntime}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Max тиков за запуск</label>
+            <input type="number" step="1" min="1" name="fast_loop_max_ticks_per_run"
+              value="{$pmCfgFastMaxTicks}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Allow close</label>
+            <select name="fast_tick_allow_close" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgFastCloseYes}>Да</option>
+              <option value="0"{$pmCfgFastCloseNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Allow lock move</label>
+            <select name="fast_tick_allow_lock_move" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgFastLockMoveYes}>Да</option>
+              <option value="0"{$pmCfgFastLockMoveNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min lock interval (сек)</label>
+            <input type="number" step="1" min="5" name="fast_tick_min_lock_update_interval_seconds"
+              value="{$pmCfgFastMinLockInterval}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min close retry (сек)</label>
+            <input type="number" step="1" min="5" name="fast_tick_min_close_retry_interval_seconds"
+              value="{$pmCfgFastMinCloseInterval}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+
         <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
       </form>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
@@ -7885,6 +8020,35 @@ function handleDashboardPmConfigSave(): void
         }
     }
     $existing['profiles']['short'] = $shortProfileData;
+
+    // ── Fast loop config keys ─────────────────────────────────────────────
+    if (isset($_POST['fast_loop_enabled'])) {
+        $existing['fast_loop_enabled'] = (bool)(int)$_POST['fast_loop_enabled'];
+    }
+    if (isset($_POST['fast_tick_enabled'])) {
+        $existing['fast_tick_enabled'] = (bool)(int)$_POST['fast_tick_enabled'];
+    }
+    if (isset($_POST['fast_loop_interval_seconds'])) {
+        $existing['fast_loop_interval_seconds'] = max(5, (int)$_POST['fast_loop_interval_seconds']);
+    }
+    if (isset($_POST['fast_loop_max_runtime_seconds'])) {
+        $existing['fast_loop_max_runtime_seconds'] = max(10, (int)$_POST['fast_loop_max_runtime_seconds']);
+    }
+    if (isset($_POST['fast_loop_max_ticks_per_run'])) {
+        $existing['fast_loop_max_ticks_per_run'] = max(1, (int)$_POST['fast_loop_max_ticks_per_run']);
+    }
+    if (isset($_POST['fast_tick_allow_close'])) {
+        $existing['fast_tick_allow_close'] = (bool)(int)$_POST['fast_tick_allow_close'];
+    }
+    if (isset($_POST['fast_tick_allow_lock_move'])) {
+        $existing['fast_tick_allow_lock_move'] = (bool)(int)$_POST['fast_tick_allow_lock_move'];
+    }
+    if (isset($_POST['fast_tick_min_lock_update_interval_seconds'])) {
+        $existing['fast_tick_min_lock_update_interval_seconds'] = max(5, (int)$_POST['fast_tick_min_lock_update_interval_seconds']);
+    }
+    if (isset($_POST['fast_tick_min_close_retry_interval_seconds'])) {
+        $existing['fast_tick_min_close_retry_interval_seconds'] = max(5, (int)$_POST['fast_tick_min_close_retry_interval_seconds']);
+    }
 
     // ── Persist ──────────────────────────────────────────────────────────
     $php  = "<?php\n\ndeclare(strict_types=1);\n\n";

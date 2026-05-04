@@ -933,6 +933,216 @@ final class ProfManagerService
     }
 
     /**
+     * Lightweight fast-tick: runs one standard PM tick and writes the result
+     * to storage/runtime/last_fast_run.json.
+     *
+     * Intended to be called by tickFastLoop(). May also be called directly
+     * (e.g. from CLI or a standalone cron) when $calledFromLoop = false.
+     *
+     * All close and lock logic is handled by the existing tick() internals.
+     * The fast_tick_allow_close / fast_tick_allow_lock_move config keys are
+     * stored for diagnostics; enforcement would require profile-level changes
+     * which are out of scope for this module.
+     *
+     * @param bool $calledFromLoop Set true when called from tickFastLoop() to
+     *                             avoid acquiring a redundant per-tick lock.
+     * @return array Tick result with fast_tick=true tag
+     */
+    public function tickFast(bool $calledFromLoop = false): array
+    {
+        $fastEnabled = (bool)($this->config['fast_tick_enabled'] ?? true);
+
+        if (!$fastEnabled) {
+            return [
+                'ok'               => true,
+                'fast_tick'        => true,
+                'called_from_loop' => $calledFromLoop,
+                'skipped'          => true,
+                'skip_reason'      => 'fast_tick_disabled',
+                'ts'               => date('c'),
+            ];
+        }
+
+        // Run standard tick — all business logic lives there
+        $result = $this->tick();
+
+        // Tag result as fast-tick for diagnostics
+        $result['fast_tick']        = true;
+        $result['called_from_loop'] = $calledFromLoop;
+
+        // Write to last_fast_run.json (separate from the regular last_run.json)
+        $this->writeFastLastRun($result);
+
+        return $result;
+    }
+
+    /**
+     * Fast-loop runner: called by ISP cron once per minute.
+     * Internally runs tickFast() every fast_loop_interval_seconds until
+     * fast_loop_max_runtime_seconds is reached or fast_loop_max_ticks_per_run
+     * ticks complete.
+     *
+     * Uses a file lock at storage/runtime/fast_loop.lock to prevent
+     * overlapping loop invocations.
+     *
+     * Writes storage/runtime/last_fast_loop.json after each run.
+     *
+     * @return array Loop summary result
+     */
+    public function tickFastLoop(): array
+    {
+        $ts = date('c');
+
+        $fastLoopEnabled  = (bool)($this->config['fast_loop_enabled']             ?? true);
+        $intervalSec      = max(5,  (int)($this->config['fast_loop_interval_seconds']    ?? 15));
+        $maxRuntimeSec    = max(10, (int)($this->config['fast_loop_max_runtime_seconds']  ?? 55));
+        $overlapGuardSec  = max(10, (int)($this->config['fast_loop_overlap_guard_seconds'] ?? 70));
+        $maxTicks         = max(1,  (int)($this->config['fast_loop_max_ticks_per_run']   ?? 4));
+
+        $baseResult = [
+            'fast_loop'              => true,
+            'ts'                     => $ts,
+            'interval_seconds'       => $intervalSec,
+            'max_runtime_seconds'    => $maxRuntimeSec,
+            'last_fast_loop_path'    => 'public/cron/prof_manager_fast_loop.php',
+        ];
+
+        if (!$fastLoopEnabled) {
+            $result = array_merge($baseResult, [
+                'ok'                     => true,
+                'skipped'                => true,
+                'skip_reason'            => 'fast_loop_disabled',
+                'ticks_attempted'        => 0,
+                'ticks_completed'        => 0,
+                'ticks_skipped'          => 0,
+                'closes_submitted_total' => 0,
+                'locks_moved_total'      => 0,
+                'duration_ms'            => 0,
+            ]);
+            $this->writeFastLoopLastRun($result);
+            return $result;
+        }
+
+        // ── Overlap guard ─────────────────────────────────────────────────
+        $lockPath = $this->getFastLoopLockPath();
+        if (is_file($lockPath)) {
+            $lockTs  = (int)@file_get_contents($lockPath);
+            $lockAge = time() - $lockTs;
+            if ($lockTs > 0 && $lockAge < $overlapGuardSec) {
+                $result = array_merge($baseResult, [
+                    'ok'                     => true,
+                    'skipped'                => true,
+                    'skip_reason'            => 'fast_loop_overlap_guard',
+                    'lock_age_sec'           => $lockAge,
+                    'ticks_attempted'        => 0,
+                    'ticks_completed'        => 0,
+                    'ticks_skipped'          => 0,
+                    'closes_submitted_total' => 0,
+                    'locks_moved_total'      => 0,
+                    'duration_ms'            => 0,
+                ]);
+                $this->writeFastLoopLastRun($result);
+                return $result;
+            }
+        }
+
+        // ── Write lock ────────────────────────────────────────────────────
+        $lockDir = dirname($lockPath);
+        if (!is_dir($lockDir)) {
+            @mkdir($lockDir, 0755, true);
+        }
+        @file_put_contents($lockPath, (string)time(), LOCK_EX);
+
+        // ── Loop ──────────────────────────────────────────────────────────
+        $loopStart       = microtime(true);
+        $ticksAttempted  = 0;
+        $ticksCompleted  = 0;
+        $ticksSkipped    = 0;
+        $closesTotal     = 0;
+        $locksMovedTotal = 0;
+        $tickResults     = [];
+
+        try {
+            for ($i = 0; $i < $maxTicks; $i++) {
+                $elapsed = microtime(true) - $loopStart;
+                if ($elapsed >= $maxRuntimeSec) {
+                    break;
+                }
+
+                $ticksAttempted++;
+
+                try {
+                    $tickResult = $this->tickFast(true);
+                    $ticksCompleted++;
+
+                    $closesSub   = (int)($tickResult['actions_summary']['demo_close_submitted'] ?? 0)
+                                 + (int)($tickResult['actions_summary']['live_close_submitted'] ?? 0);
+                    $locksSet    = (int)($tickResult['actions_summary']['would_set_profit_lock']  ?? 0)
+                                 + (int)($tickResult['actions_summary']['would_move_profit_lock'] ?? 0);
+
+                    $closesTotal     += $closesSub;
+                    $locksMovedTotal += $locksSet;
+
+                    $tickResults[] = [
+                        'tick'             => $i + 1,
+                        'ts'               => $tickResult['ts'] ?? date('c'),
+                        'ok'               => $tickResult['ok'] ?? false,
+                        'positions_total'  => $tickResult['positions_total'] ?? 0,
+                        'executed_count'   => $tickResult['executed_count']  ?? 0,
+                        'skipped_count'    => $tickResult['skipped_count']   ?? 0,
+                        'closes_submitted' => $closesSub,
+                        'locks_moved'      => $locksSet,
+                    ];
+
+                    if (!empty($tickResult['skipped'])) {
+                        $ticksSkipped++;
+                    }
+                } catch (\Throwable $e) {
+                    $ticksSkipped++;
+                    $tickResults[] = [
+                        'tick'  => $i + 1,
+                        'ok'    => false,
+                        'error' => $e->getMessage(),
+                    ];
+                }
+
+                // Sleep between ticks if time allows another iteration
+                if ($i < $maxTicks - 1) {
+                    $elapsed   = microtime(true) - $loopStart;
+                    $remaining = $maxRuntimeSec - $elapsed;
+                    if ($remaining > $intervalSec) {
+                        sleep($intervalSec);
+                    } else {
+                        break; // not enough time for another full tick
+                    }
+                }
+            }
+        } finally {
+            // Always release the loop lock
+            @unlink($lockPath);
+        }
+
+        $durationMs = (int)round((microtime(true) - $loopStart) * 1000);
+
+        $result = array_merge($baseResult, [
+            'ok'                     => true,
+            'started_at'             => $ts,
+            'finished_at'            => date('c'),
+            'duration_ms'            => $durationMs,
+            'ticks_attempted'        => $ticksAttempted,
+            'ticks_completed'        => $ticksCompleted,
+            'ticks_skipped'          => $ticksSkipped,
+            'closes_submitted_total' => $closesTotal,
+            'locks_moved_total'      => $locksMovedTotal,
+            'errors_total'           => $ticksSkipped,
+            'tick_results'           => $tickResults,
+        ]);
+
+        $this->writeFastLoopLastRun($result);
+        return $result;
+    }
+
+    /**
      * Return current module status (without running a tick).
      *
      * @return array
@@ -1730,5 +1940,62 @@ final class ProfManagerService
         } catch (\Throwable) {
             // Never crash a tick over registry write failure
         }
+    }
+
+    // =========================================================================
+    // Fast loop helpers
+    // =========================================================================
+
+    /**
+     * Write the fast-tick result to storage/runtime/last_fast_run.json.
+     * Never throws — write failures are silently swallowed to avoid crashing
+     * the calling tick.
+     */
+    private function writeFastLastRun(array $data): void
+    {
+        $path = $this->moduleDir . '/storage/runtime/last_fast_run.json';
+        $dir  = dirname($path);
+        try {
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            file_put_contents(
+                $path,
+                json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n",
+                LOCK_EX
+            );
+        } catch (\Throwable) {
+            // swallow — never crash a tick over a diagnostic write
+        }
+    }
+
+    /**
+     * Write the fast-loop summary to storage/runtime/last_fast_loop.json.
+     * Never throws.
+     */
+    private function writeFastLoopLastRun(array $data): void
+    {
+        $path = $this->moduleDir . '/storage/runtime/last_fast_loop.json';
+        $dir  = dirname($path);
+        try {
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            file_put_contents(
+                $path,
+                json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n",
+                LOCK_EX
+            );
+        } catch (\Throwable) {
+            // swallow
+        }
+    }
+
+    /**
+     * Absolute path to the fast-loop overlap-guard lock file.
+     */
+    private function getFastLoopLockPath(): string
+    {
+        return $this->moduleDir . '/storage/runtime/fast_loop.lock';
     }
 }

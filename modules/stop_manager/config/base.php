@@ -145,6 +145,23 @@ return [
     'protective_stop_trigger_by'       => 'MarkPrice',
     'protective_stop_verify_after_set' => true,
 
+    // Unverified stop retry: when a setTradingStop returned ok but the follow-up
+    // verifyTradingStop failed, attempt re-verification on subsequent ticks.
+    //
+    // protective_stop_unverified_retry_enabled:
+    //   true (default) — retry verification for stops where confirmed_by_exchange=false.
+    //   false           — leave unverified stops as-is; do not retry.
+    //
+    // protective_stop_unverified_retry_interval_seconds:
+    //   Minimum seconds between retry attempts.  Default 30.
+    //
+    // protective_stop_unverified_max_retries:
+    //   Stop retrying after this many failed verification attempts.  Default 5.
+    //   After max retries, state gets warning=protective_stop_unverified_max_retries_reached.
+    'protective_stop_unverified_retry_enabled'          => true,
+    'protective_stop_unverified_retry_interval_seconds' => 30,
+    'protective_stop_unverified_max_retries'            => 5,
+
     // ── Side-specific stop profiles ───────────────────────────────────────────
     //
     // profiles.long — controls long-side generic ROI emergency stop behavior.

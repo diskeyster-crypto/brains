@@ -251,6 +251,8 @@ final class StopManagerService
         $stats['live_stoploss_set_attempted_total'] += $result['live_stoploss_set_attempted_total'] ?? 0;
         $stats['live_stoploss_set_verified_total']  += $result['live_stoploss_set_verified_total']  ?? 0;
         $stats['demo_stoploss_set_verified_total']  += $result['demo_stoploss_set_verified_total']  ?? 0;
+        // Live protective stop gate cumulative counters
+        $stats['live_protective_stop_skipped_disabled_total'] += $result['live_protective_stop_skipped_disabled_total'] ?? 0;
         // Close deduplication cumulative counters
         $stats['stop_close_deduped_total']        += $result['stop_close_deduped_total']        ?? 0;
 
@@ -406,6 +408,11 @@ final class StopManagerService
             'protective_stop_tpsl_mode'                      => (string)($config['protective_stop_tpsl_mode']      ?? 'Full'),
             'protective_stop_trigger_by'                     => (string)($config['protective_stop_trigger_by']     ?? 'MarkPrice'),
             'protective_stop_verify_after_set'               => (bool)($config['protective_stop_verify_after_set'] ?? true),
+            // ── Live protective stop gate diagnostics (this tick) ────────────
+            'live_protective_stop_skipped_disabled_total'    => $result['live_protective_stop_skipped_disabled_total']    ?? 0,
+            'live_protective_stop_skipped_disabled_examples' => $result['live_protective_stop_skipped_disabled_examples'] ?? [],
+            // ── Live protective stop gate cumulative ─────────────────────────
+            'live_protective_stop_skipped_disabled_cumulative' => (int)($stats['live_protective_stop_skipped_disabled_total'] ?? 0),
             // ── Close deduplication diagnostics (this tick) ──────────────────
             'stop_close_deduped_total'                       => $result['stop_close_deduped_total']       ?? 0,
             'stop_close_deduped_examples'                    => $result['stop_close_deduped_examples']    ?? [],
@@ -556,6 +563,10 @@ final class StopManagerService
         $closedThisTick           = [];   // key => true
         $stopCloseDedupedTotal    = 0;
         $stopCloseDedupedExamples = [];
+
+        // Live protective stop gate diagnostics
+        $liveProtStopsSkippedDisabledTotal    = 0;
+        $liveProtStopsSkippedDisabledExamples = [];
 
         // Legacy liq_distance_percent path control
         $legacyEnabled          = (bool)($config['legacy_liq_distance_stop_enabled'] ?? false);
@@ -1164,6 +1175,29 @@ final class StopManagerService
 
         if ($protStopStateChanged) {
             $this->writeJson('storage/protective_stops_state.json', $protStopState);
+        }
+
+        // ── Diagnostic: live positions skipped because live_protective_stops_enabled=false ──
+        // When SM is in live mode and sideRoiProtEnabled is true but liveProtStopsEnabled=false,
+        // count how many live positions were skipped so the operator can see a clear reason.
+        if ($mode === 'live' && $sideRoiProtEnabled && !$liveProtStopsEnabled && $isActiveMode) {
+            foreach ($posMap as $_skipPos) {
+                $_skipPosMode = $this->normalizeExecMode((string)($_skipPos['execution_mode'] ?? 'demo'));
+                if ($_skipPosMode !== 'live') {
+                    continue;
+                }
+                $liveProtStopsSkippedDisabledTotal++;
+                if (count($liveProtStopsSkippedDisabledExamples) < 5) {
+                    $liveProtStopsSkippedDisabledExamples[] = [
+                        'symbol'      => $_skipPos['symbol']      ?? null,
+                        'side'        => $_skipPos['side']        ?? null,
+                        'strategy_id' => $_skipPos['strategy_id'] ?? $_skipPos['owner_strategy'] ?? null,
+                        'signal_id'   => $_skipPos['signal_id']   ?? null,
+                        'mode'        => 'live',
+                        'reason'      => 'live_protective_stops_disabled',
+                    ];
+                }
+            }
         }
 
         // ── Early fail guard for double_bottom_long (demo only) ──────────────
@@ -1867,6 +1901,9 @@ final class StopManagerService
             'stoploss_set_examples'                         => $slSetExamples,
             'stoploss_unverified_examples'                  => $slUnverifiedExamples,
             'stoploss_failed_examples'                      => $slFailedExamples,
+            // Live protective stop gate diagnostics
+            'live_protective_stop_skipped_disabled_total'    => $liveProtStopsSkippedDisabledTotal,
+            'live_protective_stop_skipped_disabled_examples' => $liveProtStopsSkippedDisabledExamples,
             // Close deduplication counters
             'stop_close_deduped_total'                      => $stopCloseDedupedTotal,
             'stop_close_deduped_examples'                   => $stopCloseDedupedExamples,
@@ -2480,7 +2517,7 @@ final class StopManagerService
             $resp = $gw->request('/v5/position/info', [
                 'category' => 'linear',
                 'symbol'   => $symbol,
-            ]);
+            ], true);
         } catch (\Throwable $ex) {
             return array_merge($base, [
                 'verification_status' => 'query_exception',

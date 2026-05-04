@@ -604,6 +604,9 @@ HTML;
             $existing['mode']                      = in_array($_POST['mode'] ?? '', ['demo', 'live'], true)
                 ? (string)$_POST['mode']
                 : 'demo';
+            if (isset($_POST['live_protective_stops_enabled'])) {
+                $existing['live_protective_stops_enabled'] = (bool)(int)$_POST['live_protective_stops_enabled'];
+            }
             // Legacy stop_mode / liq_distance_percent / breakeven_* keys are NOT
             // updated from the quick UI any more. Their existing values in active.php
             // are preserved for backward compatibility, but the UI no longer exposes

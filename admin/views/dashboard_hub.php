@@ -1705,6 +1705,9 @@ ROWS;
     $smProtTpslMode     = (string)($smLastRun['protective_stop_tpsl_mode']      ?? 'Full');
     $smProtTriggerBy    = (string)($smLastRun['protective_stop_trigger_by']     ?? 'MarkPrice');
     $smProtVerify       = (bool)($smLastRun['protective_stop_verify_after_set'] ?? true);
+    // Live protective stop gate diagnostics
+    $smLiveProtSkippedDisabled    = (int)($smLastRun['live_protective_stop_skipped_disabled_total']    ?? 0);
+    $smLiveProtSkippedDisabledCum = (int)($smLastRun['live_protective_stop_skipped_disabled_cumulative'] ?? 0);
 
     // Precomputed display helpers for protective stop runtime card
     $smProtEnabledHtml  = $smProtEnabled
@@ -1825,6 +1828,9 @@ ROWS;
             . '<td><code style="color:' . $protFailedColor . ';">' . $e($smProtFailed) . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Пропущено (тик)</td>'
             . '<td><code>' . $e($smProtSkipped) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">&#9888; Live пропущено — gate off (тик)</td>'
+            . '<td><code style="color:' . ($smLiveProtSkippedDisabled > 0 ? '#f0883e' : 'inherit') . ';">'
+            . $e($smLiveProtSkippedDisabled) . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Установлено (накопл.)</td>'
             . '<td><code>' . $e($smProtSetCumulative) . '</code></td></tr>'
             . '</table>'
@@ -1869,6 +1875,8 @@ ROWS;
     $smCfgEnNo   = !($smConfig['enabled'] ?? false) ? ' selected' : '';
     $smCfgModeDe = $smMode !== 'live' ? ' selected' : '';
     $smCfgModeLi = $smMode === 'live' ? ' selected' : '';
+    $smCfgLiveProtYes = ($smConfig['live_protective_stops_enabled'] ?? false) ? ' selected' : '';
+    $smCfgLiveProtNo  = !($smConfig['live_protective_stops_enabled'] ?? false) ? ' selected' : '';
     $smCfgBeEnYes = ($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
     $smCfgBeEnNo  = !($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
     $smCfgBuf   = $e($smLiqDist);
@@ -6158,6 +6166,14 @@ BLCK;
               <option value="demo"{$smCfgModeDe}>demo</option>
               <option value="live"{$smCfgModeLi}>live</option>
             </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Live protective stopLoss</label>
+            <select name="live_protective_stops_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="0"{$smCfgLiveProtNo}>Откл (безопасно)</option>
+              <option value="1"{$smCfgLiveProtYes}>&#x26A1; Включить live стопы</option>
+            </select>
+            <div style="font-size:11px;color:var(--ui-text-muted);margin-top:3px;">Включить только после проверки live gateway.</div>
           </div>
         </div>
 

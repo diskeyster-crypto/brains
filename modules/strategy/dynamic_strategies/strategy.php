@@ -389,6 +389,46 @@ final class DynamicStrategiesStrategy
         }
         $candidates = $allowedCandidates;
 
+        // ── Replay/trend confirmation gate — load prior run data ──────────────────
+        // The replay analyzer runs at the END of execute() and updates
+        // rejected_context_replay.json.  During THIS run we gate short executable
+        // handoffs using data from the PREVIOUS run (file already on disk).
+        $requireReplayGate = (bool)($config['dynamic_handoff_require_replay_confirmation'] ?? true);
+        $priorReplayFile   = $this->moduleDir . '/storage/rejected_context_replay.json';
+        $replayBySymbol    = [];
+        if ($requireReplayGate && file_exists($priorReplayFile) && is_readable($priorReplayFile)) {
+            $rawReplay = @file_get_contents($priorReplayFile);
+            if ($rawReplay !== false && trim($rawReplay) !== '') {
+                $decodedReplay = json_decode($rawReplay, true);
+                if (is_array($decodedReplay)) {
+                    foreach ($decodedReplay as $rec) {
+                        $rsym = (string)($rec['symbol'] ?? '');
+                        if ($rsym !== '') {
+                            $replayBySymbol[$rsym][] = $rec;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Pre-enrich candidates with matched replay records ─────────────────────
+        // Adds replay_status, trend_5m/15m/30m, replay_reject_reason to each
+        // candidate so the signal loop and candidates.json carry replay context.
+        $replayMatchAgeMinutes = (int)($config['context_max_age_minutes'] ?? 180);
+        if ($requireReplayGate) {
+            foreach ($candidates as $idx => $cand) {
+                $matchedRec = $this->findReplayRecordForCandidate(
+                    $cand, $replayBySymbol, $replayMatchAgeMinutes
+                );
+                $candidates[$idx]['replay_status']             = $matchedRec !== null ? ($matchedRec['status']             ?? null) : null;
+                $candidates[$idx]['replay_reject_reason']      = $matchedRec !== null ? ($matchedRec['reject_reason']      ?? null) : null;
+                $candidates[$idx]['trend_5m']                  = $matchedRec !== null ? ($matchedRec['trend_5m']           ?? null) : null;
+                $candidates[$idx]['trend_15m']                 = $matchedRec !== null ? ($matchedRec['trend_15m']          ?? null) : null;
+                $candidates[$idx]['trend_30m']                 = $matchedRec !== null ? ($matchedRec['trend_30m']          ?? null) : null;
+                $candidates[$idx]['replay_confirmation_count'] = $matchedRec !== null ? ($matchedRec['confirmation_count'] ?? 0)    : 0;
+            }
+        }
+
         // ── 10. Build signals ──────────────────────────────────────────────────
         $signals             = [];
         $nonExecutableSignals = [];
@@ -420,6 +460,19 @@ final class DynamicStrategiesStrategy
         $botHandoffPayloadInvalidTotal        = 0;
         $botHandoffPayloadExamples            = [];
         $botHandoffPayloadInvalidExamples     = [];
+
+        // Replay gate counters (short-only gate, applied when requireReplayGate=true)
+        $replayGateCheckedTotal         = 0;
+        $replayGatePassedTotal          = 0;
+        $replayGateBlockedTotal         = 0;
+        $replayGateMissingTotal         = 0;
+        $replayGateBlocked5mTotal       = 0;
+        $replayGateBlocked15mTotal      = 0;
+        $replayGateBlocked30mTotal      = 0;
+        $replayGateBlockedRecoveryTotal = 0;
+        $replayGatePassedExamples       = [];
+        $replayGateBlockedExamples      = [];
+        $replayGateMissingExamples      = [];
 
         // Global thresholds (fallback when rule-specific config is missing)
         $globalMinDemoConf  = (int)($config['min_confirmations_demo'] ?? $config['min_confirmations_for_demo_signal'] ?? 3);
@@ -590,6 +643,81 @@ final class DynamicStrategiesStrategy
                 }
             }
 
+            // ── Replay/trend confirmation gate (short only) ────────────────────
+            // Uses pre-enriched replay fields on the candidate (loaded from prior run).
+            // Blocks executable=true for short candidates that lack replay confirmation
+            // or show bullish 15m/30m trends.  Long candidates bypass this gate.
+            if ($requireReplayGate && $candSide === 'short' && $isExecutable) {
+                $replayGateCheckedTotal++;
+                $executableBeforeGate = $isExecutable;
+
+                $gateResult = $this->applyReplayGate($cand, $config);
+
+                if (!($gateResult['passed'] ?? false)) {
+                    $isExecutable = false;
+                    $handoffReady = false;
+                    $blockReason  = (string)($gateResult['block_reason'] ?? 'replay_trend_confirmation_failed');
+                    $warnings[]   = $blockReason;
+                    $replayGateBlockedTotal++;
+
+                    if (($gateResult['block_reason'] ?? '') === 'missing_replay_confirmation') {
+                        $replayGateMissingTotal++;
+                    }
+
+                    foreach ((array)($gateResult['failed_checks'] ?? []) as $fc) {
+                        if ($fc === '5m_not_bearish')              { $replayGateBlocked5mTotal++; }
+                        elseif ($fc === '15m_too_bullish')         { $replayGateBlocked15mTotal++; }
+                        elseif ($fc === '30m_too_bullish')         { $replayGateBlocked30mTotal++; }
+                        elseif ($fc === 'strong_recovery_detected'){ $replayGateBlockedRecoveryTotal++; }
+                    }
+
+                    if (count($replayGateBlockedExamples) < 5) {
+                        $replayGateBlockedExamples[] = [
+                            'symbol'                     => $sym,
+                            'dynamic_rule'               => $ruleId,
+                            'source_context_ids'         => $cand['source_context_ids'],
+                            'replay_status'              => $gateResult['replay_status'],
+                            'replay_reject_reason'       => $gateResult['replay_reject_reason'],
+                            'trend_5m_price_change_pct'  => $gateResult['trend_5m_price_change_pct'],
+                            'trend_15m_price_change_pct' => $gateResult['trend_15m_price_change_pct'],
+                            'trend_30m_price_change_pct' => $gateResult['trend_30m_price_change_pct'],
+                            'failed_checks'              => $gateResult['failed_checks'],
+                            'executable_before_gate'     => $executableBeforeGate,
+                            'executable_after_gate'      => false,
+                        ];
+                    }
+
+                    if (($gateResult['block_reason'] ?? '') === 'missing_replay_confirmation'
+                        && count($replayGateMissingExamples) < 5
+                    ) {
+                        $replayGateMissingExamples[] = [
+                            'symbol'                 => $sym,
+                            'dynamic_rule'           => $ruleId,
+                            'source_context_ids'     => $cand['source_context_ids'],
+                            'source_context_types'   => $cand['source_context_types'] ?? [],
+                            'executable_before_gate' => $executableBeforeGate,
+                            'executable_after_gate'  => false,
+                            'reason'                 => 'no_replay_record_found',
+                        ];
+                    }
+                } else {
+                    $replayGatePassedTotal++;
+                    if (count($replayGatePassedExamples) < 5) {
+                        $replayGatePassedExamples[] = [
+                            'symbol'                     => $sym,
+                            'dynamic_rule'               => $ruleId,
+                            'source_context_ids'         => $cand['source_context_ids'],
+                            'replay_status'              => $gateResult['replay_status'],
+                            'trend_5m_price_change_pct'  => $gateResult['trend_5m_price_change_pct'],
+                            'trend_15m_price_change_pct' => $gateResult['trend_15m_price_change_pct'],
+                            'trend_30m_price_change_pct' => $gateResult['trend_30m_price_change_pct'],
+                            'executable_before_gate'     => $executableBeforeGate,
+                            'executable_after_gate'      => true,
+                        ];
+                    }
+                }
+            }
+
             if ($isExecutable) {
                 $executableTotal++;
             } else {
@@ -616,6 +744,13 @@ final class DynamicStrategiesStrategy
                 'source_reason_codes'  => $cand['source_reason_codes'] ?? [],
                 'warnings'             => $warnings,
                 'reason_codes'         => $cand['reason_codes'],
+                // Replay gate fields (null when gate not applied or no record found)
+                'replay_status'              => $cand['replay_status'] ?? null,
+                'replay_reject_reason'       => $cand['replay_reject_reason'] ?? null,
+                'trend_5m_price_change_pct'  => is_array($cand['trend_5m']  ?? null) ? ($cand['trend_5m']['price_change_pct']  ?? null) : null,
+                'trend_15m_price_change_pct' => is_array($cand['trend_15m'] ?? null) ? ($cand['trend_15m']['price_change_pct'] ?? null) : null,
+                'trend_30m_price_change_pct' => is_array($cand['trend_30m'] ?? null) ? ($cand['trend_30m']['price_change_pct'] ?? null) : null,
+                'replay_gate_applied'        => $requireReplayGate && $candSide === 'short',
             ];
 
             $detectedAt = date('c');
@@ -864,6 +999,19 @@ final class DynamicStrategiesStrategy
             'dynamic_handoff_blocked_missing_entry_price_examples' => $handoffBlockedMissingPriceExamples,
             'bot_handoff_payload_examples'        => $botHandoffPayloadExamples,
             'bot_handoff_payload_invalid_examples' => $botHandoffPayloadInvalidExamples,
+            // ── Replay gate diagnostics ───────────────────────────────────────
+            'dynamic_replay_gate_enabled'                       => $requireReplayGate,
+            'dynamic_replay_gate_checked_total'                 => $replayGateCheckedTotal,
+            'dynamic_replay_gate_passed_total'                  => $replayGatePassedTotal,
+            'dynamic_replay_gate_blocked_total'                 => $replayGateBlockedTotal,
+            'dynamic_replay_gate_missing_total'                 => $replayGateMissingTotal,
+            'dynamic_replay_gate_blocked_5m_total'              => $replayGateBlocked5mTotal,
+            'dynamic_replay_gate_blocked_15m_total'             => $replayGateBlocked15mTotal,
+            'dynamic_replay_gate_blocked_30m_total'             => $replayGateBlocked30mTotal,
+            'dynamic_replay_gate_blocked_strong_recovery_total' => $replayGateBlockedRecoveryTotal,
+            'dynamic_replay_gate_passed_examples'               => $replayGatePassedExamples,
+            'dynamic_replay_gate_blocked_examples'              => $replayGateBlockedExamples,
+            'dynamic_replay_gate_missing_examples'              => $replayGateMissingExamples,
             // Alias fields for generic dashboard display
             'found'                           => count($candidates),
             'generated_signals_count'         => count($signals),
@@ -2233,6 +2381,192 @@ final class DynamicStrategiesStrategy
         // Sort by count descending
         uasort($result, fn(array $a, array $b) => $b['count'] - $a['count']);
         return $result;
+    }
+
+    // ── Replay gate helpers ───────────────────────────────────────────────────
+
+    /**
+     * Find the most recent matching replay record for a given candidate.
+     *
+     * Matching criteria:
+     *   1. Same symbol.
+     *   2. context_type of the replay record is in the candidate's source_context_types
+     *      (when source_context_types is non-empty; otherwise any type for the symbol).
+     *   3. Record is within $maxAgeMinutes.
+     *   4. status != 'skipped_candles_unavailable' (no trend data to evaluate).
+     *
+     * Returns the most recent matching record, or null if none found.
+     */
+    private function findReplayRecordForCandidate(
+        array $candidate,
+        array $replayBySymbol,
+        int   $maxAgeMinutes
+    ): ?array {
+        $sym             = (string)($candidate['symbol'] ?? '');
+        $srcContextTypes = (array)($candidate['source_context_types'] ?? []);
+        $now             = time();
+        $cutoff          = $now - ($maxAgeMinutes * 60);
+
+        $records = $replayBySymbol[$sym] ?? [];
+        if (empty($records)) {
+            return null;
+        }
+
+        $matching = [];
+        foreach ($records as $rec) {
+            if (!is_array($rec)) {
+                continue;
+            }
+            // Skip records with no usable trend data
+            if (($rec['status'] ?? '') === 'skipped_candles_unavailable') {
+                continue;
+            }
+            // Context-type filter when candidate has source_context_types
+            if (!empty($srcContextTypes)) {
+                $recType = (string)($rec['context_type'] ?? '');
+                if (!in_array($recType, $srcContextTypes, true)) {
+                    continue;
+                }
+            }
+            // Age filter
+            $obsAt = $rec['observed_at'] ?? null;
+            if ($obsAt !== null) {
+                $recTs = is_int($obsAt) ? $obsAt : (int)strtotime((string)$obsAt);
+                if ($recTs > 0 && $recTs < $cutoff) {
+                    continue;
+                }
+            }
+            $matching[] = $rec;
+        }
+
+        if (empty($matching)) {
+            return null;
+        }
+
+        // Return most recent
+        usort($matching, static function (array $a, array $b): int {
+            $oaA = $a['observed_at'] ?? null;
+            $oaB = $b['observed_at'] ?? null;
+            $ta  = $oaA !== null ? (is_int($oaA) ? $oaA : (int)strtotime((string)$oaA)) : 0;
+            $tb  = $oaB !== null ? (is_int($oaB) ? $oaB : (int)strtotime((string)$oaB)) : 0;
+            return $tb - $ta;
+        });
+
+        return $matching[0];
+    }
+
+    /**
+     * Apply the replay/trend confirmation gate to a pre-enriched short candidate.
+     *
+     * The candidate must already have the following fields set by the pre-enrichment pass:
+     *   replay_status, replay_reject_reason, trend_5m, trend_15m, trend_30m,
+     *   confirmation_count.
+     *
+     * Returns an array with:
+     *   passed       bool
+     *   gate_enabled bool
+     *   block_reason string|null
+     *   failed_checks array
+     *   replay_status string|null
+     *   replay_reject_reason string|null
+     *   trend_5m/15m/30m_price_change_pct float|null
+     */
+    private function applyReplayGate(array $candidate, array $config): array
+    {
+        $require5m     = (bool)($config['dynamic_handoff_require_5m_bearish']          ?? true);
+        $require15m    = (bool)($config['dynamic_handoff_require_15m_not_bullish']     ?? true);
+        $require30m    = (bool)($config['dynamic_handoff_require_30m_not_bullish']     ?? true);
+        $blockRecovery = (bool)($config['dynamic_handoff_block_on_strong_recovery']    ?? true);
+        $max15mPct     = (float)($config['dynamic_handoff_max_15m_price_change_pct']   ?? 0.20);
+        $max30mPct     = (float)($config['dynamic_handoff_max_30m_price_change_pct']   ?? 0.30);
+        $minConf       = (int)  ($config['dynamic_handoff_min_confirmations_with_replay'] ?? 3);
+
+        $replayStatus = $candidate['replay_status'] ?? null;
+
+        // No matching replay record → block
+        if ($replayStatus === null) {
+            return [
+                'passed'                     => false,
+                'gate_enabled'               => true,
+                'block_reason'               => 'missing_replay_confirmation',
+                'failed_checks'              => ['no_replay_record'],
+                'replay_status'              => null,
+                'replay_reject_reason'       => $candidate['replay_reject_reason'] ?? null,
+                'trend_5m_price_change_pct'  => null,
+                'trend_15m_price_change_pct' => null,
+                'trend_30m_price_change_pct' => null,
+            ];
+        }
+
+        // Replay record found but not a confirmed short candidate → block
+        if ($replayStatus !== 'replay_short_candidate') {
+            return [
+                'passed'                     => false,
+                'gate_enabled'               => true,
+                'block_reason'               => 'replay_not_confirmed',
+                'failed_checks'              => ['replay_status_not_candidate'],
+                'replay_status'              => $replayStatus,
+                'replay_reject_reason'       => $candidate['replay_reject_reason'] ?? null,
+                'trend_5m_price_change_pct'  => null,
+                'trend_15m_price_change_pct' => null,
+                'trend_30m_price_change_pct' => null,
+            ];
+        }
+
+        $trend5m  = (array)($candidate['trend_5m']  ?? []);
+        $trend15m = (array)($candidate['trend_15m'] ?? []);
+        $trend30m = (array)($candidate['trend_30m'] ?? []);
+
+        $failedChecks = [];
+
+        // Minimum confirmations check (overrides per-rule minimum when gate is active)
+        $confCnt = (int)($candidate['confirmation_count'] ?? 0);
+        if ($confCnt < $minConf) {
+            $failedChecks[] = 'insufficient_confirmations_with_replay_gate';
+        }
+
+        // 5m bearish: lower_close OR bearish flag (only checked when data available)
+        if ($require5m && ($trend5m['data_available'] ?? false)) {
+            $is5mBearish = ($trend5m['lower_close'] ?? false) || ($trend5m['bearish'] ?? false);
+            if (!$is5mBearish) {
+                $failedChecks[] = '5m_not_bearish';
+            }
+        }
+
+        // 15m not bullish: price_change_pct must be <= threshold
+        $pct15m = (float)($trend15m['price_change_pct'] ?? 0.0);
+        if ($require15m && ($trend15m['data_available'] ?? false) && $pct15m > $max15mPct) {
+            $failedChecks[] = '15m_too_bullish';
+        }
+
+        // 30m not bullish
+        $pct30m = (float)($trend30m['price_change_pct'] ?? 0.0);
+        if ($require30m && ($trend30m['data_available'] ?? false) && $pct30m > $max30mPct) {
+            $failedChecks[] = '30m_too_bullish';
+        }
+
+        // No strong recovery in 15m or 30m window
+        if ($blockRecovery) {
+            $noRecov15m = $trend15m['no_strong_recovery'] ?? true;
+            $noRecov30m = $trend30m['no_strong_recovery'] ?? true;
+            if (!$noRecov15m || !$noRecov30m) {
+                $failedChecks[] = 'strong_recovery_detected';
+            }
+        }
+
+        $passed = empty($failedChecks);
+
+        return [
+            'passed'                     => $passed,
+            'gate_enabled'               => true,
+            'block_reason'               => $passed ? null : 'replay_trend_confirmation_failed',
+            'failed_checks'              => $failedChecks,
+            'replay_status'              => $replayStatus,
+            'replay_reject_reason'       => $candidate['replay_reject_reason'] ?? null,
+            'trend_5m_price_change_pct'  => $trend5m['price_change_pct']  ?? null,
+            'trend_15m_price_change_pct' => $trend15m['price_change_pct'] ?? null,
+            'trend_30m_price_change_pct' => $trend30m['price_change_pct'] ?? null,
+        ];
     }
 
     // ── Config helpers ─────────────────────────────────────────────────────────

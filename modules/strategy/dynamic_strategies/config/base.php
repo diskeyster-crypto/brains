@@ -135,6 +135,24 @@ return [
     'replay_max_contexts'            => 500,  // max contexts processed per replay run
     'replay_candle_storage_dir'      => 'modules/parser/parser2_history_accumulator/storage',
 
+    // ── Replay/trend confirmation gate for executable demo handoff ────────────
+    // Applied only to side=short candidates.
+    // When true, executable bot_handoff_queue entries require matching replay
+    // confirmation (status=replay_short_candidate) and passing trend checks.
+    // Candidates and signals may still be written as diagnostic (non-executable).
+    'dynamic_handoff_require_replay_confirmation' => true,
+    'dynamic_handoff_require_5m_bearish'          => true,
+    'dynamic_handoff_require_15m_not_bullish'     => true,
+    'dynamic_handoff_require_30m_not_bullish'     => true,
+    'dynamic_handoff_block_on_strong_recovery'    => true,
+    // Max allowed price_change_pct (%) for 15m/30m trend to be "not bullish".
+    // A value greater than the threshold means the window is too bullish to short.
+    'dynamic_handoff_max_15m_price_change_pct'    => 0.20,  // >0.20% 15 m rise = bullish → block
+    'dynamic_handoff_max_30m_price_change_pct'    => 0.30,  // >0.30% 30 m rise = bullish → block
+    // Minimum confirmations required when replay gate is active.
+    // Overrides per-rule min_confirmations_demo for short candidates only.
+    'dynamic_handoff_min_confirmations_with_replay' => 3,
+
     // ── Source adapter paths ──────────────────────────────────────────────────
     // Read-only module paths used by source adapters.
     // Dynamic Strategies never writes to these paths.

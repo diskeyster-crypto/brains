@@ -149,8 +149,10 @@ return [
     // A value greater than the threshold means the window is too bullish to short.
     'dynamic_handoff_max_15m_price_change_pct'    => 0.20,  // >0.20% 15 m rise = bullish → block
     'dynamic_handoff_max_30m_price_change_pct'    => 0.30,  // >0.30% 30 m rise = bullish → block
-    // Minimum confirmations required when replay gate is active.
-    // Overrides per-rule min_confirmations_demo for short candidates only.
+    // Minimum replay confirmation count required when replay gate is active.
+    // This checks replay_record.confirmations.count (not per-rule min_confirmations_demo).
+    // Per-rule min_confirmations_demo is checked separately before the replay gate.
+    // Both must pass for a short candidate to become executable.
     'dynamic_handoff_min_confirmations_with_replay' => 3,
 
     // ── Source adapter paths ──────────────────────────────────────────────────

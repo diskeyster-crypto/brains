@@ -425,7 +425,28 @@ final class DynamicStrategiesStrategy
                 $candidates[$idx]['trend_5m']                  = $matchedRec !== null ? ($matchedRec['trend_5m']           ?? null) : null;
                 $candidates[$idx]['trend_15m']                 = $matchedRec !== null ? ($matchedRec['trend_15m']          ?? null) : null;
                 $candidates[$idx]['trend_30m']                 = $matchedRec !== null ? ($matchedRec['trend_30m']          ?? null) : null;
-                $candidates[$idx]['replay_confirmation_count'] = $matchedRec !== null ? ($matchedRec['confirmation_count'] ?? 0)    : 0;
+                // Extract replay confirmation fields from confirmations sub-array (new format),
+                // with fallback to top-level confirmation_count for legacy records.
+                $replayCnt            = 0;
+                $replayConfPassed     = null;
+                $replayConfConfidence = null;
+                $replayPriceChangePct = null;
+                if ($matchedRec !== null) {
+                    $confBlock = $matchedRec['confirmations'] ?? null;
+                    if (is_array($confBlock)) {
+                        $replayCnt            = (int)($confBlock['count'] ?? 0);
+                        $replayConfPassed     = array_key_exists('passed', $confBlock) ? (bool)$confBlock['passed'] : null;
+                        $replayConfConfidence = is_numeric($confBlock['confidence'] ?? null)    ? (float)$confBlock['confidence']    : null;
+                        $replayPriceChangePct = is_numeric($confBlock['price_change_pct'] ?? null) ? (float)$confBlock['price_change_pct'] : null;
+                    } else {
+                        // Legacy format: confirmation_count at top level
+                        $replayCnt = (int)($matchedRec['confirmation_count'] ?? 0);
+                    }
+                }
+                $candidates[$idx]['replay_confirmation_count']      = $replayCnt;
+                $candidates[$idx]['replay_confirmation_passed']     = $replayConfPassed;
+                $candidates[$idx]['replay_confirmation_confidence'] = $replayConfConfidence;
+                $candidates[$idx]['replay_price_change_pct']        = $replayPriceChangePct;
             }
         }
 
@@ -673,17 +694,22 @@ final class DynamicStrategiesStrategy
 
                     if (count($replayGateBlockedExamples) < 5) {
                         $replayGateBlockedExamples[] = [
-                            'symbol'                     => $sym,
-                            'dynamic_rule'               => $ruleId,
-                            'source_context_ids'         => $cand['source_context_ids'],
-                            'replay_status'              => $gateResult['replay_status'],
-                            'replay_reject_reason'       => $gateResult['replay_reject_reason'],
-                            'trend_5m_price_change_pct'  => $gateResult['trend_5m_price_change_pct'],
-                            'trend_15m_price_change_pct' => $gateResult['trend_15m_price_change_pct'],
-                            'trend_30m_price_change_pct' => $gateResult['trend_30m_price_change_pct'],
-                            'failed_checks'              => $gateResult['failed_checks'],
-                            'executable_before_gate'     => $executableBeforeGate,
-                            'executable_after_gate'      => false,
+                            'symbol'                                    => $sym,
+                            'dynamic_rule'                              => $ruleId,
+                            'source_context_ids'                        => $cand['source_context_ids'],
+                            'replay_status'                             => $gateResult['replay_status'],
+                            'replay_reject_reason'                      => $gateResult['replay_reject_reason'],
+                            'candidate_confirmation_count'              => $gateResult['candidate_confirmation_count'],
+                            'replay_confirmation_count'                 => $gateResult['replay_confirmation_count'],
+                            'replay_confirmation_passed'                => $gateResult['replay_confirmation_passed'],
+                            'replay_confirmation_confidence'            => $gateResult['replay_confirmation_confidence'],
+                            'dynamic_handoff_min_confirmations_with_replay' => $gateResult['dynamic_handoff_min_confirmations_with_replay'],
+                            'trend_5m_price_change_pct'                 => $gateResult['trend_5m_price_change_pct'],
+                            'trend_15m_price_change_pct'                => $gateResult['trend_15m_price_change_pct'],
+                            'trend_30m_price_change_pct'                => $gateResult['trend_30m_price_change_pct'],
+                            'failed_checks'                             => $gateResult['failed_checks'],
+                            'executable_before_gate'                    => $executableBeforeGate,
+                            'executable_after_gate'                     => false,
                         ];
                     }
 
@@ -704,15 +730,20 @@ final class DynamicStrategiesStrategy
                     $replayGatePassedTotal++;
                     if (count($replayGatePassedExamples) < 5) {
                         $replayGatePassedExamples[] = [
-                            'symbol'                     => $sym,
-                            'dynamic_rule'               => $ruleId,
-                            'source_context_ids'         => $cand['source_context_ids'],
-                            'replay_status'              => $gateResult['replay_status'],
-                            'trend_5m_price_change_pct'  => $gateResult['trend_5m_price_change_pct'],
-                            'trend_15m_price_change_pct' => $gateResult['trend_15m_price_change_pct'],
-                            'trend_30m_price_change_pct' => $gateResult['trend_30m_price_change_pct'],
-                            'executable_before_gate'     => $executableBeforeGate,
-                            'executable_after_gate'      => true,
+                            'symbol'                                    => $sym,
+                            'dynamic_rule'                              => $ruleId,
+                            'source_context_ids'                        => $cand['source_context_ids'],
+                            'replay_status'                             => $gateResult['replay_status'],
+                            'candidate_confirmation_count'              => $gateResult['candidate_confirmation_count'],
+                            'replay_confirmation_count'                 => $gateResult['replay_confirmation_count'],
+                            'replay_confirmation_passed'                => $gateResult['replay_confirmation_passed'],
+                            'replay_confirmation_confidence'            => $gateResult['replay_confirmation_confidence'],
+                            'dynamic_handoff_min_confirmations_with_replay' => $gateResult['dynamic_handoff_min_confirmations_with_replay'],
+                            'trend_5m_price_change_pct'                 => $gateResult['trend_5m_price_change_pct'],
+                            'trend_15m_price_change_pct'                => $gateResult['trend_15m_price_change_pct'],
+                            'trend_30m_price_change_pct'                => $gateResult['trend_30m_price_change_pct'],
+                            'executable_before_gate'                    => $executableBeforeGate,
+                            'executable_after_gate'                     => true,
                         ];
                     }
                 }
@@ -2486,30 +2517,40 @@ final class DynamicStrategiesStrategy
         // No matching replay record → block
         if ($replayStatus === null) {
             return [
-                'passed'                     => false,
-                'gate_enabled'               => true,
-                'block_reason'               => 'missing_replay_confirmation',
-                'failed_checks'              => ['no_replay_record'],
-                'replay_status'              => null,
-                'replay_reject_reason'       => $candidate['replay_reject_reason'] ?? null,
-                'trend_5m_price_change_pct'  => null,
-                'trend_15m_price_change_pct' => null,
-                'trend_30m_price_change_pct' => null,
+                'passed'                                        => false,
+                'gate_enabled'                                  => true,
+                'block_reason'                                  => 'missing_replay_confirmation',
+                'failed_checks'                                 => ['no_replay_record'],
+                'replay_status'                                 => null,
+                'replay_reject_reason'                         => $candidate['replay_reject_reason'] ?? null,
+                'candidate_confirmation_count'                  => (int)($candidate['confirmation_count'] ?? 0),
+                'replay_confirmation_count'                     => (int)($candidate['replay_confirmation_count'] ?? 0),
+                'replay_confirmation_passed'                    => $candidate['replay_confirmation_passed']     ?? null,
+                'replay_confirmation_confidence'                => $candidate['replay_confirmation_confidence'] ?? null,
+                'dynamic_handoff_min_confirmations_with_replay' => $minConf,
+                'trend_5m_price_change_pct'                     => null,
+                'trend_15m_price_change_pct'                    => null,
+                'trend_30m_price_change_pct'                    => null,
             ];
         }
 
         // Replay record found but not a confirmed short candidate → block
         if ($replayStatus !== 'replay_short_candidate') {
             return [
-                'passed'                     => false,
-                'gate_enabled'               => true,
-                'block_reason'               => 'replay_not_confirmed',
-                'failed_checks'              => ['replay_status_not_candidate'],
-                'replay_status'              => $replayStatus,
-                'replay_reject_reason'       => $candidate['replay_reject_reason'] ?? null,
-                'trend_5m_price_change_pct'  => null,
-                'trend_15m_price_change_pct' => null,
-                'trend_30m_price_change_pct' => null,
+                'passed'                                        => false,
+                'gate_enabled'                                  => true,
+                'block_reason'                                  => 'replay_not_confirmed',
+                'failed_checks'                                 => ['replay_status_not_candidate'],
+                'replay_status'                                 => $replayStatus,
+                'replay_reject_reason'                         => $candidate['replay_reject_reason'] ?? null,
+                'candidate_confirmation_count'                  => (int)($candidate['confirmation_count'] ?? 0),
+                'replay_confirmation_count'                     => (int)($candidate['replay_confirmation_count'] ?? 0),
+                'replay_confirmation_passed'                    => $candidate['replay_confirmation_passed']     ?? null,
+                'replay_confirmation_confidence'                => $candidate['replay_confirmation_confidence'] ?? null,
+                'dynamic_handoff_min_confirmations_with_replay' => $minConf,
+                'trend_5m_price_change_pct'                     => null,
+                'trend_15m_price_change_pct'                    => null,
+                'trend_30m_price_change_pct'                    => null,
             ];
         }
 
@@ -2517,12 +2558,15 @@ final class DynamicStrategiesStrategy
         $trend15m = (array)($candidate['trend_15m'] ?? []);
         $trend30m = (array)($candidate['trend_30m'] ?? []);
 
-        $failedChecks = [];
+        $failedChecks  = [];
+        $candConfCnt   = (int)($candidate['confirmation_count']       ?? 0);
+        $replayConfCnt = (int)($candidate['replay_confirmation_count'] ?? 0);
 
-        // Minimum confirmations check (overrides per-rule minimum when gate is active)
-        $confCnt = (int)($candidate['confirmation_count'] ?? 0);
-        if ($confCnt < $minConf) {
-            $failedChecks[] = 'insufficient_confirmations_with_replay_gate';
+        // Minimum replay confirmations check.
+        // Uses replay_record.confirmations.count (not the per-rule candidate confirmation_count).
+        // Per-rule min_confirmations_demo is already checked separately before the gate.
+        if ($replayConfCnt < $minConf) {
+            $failedChecks[] = 'insufficient_replay_confirmations';
         }
 
         // 5m bearish: lower_close OR bearish flag (only checked when data available)
@@ -2557,15 +2601,20 @@ final class DynamicStrategiesStrategy
         $passed = empty($failedChecks);
 
         return [
-            'passed'                     => $passed,
-            'gate_enabled'               => true,
-            'block_reason'               => $passed ? null : 'replay_trend_confirmation_failed',
-            'failed_checks'              => $failedChecks,
-            'replay_status'              => $replayStatus,
-            'replay_reject_reason'       => $candidate['replay_reject_reason'] ?? null,
-            'trend_5m_price_change_pct'  => $trend5m['price_change_pct']  ?? null,
-            'trend_15m_price_change_pct' => $trend15m['price_change_pct'] ?? null,
-            'trend_30m_price_change_pct' => $trend30m['price_change_pct'] ?? null,
+            'passed'                          => $passed,
+            'gate_enabled'                    => true,
+            'block_reason'                    => $passed ? null : 'replay_trend_confirmation_failed',
+            'failed_checks'                   => $failedChecks,
+            'replay_status'                   => $replayStatus,
+            'replay_reject_reason'            => $candidate['replay_reject_reason'] ?? null,
+            'candidate_confirmation_count'    => $candConfCnt,
+            'replay_confirmation_count'       => $replayConfCnt,
+            'replay_confirmation_passed'      => $candidate['replay_confirmation_passed']     ?? null,
+            'replay_confirmation_confidence'  => $candidate['replay_confirmation_confidence'] ?? null,
+            'dynamic_handoff_min_confirmations_with_replay' => $minConf,
+            'trend_5m_price_change_pct'       => $trend5m['price_change_pct']  ?? null,
+            'trend_15m_price_change_pct'      => $trend15m['price_change_pct'] ?? null,
+            'trend_30m_price_change_pct'      => $trend30m['price_change_pct'] ?? null,
         ];
     }
 

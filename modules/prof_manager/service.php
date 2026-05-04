@@ -816,6 +816,12 @@ final class ProfManagerService
 
             $configSnapshot = $this->buildConfigSnapshot();
 
+            // ── PM exchange profit-floor sync ─────────────────────────────────
+            // Sets a stopLoss safety floor on the exchange from PM virtual lock.
+            // Disabled by default; only runs when enabled in config.
+            // PM virtual lock remains the primary exit logic.
+            $floorSyncResult = $this->syncExchangeProfitFloor($moduleMode, $rawPositions, $positionsRuntime);
+
             $result = array_merge([
                 'ok'                   => true,
                 'ts'                   => $ts,
@@ -907,6 +913,17 @@ final class ProfManagerService
                 'lock_too_close_adjusted_examples'       => $lockTooCloseAdjustedExamples,
                 'lock_too_close_close_examples'          => $lockTooCloseCloseExamples,
                 'lock_too_close_unprotected_examples'    => $lockTooCloseUnprotectedExamples,
+                // PM exchange profit-floor sync diagnostics
+                'pm_floor_sync_enabled'                  => $floorSyncResult['pm_floor_sync_enabled'],
+                'pm_floor_sync_skip_reason'              => $floorSyncResult['pm_floor_sync_skip_reason'] ?? null,
+                'pm_floor_sync_attempted_total'          => $floorSyncResult['pm_floor_sync_attempted_total'],
+                'pm_floor_sync_set_total'                => $floorSyncResult['pm_floor_sync_set_total'],
+                'pm_floor_sync_skipped_total'            => $floorSyncResult['pm_floor_sync_skipped_total'],
+                'pm_floor_sync_failed_total'             => $floorSyncResult['pm_floor_sync_failed_total'],
+                'pm_floor_sync_examples'                 => $floorSyncResult['pm_floor_sync_examples'],
+                'pm_floor_sync_skipped_examples'         => $floorSyncResult['pm_floor_sync_skipped_examples'],
+                'pm_floor_sync_failed_examples'          => $floorSyncResult['pm_floor_sync_failed_examples'],
+                'live_profit_floor_sync_skipped_disabled'=> $floorSyncResult['live_profit_floor_sync_skipped_disabled'] ?? false,
             ], $configSnapshot);
 
             $this->store->writeLastRun($result);
@@ -1998,4 +2015,298 @@ final class ProfManagerService
     {
         return $this->moduleDir . '/storage/runtime/fast_loop.lock';
     }
+
+    // =========================================================================
+    // PM exchange profit-floor sync
+    // =========================================================================
+
+    /**
+     * Sync PM virtual lock price to exchange as a safety stopLoss floor.
+     *
+     * The exchange stopLoss is a backup ONLY — PM virtual lock remains the
+     * primary smart exit logic.  This method sets a stopLoss that sits a
+     * configurable buffer below the virtual lock, so if PM fast tick misses,
+     * the exchange will close near the intended floor.
+     *
+     * Safety gates:
+     *   - pm_exchange_profit_floor_sync_enabled must be true
+     *   - current mode must be in pm_exchange_profit_floor_modes
+     *   - for live: pm_exchange_profit_floor_live_enabled must also be true
+     *   - virtual_lock_roi must be >= pm_exchange_profit_floor_min_roi
+     *   - update throttled by pm_exchange_profit_floor_min_update_interval_seconds
+     *   - update only if floor improved by pm_exchange_profit_floor_min_improvement_roi
+     *
+     * @param string $moduleMode     Current PM mode ('demo' or 'live')
+     * @param array  $rawPositions   Raw position records from the position reader
+     * @param array  $posRuntime     Per-position runtime records (from this tick)
+     * @return array Diagnostic result with counters and examples
+     */
+    public function syncExchangeProfitFloor(
+        string $moduleMode,
+        array  $rawPositions,
+        array  $posRuntime
+    ): array {
+        $cfg            = $this->config;
+        $enabled        = (bool)($cfg['pm_exchange_profit_floor_sync_enabled']              ?? false);
+        $allowedModes   = (array)($cfg['pm_exchange_profit_floor_modes']                    ?? ['demo']);
+        $liveEnabled    = (bool)($cfg['pm_exchange_profit_floor_live_enabled']              ?? false);
+        $minRoi         = (float)($cfg['pm_exchange_profit_floor_min_roi']                  ?? 8.0);
+        $bufferRoi      = (float)($cfg['pm_exchange_profit_floor_buffer_roi']               ?? 3.0);
+        $minUpdateSec   = (int)($cfg['pm_exchange_profit_floor_min_update_interval_seconds'] ?? 30);
+        $minImprovRoi   = (float)($cfg['pm_exchange_profit_floor_min_improvement_roi']      ?? 2.0);
+        $useMarkPrice   = (bool)($cfg['pm_exchange_profit_floor_use_mark_price']            ?? true);
+        $triggerBy      = $useMarkPrice ? 'MarkPrice' : 'LastPrice';
+
+        $result = [
+            'pm_floor_sync_enabled'           => $enabled,
+            'pm_floor_sync_mode'              => $moduleMode,
+            'pm_floor_sync_attempted_total'   => 0,
+            'pm_floor_sync_set_total'         => 0,
+            'pm_floor_sync_skipped_total'     => 0,
+            'pm_floor_sync_failed_total'      => 0,
+            'pm_floor_sync_examples'          => [],
+            'pm_floor_sync_skipped_examples'  => [],
+            'pm_floor_sync_failed_examples'   => [],
+        ];
+
+        if (!$enabled) {
+            $result['pm_floor_sync_skip_reason'] = 'disabled';
+            return $result;
+        }
+
+        if (!in_array($moduleMode, $allowedModes, true)) {
+            $result['pm_floor_sync_skip_reason'] = 'mode_not_in_allowed_modes';
+            return $result;
+        }
+
+        if ($moduleMode === 'live' && !$liveEnabled) {
+            $result['pm_floor_sync_skip_reason']          = 'live_profit_floor_sync_skipped_disabled';
+            $result['live_profit_floor_sync_skipped_disabled'] = true;
+            return $result;
+        }
+
+        // Load sync state (throttle cache)
+        $stateFile = $this->moduleDir . '/storage/runtime/pm_profit_floor_sync_state.json';
+        $syncState = [];
+        if (is_file($stateFile)) {
+            try {
+                $raw = @file_get_contents($stateFile);
+                if ($raw !== false) {
+                    $dec = json_decode($raw, true);
+                    if (is_array($dec)) {
+                        $syncState = $dec;
+                    }
+                }
+            } catch (\Throwable) {}
+        }
+
+        $botConfig = $this->loadBotConfig();
+        $gw = ($moduleMode === 'live') ? $this->getLiveGateway($botConfig) : $this->getDemoGateway($botConfig);
+
+        if ($gw === null) {
+            $result['pm_floor_sync_skip_reason'] = 'no_gateway';
+            return $result;
+        }
+
+        // Build position lookup by symbol+side from raw positions
+        $posIdx = [];
+        foreach ($rawPositions as $rp) {
+            $sym  = strtoupper((string)($rp['symbol'] ?? ''));
+            $side = strtolower((string)($rp['side']   ?? ''));
+            if ($sym !== '' && in_array($side, ['long', 'short'], true)) {
+                $posIdx["{$sym}_{$side}"] = $rp;
+            }
+        }
+
+        $nowTs           = time();
+        $syncStateChanged = false;
+
+        foreach ($posRuntime as $pr) {
+            $symbol = strtoupper((string)($pr['symbol'] ?? ''));
+            $side   = strtolower((string)($pr['side']   ?? ''));
+
+            if ($symbol === '' || !in_array($side, ['long', 'short'], true)) {
+                continue;
+            }
+
+            $lockActive = (bool)($pr['lock_active'] ?? false);
+            $lockPrice  = isset($pr['lock_price']) && $pr['lock_price'] > 0.0 ? (float)$pr['lock_price'] : null;
+
+            if (!$lockActive || $lockPrice === null) {
+                continue;
+            }
+
+            $rawPos    = $posIdx["{$symbol}_{$side}"] ?? null;
+            $entryPrice = (float)($rawPos['entry_price'] ?? $rawPos['avg_price'] ?? $pr['entry_price'] ?? 0.0);
+            $leverage   = (float)($rawPos['leverage']   ?? $rawPos['bot_leverage'] ?? 0.0);
+
+            if ($entryPrice <= 0.0 || $leverage <= 0.0) {
+                $result['pm_floor_sync_skipped_total']++;
+                $result['pm_floor_sync_skipped_examples'][] = [
+                    'symbol' => $symbol, 'side' => $side,
+                    'skip_reason' => 'missing_entry_or_leverage',
+                ];
+                continue;
+            }
+
+            // Compute virtual lock ROI
+            if ($side === 'long') {
+                $virtualLockRoi = ($lockPrice - $entryPrice) / $entryPrice * 100.0 * $leverage;
+            } else {
+                $virtualLockRoi = ($entryPrice - $lockPrice) / $entryPrice * 100.0 * $leverage;
+            }
+
+            if ($virtualLockRoi < $minRoi) {
+                $result['pm_floor_sync_skipped_total']++;
+                $result['pm_floor_sync_skipped_examples'][] = [
+                    'symbol'          => $symbol,
+                    'side'            => $side,
+                    'virtual_lock_roi'=> round($virtualLockRoi, 4),
+                    'min_roi'         => $minRoi,
+                    'skip_reason'     => 'below_min_roi',
+                ];
+                continue;
+            }
+
+            // Compute exchange floor ROI and stop price
+            $exchangeFloorRoi = max(0.0, $virtualLockRoi - $bufferRoi);
+            if ($side === 'long') {
+                $floorStopPrice = $entryPrice * (1.0 + $exchangeFloorRoi / $leverage / 100.0);
+            } else {
+                $floorStopPrice = $entryPrice * (1.0 - $exchangeFloorRoi / $leverage / 100.0);
+            }
+
+            if ($floorStopPrice <= 0.0) {
+                $result['pm_floor_sync_skipped_total']++;
+                continue;
+            }
+
+            // Throttle check
+            $stateKey    = "{$symbol}_{$side}";
+            $posState    = $syncState[$stateKey] ?? null;
+            $lastSetTs   = (int)($posState['last_set_ts']    ?? 0);
+            $lastFloorRoi= (float)($posState['last_floor_roi'] ?? 0.0);
+
+            if ($lastSetTs > 0 && ($nowTs - $lastSetTs) < $minUpdateSec) {
+                $result['pm_floor_sync_skipped_total']++;
+                $result['pm_floor_sync_skipped_examples'][] = [
+                    'symbol'      => $symbol,
+                    'side'        => $side,
+                    'skip_reason' => 'throttled',
+                    'seconds_since_last' => $nowTs - $lastSetTs,
+                    'min_update_interval'=> $minUpdateSec,
+                ];
+                continue;
+            }
+
+            // Min improvement check
+            if ($lastFloorRoi > 0.0 && ($exchangeFloorRoi - $lastFloorRoi) < $minImprovRoi) {
+                $result['pm_floor_sync_skipped_total']++;
+                $result['pm_floor_sync_skipped_examples'][] = [
+                    'symbol'             => $symbol,
+                    'side'               => $side,
+                    'skip_reason'        => 'insufficient_improvement',
+                    'exchange_floor_roi' => round($exchangeFloorRoi, 4),
+                    'last_floor_roi'     => round($lastFloorRoi, 4),
+                    'min_improvement'    => $minImprovRoi,
+                ];
+                continue;
+            }
+
+            $result['pm_floor_sync_attempted_total']++;
+
+            // Call exchange
+            $stopStr = rtrim(rtrim(number_format($floorStopPrice, 8, '.', ''), '0'), '.');
+            $positionIdx = 0; // default one-way mode
+            try {
+                $resp = $gw->request('/v5/position/trading-stop', [
+                    'category'    => 'linear',
+                    'symbol'      => $symbol,
+                    'stopLoss'    => $stopStr,
+                    'slTriggerBy' => $triggerBy,
+                    'tpslMode'    => 'Full',
+                    'positionIdx' => $positionIdx,
+                ], true);
+                $retCode = (int)($resp['ret_code'] ?? -1);
+                $retMsg  = (string)($resp['ret_msg'] ?? '');
+            } catch (\Throwable $ex) {
+                $retCode = -1;
+                $retMsg  = $ex->getMessage();
+            }
+
+            $ok = $retCode === 0
+                || $retCode === 110043
+                || stripos($retMsg, 'not modified') !== false
+                || stripos($retMsg, 'not been modified') !== false;
+
+            $ex = [
+                'symbol'              => $symbol,
+                'side'                => $side,
+                'mode'                => $moduleMode,
+                'entry_price'         => $entryPrice,
+                'lock_price'          => $lockPrice,
+                'virtual_lock_roi'    => round($virtualLockRoi, 4),
+                'exchange_floor_roi'  => round($exchangeFloorRoi, 4),
+                'floor_stop_price'    => $floorStopPrice,
+                'positionIdx'         => $positionIdx,
+                'slTriggerBy'         => $triggerBy,
+                'ret_code'            => $retCode,
+                'ret_msg'             => $retMsg,
+                'ok'                  => $ok,
+            ];
+
+            if ($ok) {
+                $result['pm_floor_sync_set_total']++;
+                if (count($result['pm_floor_sync_examples']) < 5) {
+                    $result['pm_floor_sync_examples'][] = $ex;
+                }
+                $syncState[$stateKey] = [
+                    'last_floor_roi'   => $exchangeFloorRoi,
+                    'last_stop_price'  => $floorStopPrice,
+                    'last_set_ts'      => $nowTs,
+                    'last_lock_price'  => $lockPrice,
+                    'last_set_at'      => date('c', $nowTs),
+                ];
+                $syncStateChanged = true;
+            } else {
+                $result['pm_floor_sync_failed_total']++;
+                if (count($result['pm_floor_sync_failed_examples']) < 5) {
+                    $result['pm_floor_sync_failed_examples'][] = $ex;
+                }
+            }
+        }
+
+        // Prune stale entries from sync state
+        $activeKeys = [];
+        foreach ($posRuntime as $pr) {
+            $sym  = strtoupper((string)($pr['symbol'] ?? ''));
+            $side = strtolower((string)($pr['side']   ?? ''));
+            if ($sym !== '' && in_array($side, ['long', 'short'], true)) {
+                $activeKeys[] = "{$sym}_{$side}";
+            }
+        }
+        foreach (array_keys($syncState) as $k) {
+            if (!in_array($k, $activeKeys, true)) {
+                unset($syncState[$k]);
+                $syncStateChanged = true;
+            }
+        }
+
+        if ($syncStateChanged) {
+            try {
+                $dir = dirname($stateFile);
+                if (!is_dir($dir)) {
+                    mkdir($dir, 0755, true);
+                }
+                file_put_contents(
+                    $stateFile,
+                    json_encode($syncState, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n",
+                    LOCK_EX
+                );
+            } catch (\Throwable) {}
+        }
+
+        return $result;
+    }
+
 }

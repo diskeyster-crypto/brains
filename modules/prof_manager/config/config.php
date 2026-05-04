@@ -26,4 +26,57 @@ return [
     'fast_tick_min_close_retry_interval_seconds'   => 15,
     'parser_metrics_fast_cache_ttl_seconds'        => 60,
     'impulse_metrics_fast_cache_ttl_seconds'       => 60,
+
+    // ── PM exchange profit-floor sync ─────────────────────────────────────
+    //
+    // When enabled, PM computes a safety stopLoss price from its virtual lock
+    // and sets it on the exchange via the Bybit trading-stop API.
+    //
+    // The exchange stopLoss is a SAFETY FLOOR ONLY — it is NOT the primary exit.
+    // PM virtual lock logic (impulse hold, grace, staircase, chop) remains primary.
+    //
+    // Safety defaults:
+    //   - disabled by default
+    //   - live disabled by default
+    //   - min_roi prevents setting a stop below entry (only in profit)
+    //
+    // pm_exchange_profit_floor_sync_enabled:
+    //   false (default) — feature disabled; no exchange stopLoss set by PM.
+    //   true             — PM computes and sets exchange stopLoss from virtual lock.
+    //
+    // pm_exchange_profit_floor_modes:
+    //   array of allowed modes, e.g. ['demo'] or ['demo', 'live'].
+    //   Checked alongside pm_exchange_profit_floor_live_enabled for live.
+    //
+    // pm_exchange_profit_floor_live_enabled:
+    //   false (default, safety gate) — never set exchange stopLoss on live accounts.
+    //   true — allow PM to set exchange stopLoss on live positions (dangerous).
+    //
+    // pm_exchange_profit_floor_min_roi:
+    //   Minimum virtual lock ROI% before the PM exchange floor is applied.
+    //   Exchange stopLoss will not be set if virtual_lock_roi < this value.
+    //
+    // pm_exchange_profit_floor_buffer_roi:
+    //   ROI% buffer applied below the virtual lock: exchange_floor_roi = lock_roi - buffer.
+    //   Prevents the exchange stop from sitting exactly at the PM lock price.
+    //
+    // pm_exchange_profit_floor_min_update_interval_seconds:
+    //   Minimum seconds between successive exchange stopLoss updates per position.
+    //   Prevents excessive API calls on every tick.
+    //
+    // pm_exchange_profit_floor_min_improvement_roi:
+    //   Only update exchange stopLoss if the new floor is at least this ROI% better
+    //   than the currently set exchange floor. Avoids trivial updates.
+    //
+    // pm_exchange_profit_floor_use_mark_price:
+    //   true (default) — use MarkPrice as slTriggerBy when setting exchange stopLoss.
+    //   false           — use LastPrice.
+    'pm_exchange_profit_floor_sync_enabled'              => false,
+    'pm_exchange_profit_floor_modes'                     => ['demo'],
+    'pm_exchange_profit_floor_live_enabled'              => false,
+    'pm_exchange_profit_floor_min_roi'                   => 8.0,
+    'pm_exchange_profit_floor_buffer_roi'                => 3.0,
+    'pm_exchange_profit_floor_min_update_interval_seconds' => 30,
+    'pm_exchange_profit_floor_min_improvement_roi'       => 2.0,
+    'pm_exchange_profit_floor_use_mark_price'            => true,
 ];

@@ -242,6 +242,15 @@ final class StopManagerService
         $stats['long_protective_stop_failed_total']  += $result['long_protective_stop_failed_total']  ?? 0;
         $stats['short_protective_stop_set_total'] += $result['short_protective_stop_set_total'] ?? 0;
         $stats['short_protective_stop_failed_total'] += $result['short_protective_stop_failed_total'] ?? 0;
+        // StopLoss set/verify cumulative counters
+        $stats['stoploss_set_attempted_total']      += $result['stoploss_set_attempted_total']      ?? 0;
+        $stats['stoploss_set_success_total']        += $result['stoploss_set_success_total']        ?? 0;
+        $stats['stoploss_set_verified_total']       += $result['stoploss_set_verified_total']       ?? 0;
+        $stats['stoploss_set_unverified_total']     += $result['stoploss_set_unverified_total']     ?? 0;
+        $stats['stoploss_set_failed_total']         += $result['stoploss_set_failed_total']         ?? 0;
+        $stats['live_stoploss_set_attempted_total'] += $result['live_stoploss_set_attempted_total'] ?? 0;
+        $stats['live_stoploss_set_verified_total']  += $result['live_stoploss_set_verified_total']  ?? 0;
+        $stats['demo_stoploss_set_verified_total']  += $result['demo_stoploss_set_verified_total']  ?? 0;
         // Close deduplication cumulative counters
         $stats['stop_close_deduped_total']        += $result['stop_close_deduped_total']        ?? 0;
 
@@ -371,6 +380,32 @@ final class StopManagerService
             // ── Protective stop cumulative ───────────────────────────────────
             'protective_stops_set_cumulative'                => (int)($stats['protective_stops_set_total']     ?? 0),
             'protective_stops_failed_cumulative'             => (int)($stats['protective_stops_failed_total']  ?? 0),
+            // ── StopLoss set/verify diagnostics (this tick) ──────────────────
+            'stoploss_set_attempted_total'                   => $result['stoploss_set_attempted_total']      ?? 0,
+            'stoploss_set_success_total'                     => $result['stoploss_set_success_total']        ?? 0,
+            'stoploss_set_verified_total'                    => $result['stoploss_set_verified_total']       ?? 0,
+            'stoploss_set_unverified_total'                  => $result['stoploss_set_unverified_total']     ?? 0,
+            'stoploss_set_failed_total'                      => $result['stoploss_set_failed_total']         ?? 0,
+            'live_stoploss_set_attempted_total'              => $result['live_stoploss_set_attempted_total'] ?? 0,
+            'live_stoploss_set_verified_total'               => $result['live_stoploss_set_verified_total']  ?? 0,
+            'demo_stoploss_set_verified_total'               => $result['demo_stoploss_set_verified_total']  ?? 0,
+            'stoploss_set_examples'                          => $result['stoploss_set_examples']             ?? [],
+            'stoploss_unverified_examples'                   => $result['stoploss_unverified_examples']      ?? [],
+            'stoploss_failed_examples'                       => $result['stoploss_failed_examples']          ?? [],
+            // ── StopLoss set/verify cumulative ───────────────────────────────
+            'stoploss_set_attempted_cumulative'              => (int)($stats['stoploss_set_attempted_total']      ?? 0),
+            'stoploss_set_verified_cumulative'               => (int)($stats['stoploss_set_verified_total']       ?? 0),
+            'stoploss_set_unverified_cumulative'             => (int)($stats['stoploss_set_unverified_total']     ?? 0),
+            'stoploss_set_failed_cumulative'                 => (int)($stats['stoploss_set_failed_total']         ?? 0),
+            'live_stoploss_set_attempted_cumulative'         => (int)($stats['live_stoploss_set_attempted_total'] ?? 0),
+            'live_stoploss_set_verified_cumulative'          => (int)($stats['live_stoploss_set_verified_total']  ?? 0),
+            'demo_stoploss_set_verified_cumulative'          => (int)($stats['demo_stoploss_set_verified_total']  ?? 0),
+            // ── SM config snapshot for diagnostics ───────────────────────────
+            'live_protective_stops_enabled'                  => (bool)($config['live_protective_stops_enabled']    ?? false),
+            'protective_stop_position_mode'                  => (string)($config['protective_stop_position_mode']  ?? 'one-way'),
+            'protective_stop_tpsl_mode'                      => (string)($config['protective_stop_tpsl_mode']      ?? 'Full'),
+            'protective_stop_trigger_by'                     => (string)($config['protective_stop_trigger_by']     ?? 'MarkPrice'),
+            'protective_stop_verify_after_set'               => (bool)($config['protective_stop_verify_after_set'] ?? true),
             // ── Close deduplication diagnostics (this tick) ──────────────────
             'stop_close_deduped_total'                       => $result['stop_close_deduped_total']       ?? 0,
             'stop_close_deduped_examples'                    => $result['stop_close_deduped_examples']    ?? [],
@@ -865,10 +900,34 @@ final class StopManagerService
                          && (bool)($shortProtCfg['emergency_stop_enabled'] ?? true);
         $sideRoiProtEnabled = $longProtOn || $shortProtOn;
 
+        // Protective stop exchange API parameters from config
+        $liveProtStopsEnabled = (bool)($config['live_protective_stops_enabled']    ?? false);
+        $protPositionMode     = (string)($config['protective_stop_position_mode']  ?? 'one-way');
+        $protTpslMode         = (string)($config['protective_stop_tpsl_mode']      ?? 'Full');
+        $protTriggerBy        = (string)($config['protective_stop_trigger_by']     ?? 'MarkPrice');
+        $protVerifyAfterSet   = (bool)($config['protective_stop_verify_after_set'] ?? true);
+
+        // New stoploss set/verify counters (per-tick)
+        $slSetAttemptedTotal       = 0;
+        $slSetSuccessTotal         = 0;
+        $slSetVerifiedTotal        = 0;
+        $slSetUnverifiedTotal      = 0;
+        $slSetFailedTotal          = 0;
+        $liveSlSetAttemptedTotal   = 0;
+        $liveSlSetVerifiedTotal    = 0;
+        $demoSlSetVerifiedTotal    = 0;
+        $slSetExamples             = [];
+        $slUnverifiedExamples      = [];
+        $slFailedExamples          = [];
+
         $protStopState        = $this->readJson('storage/protective_stops_state.json', []);
         $protStopStateChanged = false;
 
-        if ($sideRoiProtEnabled && $mode === 'demo' && $isActiveMode && $activeGw !== null) {
+        // Run for demo always; run for live only when live_protective_stops_enabled=true
+        $runProtForDemo = $sideRoiProtEnabled && $mode === 'demo' && $isActiveMode && $activeGw !== null;
+        $runProtForLive = $sideRoiProtEnabled && $mode === 'live' && $liveProtStopsEnabled && $isActiveMode && $activeGw !== null;
+
+        if ($runProtForDemo || $runProtForLive) {
             foreach ($posMap as $_protKey => $_protPos) {
                 $pSide    = (string)($_protPos['side'] ?? '');
                 $pMode    = $this->normalizeExecMode((string)($_protPos['execution_mode'] ?? 'demo'));
@@ -876,7 +935,13 @@ final class StopManagerService
                 $pStratId = (string)($_protPos['strategy_id'] ?? $_protPos['owner_strategy'] ?? '');
                 $pSigId   = (string)($_protPos['signal_id'] ?? '');
 
-                if ($pMode !== 'demo') {
+                // For demo SM mode: only handle demo positions
+                // For live SM mode: only handle live positions (safety gate)
+                if ($runProtForDemo && $pMode !== 'demo') {
+                    $protStopsSkippedTotal++;
+                    continue;
+                }
+                if ($runProtForLive && $pMode !== 'live') {
                     $protStopsSkippedTotal++;
                     continue;
                 }
@@ -926,7 +991,10 @@ final class StopManagerService
                 // Check existing protective stop state
                 $pStateKey      = "{$pMode}_{$pSymbol}_{$pSide}";
                 $pExistingStop  = $protStopState[$pStateKey] ?? null;
-                $pExistingPrice = isset($pExistingStop['stop_price_set']) ? (float)$pExistingStop['stop_price_set'] : 0.0;
+                // Use requested_stop_price for change detection (backward-compat fallback: stop_price_set)
+                $pExistingPrice = isset($pExistingStop['requested_stop_price'])
+                    ? (float)$pExistingStop['requested_stop_price']
+                    : (isset($pExistingStop['stop_price_set']) ? (float)$pExistingStop['stop_price_set'] : 0.0);
 
                 // Skip if already set at same price (tiny epsilon = 0.001% of stop price)
                 $pPriceChanged = ($pExistingPrice <= 0.0)
@@ -937,26 +1005,55 @@ final class StopManagerService
                     continue;
                 }
 
-                $pSetResult = $this->setDemoTradingStop($activeGw, $pSymbol, $pStopPrice);
-                $pAction    = $pExistingPrice <= 0.0 ? 'set' : 'update';
+                // Track attempt
+                $slSetAttemptedTotal++;
+                if ($pMode === 'live') { $liveSlSetAttemptedTotal++; }
+
+                $pSetResult = $this->setTradingStop(
+                    $activeGw,
+                    $pSymbol,
+                    $pSide,
+                    $pStopPrice,
+                    $protPositionMode,
+                    $protTpslMode,
+                    $protTriggerBy
+                );
+                $pAction = $pExistingPrice <= 0.0 ? 'set' : 'update';
+
+                // Verification (if enabled and set was reported ok)
+                $pVerifyResult = null;
+                $pConfirmed    = false;
+                if ($protVerifyAfterSet && ($pSetResult['ok'] || $pSetResult['note'] === 'already_set')) {
+                    $pVerifyResult = $this->verifyTradingStop($activeGw, $pSymbol, $pSide, $pStopPrice, $protPositionMode);
+                    $pConfirmed    = (bool)($pVerifyResult['stop_loss_confirmed'] ?? false);
+                }
 
                 $pExample = [
-                    'symbol'             => $pSymbol,
-                    'side'               => $pSide,
-                    'strategy_id'        => $pStratId,
-                    'signal_id'          => $pSigId !== '' ? $pSigId : null,
-                    'entry_price'        => $pEntry,
-                    'current_price'      => $pCurrentPx,
-                    'leverage'           => (int)$pLeverage,
-                    'emergency_stop_roi' => $pEmgRoi,
-                    'stop_price'         => $pStopPrice,
-                    'stop_guard'         => $pStopGuard,
-                    'action'             => $pAction,
-                    'ret_code'           => $pSetResult['ret_code'],
-                    'ret_msg'            => $pSetResult['ret_msg'],
+                    'symbol'              => $pSymbol,
+                    'side'                => $pSide,
+                    'mode'                => $pMode,
+                    'account_id'          => isset($_protPos['account_id']) ? (string)$_protPos['account_id'] : null,
+                    'strategy_id'         => $pStratId,
+                    'signal_id'           => $pSigId !== '' ? $pSigId : null,
+                    'entry_price'         => $pEntry,
+                    'current_price'       => $pCurrentPx,
+                    'leverage'            => (int)$pLeverage,
+                    'emergency_stop_roi'  => $pEmgRoi,
+                    'requested_stop_price'=> $pStopPrice,
+                    'confirmed_stop_price'=> $pVerifyResult['confirmed_stop_loss'] ?? null,
+                    'stop_guard'          => $pStopGuard,
+                    'action'              => $pAction,
+                    'positionIdx'         => $pSetResult['position_idx'] ?? 0,
+                    'category'            => 'linear',
+                    'tpslMode'            => $protTpslMode,
+                    'slTriggerBy'         => $protTriggerBy,
+                    'ret_code'            => $pSetResult['ret_code'],
+                    'ret_msg'             => $pSetResult['ret_msg'],
+                    'verification_status' => $pVerifyResult['verification_status'] ?? ($protVerifyAfterSet ? 'not_attempted' : 'skipped'),
                 ];
 
                 if ($pSetResult['ok'] || $pSetResult['note'] === 'already_set') {
+                    $slSetSuccessTotal++;
                     if ($pAction === 'set') {
                         $protStopsSetTotal++;
                         if ($pSide === 'long')  { $longProtStopsSetTotal++;  }
@@ -964,49 +1061,89 @@ final class StopManagerService
                     } else {
                         $protStopsUpdatedTotal++;
                     }
-                    $protStopState[$pStateKey] = [
-                        'stop_price_set' => $pStopPrice,
-                        'set_at'         => $tickAt,
-                        'set_at_ts'      => time(),
-                        'stop_guard'     => $pStopGuard,
-                        'strategy_id'    => $pStratId,
-                        'emergency_roi'  => $pEmgRoi,
+
+                    $pNowTs = time();
+
+                    // Build state record with requested + confirmed separation
+                    $pStateRecord = [
+                        // Legacy compat field (still set for backward compat with UI reading stop_price_set)
+                        'stop_price_set'          => $pStopPrice,
+                        'set_at'                  => $tickAt,
+                        'set_at_ts'               => $pNowTs,
+                        'stop_guard'              => $pStopGuard,
+                        'strategy_id'             => $pStratId,
+                        'emergency_roi'           => $pEmgRoi,
+                        // Requested fields
+                        'requested_stop_price'    => $pStopPrice,
+                        'requested_emergency_roi' => $pEmgRoi,
+                        'requested_at'            => $tickAt,
+                        // Confirmed fields
+                        'confirmed_stop_price'    => $pVerifyResult['confirmed_stop_loss'] ?? null,
+                        'confirmed_emergency_roi' => $pConfirmed ? $pEmgRoi : null,
+                        'confirmed_at'            => $pConfirmed ? $tickAt : null,
+                        'confirmed_by_exchange'   => $pConfirmed,
+                        'verification_status'     => $pVerifyResult['verification_status'] ?? ($protVerifyAfterSet ? 'not_attempted' : 'skipped'),
                     ];
+
+                    if ($pConfirmed) {
+                        $slSetVerifiedTotal++;
+                        if ($pMode === 'live') { $liveSlSetVerifiedTotal++; }
+                        if ($pMode === 'demo') { $demoSlSetVerifiedTotal++; }
+                        if (count($slSetExamples) < 5) { $slSetExamples[] = $pExample; }
+                    } elseif ($protVerifyAfterSet && $pVerifyResult !== null) {
+                        // Set was reported ok, but verification failed
+                        $slSetUnverifiedTotal++;
+                        if (count($slUnverifiedExamples) < 5) { $slUnverifiedExamples[] = $pExample; }
+                    } else {
+                        // Verification skipped (protVerifyAfterSet=false)
+                        if (count($slSetExamples) < 5) { $slSetExamples[] = $pExample; }
+                    }
+
+                    $protStopState[$pStateKey] = $pStateRecord;
                     $protStopStateChanged = true;
                     if (count($protStopExamples) < 5) { $protStopExamples[] = $pExample; }
                 } else {
+                    $slSetFailedTotal++;
                     $protStopsFailedTotal++;
                     if ($pSide === 'long')  { $longProtStopsFailedTotal++;  }
                     if ($pSide === 'short') { $shortProtStopsFailedTotal++; }
                     if (count($protStopFailedExamples) < 5) { $protStopFailedExamples[] = $pExample; }
+                    if (count($slFailedExamples) < 5) { $slFailedExamples[] = $pExample; }
                 }
 
                 $this->appendActionLog([
-                    'timestamp'          => $tickAt,
-                    'event_type'         => $pSetResult['ok'] ? 'protective_stop_set' : 'protective_stop_failed',
-                    'stop_source'        => 'stop_manager',
-                    'stop_guard'         => $pStopGuard,
-                    'stop_reason'        => $pStopReason,
-                    'stop_profile'       => 'side_specific_roi_emergency',
-                    'strategy_id'        => $pStratId,
-                    'signal_id'          => $pSigId,
-                    'symbol'             => $pSymbol,
-                    'side'               => $pSide,
-                    'entry_price'        => $pEntry,
-                    'current_price'      => $pCurrentPx,
-                    'leverage'           => (int)$pLeverage,
-                    'emergency_stop_roi' => $pEmgRoi,
-                    'stop_price'         => $pStopPrice,
-                    'action'             => $pAction,
-                    'ret_code'           => $pSetResult['ret_code'],
-                    'ret_msg'            => $pSetResult['ret_msg'],
+                    'timestamp'           => $tickAt,
+                    'event_type'          => $pSetResult['ok'] ? 'protective_stop_set' : 'protective_stop_failed',
+                    'stop_source'         => 'stop_manager',
+                    'stop_guard'          => $pStopGuard,
+                    'stop_reason'         => $pStopReason,
+                    'stop_profile'        => 'side_specific_roi_emergency',
+                    'strategy_id'         => $pStratId,
+                    'signal_id'           => $pSigId,
+                    'symbol'              => $pSymbol,
+                    'side'                => $pSide,
+                    'mode'                => $pMode,
+                    'entry_price'         => $pEntry,
+                    'current_price'       => $pCurrentPx,
+                    'leverage'            => (int)$pLeverage,
+                    'emergency_stop_roi'  => $pEmgRoi,
+                    'requested_stop_price'=> $pStopPrice,
+                    'confirmed_stop_price'=> $pVerifyResult['confirmed_stop_loss'] ?? null,
+                    'action'              => $pAction,
+                    'positionIdx'         => $pSetResult['position_idx'] ?? 0,
+                    'tpslMode'            => $protTpslMode,
+                    'slTriggerBy'         => $protTriggerBy,
+                    'ret_code'            => $pSetResult['ret_code'],
+                    'ret_msg'             => $pSetResult['ret_msg'],
+                    'verification_status' => $pExample['verification_status'],
                 ]);
             }
         }
 
         // Prune protective stop state entries for positions no longer active.
         // Runs regardless of gateway availability so the state stays clean.
-        if ($sideRoiProtEnabled && $mode === 'demo' && $isActiveMode) {
+        $runProtPrune = $sideRoiProtEnabled && $isActiveMode && ($mode === 'demo' || ($mode === 'live' && $liveProtStopsEnabled));
+        if ($runProtPrune) {
             foreach (array_keys($protStopState) as $_pStateKey) {
                 $_found = false;
                 foreach ($posMap as $_chkPos) {
@@ -1718,6 +1855,18 @@ final class StopManagerService
             'protective_stop_examples'                      => $protStopExamples,
             'protective_stop_failed_examples'               => $protStopFailedExamples,
             'protective_stops_active_count'                 => count($protStopState),
+            // StopLoss set/verify diagnostics
+            'stoploss_set_attempted_total'                  => $slSetAttemptedTotal,
+            'stoploss_set_success_total'                    => $slSetSuccessTotal,
+            'stoploss_set_verified_total'                   => $slSetVerifiedTotal,
+            'stoploss_set_unverified_total'                 => $slSetUnverifiedTotal,
+            'stoploss_set_failed_total'                     => $slSetFailedTotal,
+            'live_stoploss_set_attempted_total'             => $liveSlSetAttemptedTotal,
+            'live_stoploss_set_verified_total'              => $liveSlSetVerifiedTotal,
+            'demo_stoploss_set_verified_total'              => $demoSlSetVerifiedTotal,
+            'stoploss_set_examples'                         => $slSetExamples,
+            'stoploss_unverified_examples'                  => $slUnverifiedExamples,
+            'stoploss_failed_examples'                      => $slFailedExamples,
             // Close deduplication counters
             'stop_close_deduped_total'                      => $stopCloseDedupedTotal,
             'stop_close_deduped_examples'                   => $stopCloseDedupedExamples,
@@ -2178,7 +2327,15 @@ final class StopManagerService
     }
 
     /**
-     * Call Bybit Demo /v5/position/trading-stop to set a stop-loss.
+     * Call Bybit /v5/position/trading-stop to set a stop-loss (demo or live).
+     *
+     * Uses the correct Bybit V5 semantics:
+     *   - category = linear
+     *   - tpslMode = Full (set full-position stop)
+     *   - slTriggerBy = MarkPrice (or from config)
+     *   - positionIdx derived from $side and $positionMode config:
+     *       one-way mode: 0 for all positions
+     *       hedge mode:   1 for long, 2 for short
      *
      * Treats the following as success:
      *   - retCode = 0
@@ -2187,37 +2344,66 @@ final class StopManagerService
      *
      * Never logs API keys.
      *
+     * @param \Core\Gateway\Bybit $gw         Gateway client (demo or live)
+     * @param string              $symbol      Trading symbol (uppercase)
+     * @param string              $side        'long' or 'short'
+     * @param float               $stopPrice   Stop-loss price
+     * @param string              $positionMode 'one-way' (default) or 'hedge'
+     * @param string              $tpslMode    'Full' or 'Partial' (default 'Full')
+     * @param string              $triggerBy   'MarkPrice', 'LastPrice', 'IndexPrice'
+     *
      * @return array{
      *   ok: bool,
      *   symbol: string,
+     *   side: string,
      *   stop_price: float,
+     *   position_idx: int,
+     *   tpsl_mode: string,
+     *   trigger_by: string,
      *   ret_code: int,
      *   ret_msg: string,
      *   note: string
      * }
      */
-    private function setDemoTradingStop(
+    private function setTradingStop(
         \Core\Gateway\Bybit $gw,
         string $symbol,
-        float $stopPrice
+        string $side,
+        float  $stopPrice,
+        string $positionMode = 'one-way',
+        string $tpslMode     = 'Full',
+        string $triggerBy    = 'MarkPrice'
     ): array {
         $stopStr = rtrim(rtrim(number_format($stopPrice, 8, '.', ''), '0'), '.');
+
+        // Derive positionIdx from position mode and side
+        if ($positionMode === 'hedge') {
+            $positionIdx = ($side === 'short') ? 2 : 1;
+        } else {
+            $positionIdx = 0; // one-way mode
+        }
 
         try {
             $resp = $gw->request('/v5/position/trading-stop', [
                 'category'    => 'linear',
                 'symbol'      => $symbol,
                 'stopLoss'    => $stopStr,
-                'positionIdx' => 0,
+                'slTriggerBy' => $triggerBy,
+                'tpslMode'    => $tpslMode,
+                'positionIdx' => $positionIdx,
             ], true);
         } catch (\Throwable $ex) {
             return [
-                'ok'         => false,
-                'symbol'     => $symbol,
-                'stop_price' => $stopPrice,
-                'ret_code'   => -1,
-                'ret_msg'    => $ex->getMessage(),
-                'note'       => 'exception',
+                'ok'           => false,
+                'symbol'       => $symbol,
+                'side'         => $side,
+                'stop_price'   => $stopPrice,
+                'position_idx' => $positionIdx,
+                'tpsl_mode'    => $tpslMode,
+                'trigger_by'   => $triggerBy,
+                'ret_code'     => -1,
+                'ret_msg'      => $ex->getMessage(),
+                'note'         => 'exception',
             ];
         }
 
@@ -2239,13 +2425,143 @@ final class StopManagerService
         }
 
         return [
-            'ok'         => $ok,
-            'symbol'     => $symbol,
-            'stop_price' => $stopPrice,
-            'ret_code'   => $retCode,
-            'ret_msg'    => $retMsg,
-            'note'       => $note,
+            'ok'           => $ok,
+            'symbol'       => $symbol,
+            'side'         => $side,
+            'stop_price'   => $stopPrice,
+            'position_idx' => $positionIdx,
+            'tpsl_mode'    => $tpslMode,
+            'trigger_by'   => $triggerBy,
+            'ret_code'     => $retCode,
+            'ret_msg'      => $retMsg,
+            'note'         => $note,
         ];
+    }
+
+    /**
+     * Verify that a stopLoss was accepted by the exchange by querying position info.
+     *
+     * Queries /v5/position/info and checks the stopLoss field on the returned position.
+     * Considers the stop verified if the exchange-reported stopLoss is non-zero and
+     * approximately equal to the requested price (within 0.1% relative tolerance).
+     *
+     * @param \Core\Gateway\Bybit $gw                Gateway client
+     * @param string              $symbol             Trading symbol
+     * @param string              $side               'long' or 'short'
+     * @param float               $requestedStopPrice Price that was requested
+     * @param string              $positionMode        'one-way' or 'hedge'
+     *
+     * @return array{
+     *   stop_loss_confirmed: bool,
+     *   requested_stop_loss: float,
+     *   confirmed_stop_loss: float|null,
+     *   ret_code: int|null,
+     *   ret_msg: string|null,
+     *   verification_status: string
+     * }
+     */
+    private function verifyTradingStop(
+        \Core\Gateway\Bybit $gw,
+        string $symbol,
+        string $side,
+        float  $requestedStopPrice,
+        string $positionMode = 'one-way'
+    ): array {
+        $base = [
+            'stop_loss_confirmed'  => false,
+            'requested_stop_loss'  => $requestedStopPrice,
+            'confirmed_stop_loss'  => null,
+            'ret_code'             => null,
+            'ret_msg'              => null,
+            'verification_status'  => 'unknown',
+        ];
+
+        try {
+            $resp = $gw->request('/v5/position/info', [
+                'category' => 'linear',
+                'symbol'   => $symbol,
+            ]);
+        } catch (\Throwable $ex) {
+            return array_merge($base, [
+                'verification_status' => 'query_exception',
+                'ret_msg'             => $ex->getMessage(),
+            ]);
+        }
+
+        $retCode = (int)($resp['ret_code'] ?? -1);
+        $retMsg  = (string)($resp['ret_msg'] ?? '');
+
+        if ($retCode !== 0) {
+            return array_merge($base, [
+                'ret_code'            => $retCode,
+                'ret_msg'             => $retMsg,
+                'verification_status' => 'query_failed',
+            ]);
+        }
+
+        // Find the matching position in the list
+        $positionList = (array)($resp['result']['list'] ?? []);
+        $matchedPos   = null;
+
+        foreach ($positionList as $p) {
+            $pSide = strtolower((string)($p['side'] ?? ''));
+            // Normalize Bybit side: 'Buy' → 'long', 'Sell' → 'short'
+            if ($pSide === 'buy')  { $pSide = 'long'; }
+            if ($pSide === 'sell') { $pSide = 'short'; }
+
+            if ($pSide === $side) {
+                $matchedPos = $p;
+                break;
+            }
+        }
+
+        if ($matchedPos === null) {
+            return array_merge($base, [
+                'ret_code'            => $retCode,
+                'ret_msg'             => $retMsg,
+                'verification_status' => 'position_not_found',
+            ]);
+        }
+
+        $exchangeStop = (float)($matchedPos['stopLoss'] ?? 0.0);
+
+        if ($exchangeStop <= 0.0) {
+            return array_merge($base, [
+                'ret_code'            => $retCode,
+                'ret_msg'             => $retMsg,
+                'confirmed_stop_loss' => $exchangeStop,
+                'verification_status' => 'stop_loss_zero_on_exchange',
+            ]);
+        }
+
+        // Approximate match: within 0.1% of requested price
+        $tolerance = 0.001 * max($requestedStopPrice, $exchangeStop);
+        $confirmed = abs($exchangeStop - $requestedStopPrice) <= $tolerance;
+
+        return [
+            'stop_loss_confirmed'  => $confirmed,
+            'requested_stop_loss'  => $requestedStopPrice,
+            'confirmed_stop_loss'  => $exchangeStop,
+            'ret_code'             => $retCode,
+            'ret_msg'              => $retMsg,
+            'verification_status'  => $confirmed ? 'verified' : 'price_mismatch',
+        ];
+    }
+
+    /**
+     * @deprecated Use setTradingStop() instead.
+     *
+     * Backward-compat wrapper kept so callers in the legacy liq_distance_percent
+     * path continue to work without change. Delegates to setTradingStop().
+     * side defaults to 'long' for backward compat (legacy path is long-only).
+     */
+    private function setDemoTradingStop(
+        \Core\Gateway\Bybit $gw,
+        string $symbol,
+        float $stopPrice,
+        string $side = 'long'
+    ): array {
+        return $this->setTradingStop($gw, $symbol, $side, $stopPrice);
     }
 
     /**
@@ -2352,6 +2668,15 @@ final class StopManagerService
             'short_protective_stop_failed_total'            => 0,
             // Close deduplication cumulative counters
             'stop_close_deduped_total'                      => 0,
+            // StopLoss set/verify cumulative counters
+            'stoploss_set_attempted_total'                  => 0,
+            'stoploss_set_success_total'                    => 0,
+            'stoploss_set_verified_total'                   => 0,
+            'stoploss_set_unverified_total'                 => 0,
+            'stoploss_set_failed_total'                     => 0,
+            'live_stoploss_set_attempted_total'             => 0,
+            'live_stoploss_set_verified_total'              => 0,
+            'demo_stoploss_set_verified_total'              => 0,
         ];
     }
 

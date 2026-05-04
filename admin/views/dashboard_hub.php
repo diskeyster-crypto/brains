@@ -301,6 +301,24 @@ function renderDashboardHub(): string
     $pmCfgFastLockMoveYes      = ($pmCfgFastAllowLockMove === '1') ? ' selected' : '';
     $pmCfgFastLockMoveNo       = ($pmCfgFastAllowLockMove !== '1') ? ' selected' : '';
 
+    // ── PM exchange profit-floor sync config vars ─────────────────────────
+    $pmCfgFloorSyncEnabled  = (bool)($pmCfg['pm_exchange_profit_floor_sync_enabled']              ?? false);
+    $pmCfgFloorModesRaw     = (array)($pmCfg['pm_exchange_profit_floor_modes']                    ?? ['demo']);
+    $pmCfgFloorModesStr     = implode(', ', $pmCfgFloorModesRaw);
+    $pmCfgFloorLiveEnabled  = (bool)($pmCfg['pm_exchange_profit_floor_live_enabled']              ?? false);
+    $pmCfgFloorMinRoi       = (string)($pmCfg['pm_exchange_profit_floor_min_roi']                 ?? 8.0);
+    $pmCfgFloorBufferRoi    = (string)($pmCfg['pm_exchange_profit_floor_buffer_roi']              ?? 3.0);
+    $pmCfgFloorMinUpdateSec = (string)($pmCfg['pm_exchange_profit_floor_min_update_interval_seconds'] ?? 30);
+    $pmCfgFloorMinImprovRoi = (string)($pmCfg['pm_exchange_profit_floor_min_improvement_roi']     ?? 2.0);
+    $pmCfgFloorMarkPrice    = (bool)($pmCfg['pm_exchange_profit_floor_use_mark_price']            ?? true);
+
+    $pmCfgFloorSyncEnYes   = $pmCfgFloorSyncEnabled   ? ' selected' : '';
+    $pmCfgFloorSyncEnNo    = !$pmCfgFloorSyncEnabled  ? ' selected' : '';
+    $pmCfgFloorLiveEnYes   = $pmCfgFloorLiveEnabled   ? ' selected' : '';
+    $pmCfgFloorLiveEnNo    = !$pmCfgFloorLiveEnabled  ? ' selected' : '';
+    $pmCfgFloorMarkPxYes   = $pmCfgFloorMarkPrice     ? ' selected' : '';
+    $pmCfgFloorMarkPxNo    = !$pmCfgFloorMarkPrice    ? ' selected' : '';
+
     // ── flash message ─────────────────────────────────────────────────────
     $flash = null;
     if (session_status() === PHP_SESSION_NONE) {
@@ -1664,6 +1682,30 @@ ROWS;
     $smProtShortSet      = (int)($smLastRun['short_protective_stop_set_total']      ?? 0);
     $smProtSetCumulative = (int)($smLastRun['protective_stops_set_cumulative']      ?? 0);
 
+    // StopLoss set/verify diagnostics (from new unified setTradingStop + verifyTradingStop)
+    $smSlAttempted      = (int)($smLastRun['stoploss_set_attempted_total']      ?? 0);
+    $smSlSuccess        = (int)($smLastRun['stoploss_set_success_total']         ?? 0);
+    $smSlVerified       = (int)($smLastRun['stoploss_set_verified_total']        ?? 0);
+    $smSlUnverified     = (int)($smLastRun['stoploss_set_unverified_total']      ?? 0);
+    $smSlFailed         = (int)($smLastRun['stoploss_set_failed_total']          ?? 0);
+    $smLiveSlAttempted  = (int)($smLastRun['live_stoploss_set_attempted_total']  ?? 0);
+    $smLiveSlVerified   = (int)($smLastRun['live_stoploss_set_verified_total']   ?? 0);
+    $smDemoSlVerified   = (int)($smLastRun['demo_stoploss_set_verified_total']   ?? 0);
+    // Cumulative
+    $smSlAttemptedCum   = (int)($smLastRun['stoploss_set_attempted_cumulative']       ?? 0);
+    $smSlVerifiedCum    = (int)($smLastRun['stoploss_set_verified_cumulative']        ?? 0);
+    $smSlUnverifiedCum  = (int)($smLastRun['stoploss_set_unverified_cumulative']      ?? 0);
+    $smSlFailedCum      = (int)($smLastRun['stoploss_set_failed_cumulative']          ?? 0);
+    $smLiveSlAttemptedCum = (int)($smLastRun['live_stoploss_set_attempted_cumulative'] ?? 0);
+    $smLiveSlVerifiedCum  = (int)($smLastRun['live_stoploss_set_verified_cumulative']  ?? 0);
+    $smDemoSlVerifiedCum  = (int)($smLastRun['demo_stoploss_set_verified_cumulative']  ?? 0);
+    // SM config flags from last_run
+    $smLiveProtEnabled  = (bool)($smLastRun['live_protective_stops_enabled']    ?? false);
+    $smProtPositionMode = (string)($smLastRun['protective_stop_position_mode']  ?? 'one-way');
+    $smProtTpslMode     = (string)($smLastRun['protective_stop_tpsl_mode']      ?? 'Full');
+    $smProtTriggerBy    = (string)($smLastRun['protective_stop_trigger_by']     ?? 'MarkPrice');
+    $smProtVerify       = (bool)($smLastRun['protective_stop_verify_after_set'] ?? true);
+
     // Precomputed display helpers for protective stop runtime card
     $smProtEnabledHtml  = $smProtEnabled
         ? '<span style="color:#3fb950;">включены</span>'
@@ -1748,12 +1790,25 @@ ROWS;
         $protActiveColor  = $smProtActiveCount > 0 ? '#3fb950' : '#8b949e';
         $protSetColor     = $smProtSet > 0 ? '#3fb950' : 'inherit';
         $protFailedColor  = $smProtFailed > 0 ? '#f85149' : 'inherit';
+        $slVerifiedColor  = $smSlVerified > 0 ? '#3fb950' : 'inherit';
+        $slUnverifiedColor= $smSlUnverified > 0 ? '#f0883e' : 'inherit';
+        $liveProtHtml     = $smLiveProtEnabled
+            ? '<span style="color:#f0883e;">&#x26A1; live включен</span>'
+            : '<span style="color:#8b949e;">live отключен</span>';
         $smProtStopsHtml  = '<div class="card" style="margin-bottom:16px;">'
             . '<div class="card-header">Защитные стопы — side-specific ROI (protective stops)</div>'
             . '<div class="card-body">'
             . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:240px;">ROI protective стопы</td>'
             . '<td>' . $smProtEnabledHtml . '</td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Live protective stops</td>'
+            . '<td>' . $liveProtHtml . '</td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Position mode</td>'
+            . '<td><code>' . $e($smProtPositionMode) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">tpslMode / triggerBy</td>'
+            . '<td><code>' . $e($smProtTpslMode) . ' / ' . $e($smProtTriggerBy) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Верификация после установки</td>'
+            . '<td><code>' . ($smProtVerify ? 'да' : 'нет') . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных защитных стопов</td>'
             . '<td><code style="color:' . $protActiveColor . ';font-weight:600;">' . $e($smProtActiveCount) . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Установлено (тик)</td>'
@@ -1772,6 +1827,42 @@ ROWS;
             . '<td><code>' . $e($smProtSkipped) . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Установлено (накопл.)</td>'
             . '<td><code>' . $e($smProtSetCumulative) . '</code></td></tr>'
+            . '</table>'
+            . '</div></div>'
+            // StopLoss verification card
+            . '<div class="card" style="margin-bottom:16px;">'
+            . '<div class="card-header">StopLoss — запрошено / подтверждено (биржей)</div>'
+            . '<div class="card-body">'
+            . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:240px;">Попыток установки (тик)</td>'
+            . '<td><code>' . $e($smSlAttempted) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Успешно установлено (тик)</td>'
+            . '<td><code>' . $e($smSlSuccess) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">✅ Подтверждено биржей (тик)</td>'
+            . '<td><code style="color:' . $slVerifiedColor . ';">' . $e($smSlVerified) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">⚠ Не подтверждено (тик)</td>'
+            . '<td><code style="color:' . $slUnverifiedColor . ';">' . $e($smSlUnverified) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибок (тик)</td>'
+            . '<td><code style="color:' . ($smSlFailed > 0 ? '#f85149' : 'inherit') . ';">' . $e($smSlFailed) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Live попыток (тик)</td>'
+            . '<td><code style="color:' . ($smLiveSlAttempted > 0 ? '#f0883e' : 'inherit') . ';">' . $e($smLiveSlAttempted) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Live подтверждено (тик)</td>'
+            . '<td><code style="color:' . ($smLiveSlVerified > 0 ? '#f0883e' : 'inherit') . ';">' . $e($smLiveSlVerified) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Demo подтверждено (тик)</td>'
+            . '<td><code style="color:' . ($smDemoSlVerified > 0 ? '#3fb950' : 'inherit') . ';">' . $e($smDemoSlVerified) . '</code></td></tr>'
+            . '<tr><td colspan="2" style="padding:8px 0 4px;color:var(--ui-text-muted);font-style:italic;">Накопленные</td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Попыток (накопл.)</td>'
+            . '<td><code>' . $e($smSlAttemptedCum) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Подтверждено (накопл.)</td>'
+            . '<td><code style="color:' . ($smSlVerifiedCum > 0 ? '#3fb950' : 'inherit') . ';">' . $e($smSlVerifiedCum) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Не подтверждено (накопл.)</td>'
+            . '<td><code style="color:' . ($smSlUnverifiedCum > 0 ? '#f0883e' : 'inherit') . ';">' . $e($smSlUnverifiedCum) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибок (накопл.)</td>'
+            . '<td><code style="color:' . ($smSlFailedCum > 0 ? '#f85149' : 'inherit') . ';">' . $e($smSlFailedCum) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Live попыток (накопл.)</td>'
+            . '<td><code>' . $e($smLiveSlAttemptedCum) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Live подтверждено (накопл.)</td>'
+            . '<td><code>' . $e($smLiveSlVerifiedCum) . '</code></td></tr>'
             . '</table></div></div>';
     }
     $smCfgEnYes  = ($smConfig['enabled'] ?? false) ? ' selected' : '';
@@ -2366,6 +2457,37 @@ ROWS;
         $_frTs = (string)($pmFastRunData['ts'] ?? '—');
         $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Последний fast-тик</td>'
             . '<td><code style="font-size:11px;">' . $e($_frTs) . '</code></td></tr>';
+    }
+
+    // ── PM exchange profit-floor sync compact diagnostics ─────────────────
+    $_pmFloorEnabled    = (bool)($pmRawLastRun['pm_floor_sync_enabled']         ?? false);
+    $_pmFloorSkipReason = (string)($pmRawLastRun['pm_floor_sync_skip_reason']   ?? '');
+    $_pmFloorAttempted  = (int)($pmRawLastRun['pm_floor_sync_attempted_total']  ?? 0);
+    $_pmFloorSet        = (int)($pmRawLastRun['pm_floor_sync_set_total']        ?? 0);
+    $_pmFloorFailed     = (int)($pmRawLastRun['pm_floor_sync_failed_total']     ?? 0);
+    $_pmFloorSkipped    = (int)($pmRawLastRun['pm_floor_sync_skipped_total']    ?? 0);
+    $_pmLiveSkipDisabled= (bool)($pmRawLastRun['live_profit_floor_sync_skipped_disabled'] ?? false);
+
+    $_pmFloorEnabledHtml = $_pmFloorEnabled
+        ? '<span style="color:#3fb950;">включен</span>'
+        : '<span style="color:#8b949e;">выключен</span>';
+
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;padding-top:6px;"><strong style="font-size:11px;">Exchange profit-floor sync</strong></td>'
+        . '<td style="padding-top:6px;">' . $_pmFloorEnabledHtml . '</td></tr>';
+    if ($_pmFloorSkipReason !== '') {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Skip причина</td>'
+            . '<td><code style="font-size:11px;color:#8b949e;">' . $e($_pmFloorSkipReason) . '</code></td></tr>';
+    }
+    if ($_pmFloorEnabled) {
+        $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Попыток / установлено</td>'
+            . '<td><code>' . $_pmFloorAttempted . ' / ' . $_pmFloorSet . '</code></td></tr>';
+        if ($_pmFloorFailed > 0) {
+            $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибок</td>'
+                . '<td><code style="color:#f85149;">' . $_pmFloorFailed . '</code></td></tr>';
+        }
+        if ($_pmLiveSkipDisabled) {
+            $pmDiagRows .= '<tr><td colspan="2"><code style="color:#8b949e;font-size:11px;">live_profit_floor_sync_skipped_disabled</code></td></tr>';
+        }
     }
 
     // ── PM per-position runtime table HTML ───────────────────────────────
@@ -5798,6 +5920,69 @@ BLCK;
           </div>
         </div>
 
+        <!-- PM exchange profit-floor sync -->
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
+          <div style="font-size:12px;color:var(--ui-text-muted);margin-bottom:8px;font-weight:600;">
+            Exchange profit-floor sync
+            <span style="font-weight:400;margin-left:6px;color:#8b949e;">(safety stopLoss backup from PM virtual lock)</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px 16px;">
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Включить</label>
+              <select name="pm_exchange_profit_floor_sync_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+                <option value="1"{$pmCfgFloorSyncEnYes}>Да</option>
+                <option value="0"{$pmCfgFloorSyncEnNo}>Нет</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режимы (demo/live)</label>
+              <input type="text" name="pm_exchange_profit_floor_modes" value="{$e($pmCfgFloorModesStr)}"
+                class="form-control" style="height:32px;font-size:13px;padding:2px 8px;" placeholder="demo">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">
+                Live включить
+                <span style="color:#f85149;margin-left:4px;">&#x26A0; опасно</span>
+              </label>
+              <select name="pm_exchange_profit_floor_live_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+                <option value="0"{$pmCfgFloorLiveEnNo}>Нет (безопасно)</option>
+                <option value="1"{$pmCfgFloorLiveEnYes}>Да (live стоп)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min ROI лока (%)</label>
+              <input type="number" step="0.1" min="0" name="pm_exchange_profit_floor_min_roi"
+                value="{$pmCfgFloorMinRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Buffer ROI (%)</label>
+              <input type="number" step="0.1" min="0" name="pm_exchange_profit_floor_buffer_roi"
+                value="{$pmCfgFloorBufferRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min интервал обн. (сек)</label>
+              <input type="number" step="1" min="5" name="pm_exchange_profit_floor_min_update_interval_seconds"
+                value="{$pmCfgFloorMinUpdateSec}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Min улучшение ROI (%)</label>
+              <input type="number" step="0.1" min="0" name="pm_exchange_profit_floor_min_improvement_roi"
+                value="{$pmCfgFloorMinImprovRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Trigger by</label>
+              <select name="pm_exchange_profit_floor_use_mark_price" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+                <option value="1"{$pmCfgFloorMarkPxYes}>MarkPrice</option>
+                <option value="0"{$pmCfgFloorMarkPxNo}>LastPrice</option>
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:6px;font-size:11px;color:var(--ui-text-muted);">
+            PM virtual lock остаётся основным. Exchange stopLoss — только страховочный floor.
+            Режимы: через запятую, например <code>demo</code> или <code>demo, live</code>.
+          </div>
+        </div>
+
         <button type="submit" class="btn btn-sm btn-primary">Сохранить</button>
       </form>
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-border);">
@@ -8048,6 +8233,37 @@ function handleDashboardPmConfigSave(): void
     }
     if (isset($_POST['fast_tick_min_close_retry_interval_seconds'])) {
         $existing['fast_tick_min_close_retry_interval_seconds'] = max(5, (int)$_POST['fast_tick_min_close_retry_interval_seconds']);
+    }
+
+    // ── PM exchange profit-floor sync config keys ─────────────────────────
+    if (isset($_POST['pm_exchange_profit_floor_sync_enabled'])) {
+        $existing['pm_exchange_profit_floor_sync_enabled'] = (bool)(int)$_POST['pm_exchange_profit_floor_sync_enabled'];
+    }
+    if (isset($_POST['pm_exchange_profit_floor_modes'])) {
+        // Parse comma-separated mode strings, only allow 'demo' and 'live'
+        $rawModes  = preg_split('/[\s,]+/', trim((string)$_POST['pm_exchange_profit_floor_modes']));
+        $cleanModes = array_values(array_intersect(array_filter($rawModes), ['demo', 'live']));
+        if (!empty($cleanModes)) {
+            $existing['pm_exchange_profit_floor_modes'] = $cleanModes;
+        }
+    }
+    if (isset($_POST['pm_exchange_profit_floor_live_enabled'])) {
+        $existing['pm_exchange_profit_floor_live_enabled'] = (bool)(int)$_POST['pm_exchange_profit_floor_live_enabled'];
+    }
+    if (isset($_POST['pm_exchange_profit_floor_min_roi'])) {
+        $existing['pm_exchange_profit_floor_min_roi'] = max(0.0, (float)$_POST['pm_exchange_profit_floor_min_roi']);
+    }
+    if (isset($_POST['pm_exchange_profit_floor_buffer_roi'])) {
+        $existing['pm_exchange_profit_floor_buffer_roi'] = max(0.0, (float)$_POST['pm_exchange_profit_floor_buffer_roi']);
+    }
+    if (isset($_POST['pm_exchange_profit_floor_min_update_interval_seconds'])) {
+        $existing['pm_exchange_profit_floor_min_update_interval_seconds'] = max(5, (int)$_POST['pm_exchange_profit_floor_min_update_interval_seconds']);
+    }
+    if (isset($_POST['pm_exchange_profit_floor_min_improvement_roi'])) {
+        $existing['pm_exchange_profit_floor_min_improvement_roi'] = max(0.0, (float)$_POST['pm_exchange_profit_floor_min_improvement_roi']);
+    }
+    if (isset($_POST['pm_exchange_profit_floor_use_mark_price'])) {
+        $existing['pm_exchange_profit_floor_use_mark_price'] = (bool)(int)$_POST['pm_exchange_profit_floor_use_mark_price'];
     }
 
     // ── Persist ──────────────────────────────────────────────────────────

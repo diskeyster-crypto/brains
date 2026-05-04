@@ -116,6 +116,35 @@ return [
     //   true — re-enable the legacy liq_distance_percent + breakeven runtime path.
     'legacy_liq_distance_stop_enabled' => false,
 
+    // ── Protective stop exchange API parameters ───────────────────────────────
+    //
+    // live_protective_stops_enabled:
+    //   false (default) — only demo positions receive protective stop placement.
+    //   true             — live positions also receive protective stop placement.
+    //   CAUTION: Only enable after verifying live gateway credentials work correctly.
+    //
+    // protective_stop_position_mode:
+    //   'one-way' (default) — account is in one-way mode; positionIdx = 0 for all positions.
+    //   'hedge'             — account is in hedge mode; long → positionIdx = 1, short → 2.
+    //
+    // protective_stop_tpsl_mode:
+    //   'Full' (default) — set the full position stop-loss (Bybit V5 tpslMode=Full).
+    //   'Partial'         — partial TPSL (only needed for partial position management).
+    //
+    // protective_stop_trigger_by:
+    //   'MarkPrice' (default) — trigger on mark price (standard for perpetual contracts).
+    //   'LastPrice'           — trigger on last traded price.
+    //   'IndexPrice'          — trigger on index price.
+    //
+    // protective_stop_verify_after_set:
+    //   true (default) — after setting stopLoss, query position info to verify.
+    //   false           — skip verification (faster but less reliable diagnostics).
+    'live_protective_stops_enabled'    => false,
+    'protective_stop_position_mode'    => 'one-way',  // 'one-way' | 'hedge'
+    'protective_stop_tpsl_mode'        => 'Full',
+    'protective_stop_trigger_by'       => 'MarkPrice',
+    'protective_stop_verify_after_set' => true,
+
     // ── Side-specific stop profiles ───────────────────────────────────────────
     //
     // profiles.long — controls long-side generic ROI emergency stop behavior.

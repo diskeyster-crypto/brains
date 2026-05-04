@@ -1580,7 +1580,9 @@ ROWS;
     $smPosSeen     = (string)($smLastRun['positions_seen']                ?? 0);
     $smEstLiq      = (string)($smLastRun['positions_with_estimated_liq']  ?? 0);
     $smNoLiq       = (string)($smLastRun['positions_without_liq']         ?? 0);
-    $smActiveStops = (string)($smLastRun['stops_active_count']            ?? count(array_filter($smStops, static fn($s) => in_array($s['stop_state'] ?? '', ['active', 'estimated_liq'], true))));
+    $smActiveStops = (string)($smLastRun['protective_stops_active_count']
+        ?? $smLastRun['stops_active_count']
+        ?? count(array_filter($smStops, static fn($s) => in_array($s['stop_state'] ?? '', ['active', 'estimated_liq'], true))));
     $smStaleStops  = (string)(count(array_filter($smStops, static fn($s) => ($s['stop_state'] ?? '') === 'stale')));
     $smBeApplied   = (string)($smStats['breakeven_applied_total']         ?? 0);
     $smStatusColor = $smLastStatus === 'ok' ? '#3fb950' : '#8b949e';
@@ -1602,6 +1604,18 @@ ROWS;
     $smDemoLastErrCode      = $smLastRun['demo_last_stop_error_code']      ?? null;
     $smDemoLastErrMsg       = (string)($smLastRun['demo_last_stop_error_msg'] ?? '');
     $smDemoLastSymbol       = (string)($smLastRun['demo_last_stop_symbol']    ?? '');
+
+    // Protective stop diagnostics (side-specific ROI-based proactive stops)
+    $smProtEnabled       = (bool)($smLastRun['side_roi_protective_stop_enabled']   ?? false);
+    $smProtActiveCount   = (int)($smLastRun['protective_stops_active_count']        ?? 0);
+    $smProtSet           = (int)($smLastRun['protective_stops_set_total']           ?? 0);
+    $smProtUpdated       = (int)($smLastRun['protective_stops_updated_total']       ?? 0);
+    $smProtAlreadyOk     = (int)($smLastRun['protective_stops_already_ok_total']    ?? 0);
+    $smProtFailed        = (int)($smLastRun['protective_stops_failed_total']        ?? 0);
+    $smProtSkipped       = (int)($smLastRun['protective_stops_skipped_total']       ?? 0);
+    $smProtLongSet       = (int)($smLastRun['long_protective_stop_set_total']       ?? 0);
+    $smProtShortSet      = (int)($smLastRun['short_protective_stop_set_total']      ?? 0);
+    $smProtSetCumulative = (int)($smLastRun['protective_stops_set_cumulative']      ?? 0);
 
     // Early fail guard diagnostics (from last_run.json when available)
     $smEfEnabled   = (bool)($smConfig['double_bottom_early_fail_enabled'] ?? true);
@@ -1674,7 +1688,36 @@ ROWS;
         $smDemoExecHtml = '';
     }
 
-    // ── stop_manager config for Control tab (mirrored) ───────────────────
+    // Build protective stop diagnostics card (shown in demo/live mode when enabled)
+    $smProtStopsHtml = '';
+    if ($smProtEnabled && ($smMode === 'demo' || $smMode === 'live')) {
+        $protActiveColor  = $smProtActiveCount > 0 ? '#3fb950' : '#8b949e';
+        $protSetColor     = $smProtSet > 0 ? '#3fb950' : 'inherit';
+        $protFailedColor  = $smProtFailed > 0 ? '#f85149' : 'inherit';
+        $smProtStopsHtml  = '<div class="card" style="margin-bottom:16px;">'
+            . '<div class="card-header">Защитные стопы — side-specific ROI (protective stops)</div>'
+            . '<div class="card-body">'
+            . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:240px;">Активных защитных стопов</td>'
+            . '<td><code style="color:' . $protActiveColor . ';font-weight:600;">' . $e($smProtActiveCount) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Установлено (тик)</td>'
+            . '<td><code style="color:' . $protSetColor . ';">' . $e($smProtSet) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Обновлено (тик)</td>'
+            . '<td><code>' . $e($smProtUpdated) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Уже OK (тик)</td>'
+            . '<td><code>' . $e($smProtAlreadyOk) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибок установки (тик)</td>'
+            . '<td><code style="color:' . $protFailedColor . ';">' . $e($smProtFailed) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Пропущено (тик)</td>'
+            . '<td><code>' . $e($smProtSkipped) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long установлено (тик)</td>'
+            . '<td><code>' . $e($smProtLongSet) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">short установлено (тик)</td>'
+            . '<td><code>' . $e($smProtShortSet) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Установлено (накопл.)</td>'
+            . '<td><code>' . $e($smProtSetCumulative) . '</code></td></tr>'
+            . '</table></div></div>';
+    }
     $smCfgEnYes  = ($smConfig['enabled'] ?? false) ? ' selected' : '';
     $smCfgEnNo   = !($smConfig['enabled'] ?? false) ? ' selected' : '';
     $smCfgModeDe = $smMode !== 'live' ? ' selected' : '';
@@ -2505,7 +2548,7 @@ HTML;
       <div><span style="color:var(--ui-text-muted);">Позиций активно</span><br><strong style="color:#a78bfa;">{$posCount}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Стратегий включено</span><br><strong style="color:#3fb950;">{$enabledStrat}</strong> / {$totalStrat}</div>
       <div><span style="color:var(--ui-text-muted);">PM отслеживает</span><br><strong style="color:#f0883e;">{$pmPosTracked}</strong> поз.</div>
-      <div><span style="color:var(--ui-text-muted);">SM стопов активно</span><br><strong style="color:#a78bfa;">{$smActiveStops}</strong> <span style="color:#8b949e;font-size:11px;">(stale: {$smStaleStops})</span></div>
+      <div><span style="color:var(--ui-text-muted);">SM защитных стопов</span><br><strong style="color:#a78bfa;">{$smActiveStops}</strong> <span style="color:#8b949e;font-size:11px;">(stale: {$smStaleStops})</span></div>
       <div><span style="color:var(--ui-text-muted);">Ср. ROI (PM поз.)</span><br><strong style="color:#58a6ff;">{$sysAvgRoi}</strong></div>
       <div><span style="color:var(--ui-text-muted);">Последняя ошибка</span><br>{$sysLastErrorHtml}</div>
     </div>
@@ -4262,7 +4305,7 @@ HTML;
         . '<td style="padding:5px 10px;color:' . $modSmClr . ';font-weight:600;">' . $scSmState . '</td>'
         . '<td style="padding:5px 10px;"><code style="font-size:11px;">' . $e($smMode) . '</code></td>'
         . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . $e($smLastTick) . '</td>'
-        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">стопов: ' . $smActiveStops . ' (stale: ' . $smStaleStops . ') · позиций: ' . $smPosSeen . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">защ.стопов: ' . $smActiveStops . ' (stale: ' . $smStaleStops . ') · позиций: ' . $smPosSeen . '</td>'
         . '<td style="padding:5px 10px;font-size:11px;color:#f85149;">' . $e($scSmReason) . '</td>'
         . '</tr>';
     // Profit Manager
@@ -5163,8 +5206,10 @@ BLCK;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Позиций увидено</td><td><code>{$smPosSeen}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">С расчётным liq</td><td><code>{$smEstLiq}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Без liq</td><td><code>{$smNoLiq}</code></td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных стопов</td><td><code>{$smActiveStops}</code></td></tr>
-          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Stale стопов</td><td><code style="color:#8b949e;">{$smStaleStops}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Защитных стопов активно</td><td><code style="color:#a78bfa;font-weight:600;">{$smActiveStops}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Защитных установлено (тик)</td><td><code style="color:#3fb950;">{$smProtSet}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Защитных уже OK (тик)</td><td><code>{$smProtAlreadyOk}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;color:#8b949e;">Stale стопов (deprecated)</td><td><code style="color:#8b949e;">{$smStaleStops}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Breakeven применено</td><td><code>{$smBeApplied}</code></td></tr>
         </table>
       </div>
@@ -5206,6 +5251,7 @@ BLCK;
     </div>
   </div>
   {$smDemoExecHtml}
+  {$smProtStopsHtml}
   {$smEarlyFailHtml}
 </div>
 

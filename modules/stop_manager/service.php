@@ -365,6 +365,7 @@ final class StopManagerService
             'short_protective_stop_failed_total'             => $result['short_protective_stop_failed_total'] ?? 0,
             'protective_stop_examples'                       => $result['protective_stop_examples']        ?? [],
             'protective_stop_failed_examples'                => $result['protective_stop_failed_examples'] ?? [],
+            'protective_stops_active_count'                  => $result['protective_stops_active_count']   ?? 0,
             // ── Protective stop cumulative ───────────────────────────────────
             'protective_stops_set_cumulative'                => (int)($stats['protective_stops_set_total']     ?? 0),
             'protective_stops_failed_cumulative'             => (int)($stats['protective_stops_failed_total']  ?? 0),
@@ -1714,6 +1715,7 @@ final class StopManagerService
             'short_protective_stop_failed_total'            => $shortProtStopsFailedTotal,
             'protective_stop_examples'                      => $protStopExamples,
             'protective_stop_failed_examples'               => $protStopFailedExamples,
+            'protective_stops_active_count'                 => count($protStopState),
             // Close deduplication counters
             'stop_close_deduped_total'                      => $stopCloseDedupedTotal,
             'stop_close_deduped_examples'                   => $stopCloseDedupedExamples,

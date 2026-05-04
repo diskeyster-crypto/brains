@@ -200,6 +200,11 @@ final class ProfManagerService
             $shortCloseExamples            = [];
             $shortSkipExamples             = [];
 
+            // PM state identity counters
+            $pmStateIdentityMismatchTotal = 0;
+            $pmStateLegacyKeyIgnoredTotal = 0;
+            $pmStateIdentityMismatchExamples = [];
+
             // Long impulse-hold diagnostic counters
             $impulseHoldCheckedTotal             = 0;
             $impulseHoldStrongTotal              = 0;
@@ -289,6 +294,24 @@ final class ProfManagerService
                         'profile_used' => 'none',
                         'notes'        => [],
                     ];
+                }
+
+                // ── PM state identity mismatch tracking ───────────────────────
+                if (!empty($profileResult['pm_state_identity_mismatch'])) {
+                    $pmStateIdentityMismatchTotal++;
+                    if (count($pmStateIdentityMismatchExamples) < 5) {
+                        $pmStateIdentityMismatchExamples[] = [
+                            'symbol'      => $pos['symbol']                         ?? '',
+                            'side'        => $pos['side']                            ?? '',
+                            'signal_id'   => $pos['signal_id']                      ?? null,
+                            'opened_at'   => $pos['opened_at'] ?? $pos['bot_submitted_at'] ?? null,
+                            'entry_price' => (float)($pos['entry_price'] ?? $pos['avg_price'] ?? 0.0),
+                            'action'      => $profileResult['action']                ?? 'skip',
+                        ];
+                    }
+                }
+                if (!empty($profileResult['pm_state_legacy_key_ignored'])) {
+                    $pmStateLegacyKeyIgnoredTotal++;
                 }
 
                 // ── PM Close Execution ────────────────────────────────────────
@@ -852,6 +875,14 @@ final class ProfManagerService
                 'locks_active_short'                  => $this->shortProfile->getLockCount(),
                 'short_state_cleaned'                 => $shortCleanResult['short_state_cleaned'],
                 'short_locks_cleaned'                 => $shortCleanResult['short_locks_cleaned'],
+                // PM state identity diagnostics
+                'pm_state_identity_mismatch_total'    => $pmStateIdentityMismatchTotal,
+                'pm_state_legacy_key_ignored_total'   => $pmStateLegacyKeyIgnoredTotal,
+                'pm_state_stale_removed_total'        => $cleanResult['long_state_cleaned']
+                                                       + $cleanResult['long_locks_cleaned']
+                                                       + $shortCleanResult['short_state_cleaned']
+                                                       + $shortCleanResult['short_locks_cleaned'],
+                'pm_state_identity_mismatch_examples' => $pmStateIdentityMismatchExamples,
                 'short_positions_checked_total'       => $shortCheckedTotal,
                 'short_locks_set_total'               => $shortLocksSetTotal,
                 'short_locks_moved_total'             => $shortLocksMovedTotal,

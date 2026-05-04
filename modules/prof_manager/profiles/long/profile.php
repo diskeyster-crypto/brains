@@ -83,6 +83,53 @@ class LongProfile
         $positionState = $positionsState[$key] ?? [];
         $lockState     = $locks[$key]          ?? [];
 
+        // ── Position identity validation ───────────────────────────────────────
+        // Detect stale lock/position state that belongs to a previous position
+        // on the same symbol+side.  If identity fields mismatch (or are absent
+        // on a legacy record), discard the stored state so the new position
+        // starts fresh and does not inherit an old lock_price.
+        $identityMismatch  = false;
+        $legacyKeyIgnored  = false;
+        $curSignalId   = (string)($position['signal_id']       ?? '');
+        $curOpenedAt   = (string)($position['opened_at']       ?? $position['bot_submitted_at'] ?? $position['created_at'] ?? '');
+        $curEntryPrice = (float)($position['entry_price']      ?? $position['avg_price'] ?? 0.0);
+
+        if (!empty($lockState)) {
+            $hasIdentity = array_key_exists('position_signal_id',   $lockState)
+                        || array_key_exists('position_opened_at',    $lockState)
+                        || array_key_exists('position_entry_price',  $lockState);
+
+            if (!$hasIdentity) {
+                // Legacy record — written before identity fields were introduced.
+                // Discard silently so the new position is not contaminated.
+                $legacyKeyIgnored = true;
+                $lockState        = [];
+                $positionState    = [];
+            } else {
+                $storedSigId      = (string)($lockState['position_signal_id']  ?? '');
+                $storedOpenedAt   = (string)($lockState['position_opened_at']  ?? '');
+                $storedEntryPrice = (float)($lockState['position_entry_price'] ?? 0.0);
+
+                $mismatch = false;
+                if ($storedSigId !== '' && $curSignalId !== '' && $storedSigId !== $curSignalId) {
+                    $mismatch = true;
+                } elseif ($storedOpenedAt !== '' && $curOpenedAt !== '' && $storedOpenedAt !== $curOpenedAt) {
+                    $mismatch = true;
+                } elseif ($storedEntryPrice > 0.0 && $curEntryPrice > 0.0) {
+                    $tol = 0.001 * max($storedEntryPrice, $curEntryPrice);
+                    if (abs($storedEntryPrice - $curEntryPrice) > $tol) {
+                        $mismatch = true;
+                    }
+                }
+
+                if ($mismatch) {
+                    $identityMismatch = true;
+                    $lockState        = [];
+                    $positionState    = [];
+                }
+            }
+        }
+
         // ── Pre-compute ROI and effective lock buffer for impulse hold ─────────
         $currentPrice = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
         $earlyRoi     = $this->riskMath->calculateRoiPct($position);
@@ -156,15 +203,24 @@ class LongProfile
         // Update lock entry for legacy lock actions
         if (in_array($plan['action'], ['would_set_profit_lock', 'would_move_profit_lock'], true)) {
             $locks[$key] = [
-                'symbol'        => $symbol,
-                'side'          => 'long',
-                'lock_price'    => $plan['proposed_lock'],
-                'lock_roi'      => $plan['proposed_roi'],
-                'action'        => $plan['action'],
-                'updated_at'    => date('c', $nowTs),
-                'updated_at_ts' => $nowTs,
+                'symbol'               => $symbol,
+                'side'                 => 'long',
+                'lock_price'           => $plan['proposed_lock'],
+                'lock_roi'             => $plan['proposed_roi'],
+                'action'               => $plan['action'],
+                'updated_at'           => date('c', $nowTs),
+                'updated_at_ts'        => $nowTs,
+                // Position identity — used to detect stale state when the same
+                // symbol+side is reused by a new, different position.
+                'position_signal_id'   => $curSignalId,
+                'position_opened_at'   => $curOpenedAt,
+                'position_entry_price' => $curEntryPrice,
             ];
         } elseif (!empty($lockState)) {
+            // Preserve existing lock but ensure identity fields are present.
+            $lockState['position_signal_id']   = $curSignalId;
+            $lockState['position_opened_at']   = $curOpenedAt;
+            $lockState['position_entry_price'] = $curEntryPrice;
             $locks[$key] = $lockState;
         }
 
@@ -432,6 +488,9 @@ class LongProfile
             'lock_too_close_unprotected'       => $lockTooCloseUnprotected,
             'lock_too_close_impulse_override'  => $lockTooCloseImpulseOverride,
             'lock_too_close_close_action'      => $lockTooCloseCloseAction,
+            // ── Position identity diagnostics ─────────────────────────────────
+            'pm_state_identity_mismatch'       => $identityMismatch,
+            'pm_state_legacy_key_ignored'      => $legacyKeyIgnored,
         ];
     }
 

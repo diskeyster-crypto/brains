@@ -60,6 +60,51 @@ class ShortProfile
         $positionState = $positionsState[$key] ?? [];
         $lockState     = $locks[$key]          ?? [];
 
+        // ── Position identity validation ───────────────────────────────────────
+        // Detect stale lock/position state that belongs to a previous position
+        // on the same symbol+side.  If identity fields mismatch (or are absent
+        // on a legacy record), discard the stored state so the new position
+        // starts fresh and does not inherit an old lock_price.
+        $identityMismatch  = false;
+        $legacyKeyIgnored  = false;
+        $curSignalId   = (string)($position['signal_id']   ?? '');
+        $curOpenedAt   = (string)($position['opened_at']   ?? $position['bot_submitted_at'] ?? $position['created_at'] ?? '');
+        $curEntryPrice = (float)($position['entry_price']  ?? $position['avg_price'] ?? 0.0);
+
+        if (!empty($lockState)) {
+            $hasIdentity = array_key_exists('position_signal_id',   $lockState)
+                        || array_key_exists('position_opened_at',    $lockState)
+                        || array_key_exists('position_entry_price',  $lockState);
+
+            if (!$hasIdentity) {
+                $legacyKeyIgnored = true;
+                $lockState        = [];
+                $positionState    = [];
+            } else {
+                $storedSigId      = (string)($lockState['position_signal_id']  ?? '');
+                $storedOpenedAt   = (string)($lockState['position_opened_at']  ?? '');
+                $storedEntryPrice = (float)($lockState['position_entry_price'] ?? 0.0);
+
+                $mismatch = false;
+                if ($storedSigId !== '' && $curSignalId !== '' && $storedSigId !== $curSignalId) {
+                    $mismatch = true;
+                } elseif ($storedOpenedAt !== '' && $curOpenedAt !== '' && $storedOpenedAt !== $curOpenedAt) {
+                    $mismatch = true;
+                } elseif ($storedEntryPrice > 0.0 && $curEntryPrice > 0.0) {
+                    $tol = 0.001 * max($storedEntryPrice, $curEntryPrice);
+                    if (abs($storedEntryPrice - $curEntryPrice) > $tol) {
+                        $mismatch = true;
+                    }
+                }
+
+                if ($mismatch) {
+                    $identityMismatch = true;
+                    $lockState        = [];
+                    $positionState    = [];
+                }
+            }
+        }
+
         $initRoi       = (float) ($this->config['init_roi']       ?? 2.0);
         $activationRoi = (float) ($this->config['activation_roi'] ?? 8.0);
 
@@ -142,16 +187,24 @@ class ShortProfile
         // Update lock entry for set/move actions
         if (in_array($plan['action'], ['would_set_profit_lock', 'would_move_profit_lock'], true)) {
             $locks[$key] = [
-                'symbol'        => $symbol,
-                'side'          => 'short',
-                'lock_price'    => $plan['proposed_lock'],
-                'lock_roi'      => $plan['proposed_roi'],
-                'action'        => $plan['action'],
-                'updated_at'    => date('c', $nowTs),
-                'updated_at_ts' => $nowTs,
+                'symbol'               => $symbol,
+                'side'                 => 'short',
+                'lock_price'           => $plan['proposed_lock'],
+                'lock_roi'             => $plan['proposed_roi'],
+                'action'               => $plan['action'],
+                'updated_at'           => date('c', $nowTs),
+                'updated_at_ts'        => $nowTs,
+                // Position identity — used to detect stale state when the same
+                // symbol+side is reused by a new, different position.
+                'position_signal_id'   => $curSignalId,
+                'position_opened_at'   => $curOpenedAt,
+                'position_entry_price' => $curEntryPrice,
             ];
         } elseif (!empty($lockState)) {
-            // Preserve existing lock (e.g. during would_close_on_lock_touch or skip)
+            // Preserve existing lock but ensure identity fields are present.
+            $lockState['position_signal_id']   = $curSignalId;
+            $lockState['position_opened_at']   = $curOpenedAt;
+            $lockState['position_entry_price'] = $curEntryPrice;
             $locks[$key] = $lockState;
         }
 
@@ -163,19 +216,22 @@ class ShortProfile
         $lockPrice  = isset($lockRecord['lock_price']) ? (float) $lockRecord['lock_price'] : null;
 
         return [
-            'action'                    => $plan['action']       ?? 'skip',
-            'skip_reason'               => $plan['skip_reason']  ?? null,
-            'roi'                       => $currentRoi,
-            'peak_roi'                  => $peakRoi,
-            'lock_price'                => ($lockPrice !== null && $lockPrice > 0.0) ? $lockPrice : null,
-            'lock_active'               => ($lockPrice !== null && $lockPrice > 0.0),
-            'profile_used'              => 'baseline_short_lock',
-            'notes'                     => !empty($plan['note']) ? [$plan['note']] : [],
-            'init_roi'                  => $initRoi,
-            'activation_roi'            => $activationRoi,
-            'distance_pct'              => $plan['distance_pct']              ?? null,
-            'min_required_distance_pct' => $plan['min_required_distance_pct'] ?? null,
-            'side_supported'            => true,
+            'action'                     => $plan['action']       ?? 'skip',
+            'skip_reason'                => $plan['skip_reason']  ?? null,
+            'roi'                        => $currentRoi,
+            'peak_roi'                   => $peakRoi,
+            'lock_price'                 => ($lockPrice !== null && $lockPrice > 0.0) ? $lockPrice : null,
+            'lock_active'                => ($lockPrice !== null && $lockPrice > 0.0),
+            'profile_used'               => 'baseline_short_lock',
+            'notes'                      => !empty($plan['note']) ? [$plan['note']] : [],
+            'init_roi'                   => $initRoi,
+            'activation_roi'             => $activationRoi,
+            'distance_pct'               => $plan['distance_pct']              ?? null,
+            'min_required_distance_pct'  => $plan['min_required_distance_pct'] ?? null,
+            'side_supported'             => true,
+            // ── Position identity diagnostics ─────────────────────────────────
+            'pm_state_identity_mismatch' => $identityMismatch,
+            'pm_state_legacy_key_ignored'=> $legacyKeyIgnored,
         ];
     }
 

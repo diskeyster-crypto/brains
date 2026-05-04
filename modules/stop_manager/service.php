@@ -266,6 +266,8 @@ final class StopManagerService
             'legacy_liq_distance_stop_enabled' => $legacyCfgEnabled,
             'legacy_stop_counters_deprecated'  => !$legacyCfgEnabled,
             'legacy_stop_skipped_total'        => $result['legacy_stop_skipped_total'] ?? 0,
+            // Counters superseded by side-specific ROI protective stops
+            'deprecated_stop_counter_names'    => ['demo_stops_set', 'stops_active_count', 'stops_initialized', 'stops_recalculated'],
             // Kept for backward compat (deprecated when legacy path disabled)
             'liq_distance_percent'         => max(1.0, min(99.0, (float)($config['liq_distance_percent'] ?? 90.0))),
             'positions_seen'               => $result['positions_seen'],

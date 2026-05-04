@@ -1617,6 +1617,12 @@ ROWS;
     $smProtShortSet      = (int)($smLastRun['short_protective_stop_set_total']      ?? 0);
     $smProtSetCumulative = (int)($smLastRun['protective_stops_set_cumulative']      ?? 0);
 
+    // Precomputed display helpers for protective stop runtime card
+    $smProtEnabledHtml  = $smProtEnabled
+        ? '<span style="color:#3fb950;">включены</span>'
+        : '<span style="color:#8b949e;">отключены (config)</span>';
+    $smProtFailedColor  = $smProtFailed > 0 ? '#f85149' : 'inherit';
+
     // Early fail guard diagnostics (from last_run.json when available)
     $smEfEnabled   = (bool)($smConfig['double_bottom_early_fail_enabled'] ?? true);
     $smEfChecked   = (int)($smLastRun['double_bottom_early_fail_checked_total']             ?? 0);
@@ -1688,9 +1694,10 @@ ROWS;
         $smDemoExecHtml = '';
     }
 
-    // Build protective stop diagnostics card (shown in demo/live mode when enabled)
+    // Build protective stop diagnostics card (shown in demo/live mode regardless of enabled flag,
+    // so operators can see the counters even when temporarily disabled)
     $smProtStopsHtml = '';
-    if ($smProtEnabled && ($smMode === 'demo' || $smMode === 'live')) {
+    if ($smMode === 'demo' || $smMode === 'live') {
         $protActiveColor  = $smProtActiveCount > 0 ? '#3fb950' : '#8b949e';
         $protSetColor     = $smProtSet > 0 ? '#3fb950' : 'inherit';
         $protFailedColor  = $smProtFailed > 0 ? '#f85149' : 'inherit';
@@ -1698,10 +1705,16 @@ ROWS;
             . '<div class="card-header">Защитные стопы — side-specific ROI (protective stops)</div>'
             . '<div class="card-body">'
             . '<table style="width:100%;font-size:13px;border-collapse:collapse;">'
-            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:240px;">Активных защитных стопов</td>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;width:240px;">ROI protective стопы</td>'
+            . '<td>' . $smProtEnabledHtml . '</td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Активных защитных стопов</td>'
             . '<td><code style="color:' . $protActiveColor . ';font-weight:600;">' . $e($smProtActiveCount) . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Установлено (тик)</td>'
             . '<td><code style="color:' . $protSetColor . ';">' . $e($smProtSet) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long установлено (тик)</td>'
+            . '<td><code>' . $e($smProtLongSet) . '</code></td></tr>'
+            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">short установлено (тик)</td>'
+            . '<td><code>' . $e($smProtShortSet) . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Обновлено (тик)</td>'
             . '<td><code>' . $e($smProtUpdated) . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Уже OK (тик)</td>'
@@ -1710,10 +1723,6 @@ ROWS;
             . '<td><code style="color:' . $protFailedColor . ';">' . $e($smProtFailed) . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Пропущено (тик)</td>'
             . '<td><code>' . $e($smProtSkipped) . '</code></td></tr>'
-            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long установлено (тик)</td>'
-            . '<td><code>' . $e($smProtLongSet) . '</code></td></tr>'
-            . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">short установлено (тик)</td>'
-            . '<td><code>' . $e($smProtShortSet) . '</code></td></tr>'
             . '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Установлено (накопл.)</td>'
             . '<td><code>' . $e($smProtSetCumulative) . '</code></td></tr>'
             . '</table></div></div>';
@@ -5206,9 +5215,12 @@ BLCK;
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Позиций увидено</td><td><code>{$smPosSeen}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">С расчётным liq</td><td><code>{$smEstLiq}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Без liq</td><td><code>{$smNoLiq}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">ROI protective стопы</td><td>{$smProtEnabledHtml}</td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Защитных стопов активно</td><td><code style="color:#a78bfa;font-weight:600;">{$smActiveStops}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Защитных установлено (тик)</td><td><code style="color:#3fb950;">{$smProtSet}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long / short установлено</td><td><code>{$smProtLongSet} / {$smProtShortSet}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Защитных уже OK (тик)</td><td><code>{$smProtAlreadyOk}</code></td></tr>
+          <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Ошибок защитных (тик)</td><td><code style="color:{$smProtFailedColor};">{$smProtFailed}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;color:#8b949e;">Stale стопов (deprecated)</td><td><code style="color:#8b949e;">{$smStaleStops}</code></td></tr>
           <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">Breakeven применено</td><td><code>{$smBeApplied}</code></td></tr>
         </table>
@@ -7909,17 +7921,24 @@ function handleDashboardResetRuntime(): void
     $root = defined('ROOT') ? rtrim(ROOT, '/') : dirname(__DIR__, 2);
 
     $filesClearedCount  = 0;
+    $filesCreatedCount  = 0;
     $filesDeletedCount  = 0;
     $ndjsonClearedCount = 0;
 
     // ── Helper: write JSON to fixed path, create dir if needed ────────────
-    $safeWriteJson = static function (string $path, string $content) use (&$filesClearedCount): void {
+    // Always overwrites (idempotent). Tracks created vs cleared separately.
+    $safeWriteJson = static function (string $path, string $content) use (&$filesClearedCount, &$filesCreatedCount): void {
         $dir = dirname($path);
         if (!is_dir($dir)) {
             mkdir($dir, 0755, true);
         }
+        $existed = is_file($path);
         file_put_contents($path, $content);
-        $filesClearedCount++;
+        if ($existed) {
+            $filesClearedCount++;
+        } else {
+            $filesCreatedCount++;
+        }
     };
 
     // ── Helper: overwrite all *.json in a directory with a fixed value ────
@@ -7947,8 +7966,16 @@ function handleDashboardResetRuntime(): void
     };
 
     // ── Helper: truncate a single NDJSON / log file to empty string ───────
-    $safeWriteNdjson = static function (string $path) use (&$ndjsonClearedCount): void {
+    // Creates file with empty dir if module dir exists but file is missing (idempotent).
+    $safeWriteNdjson = static function (string $path) use (&$ndjsonClearedCount, &$filesCreatedCount): void {
+        $dir = dirname($path);
+        // Only create if the parent module storage dir exists (avoid creating orphaned dirs)
         if (!is_file($path)) {
+            if (!is_dir($dir)) {
+                return;
+            }
+            file_put_contents($path, '');
+            $filesCreatedCount++;
             return;
         }
         file_put_contents($path, '');
@@ -8004,9 +8031,10 @@ function handleDashboardResetRuntime(): void
     $safeWriteJson($root . '/modules/bot/storage/runtime/pm_close_registry.json', '{}');
 
     // ── PART 5 — Stop Manager runtime ────────────────────────────────────
-    $safeWriteJson($root . '/modules/stop_manager/storage/stops.json',    '{}');
-    $safeWriteJson($root . '/modules/stop_manager/storage/last_run.json', '{}');
-    $safeWriteJson($root . '/modules/stop_manager/storage/stats.json',    '{}');
+    $safeWriteJson($root . '/modules/stop_manager/storage/stops.json',                  '{}');
+    $safeWriteJson($root . '/modules/stop_manager/storage/last_run.json',               '{}');
+    $safeWriteJson($root . '/modules/stop_manager/storage/stats.json',                  '{}');
+    $safeWriteJson($root . '/modules/stop_manager/storage/protective_stops_state.json', '{}');
 
     // stop_manager/storage/runtime/*.json → {}
     $safeWriteJsonDir($root . '/modules/stop_manager/storage/runtime', '{}');
@@ -8016,33 +8044,39 @@ function handleDashboardResetRuntime(): void
 
     // ── PART 6 — Strategy runtime (recursive) ────────────────────────────
     $strategyRuntimeFiles = [
-        'active_positions.json'     => '[]',
-        'bot_active_positions.json' => '[]',
-        'closed_positions.json'     => '[]',
-        'signals.json'              => '[]',
-        'active_signals.json'       => '[]',
-        'last_signal.json'          => '{}',
-        'last_run.json'             => '{}',
-        'bot_last_run.json'         => '{}',
-        'runtime.json'              => '{}',
-        'candidates.json'           => '[]',
-        'handoff.json'              => '[]',
-        'queue.json'                => '[]',
-        'candidates_found.json'     => '[]',
-        'candidates_emitted.json'   => '[]',
-        'bot_handoff_queue.json'    => '[]',
-        'bot_active_orders.json'    => '[]',
-        'run_symbols.json'          => '[]',
-        'run_state.json'            => '{}',
-        'cycle_stats.json'          => '{}',
-        'stats.json'                => '{}',
-        'bot_stats.json'            => '{}',
-        'market_regime.json'        => '{}',
+        'active_positions.json'              => '[]',
+        'bot_active_positions.json'          => '[]',
+        'closed_positions.json'              => '[]',
+        'signals.json'                       => '[]',
+        'active_signals.json'                => '[]',
+        'last_signal.json'                   => '{}',
+        'last_run.json'                      => '{}',
+        'bot_last_run.json'                  => '{}',
+        'runtime.json'                       => '{}',
+        'candidates.json'                    => '[]',
+        'rejects.json'                       => '[]',
+        'handoff.json'                       => '[]',
+        'queue.json'                         => '[]',
+        'candidates_found.json'              => '[]',
+        'candidates_emitted.json'            => '[]',
+        'bot_handoff_queue.json'             => '[]',
+        'bot_active_orders.json'             => '[]',
+        'run_symbols.json'                   => '[]',
+        'run_state.json'                     => '{}',
+        'cycle_stats.json'                   => '{}',
+        'stats.json'                         => '{}',
+        'bot_stats.json'                     => '{}',
+        'market_regime.json'                 => '{}',
+        // Dynamic Strategies specific cache files
+        'input_contexts.json'                => '[]',
+        'rejected_context_replay.json'       => '[]',
+        'rejected_context_replay_summary.json' => '{}',
     ];
     // NDJSON log files inside strategy storage dirs — cleared to empty string
     $strategyNdjsonFiles = [
         'cycle_history.ndjson',
         'market_regime_history.ndjson',
+        'run_journal.ndjson',
     ];
     // Recursively find every directory named "storage" under modules/strategy/
     $stratRoot = $root . '/modules/strategy';
@@ -8058,30 +8092,81 @@ function handleDashboardResetRuntime(): void
             }
         }
     }
+    // Idempotent: always write to existing storage dirs (creates file if missing,
+    // overwrites if present). This ensures repeated reset clicks leave files empty.
     foreach ($strategyStorageDirs as $storageDir) {
         foreach ($strategyRuntimeFiles as $filename => $emptyValue) {
             $path = $storageDir . '/' . $filename;
-            if (is_file($path)) {
-                file_put_contents($path, $emptyValue);
+            $existed = is_file($path);
+            file_put_contents($path, $emptyValue);
+            if ($existed) {
                 $filesClearedCount++;
+            } else {
+                $filesCreatedCount++;
             }
         }
         foreach ($strategyNdjsonFiles as $ndjsonFile) {
             $path = $storageDir . '/' . $ndjsonFile;
-            if (is_file($path)) {
-                file_put_contents($path, '');
+            $existed = is_file($path);
+            file_put_contents($path, '');
+            if ($existed) {
                 $ndjsonClearedCount++;
+            } else {
+                $filesCreatedCount++;
             }
         }
     }
 
+    // ── PART 7 — Post-reset verification ─────────────────────────────────
+    // Check a representative set of runtime files. A non-empty file after reset
+    // likely means a write permission issue or a race with a running module.
+    $verifyFiles = [
+        $root . '/modules/bot/storage/order_queue.json'                                      => '[]',
+        $root . '/modules/bot/storage/last_run.json'                                         => '{}',
+        $root . '/modules/stop_manager/storage/last_run.json'                                => '{}',
+        $root . '/modules/stop_manager/storage/protective_stops_state.json'                  => '{}',
+        $root . '/modules/prof_manager/profiles/long/storage/locks.json'                     => '{}',
+        $root . '/modules/prof_manager/profiles/long/storage/state.json'                     => '{}',
+        $root . '/modules/prof_manager/profiles/short/storage/locks.json'                    => '{}',
+        $root . '/modules/strategy_governor/storage/pending_signals.json'                    => '{}',
+        $root . '/modules/strategy/dynamic_strategies/storage/input_contexts.json'           => '[]',
+        $root . '/modules/strategy/dynamic_strategies/storage/candidates.json'               => '[]',
+        $root . '/modules/strategy/dynamic_strategies/storage/signals.json'                  => '[]',
+        $root . '/modules/strategy/dynamic_strategies/storage/bot_handoff_queue.json'        => '[]',
+        $root . '/modules/strategy/dynamic_strategies/storage/rejected_context_replay.json'  => '[]',
+        $root . '/modules/strategy/dynamic_strategies/storage/last_run.json'                 => '{}',
+    ];
+    $remainingNonEmpty = [];
+    foreach ($verifyFiles as $path => $expectedEmpty) {
+        if (!is_file($path)) {
+            continue;
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false || trim($raw) === '' || trim($raw) === $expectedEmpty) {
+            continue;
+        }
+        // File exists but content is not the expected empty structure
+        $remainingNonEmpty[] = basename(dirname($path)) . '/' . basename($path);
+    }
+    $resetVerified          = count($remainingNonEmpty) === 0;
+    $resetRemainingTotal    = count($remainingNonEmpty);
+    $resetRemainingExamples = implode(', ', array_slice($remainingNonEmpty, 0, 5));
+
     // ── Flash & redirect ──────────────────────────────────────────────────
-    $msg = 'Локальный runtime reset выполнен. Позиции на Bybit не закрывались.'
-         . ' Если на Bybit остались открытые demo-позиции, они появятся снова после sync.'
-         . ' JSON очищено: ' . $filesClearedCount
-         . ', NDJSON логи очищены: ' . $ndjsonClearedCount
-         . ', удалено: ' . $filesDeletedCount . '.';
-    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => $msg];
+    if ($resetVerified) {
+        $msg = 'Полный локальный reset выполнен: очищено ' . $filesClearedCount
+             . ', создано ' . $filesCreatedCount
+             . ', осталось непустых 0.'
+             . ' Позиции на Bybit не закрывались.';
+    } else {
+        $msg = 'Полный локальный reset выполнен частично: осталось непустых ' . $resetRemainingTotal . '.'
+             . ' Повторите reset или проверьте права записи. Файлы: ' . $resetRemainingExamples . '.'
+             . ' Очищено: ' . $filesClearedCount . ', создано: ' . $filesCreatedCount . '.';
+    }
+    $_SESSION['dashboard_flash'] = [
+        'type' => $resetVerified ? 'success' : 'warning',
+        'msg'  => $msg,
+    ];
 
     $activeTab = trim((string)($_POST['active_tab'] ?? 'dh-overview'));
     $validTabs = ['dh-overview', 'dh-strat', 'dh-bot', 'dh-sm', 'dh-pm', 'dh-ctrl', 'dh-governor'];

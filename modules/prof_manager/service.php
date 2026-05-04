@@ -242,6 +242,15 @@ final class ProfManagerService
             $chopCloseExamples                 = [];
             $chopSkipExamples                  = [];
 
+            // Long lock-too-close diagnostic counters
+            $lockTooCloseAdjustedTotal        = 0;
+            $lockTooCloseClosedTotal          = 0;
+            $lockTooCloseUnprotectedSkipTotal = 0;
+            $lockTooCloseImpulseOverrideTotal = 0;
+            $lockTooCloseAdjustedExamples     = [];
+            $lockTooCloseCloseExamples        = [];
+            $lockTooCloseUnprotectedExamples  = [];
+
             foreach ($rawPositions as $pos) {
                 if (!is_array($pos)) {
                     continue;
@@ -283,7 +292,7 @@ final class ProfManagerService
                 }
 
                 // ── PM Close Execution ────────────────────────────────────────
-                $pmCloseActions = ['hybrid_close_confirmed', 'would_close_on_lock_touch', 'roi_chop_indecision_exit'];
+                $pmCloseActions = ['hybrid_close_confirmed', 'would_close_on_lock_touch', 'roi_chop_indecision_exit', 'would_close_on_lock_too_close'];
                 $pmAction       = $profileResult['action'] ?? 'skip';
                 $closeAttemptResult = null;
 
@@ -308,6 +317,8 @@ final class ProfManagerService
                         $closeReasonValue = 'hybrid_confirmed';
                     } elseif ($pmAction === 'roi_chop_indecision_exit') {
                         $closeReasonValue = 'roi_chop_indecision_exit';
+                    } elseif ($pmAction === 'would_close_on_lock_too_close') {
+                        $closeReasonValue = 'lock_price_too_close_profit_protect';
                     } else {
                         $closeReasonValue = $closeReasonHint ?? 'lock_touch';
                     }
@@ -646,6 +657,56 @@ final class ProfManagerService
                     }
                 }
 
+                // ── Long lock-too-close diagnostic tracking ───────────────────
+                if ($side === 'long') {
+                    $ltcAdjusted  = !empty($profileResult['lock_too_close_adjusted']);
+                    $ltcUnprot    = !empty($profileResult['lock_too_close_unprotected']);
+                    $ltcImpulse   = !empty($profileResult['lock_too_close_impulse_override']);
+                    $ltcClose     = !empty($profileResult['lock_too_close_close_action']);
+
+                    if ($ltcAdjusted) {
+                        $lockTooCloseAdjustedTotal++;
+                    }
+                    if ($ltcImpulse) {
+                        $lockTooCloseImpulseOverrideTotal++;
+                    }
+                    if ($ltcUnprot && !$ltcImpulse && !$ltcClose) {
+                        $lockTooCloseUnprotectedSkipTotal++;
+                    }
+                    if ($ltcClose && in_array($action, ['demo_close_submitted', 'live_close_submitted'], true)) {
+                        $lockTooCloseClosedTotal++;
+                    }
+
+                    $_ltcEx = null;
+                    if ($ltcAdjusted || $ltcUnprot || $ltcImpulse || $ltcClose) {
+                        $_ltcEx = [
+                            'symbol'                   => $pos['symbol'] ?? '',
+                            'side'                     => 'long',
+                            'entry_price'              => (float) ($pos['entry_price'] ?? $pos['avg_price'] ?? 0.0),
+                            'current_price'            => (float) ($pos['current_price'] ?? 0.0),
+                            'roi'                      => $profileResult['roi'] ?? null,
+                            'peak_roi'                 => $profileResult['peak_roi'] ?? null,
+                            'original_target_lock_roi' => null,
+                            'safe_lock_price'          => $profileResult['safe_lock_price'] ?? null,
+                            'safe_lock_roi'            => $profileResult['safe_lock_roi']   ?? null,
+                            'required_floor_roi'       => $profileResult['required_floor_roi'] ?? null,
+                            'min_price_distance_pct'   => $profileResult['min_required_distance_pct'] ?? null,
+                            'action'                   => $action,
+                            'reason'                   => $profileResult['notes'][0] ?? null,
+                        ];
+                    }
+
+                    if ($ltcAdjusted && $_ltcEx !== null) {
+                        if (count($lockTooCloseAdjustedExamples) < 5) { $lockTooCloseAdjustedExamples[] = $_ltcEx; }
+                    }
+                    if ($ltcImpulse && $_ltcEx !== null) {
+                        if (count($lockTooCloseUnprotectedExamples) < 5) { $lockTooCloseUnprotectedExamples[] = $_ltcEx; }
+                    }
+                    if ($ltcClose && $_ltcEx !== null) {
+                        if (count($lockTooCloseCloseExamples) < 5) { $lockTooCloseCloseExamples[] = $_ltcEx; }
+                    }
+                }
+
                 // ── Build per-position runtime record ─────────────────────────
                 $currentRoi       = $profileResult['roi'] ?? null;
                 $activationRoi    = $profileResult['activation_roi'] ?? null;
@@ -838,6 +899,14 @@ final class ProfManagerService
                 'chop_exit_examples'                            => $chopExamples,
                 'chop_exit_close_examples'                      => $chopCloseExamples,
                 'chop_exit_skip_examples'                       => $chopSkipExamples,
+                // Long lock-too-close diagnostics
+                'lock_too_close_adjusted_total'          => $lockTooCloseAdjustedTotal,
+                'lock_too_close_closed_total'            => $lockTooCloseClosedTotal,
+                'lock_too_close_unprotected_skip_total'  => $lockTooCloseUnprotectedSkipTotal,
+                'lock_too_close_impulse_override_total'  => $lockTooCloseImpulseOverrideTotal,
+                'lock_too_close_adjusted_examples'       => $lockTooCloseAdjustedExamples,
+                'lock_too_close_close_examples'          => $lockTooCloseCloseExamples,
+                'lock_too_close_unprotected_examples'    => $lockTooCloseUnprotectedExamples,
             ], $configSnapshot);
 
             $this->store->writeLastRun($result);

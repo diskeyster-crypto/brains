@@ -168,6 +168,43 @@ class LongProfile
             $locks[$key] = $lockState;
         }
 
+        // ── STEP 1c: lock-too-close unprotected handling ──────────────────────
+        // When the planner skips with lock_price_too_close_to_current and no
+        // active lock exists, the position is fully unprotected at high ROI.
+        // - Strong/very_strong impulse: allow hold, mark as unprotected.
+        // - Otherwise: emit would_close_on_lock_too_close to protect profit.
+        $lockTooCloseAdjusted        = in_array('adjusted_lock_to_safe_distance', (array) ($plan['note'] ?? []), true)
+                                        || ($plan['note'] ?? '') === 'adjusted_lock_to_safe_distance';
+        $lockTooCloseUnprotected     = false;
+        $lockTooCloseImpulseOverride = false;
+        $lockTooCloseCloseAction     = false;
+
+        if ($plan['action'] === 'skip'
+            && ($plan['skip_reason'] ?? '') === 'lock_price_too_close_to_current'
+            && ($lockState['lock_price'] ?? 0.0) <= 0.0  // no active lock
+        ) {
+            $ltcRoi        = $plan['current_roi'] ?? $earlyRoi;
+            $ltcActivation = (float) ($this->config['activation_roi']          ?? 10.0);
+            $ltcGraceMin   = (float) ($this->config['lock_touch_grace_min_roi'] ??  6.0);
+            $ltcMinRoi     = max($ltcActivation, $ltcGraceMin);
+
+            if ($ltcRoi !== null && (float) $ltcRoi >= $ltcMinRoi) {
+                $ltcImpulseClass = $impulseCtx !== null ? ($impulseCtx['impulse_class'] ?? 'weak') : 'weak';
+                if ($ltcImpulseClass === 'strong' || $ltcImpulseClass === 'very_strong') {
+                    // Strong impulse: hold, but record that position is unprotected
+                    $lockTooCloseImpulseOverride = true;
+                    $lockTooCloseUnprotected     = true;
+                    $plan['note'] = 'impulse_hold_lock_too_close_override';
+                } else {
+                    // No protection possible, no impulse hold — close to protect profit
+                    $lockTooCloseCloseAction = true;
+                    $plan['action']      = 'would_close_on_lock_too_close';
+                    $plan['skip_reason'] = null;
+                    $plan['note']        = 'lock_price_too_close_profit_protect';
+                }
+            }
+        }
+
         // ── STEP 1b: lock-touch grace / impulse-hold override ─────────────────
         $lockTouchOverrideAction = null;
         $lockTouchOverrideReason = null;
@@ -347,6 +384,9 @@ class LongProfile
             'activation_roi'            => (float) ($this->config['activation_roi'] ?? 10.0),
             'distance_pct'              => $plan['distance_pct']               ?? null,
             'min_required_distance_pct' => $plan['min_required_distance_pct']  ?? null,
+            'safe_lock_price'           => $plan['safe_lock_price']            ?? null,
+            'safe_lock_roi'             => $plan['safe_lock_roi']              ?? null,
+            'required_floor_roi'        => $plan['required_floor_roi']         ?? null,
             'hybrid_state'               => $hybridMeta['hybrid_state'],
             'hybrid_pattern_detected'    => $hybridMeta['hybrid_pattern_detected'],
             'hybrid_pattern_type'        => $hybridMeta['hybrid_pattern_type'],
@@ -387,6 +427,11 @@ class LongProfile
             'chop_detected'                    => $chopDetected,
             'chop_context'                     => $chopContext,
             'chop_skip_reason'                 => $chopSkipReason,
+            // ── Lock-too-close diagnostics ────────────────────────────────────
+            'lock_too_close_adjusted'          => $lockTooCloseAdjusted,
+            'lock_too_close_unprotected'       => $lockTooCloseUnprotected,
+            'lock_too_close_impulse_override'  => $lockTooCloseImpulseOverride,
+            'lock_too_close_close_action'      => $lockTooCloseCloseAction,
         ];
     }
 

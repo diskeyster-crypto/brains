@@ -155,9 +155,57 @@ class ProfitLockPlanner
                     $actualDistPct = round(($targetLockPrice - $currentPrice2) / $currentPrice2 * 100.0, 4);
                 }
             }
+
+            // ── Safe-distance fallback: try to find a lock at exactly safe distance ──
+            // For long:  safe_lock_price = current * (1 - min_dist/100)
+            // For short: safe_lock_price = current * (1 + min_dist/100)
+            // Only use the safe lock if it meets the required floor ROI, is on the
+            // profit side of entry, and improves over the existing lock.
+            $reqFloorRoi     = (float) ($profileConfig['lock_floor_roi'] ?? 5.0);
+            $safeLockPrice   = null;
+            $safeLockRoi     = null;
+
+            if ($currentPrice2 > 0.0 && $entryPrice > 0.0 && $leverage > 0.0) {
+                $factor = $minDistPct / 100.0;
+                if ($side === 'long' || $side === 'buy') {
+                    $safeLockPrice = $currentPrice2 * (1.0 - $factor);
+                    $safeLockRoi   = ($safeLockPrice - $entryPrice) / $entryPrice * 100.0 * $leverage;
+                } elseif ($side === 'short' || $side === 'sell') {
+                    $safeLockPrice = $currentPrice2 * (1.0 + $factor);
+                    $safeLockRoi   = ($entryPrice - $safeLockPrice) / $entryPrice * 100.0 * $leverage;
+                }
+            }
+
+            if ($safeLockPrice !== null
+                && $safeLockRoi !== null
+                && $safeLockRoi >= $reqFloorRoi
+                && $this->riskMath->isProfitSide($position, $safeLockPrice)
+                && $this->riskMath->isImprovingLock($position, $oldLockPrice, $safeLockPrice)
+            ) {
+                // Adjusted lock meets requirements — use it instead of skipping
+                $safeLockPrice = $this->riskMath->roundToTick($safeLockPrice, $tickSize);
+                $safeAction    = $oldLockPrice <= 0.0 ? 'would_set_profit_lock' : 'would_move_profit_lock';
+                return $this->buildPlan(
+                    $safeAction,
+                    $symbol,
+                    $side,
+                    $safeLockPrice,
+                    $safeLockRoi,
+                    $oldLockPrice,
+                    $currentRoi,
+                    $peakRoi,
+                    'adjusted_lock_to_safe_distance',
+                    $positionState
+                );
+            }
+
+            // Safe-distance fallback also failed (or requirements not met) — skip
             return $this->skip($symbol, $side, 'lock_price_too_close_to_current', $lockState, $positionState, $currentRoi, $peakRoi, [
                 'distance_pct'              => $actualDistPct,
                 'min_required_distance_pct' => $minDistPct,
+                'safe_lock_price'           => $safeLockPrice,
+                'safe_lock_roi'             => $safeLockRoi,
+                'required_floor_roi'        => $reqFloorRoi,
             ]);
         }
 

@@ -231,6 +231,19 @@ final class StopManagerService
         $stats['long_stop_skipped_too_young_total']             += $result['long_stop_skipped_too_young_total']             ?? 0;
         // Legacy liq_distance path cumulative counters
         $stats['legacy_stop_skipped_total']                     += $result['legacy_stop_skipped_total']                     ?? 0;
+        // Protective stop cumulative counters
+        $stats['protective_stops_checked_total']  += $result['protective_stops_checked_total']  ?? 0;
+        $stats['protective_stops_set_total']      += $result['protective_stops_set_total']      ?? 0;
+        $stats['protective_stops_updated_total']  += $result['protective_stops_updated_total']  ?? 0;
+        $stats['protective_stops_already_ok_total'] += $result['protective_stops_already_ok_total'] ?? 0;
+        $stats['protective_stops_failed_total']   += $result['protective_stops_failed_total']   ?? 0;
+        $stats['protective_stops_skipped_total']  += $result['protective_stops_skipped_total']  ?? 0;
+        $stats['long_protective_stop_set_total']  += $result['long_protective_stop_set_total']  ?? 0;
+        $stats['long_protective_stop_failed_total']  += $result['long_protective_stop_failed_total']  ?? 0;
+        $stats['short_protective_stop_set_total'] += $result['short_protective_stop_set_total'] ?? 0;
+        $stats['short_protective_stop_failed_total'] += $result['short_protective_stop_failed_total'] ?? 0;
+        // Close deduplication cumulative counters
+        $stats['stop_close_deduped_total']        += $result['stop_close_deduped_total']        ?? 0;
 
         // ── 4. Persist ─────────────────────────────────────────────────────────
         $this->writeJson('storage/stops.json', array_values($stops));
@@ -338,6 +351,28 @@ final class StopManagerService
             'short_stop_checked_cumulative'                      => (int)($stats['short_stop_checked_total']                      ?? 0),
             'short_stop_triggered_cumulative'                    => (int)($stats['short_stop_triggered_total']                    ?? 0),
             'short_stop_closed_cumulative'                       => (int)($stats['short_stop_closed_total']                       ?? 0),
+            // ── Protective stop diagnostics (this tick) ──────────────────────
+            'side_roi_protective_stop_enabled'               => $result['side_roi_protective_stop_enabled'] ?? false,
+            'protective_stops_checked_total'                 => $result['protective_stops_checked_total']  ?? 0,
+            'protective_stops_set_total'                     => $result['protective_stops_set_total']      ?? 0,
+            'protective_stops_updated_total'                 => $result['protective_stops_updated_total']  ?? 0,
+            'protective_stops_already_ok_total'              => $result['protective_stops_already_ok_total'] ?? 0,
+            'protective_stops_failed_total'                  => $result['protective_stops_failed_total']   ?? 0,
+            'protective_stops_skipped_total'                 => $result['protective_stops_skipped_total']  ?? 0,
+            'long_protective_stop_set_total'                 => $result['long_protective_stop_set_total']  ?? 0,
+            'long_protective_stop_failed_total'              => $result['long_protective_stop_failed_total'] ?? 0,
+            'short_protective_stop_set_total'                => $result['short_protective_stop_set_total'] ?? 0,
+            'short_protective_stop_failed_total'             => $result['short_protective_stop_failed_total'] ?? 0,
+            'protective_stop_examples'                       => $result['protective_stop_examples']        ?? [],
+            'protective_stop_failed_examples'                => $result['protective_stop_failed_examples'] ?? [],
+            // ── Protective stop cumulative ───────────────────────────────────
+            'protective_stops_set_cumulative'                => (int)($stats['protective_stops_set_total']     ?? 0),
+            'protective_stops_failed_cumulative'             => (int)($stats['protective_stops_failed_total']  ?? 0),
+            // ── Close deduplication diagnostics (this tick) ──────────────────
+            'stop_close_deduped_total'                       => $result['stop_close_deduped_total']       ?? 0,
+            'stop_close_deduped_examples'                    => $result['stop_close_deduped_examples']    ?? [],
+            // ── Close deduplication cumulative ───────────────────────────────
+            'stop_close_deduped_cumulative'                  => (int)($stats['stop_close_deduped_total']  ?? 0),
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -464,6 +499,25 @@ final class StopManagerService
         $longStopSkippedTooYoungTotal             = 0;
         $longStopTriggeredExamples                = [];
         $longStopSkippedExamples                  = [];
+
+        // Protective stop (ROI-based, set proactively on exchange) counters
+        $protStopsCheckedTotal     = 0;
+        $protStopsSetTotal         = 0;
+        $protStopsUpdatedTotal     = 0;
+        $protStopsAlreadyOkTotal   = 0;
+        $protStopsFailedTotal      = 0;
+        $protStopsSkippedTotal     = 0;
+        $longProtStopsSetTotal     = 0;
+        $longProtStopsFailedTotal  = 0;
+        $shortProtStopsSetTotal    = 0;
+        $shortProtStopsFailedTotal = 0;
+        $protStopExamples          = [];
+        $protStopFailedExamples    = [];
+
+        // Close deduplication: prevent duplicate close attempts per position per tick
+        $closedThisTick           = [];   // key => true
+        $stopCloseDedupedTotal    = 0;
+        $stopCloseDedupedExamples = [];
 
         // Legacy liq_distance_percent path control
         $legacyEnabled          = (bool)($config['legacy_liq_distance_stop_enabled'] ?? false);
@@ -791,6 +845,187 @@ final class StopManagerService
             }
         }
 
+        // ── Side-specific ROI protective stops (demo only) ───────────────────
+        // For each active demo position where the side profile is enabled,
+        // compute the protective stop price from emergency_stop_roi and set it on
+        // the exchange proactively.  This ensures a real stop order exists before
+        // ROI reaches the emergency threshold, not just a market-close-on-tick.
+        //
+        // Long:  stop_price = entry_price × (1 + emergency_stop_roi / leverage / 100)
+        // Short: stop_price = entry_price × (1 − emergency_stop_roi / leverage / 100)
+        // (emergency_stop_roi is negative, so long stop is below entry)
+        $longProtCfg   = $config['profiles']['long']  ?? [];
+        $shortProtCfg  = $config['profiles']['short'] ?? [];
+        $longProtOn    = (bool)($longProtCfg['enabled'] ?? true)
+                         && (bool)($longProtCfg['emergency_stop_enabled'] ?? true);
+        $shortProtOn   = (bool)($shortProtCfg['enabled'] ?? true)
+                         && (bool)($shortProtCfg['emergency_stop_enabled'] ?? true);
+        $sideRoiProtEnabled = $longProtOn || $shortProtOn;
+
+        $protStopState        = $this->readJson('storage/protective_stops_state.json', []);
+        $protStopStateChanged = false;
+
+        if ($sideRoiProtEnabled && $mode === 'demo' && $isActiveMode && $activeGw !== null) {
+            foreach ($posMap as $_protKey => $_protPos) {
+                $pSide    = (string)($_protPos['side'] ?? '');
+                $pMode    = $this->normalizeExecMode((string)($_protPos['execution_mode'] ?? 'demo'));
+                $pSymbol  = (string)($_protPos['symbol'] ?? '');
+                $pStratId = (string)($_protPos['strategy_id'] ?? $_protPos['owner_strategy'] ?? '');
+                $pSigId   = (string)($_protPos['signal_id'] ?? '');
+
+                if ($pMode !== 'demo') {
+                    $protStopsSkippedTotal++;
+                    continue;
+                }
+
+                if ($pSide === 'long' && $longProtOn) {
+                    $pSideProfile = $longProtCfg;
+                    $pStopGuard   = 'long_emergency_stop';
+                    $pStopReason  = 'long_emergency_roi_cap';
+                } elseif ($pSide === 'short' && $shortProtOn) {
+                    $pSideProfile = $shortProtCfg;
+                    $pStopGuard   = 'short_emergency_stop';
+                    $pStopReason  = 'short_emergency_roi_cap';
+                } else {
+                    $protStopsSkippedTotal++;
+                    continue;
+                }
+
+                // Strategy filter
+                $pAppliesTo = (array)($pSideProfile['applies_to_strategies']
+                    ?? ($pSide === 'long' ? ['double_bottom_long', '*'] : ['dynamic_strategies']));
+                if (!in_array('*', $pAppliesTo, true) && !in_array($pStratId, $pAppliesTo, true)) {
+                    $protStopsSkippedTotal++;
+                    continue;
+                }
+
+                $protStopsCheckedTotal++;
+
+                // Normalize entry price and leverage
+                $pPriceNorm  = $this->normalizePositionPrices($_protPos);
+                $pEntry      = $pPriceNorm['normalized_entry_price'];
+                $pLeverage   = (float)$pPriceNorm['normalized_leverage'];
+                $pCurrentPx  = $pPriceNorm['normalized_current_price'];
+
+                if ($pEntry === null || $pEntry <= 0.0 || $pLeverage <= 0.0 || $pCurrentPx === null || $pCurrentPx <= 0.0) {
+                    $protStopsSkippedTotal++;
+                    continue;
+                }
+
+                $pEmgRoi   = (float)($pSideProfile['emergency_stop_roi'] ?? ($pSide === 'long' ? -30.0 : -20.0));
+                $pStopPrice = $this->computeProtectiveStopPrice($pSide, $pEntry, $pLeverage, $pEmgRoi);
+
+                if ($pStopPrice === null || $pStopPrice <= 0.0) {
+                    $protStopsSkippedTotal++;
+                    continue;
+                }
+
+                // Check existing protective stop state
+                $pStateKey      = "{$pMode}_{$pSymbol}_{$pSide}";
+                $pExistingStop  = $protStopState[$pStateKey] ?? null;
+                $pExistingPrice = isset($pExistingStop['stop_price_set']) ? (float)$pExistingStop['stop_price_set'] : 0.0;
+
+                // Skip if already set at same price (tiny epsilon = 0.001% of stop price)
+                $pPriceChanged = ($pExistingPrice <= 0.0)
+                    || (abs($pStopPrice - $pExistingPrice) > 0.00001 * max($pStopPrice, $pExistingPrice));
+
+                if (!$pPriceChanged) {
+                    $protStopsAlreadyOkTotal++;
+                    continue;
+                }
+
+                $pSetResult = $this->setDemoTradingStop($activeGw, $pSymbol, $pStopPrice);
+                $pAction    = $pExistingPrice <= 0.0 ? 'set' : 'update';
+
+                $pExample = [
+                    'symbol'             => $pSymbol,
+                    'side'               => $pSide,
+                    'strategy_id'        => $pStratId,
+                    'signal_id'          => $pSigId !== '' ? $pSigId : null,
+                    'entry_price'        => $pEntry,
+                    'current_price'      => $pCurrentPx,
+                    'leverage'           => (int)$pLeverage,
+                    'emergency_stop_roi' => $pEmgRoi,
+                    'stop_price'         => $pStopPrice,
+                    'stop_guard'         => $pStopGuard,
+                    'action'             => $pAction,
+                    'ret_code'           => $pSetResult['ret_code'],
+                    'ret_msg'            => $pSetResult['ret_msg'],
+                ];
+
+                if ($pSetResult['ok'] || $pSetResult['note'] === 'already_set') {
+                    if ($pAction === 'set') {
+                        $protStopsSetTotal++;
+                        if ($pSide === 'long')  { $longProtStopsSetTotal++;  }
+                        if ($pSide === 'short') { $shortProtStopsSetTotal++; }
+                    } else {
+                        $protStopsUpdatedTotal++;
+                    }
+                    $protStopState[$pStateKey] = [
+                        'stop_price_set' => $pStopPrice,
+                        'set_at'         => $tickAt,
+                        'set_at_ts'      => time(),
+                        'stop_guard'     => $pStopGuard,
+                        'strategy_id'    => $pStratId,
+                        'emergency_roi'  => $pEmgRoi,
+                    ];
+                    $protStopStateChanged = true;
+                    if (count($protStopExamples) < 5) { $protStopExamples[] = $pExample; }
+                } else {
+                    $protStopsFailedTotal++;
+                    if ($pSide === 'long')  { $longProtStopsFailedTotal++;  }
+                    if ($pSide === 'short') { $shortProtStopsFailedTotal++; }
+                    if (count($protStopFailedExamples) < 5) { $protStopFailedExamples[] = $pExample; }
+                }
+
+                $this->appendActionLog([
+                    'timestamp'          => $tickAt,
+                    'event_type'         => $pSetResult['ok'] ? 'protective_stop_set' : 'protective_stop_failed',
+                    'stop_source'        => 'stop_manager',
+                    'stop_guard'         => $pStopGuard,
+                    'stop_reason'        => $pStopReason,
+                    'stop_profile'       => 'side_specific_roi_emergency',
+                    'strategy_id'        => $pStratId,
+                    'signal_id'          => $pSigId,
+                    'symbol'             => $pSymbol,
+                    'side'               => $pSide,
+                    'entry_price'        => $pEntry,
+                    'current_price'      => $pCurrentPx,
+                    'leverage'           => (int)$pLeverage,
+                    'emergency_stop_roi' => $pEmgRoi,
+                    'stop_price'         => $pStopPrice,
+                    'action'             => $pAction,
+                    'ret_code'           => $pSetResult['ret_code'],
+                    'ret_msg'            => $pSetResult['ret_msg'],
+                ]);
+            }
+        }
+
+        // Prune protective stop state entries for positions no longer active.
+        // Runs regardless of gateway availability so the state stays clean.
+        if ($sideRoiProtEnabled && $mode === 'demo' && $isActiveMode) {
+            foreach (array_keys($protStopState) as $_pStateKey) {
+                $_found = false;
+                foreach ($posMap as $_chkPos) {
+                    $_pMode   = $this->normalizeExecMode((string)($_chkPos['execution_mode'] ?? 'demo'));
+                    $_pSym    = (string)($_chkPos['symbol'] ?? '');
+                    $_pSide   = (string)($_chkPos['side'] ?? '');
+                    if ($_pStateKey === "{$_pMode}_{$_pSym}_{$_pSide}") {
+                        $_found = true;
+                        break;
+                    }
+                }
+                if (!$_found) {
+                    unset($protStopState[$_pStateKey]);
+                    $protStopStateChanged = true;
+                }
+            }
+        }
+
+        if ($protStopStateChanged) {
+            $this->writeJson('storage/protective_stops_state.json', $protStopState);
+        }
+
         // ── Early fail guard for double_bottom_long (demo only) ──────────────
         $efEnabled  = (bool)($config['double_bottom_early_fail_enabled']  ?? true);
         $efMode     = (string)($config['double_bottom_early_fail_mode']   ?? 'demo');
@@ -968,6 +1203,36 @@ final class StopManagerService
                 $closeAttempted = false;
                 $closeOk        = null;
 
+                // ── Deduplicate: skip if another guard already closed this position ──
+                $efDedupeKey = $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo'))
+                    . '_' . ($pos['symbol'] ?? '')
+                    . '_' . ($pos['side'] ?? '')
+                    . (($pos['signal_id'] ?? '') !== '' ? '_' . $pos['signal_id'] : '');
+
+                if (isset($closedThisTick[$efDedupeKey])) {
+                    $stopCloseDedupedTotal++;
+                    if (count($stopCloseDedupedExamples) < 5) {
+                        $stopCloseDedupedExamples[] = [
+                            'symbol'           => $pos['symbol']    ?? null,
+                            'side'             => $pos['side']      ?? null,
+                            'signal_id'        => $pos['signal_id'] ?? null,
+                            'skipped_guard'    => 'double_bottom_early_fail',
+                            'first_close_guard'=> $closedThisTick[$efDedupeKey],
+                            'reason'           => 'skipped_already_closing',
+                        ];
+                    }
+                    $this->appendActionLog([
+                        'timestamp'   => $tickAt,
+                        'event_type'  => 'close_deduped_skipped',
+                        'guard'       => 'double_bottom_early_fail',
+                        'symbol'      => $pos['symbol'] ?? '',
+                        'side'        => $pos['side']   ?? '',
+                        'signal_id'   => $pos['signal_id'] ?? '',
+                        'reason'      => 'skipped_already_closing',
+                    ]);
+                    continue;
+                }
+
                 if ($activeGw !== null) {
                     $closeAttempted = true;
                     $closeResult    = $this->submitDemoCloseOrder(
@@ -981,6 +1246,7 @@ final class StopManagerService
 
                     if ($closeOk) {
                         $efClosedTotal++;
+                        $closedThisTick[$efDedupeKey] = 'double_bottom_early_fail';
                         // Write early-fail close registry so the bot can preserve attribution
                         // in closed_trades.json when it detects the position has disappeared.
                         $this->writeEfCloseRegistry($pos, $closeResult, $efResult, $closeReason, $config, $tickAt);
@@ -1106,6 +1372,36 @@ final class StopManagerService
                 $ssCloseAttempted = false;
                 $ssCloseOk      = null;
 
+                // ── Deduplicate: skip if another guard already closed this position ──
+                $ssDedupeKey = $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo'))
+                    . '_' . ($pos['symbol'] ?? '')
+                    . '_short'
+                    . (($pos['signal_id'] ?? '') !== '' ? '_' . $pos['signal_id'] : '');
+
+                if (isset($closedThisTick[$ssDedupeKey])) {
+                    $stopCloseDedupedTotal++;
+                    if (count($stopCloseDedupedExamples) < 5) {
+                        $stopCloseDedupedExamples[] = [
+                            'symbol'           => $pos['symbol']    ?? null,
+                            'side'             => 'short',
+                            'signal_id'        => $pos['signal_id'] ?? null,
+                            'skipped_guard'    => $ssCloseGuard,
+                            'first_close_guard'=> $closedThisTick[$ssDedupeKey],
+                            'reason'           => 'skipped_already_closing',
+                        ];
+                    }
+                    $this->appendActionLog([
+                        'timestamp'  => $tickAt,
+                        'event_type' => 'close_deduped_skipped',
+                        'guard'      => $ssCloseGuard,
+                        'symbol'     => $pos['symbol'] ?? '',
+                        'side'       => 'short',
+                        'signal_id'  => $pos['signal_id'] ?? '',
+                        'reason'     => 'skipped_already_closing',
+                    ]);
+                    continue;
+                }
+
                 if ($activeGw !== null) {
                     $ssCloseAttempted = true;
                     $ssCloseResult    = $this->submitDemoCloseOrder(
@@ -1119,6 +1415,7 @@ final class StopManagerService
 
                     if ($ssCloseOk) {
                         $shortStopClosedTotal++;
+                        $closedThisTick[$ssDedupeKey] = $ssCloseGuard;
                         $this->writeShortEmergencyStopRegistry(
                             $pos,
                             $ssCloseResult,
@@ -1248,6 +1545,36 @@ final class StopManagerService
                 $lsCloseAttempted = false;
                 $lsCloseOk      = null;
 
+                // ── Deduplicate: skip if another guard already closed this position ──
+                $lsDedupeKey = $this->normalizeExecMode((string)($pos['execution_mode'] ?? 'demo'))
+                    . '_' . ($pos['symbol'] ?? '')
+                    . '_long'
+                    . (($pos['signal_id'] ?? '') !== '' ? '_' . $pos['signal_id'] : '');
+
+                if (isset($closedThisTick[$lsDedupeKey])) {
+                    $stopCloseDedupedTotal++;
+                    if (count($stopCloseDedupedExamples) < 5) {
+                        $stopCloseDedupedExamples[] = [
+                            'symbol'           => $pos['symbol']    ?? null,
+                            'side'             => 'long',
+                            'signal_id'        => $pos['signal_id'] ?? null,
+                            'skipped_guard'    => $lsCloseGuard,
+                            'first_close_guard'=> $closedThisTick[$lsDedupeKey],
+                            'reason'           => 'skipped_already_closing',
+                        ];
+                    }
+                    $this->appendActionLog([
+                        'timestamp'  => $tickAt,
+                        'event_type' => 'close_deduped_skipped',
+                        'guard'      => $lsCloseGuard,
+                        'symbol'     => $pos['symbol'] ?? '',
+                        'side'       => 'long',
+                        'signal_id'  => $pos['signal_id'] ?? '',
+                        'reason'     => 'skipped_already_closing',
+                    ]);
+                    continue;
+                }
+
                 if ($activeGw !== null) {
                     $lsCloseAttempted = true;
                     $lsCloseResult    = $this->submitDemoCloseOrder(
@@ -1261,6 +1588,7 @@ final class StopManagerService
 
                     if ($lsCloseOk) {
                         $longStopClosedTotal++;
+                        $closedThisTick[$lsDedupeKey] = $lsCloseGuard;
                         $this->writeLongEmergencyStopRegistry(
                             $pos,
                             $lsCloseResult,
@@ -1372,6 +1700,23 @@ final class StopManagerService
             'long_stop_skipped_examples'                    => $longStopSkippedExamples,
             // Legacy liq_distance path counters
             'legacy_stop_skipped_total'                     => $legacyStopSkippedTotal,
+            // Protective stop (ROI-based proactive exchange stop) counters
+            'side_roi_protective_stop_enabled'              => $sideRoiProtEnabled,
+            'protective_stops_checked_total'                => $protStopsCheckedTotal,
+            'protective_stops_set_total'                    => $protStopsSetTotal,
+            'protective_stops_updated_total'                => $protStopsUpdatedTotal,
+            'protective_stops_already_ok_total'             => $protStopsAlreadyOkTotal,
+            'protective_stops_failed_total'                 => $protStopsFailedTotal,
+            'protective_stops_skipped_total'                => $protStopsSkippedTotal,
+            'long_protective_stop_set_total'                => $longProtStopsSetTotal,
+            'long_protective_stop_failed_total'             => $longProtStopsFailedTotal,
+            'short_protective_stop_set_total'               => $shortProtStopsSetTotal,
+            'short_protective_stop_failed_total'            => $shortProtStopsFailedTotal,
+            'protective_stop_examples'                      => $protStopExamples,
+            'protective_stop_failed_examples'               => $protStopFailedExamples,
+            // Close deduplication counters
+            'stop_close_deduped_total'                      => $stopCloseDedupedTotal,
+            'stop_close_deduped_examples'                   => $stopCloseDedupedExamples,
         ];
     }
 
@@ -1990,7 +2335,60 @@ final class StopManagerService
             'short_stop_skipped_roi_above_cap_total'        => 0,
             'short_stop_skipped_missing_roi_total'          => 0,
             'short_stop_skipped_too_young_total'            => 0,
+            // Protective stop cumulative counters
+            'protective_stops_checked_total'                => 0,
+            'protective_stops_set_total'                    => 0,
+            'protective_stops_updated_total'                => 0,
+            'protective_stops_already_ok_total'             => 0,
+            'protective_stops_failed_total'                 => 0,
+            'protective_stops_skipped_total'                => 0,
+            'long_protective_stop_set_total'                => 0,
+            'long_protective_stop_failed_total'             => 0,
+            'short_protective_stop_set_total'               => 0,
+            'short_protective_stop_failed_total'            => 0,
+            // Close deduplication cumulative counters
+            'stop_close_deduped_total'                      => 0,
         ];
+    }
+
+    /**
+     * Compute the protective stop price for a side-specific ROI emergency stop.
+     *
+     * Long:  stop_price = entry_price × (1 + emergency_stop_roi / leverage / 100)
+     *        (emergency_stop_roi is negative → price is below entry)
+     *
+     * Short: stop_price = entry_price × (1 − emergency_stop_roi / leverage / 100)
+     *        (emergency_stop_roi is negative → price is above entry)
+     *
+     * @param string $side            'long' or 'short'
+     * @param float  $entryPrice      Position entry price (> 0)
+     * @param float  $leverage        Position leverage (> 0)
+     * @param float  $emergencyStopRoi Emergency stop ROI threshold (< 0, e.g. -12.0)
+     * @return float|null             Protective stop price, or null if inputs invalid
+     */
+    private function computeProtectiveStopPrice(
+        string $side,
+        float  $entryPrice,
+        float  $leverage,
+        float  $emergencyStopRoi
+    ): ?float {
+        if ($entryPrice <= 0.0 || $leverage <= 0.0) {
+            return null;
+        }
+
+        $priceMovePercent = $emergencyStopRoi / $leverage / 100.0;
+
+        if ($side === 'long') {
+            // Loss when price decreases; stop below entry
+            return $entryPrice * (1.0 + $priceMovePercent);
+        }
+
+        if ($side === 'short') {
+            // Loss when price increases; stop above entry
+            return $entryPrice * (1.0 - $priceMovePercent);
+        }
+
+        return null;
     }
 
     private function appendActionLog(array $event): void

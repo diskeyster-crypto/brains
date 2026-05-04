@@ -78,4 +78,76 @@ return [
     'hybrid_simulation_force_detect'   => false,
     'hybrid_simulation_force_confirm'  => false,
     'hybrid_simulation_force_reject'   => false,
+
+    // ── Lock-touch grace ──────────────────────────────────────────────────────
+    // Prevents PM from closing immediately on the first minor lock_touch by
+    // granting a short observation window.  Applies when roi is above the
+    // grace minimum and momentum has not broken.
+    //
+    // lock_touch_grace_enabled              — master switch
+    // lock_touch_grace_min_roi              — minimum ROI% before grace activates
+    // lock_touch_grace_window_seconds       — how long (sec) the grace window lasts
+    // lock_touch_grace_max_overrides        — maximum number of grace overrides per position
+    // lock_touch_grace_require_no_momentum_break — close immediately if momentum broken
+    // lock_touch_grace_hard_profit_floor_roi — ROI% floor; close immediately if below
+    // lock_touch_grace_max_giveback_roi     — max peak→current ROI drawdown before closing
+    'lock_touch_grace_enabled'                   => true,
+    'lock_touch_grace_min_roi'                   => 6.0,
+    'lock_touch_grace_window_seconds'            => 180,
+    'lock_touch_grace_max_overrides'             => 2,
+    'lock_touch_grace_require_no_momentum_break' => true,
+    'lock_touch_grace_hard_profit_floor_roi'     => 4.0,
+    'lock_touch_grace_max_giveback_roi'          => 8.0,
+
+    // ── Impulse-aware hold mode ───────────────────────────────────────────────
+    // When a long position shows strong price/OI/turnover momentum, PM widens
+    // the effective lock buffer and overrides the first lock_touch(es) to allow
+    // the move to continue.
+    //
+    // impulse_hold_enabled             — master switch
+    // impulse_hold_min_roi             — minimum ROI% required to compute impulse context
+    // impulse_hold_strong_score        — score threshold for 'strong' classification
+    // impulse_hold_very_strong_score   — score threshold for 'very_strong' classification
+    // impulse_hold_max_override_count  — maximum lock_touch overrides per position
+    // impulse_hold_max_minutes         — maximum age (min) of impulse hold state
+    // impulse_hold_hard_profit_floor_roi — ROI% floor; close immediately if below
+    // impulse_hold_max_giveback_roi    — max peak→current ROI drawdown during impulse hold
+    'impulse_hold_enabled'               => true,
+    'impulse_hold_min_roi'               => 8.0,
+    'impulse_hold_strong_score'          => 4,
+    'impulse_hold_very_strong_score'     => 5,
+    'impulse_hold_max_override_count'    => 3,
+    'impulse_hold_max_minutes'           => 45,
+    'impulse_hold_hard_profit_floor_roi' => 6.0,
+    'impulse_hold_max_giveback_roi'      => 12.0,
+
+    // ── Impulse momentum windows ──────────────────────────────────────────────
+    // Price-change thresholds over rolling windows used to score the impulse.
+    // Values are percentages (not fractions).
+    'impulse_price_window_minutes'        => 30,
+    'impulse_short_window_minutes'        => 5,
+    'impulse_min_price_change_1m_pct'     => 0.05,
+    'impulse_min_price_change_3m_pct'     => 0.12,
+    'impulse_min_price_change_5m_pct'     => 0.25,
+    'impulse_min_price_change_15m_pct'    => 0.50,
+    'impulse_min_price_change_30m_pct'    => 0.80,
+    'impulse_peak_roi_min'                => 10.0,
+
+    // ── Impulse turnover / open-interest thresholds ───────────────────────────
+    'impulse_use_turnover24h'                    => true,
+    'impulse_use_open_interest'                  => true,
+    'impulse_min_turnover_growth_pct'            => 1.5,
+    'impulse_min_open_interest_value_growth_pct' => 1.5,
+    'impulse_metrics_window_minutes'             => 30,
+
+    // ── Lock behavior during impulse hold ─────────────────────────────────────
+    // impulse_hold_skip_first_lock_touch         — override the first lock_touch
+    // impulse_hold_widen_lock_buffer_roi         — minimum widened buffer (ROI%)
+    // impulse_hold_lock_buffer_multiplier        — multiply normal buffer by this factor
+    // impulse_hold_require_momentum_break_to_close — only close on lock_touch when
+    //                                               momentum has clearly broken
+    'impulse_hold_skip_first_lock_touch'           => true,
+    'impulse_hold_widen_lock_buffer_roi'           => 5.0,
+    'impulse_hold_lock_buffer_multiplier'          => 2.0,
+    'impulse_hold_require_momentum_break_to_close' => true,
 ];

@@ -83,8 +83,39 @@ class LongProfile
         $positionState = $positionsState[$key] ?? [];
         $lockState     = $locks[$key]          ?? [];
 
+        // ── Pre-compute ROI and effective lock buffer for impulse hold ─────────
+        $currentPrice = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
+        $earlyRoi     = $this->riskMath->calculateRoiPct($position);
+        $earlyPeakRoi = (float) ($positionState['peak_roi'] ?? ($earlyRoi ?? 0.0));
+        if ($earlyRoi !== null && $earlyRoi > $earlyPeakRoi) {
+            $earlyPeakRoi = $earlyRoi;
+        }
+
+        $impulseCtx         = null;
+        $impulseChecked     = false;
+        $effectiveConfig    = $this->config;
+
+        $impulseHoldEnabled = !empty($this->config['impulse_hold_enabled']);
+        $impulseHoldMinRoi  = (float) ($this->config['impulse_hold_min_roi'] ?? 8.0);
+
+        if ($impulseHoldEnabled && $earlyRoi !== null && $earlyRoi >= $impulseHoldMinRoi) {
+            $impulseCtx     = $this->computeImpulseContext($position, $currentPrice, $earlyRoi, $earlyPeakRoi, $nowTs);
+            $impulseChecked = true;
+
+            $impulseClass = $impulseCtx['impulse_class'] ?? 'weak';
+            if ($impulseClass === 'strong' || $impulseClass === 'very_strong') {
+                // Widen the effective lock buffer to create more breathing room
+                $normalBuf    = (float) ($this->config['lock_buffer_roi'] ?? 2.0);
+                $widenBuf     = (float) ($this->config['impulse_hold_widen_lock_buffer_roi'] ?? 5.0);
+                $multiplier   = (float) ($this->config['impulse_hold_lock_buffer_multiplier'] ?? 2.0);
+                $effectiveBuf = max($normalBuf, $widenBuf, $normalBuf * $multiplier);
+                // Do not mutate $this->config — create a local copy only
+                $effectiveConfig = array_merge($this->config, ['lock_buffer_roi' => $effectiveBuf]);
+            }
+        }
+
         // ── STEP 1: run legacy_safe_long lifecycle ────────────────────────────
-        $runResult = $this->runLifecycle($position, $lockState, $positionState, $this->config, $nowTs);
+        $runResult = $this->runLifecycle($position, $lockState, $positionState, $effectiveConfig, $nowTs);
 
         $positionState = $runResult['position_state'];
         $lockState     = $runResult['lock_state'];
@@ -103,6 +134,77 @@ class LongProfile
             ];
         } elseif (!empty($lockState)) {
             $locks[$key] = $lockState;
+        }
+
+        // ── STEP 1b: lock-touch grace / impulse-hold override ─────────────────
+        $lockTouchOverrideAction = null;
+        $lockTouchOverrideReason = null;
+        $closeReasonHint         = null;
+        $graceChecked            = false;
+        $momentumBroken          = false;
+
+        if ($plan['action'] === 'would_close_on_lock_touch') {
+            $roi     = $plan['current_roi'] ?? $earlyRoi;
+            $peakRoi = $plan['peak_roi']    ?? $earlyPeakRoi;
+
+            // Priority 1: Impulse-hold override
+            if ($impulseHoldEnabled && $impulseCtx !== null) {
+                $impulseClass = $impulseCtx['impulse_class'] ?? 'weak';
+                if ($impulseClass === 'strong' || $impulseClass === 'very_strong') {
+                    $overrideResult = $this->checkImpulseHoldOverride(
+                        $position, $positionState, $impulseCtx, (float) $roi, (float) $peakRoi, $nowTs
+                    );
+                    $positionState = array_merge($positionState, $overrideResult['state_updates']);
+                    if ($overrideResult['override']) {
+                        $plan['action']          = 'hold_override_lock_touch';
+                        $plan['skip_reason']     = null;
+                        $plan['note']            = $overrideResult['reason'];
+                        $lockTouchOverrideAction = 'hold_override_lock_touch';
+                        $lockTouchOverrideReason = $overrideResult['reason'];
+                    } else {
+                        $lockTouchOverrideReason = $overrideResult['reason'];
+                        $momentumBroken          = !empty($overrideResult['momentum_broken']);
+                        if ($momentumBroken) {
+                            $closeReasonHint = 'lock_touch_impulse_broken';
+                        }
+                    }
+                }
+            }
+
+            // Priority 2: Lock-touch grace (only if impulse did not already override)
+            if ($plan['action'] === 'would_close_on_lock_touch'
+                && !empty($this->config['lock_touch_grace_enabled'])
+            ) {
+                $graceMinRoi = (float) ($this->config['lock_touch_grace_min_roi'] ?? 6.0);
+                if ($roi !== null && (float) $roi >= $graceMinRoi) {
+                    $graceChecked = true;
+                    $graceResult  = $this->checkGraceOverride(
+                        $position, $positionState, (float) $roi, (float) $peakRoi, $impulseCtx, $nowTs
+                    );
+                    $positionState = array_merge($positionState, $graceResult['state_updates']);
+                    if ($graceResult['override']) {
+                        $plan['action']          = 'hold_override_lock_touch';
+                        $plan['skip_reason']     = null;
+                        $plan['note']            = $graceResult['reason'];
+                        $lockTouchOverrideAction = 'hold_override_lock_touch';
+                        $lockTouchOverrideReason = $graceResult['reason'];
+                    } else {
+                        if ($lockTouchOverrideReason === null) {
+                            $lockTouchOverrideReason = $graceResult['reason'];
+                        }
+                        if (!$momentumBroken && !empty($graceResult['momentum_broken'])) {
+                            $momentumBroken = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Persist impulse/grace state fields ────────────────────────────────
+        if ($impulseCtx !== null) {
+            $positionState['impulse_score']        = $impulseCtx['impulse_score'] ?? 0;
+            $positionState['impulse_class']        = $impulseCtx['impulse_class'] ?? 'weak';
+            $positionState['last_impulse_context'] = $impulseCtx;
         }
 
         // ── STEP 2–4: hybrid overlay ──────────────────────────────────────────
@@ -174,6 +276,20 @@ class LongProfile
             'hybrid_price_source'        => $hybridMeta['hybrid_price_source']     ?? 'none',
             'hybrid_price_points'        => $hybridMeta['hybrid_price_points']     ?? 0,
             'hybrid_min_close_roi'       => (float) ($this->config['hybrid_min_close_roi'] ?? 5.0),
+            // ── Impulse / grace diagnostics ──────────────────────────────────
+            'impulse_checked'                  => $impulseChecked,
+            'impulse_score'                    => $impulseCtx['impulse_score']                    ?? null,
+            'impulse_class'                    => $impulseCtx['impulse_class']                    ?? null,
+            'impulse_hold_active'              => (bool) ($positionState['impulse_hold_active']   ?? false),
+            'impulse_context'                  => $impulseCtx,
+            'lock_touch_override_action'       => $lockTouchOverrideAction,
+            'lock_touch_override_reason'       => $lockTouchOverrideReason,
+            'grace_checked'                    => $graceChecked,
+            'grace_active'                     => (bool) ($positionState['lock_touch_grace_active'] ?? false),
+            'grace_override_count'             => (int)  ($positionState['lock_touch_grace_override_count'] ?? 0),
+            'momentum_broken'                  => $momentumBroken,
+            'missing_metrics'                  => !empty($impulseCtx['missing_metrics']),
+            'close_reason_hint'                => $closeReasonHint,
         ];
     }
 
@@ -236,6 +352,610 @@ class LongProfile
         return [
             'long_state_cleaned' => $statesCleaned,
             'long_locks_cleaned' => $locksCleaned,
+        ];
+    }
+
+    // =========================================================================
+    // Impulse-aware hold mode — helpers
+    // =========================================================================
+
+    /**
+     * Read recent parser2 ticker records for a symbol.
+     *
+     * Returns an ascending-timestamp array of records, each containing:
+     *   ts_unix, last_price, turnover24h, open_interest_value
+     *
+     * Fails gracefully — never throws.
+     *
+     * @param string $symbol        Upper-case trading symbol
+     * @param int    $nowTs         Current unix timestamp
+     * @param int    $windowSeconds How far back to look (minimum 60 s)
+     * @return array<int,array{ts_unix:int,last_price:float,turnover24h:float,open_interest_value:float}>
+     */
+    private function readParser2TickerPoints(string $symbol, int $nowTs, int $windowSeconds): array
+    {
+        $storageDir = $this->parser2StorageDir;
+        $symbolDir  = rtrim($storageDir, '/') . '/' . strtoupper($symbol);
+        if (!is_dir($symbolDir)) {
+            return [];
+        }
+
+        $windowSeconds = max($windowSeconds, 60);
+        $sinceTs       = $nowTs - $windowSeconds;
+
+        // Build candidate date strings covering the window
+        $dates  = [];
+        $cursor = $sinceTs;
+        while ($cursor <= $nowTs) {
+            $d = date('Y-m-d', $cursor);
+            if (!in_array($d, $dates, true)) {
+                $dates[] = $d;
+            }
+            $cursor += 86400;
+        }
+        $todayDate = date('Y-m-d', $nowTs);
+        if (!in_array($todayDate, $dates, true)) {
+            $dates[] = $todayDate;
+        }
+
+        $points = [];
+
+        foreach ($dates as $date) {
+            $file = $symbolDir . '/' . $date . '.ndjson';
+            if (!is_file($file) || !is_readable($file)) {
+                continue;
+            }
+            $handle = @fopen($file, 'r');
+            if ($handle === false) {
+                continue;
+            }
+            while (($line = fgets($handle)) !== false) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $rec = json_decode($line, true);
+                if (!is_array($rec)) {
+                    continue;
+                }
+                $ts = isset($rec['ts_unix']) ? (int) $rec['ts_unix'] : 0;
+                if ($ts < $sinceTs || $ts > ($nowTs + 60)) {
+                    continue;
+                }
+
+                $lastPrice   = 0.0;
+                $turnover24h = 0.0;
+                $oiValue     = 0.0;
+
+                if (isset($rec['data']) && is_array($rec['data'])) {
+                    // Parser2 full Bybit ticker format
+                    foreach (['lastPrice', 'markPrice', 'indexPrice'] as $f) {
+                        $v = (float) ($rec['data'][$f] ?? 0.0);
+                        if ($v > 0.0) {
+                            $lastPrice = $v;
+                            break;
+                        }
+                    }
+                    $turnover24h = (float) ($rec['data']['turnover24h']      ?? 0.0);
+                    $oiValue     = (float) ($rec['data']['openInterestValue'] ?? 0.0);
+                } elseif (isset($rec['last_price'])) {
+                    // Parser15 backfill simplified format
+                    $lastPrice = (float) ($rec['last_price'] ?? 0.0);
+                }
+
+                if ($lastPrice <= 0.0) {
+                    continue;
+                }
+
+                $points[] = [
+                    'ts_unix'             => $ts,
+                    'last_price'          => $lastPrice,
+                    'turnover24h'         => $turnover24h,
+                    'open_interest_value' => $oiValue,
+                ];
+            }
+            fclose($handle);
+        }
+
+        if (empty($points)) {
+            return [];
+        }
+
+        // Sort ascending by timestamp
+        usort($points, static fn(array $a, array $b): int => $a['ts_unix'] <=> $b['ts_unix']);
+
+        // Deduplicate by ts_unix (keep last value at each second)
+        $deduped = [];
+        foreach ($points as $p) {
+            $deduped[$p['ts_unix']] = $p;
+        }
+
+        return array_values($deduped);
+    }
+
+    /**
+     * Compute impulse context for a long position.
+     *
+     * Scores up to 6 components (each +1):
+     *   price_momentum_5m, price_momentum_15m, price_momentum_30m,
+     *   turnover_growth, open_interest_value_growth, peak_roi_strong
+     *
+     * Fails gracefully when parser2 data is unavailable — score simply
+     * does not include the missing components.
+     *
+     * @param array $position     Normalized position
+     * @param float $currentPrice Current mark price
+     * @param float $roi          Current ROI %
+     * @param float $peakRoi      Peak ROI % observed for this position
+     * @param int   $nowTs        Current unix timestamp
+     * @return array{
+     *   impulse_score: int,
+     *   impulse_class: string,
+     *   price_change_1m_pct: float|null,
+     *   price_change_3m_pct: float|null,
+     *   price_change_5m_pct: float|null,
+     *   price_change_15m_pct: float|null,
+     *   price_change_30m_pct: float|null,
+     *   turnover_growth_pct: float|null,
+     *   open_interest_value_growth_pct: float|null,
+     *   evidence: list<string>,
+     *   missing_metrics: list<string>
+     * }
+     */
+    private function computeImpulseContext(
+        array $position,
+        float $currentPrice,
+        float $roi,
+        float $peakRoi,
+        int   $nowTs
+    ): array {
+        $symbol = strtoupper(trim((string) ($position['symbol'] ?? '')));
+        $cfg    = $this->config;
+
+        $windowMin     = (int)   ($cfg['impulse_metrics_window_minutes']             ?? 30);
+        $windowSec     = $windowMin * 60;
+        $min1m         = (float) ($cfg['impulse_min_price_change_1m_pct']            ?? 0.05);
+        $min3m         = (float) ($cfg['impulse_min_price_change_3m_pct']            ?? 0.12);
+        $min5m         = (float) ($cfg['impulse_min_price_change_5m_pct']            ?? 0.25);
+        $min15m        = (float) ($cfg['impulse_min_price_change_15m_pct']           ?? 0.50);
+        $min30m        = (float) ($cfg['impulse_min_price_change_30m_pct']           ?? 0.80);
+        $minTurnGrowth = (float) ($cfg['impulse_min_turnover_growth_pct']            ?? 1.5);
+        $minOiGrowth   = (float) ($cfg['impulse_min_open_interest_value_growth_pct'] ?? 1.5);
+        $peakRoiMin    = (float) ($cfg['impulse_peak_roi_min']                       ?? 10.0);
+        $useTurnover   = !empty($cfg['impulse_use_turnover24h']);
+        $useOi         = !empty($cfg['impulse_use_open_interest']);
+
+        $strongScore     = (int) ($cfg['impulse_hold_strong_score']      ?? 4);
+        $veryStrongScore = (int) ($cfg['impulse_hold_very_strong_score'] ?? 5);
+
+        // Read parser2 ticker points for the window
+        $points         = $this->readParser2TickerPoints($symbol, $nowTs, $windowSec);
+        $missingMetrics = [];
+
+        // Locate price at each lookback target by scanning the sorted points array.
+        // We keep the most-recent record at or before each target timestamp.
+        $ts1m  = $nowTs - 60;
+        $ts3m  = $nowTs - 180;
+        $ts5m  = $nowTs - 300;
+        $ts15m = $nowTs - 900;
+        $ts30m = $nowTs - 1800;
+
+        $price1mAgo  = null;
+        $price3mAgo  = null;
+        $price5mAgo  = null;
+        $price15mAgo = null;
+        $price30mAgo = null;
+
+        if (!empty($points)) {
+            foreach ($points as $p) {
+                $pts = $p['ts_unix'];
+                if ($pts <= $ts1m)  { $price1mAgo  = $p['last_price']; }
+                if ($pts <= $ts3m)  { $price3mAgo  = $p['last_price']; }
+                if ($pts <= $ts5m)  { $price5mAgo  = $p['last_price']; }
+                if ($pts <= $ts15m) { $price15mAgo = $p['last_price']; }
+                if ($pts <= $ts30m) { $price30mAgo = $p['last_price']; }
+            }
+        } else {
+            $missingMetrics[] = 'no_ticker_data';
+        }
+
+        // Price-change calculations
+        $change1m  = null;
+        $change3m  = null;
+        $change5m  = null;
+        $change15m = null;
+        $change30m = null;
+
+        if ($currentPrice > 0.0) {
+            if ($price1mAgo !== null && $price1mAgo > 0.0) {
+                $change1m = ($currentPrice - $price1mAgo) / $price1mAgo * 100.0;
+            } else {
+                $missingMetrics[] = 'price_1m_missing';
+            }
+            if ($price3mAgo !== null && $price3mAgo > 0.0) {
+                $change3m = ($currentPrice - $price3mAgo) / $price3mAgo * 100.0;
+            } else {
+                $missingMetrics[] = 'price_3m_missing';
+            }
+            if ($price5mAgo !== null && $price5mAgo > 0.0) {
+                $change5m = ($currentPrice - $price5mAgo) / $price5mAgo * 100.0;
+            } else {
+                $missingMetrics[] = 'price_5m_missing';
+            }
+            if ($price15mAgo !== null && $price15mAgo > 0.0) {
+                $change15m = ($currentPrice - $price15mAgo) / $price15mAgo * 100.0;
+            } else {
+                $missingMetrics[] = 'price_15m_missing';
+            }
+            if ($price30mAgo !== null && $price30mAgo > 0.0) {
+                $change30m = ($currentPrice - $price30mAgo) / $price30mAgo * 100.0;
+            } else {
+                $missingMetrics[] = 'price_30m_missing';
+            }
+        }
+
+        // Turnover growth over window
+        $turnoverGrowth = null;
+        if ($useTurnover) {
+            if (!empty($points)) {
+                $t0 = (float) ($points[0]['turnover24h']       ?? 0.0);
+                $t1 = (float) (end($points)['turnover24h']     ?? 0.0);
+                if ($t0 > 0.0) {
+                    $turnoverGrowth = ($t1 - $t0) / $t0 * 100.0;
+                } else {
+                    $missingMetrics[] = 'turnover_missing';
+                }
+            } else {
+                $missingMetrics[] = 'turnover_missing';
+            }
+        }
+
+        // Open-interest value growth over window
+        $oiGrowth = null;
+        if ($useOi) {
+            if (!empty($points)) {
+                $oi0 = (float) ($points[0]['open_interest_value']       ?? 0.0);
+                $oi1 = (float) (end($points)['open_interest_value']     ?? 0.0);
+                if ($oi0 > 0.0) {
+                    $oiGrowth = ($oi1 - $oi0) / $oi0 * 100.0;
+                } else {
+                    $missingMetrics[] = 'oi_missing';
+                }
+            } else {
+                $missingMetrics[] = 'oi_missing';
+            }
+        }
+
+        // ── Score each component ──────────────────────────────────────────────
+        $score    = 0;
+        $evidence = [];
+
+        // 1. price_momentum_5m
+        if ($change5m !== null && $change5m >= $min5m) {
+            $score++;
+            $evidence[] = 'price_momentum_5m';
+        }
+        // 2. price_momentum_15m
+        if ($change15m !== null && $change15m >= $min15m) {
+            $score++;
+            $evidence[] = 'price_momentum_15m';
+        }
+        // 3. price_momentum_30m
+        if ($change30m !== null && $change30m >= $min30m) {
+            $score++;
+            $evidence[] = 'price_momentum_30m';
+        }
+        // 4. turnover_growth
+        if ($turnoverGrowth !== null && $turnoverGrowth >= $minTurnGrowth) {
+            $score++;
+            $evidence[] = 'turnover_growth';
+        }
+        // 5. open_interest_value_growth
+        if ($oiGrowth !== null && $oiGrowth >= $minOiGrowth) {
+            $score++;
+            $evidence[] = 'open_interest_value_growth';
+        }
+        // 6. peak_roi_strong
+        if ($peakRoi >= $peakRoiMin) {
+            $score++;
+            $evidence[] = 'peak_roi_strong';
+        }
+
+        // Classification
+        if ($score >= $veryStrongScore) {
+            $impulseClass = 'very_strong';
+        } elseif ($score >= $strongScore) {
+            $impulseClass = 'strong';
+        } elseif ($score >= 2) {
+            $impulseClass = 'normal';
+        } else {
+            $impulseClass = 'weak';
+        }
+
+        return [
+            'impulse_score'                  => $score,
+            'impulse_class'                  => $impulseClass,
+            'price_change_1m_pct'            => $change1m  !== null ? round($change1m,  4) : null,
+            'price_change_3m_pct'            => $change3m  !== null ? round($change3m,  4) : null,
+            'price_change_5m_pct'            => $change5m  !== null ? round($change5m,  4) : null,
+            'price_change_15m_pct'           => $change15m !== null ? round($change15m, 4) : null,
+            'price_change_30m_pct'           => $change30m !== null ? round($change30m, 4) : null,
+            'turnover_growth_pct'            => $turnoverGrowth !== null ? round($turnoverGrowth, 4) : null,
+            'open_interest_value_growth_pct' => $oiGrowth      !== null ? round($oiGrowth,       4) : null,
+            'evidence'                       => $evidence,
+            'missing_metrics'                => array_values(array_unique($missingMetrics)),
+        ];
+    }
+
+    /**
+     * Determine whether momentum has broken for a position under impulse/grace hold.
+     *
+     * Momentum is considered broken when any of the following is true:
+     *   - any available short-window price change is negative
+     *   - turnover24h growth is negative (when available)
+     *   - openInterestValue growth is negative (when available)
+     *   - roi has fallen below the hard profit floor
+     *   - (peak_roi - roi) exceeds the maximum allowed giveback
+     *
+     * @param array $impulseCtx Impulse context from computeImpulseContext()
+     * @param float $roi        Current ROI %
+     * @param float $peakRoi    Peak ROI % for this position
+     * @param float $hardFloor  Close immediately if roi < hardFloor
+     * @param float $maxGiveback Close immediately if (peakRoi - roi) > maxGiveback
+     * @return array{momentum_broken: bool, break_reasons: list<string>}
+     */
+    private function isMomentumBroken(
+        array $impulseCtx,
+        float $roi,
+        float $peakRoi,
+        float $hardFloor,
+        float $maxGiveback
+    ): array {
+        $breakReasons = [];
+
+        $change1m   = $impulseCtx['price_change_1m_pct']            ?? null;
+        $change3m   = $impulseCtx['price_change_3m_pct']            ?? null;
+        $change5m   = $impulseCtx['price_change_5m_pct']            ?? null;
+        $change15m  = $impulseCtx['price_change_15m_pct']           ?? null;
+        $turnGrowth = $impulseCtx['turnover_growth_pct']            ?? null;
+        $oiGrowth   = $impulseCtx['open_interest_value_growth_pct'] ?? null;
+
+        if ($change1m !== null && $change1m < 0.0) {
+            $breakReasons[] = 'price_1m_negative';
+        }
+        if ($change3m !== null && $change3m < 0.0) {
+            $breakReasons[] = 'price_3m_negative';
+        }
+        if ($change5m !== null && $change5m < 0.0) {
+            $breakReasons[] = 'price_5m_negative';
+        }
+        if ($change15m !== null && $change15m < 0.0) {
+            $breakReasons[] = 'price_15m_negative';
+        }
+        if ($turnGrowth !== null && $turnGrowth < 0.0) {
+            $breakReasons[] = 'turnover_negative';
+        }
+        if ($oiGrowth !== null && $oiGrowth < 0.0) {
+            $breakReasons[] = 'oi_negative';
+        }
+        if ($roi < $hardFloor) {
+            $breakReasons[] = 'below_hard_floor';
+        }
+        if (($peakRoi - $roi) > $maxGiveback) {
+            $breakReasons[] = 'giveback_exceeded';
+        }
+
+        return [
+            'momentum_broken' => !empty($breakReasons),
+            'break_reasons'   => $breakReasons,
+        ];
+    }
+
+    /**
+     * Check whether a lock-touch grace override should be applied.
+     *
+     * @param array      $position      Normalized position
+     * @param array      $positionState Current per-symbol state
+     * @param float      $roi           Current ROI %
+     * @param float      $peakRoi       Peak ROI %
+     * @param array|null $impulseCtx    Impulse context (may be null)
+     * @param int        $nowTs         Current unix timestamp
+     * @return array{override:bool, reason:string, momentum_broken:bool, state_updates:array}
+     */
+    private function checkGraceOverride(
+        array  $position,
+        array  $positionState,
+        float  $roi,
+        float  $peakRoi,
+        ?array $impulseCtx,
+        int    $nowTs
+    ): array {
+        $cfg = $this->config;
+
+        $graceWindowSec    = (int)   ($cfg['lock_touch_grace_window_seconds']         ?? 180);
+        $graceMaxOverrides = (int)   ($cfg['lock_touch_grace_max_overrides']          ?? 2);
+        $graceHardFloor    = (float) ($cfg['lock_touch_grace_hard_profit_floor_roi']  ?? 4.0);
+        $graceMaxGiveback  = (float) ($cfg['lock_touch_grace_max_giveback_roi']       ?? 8.0);
+        $requireNoMomentum = !empty($cfg['lock_touch_grace_require_no_momentum_break']);
+
+        $graceCnt     = (int) ($positionState['lock_touch_grace_override_count'] ?? 0);
+        $graceStarted = isset($positionState['lock_touch_grace_started_at'])
+            ? (int) $positionState['lock_touch_grace_started_at']
+            : null;
+
+        $failReason     = null;
+        $momentumBroken = false;
+
+        if ($roi < $graceHardFloor) {
+            $failReason = 'below_hard_profit_floor';
+        } elseif (($peakRoi - $roi) > $graceMaxGiveback) {
+            $failReason = 'giveback_exceeded';
+        } elseif ($graceCnt >= $graceMaxOverrides) {
+            $failReason = 'max_overrides_reached';
+        } elseif ($graceStarted !== null && ($nowTs - $graceStarted) > $graceWindowSec) {
+            $failReason = 'grace_window_expired';
+        } elseif ($requireNoMomentum && $impulseCtx !== null) {
+            $momentumResult = $this->isMomentumBroken(
+                $impulseCtx, $roi, $peakRoi, $graceHardFloor, $graceMaxGiveback
+            );
+            if ($momentumResult['momentum_broken']) {
+                $failReason     = 'momentum_broken';
+                $momentumBroken = true;
+            }
+        }
+
+        if ($failReason !== null) {
+            $stateUpdates = ['lock_touch_grace_active' => false];
+            if ($failReason === 'grace_window_expired') {
+                $stateUpdates['lock_touch_grace_started_at'] = null;
+            }
+            $stateUpdates['last_grace_decision'] = [
+                'ts'          => $nowTs,
+                'action'      => 'would_close_on_lock_touch',
+                'reason'      => 'lock_touch_grace_failed:' . $failReason,
+                'fail_reason' => $failReason,
+            ];
+            return [
+                'override'       => false,
+                'reason'         => 'lock_touch_grace_failed:' . $failReason,
+                'momentum_broken'=> $momentumBroken,
+                'state_updates'  => $stateUpdates,
+            ];
+        }
+
+        // Apply grace override
+        $newGraceCnt  = $graceCnt + 1;
+        $graceStarted = $graceStarted ?? $nowTs;
+
+        $stateUpdates = [
+            'lock_touch_grace_active'         => true,
+            'lock_touch_grace_started_at'     => $graceStarted,
+            'lock_touch_grace_override_count' => $newGraceCnt,
+            'last_grace_decision'             => [
+                'ts'     => $nowTs,
+                'action' => 'hold_override_lock_touch',
+                'reason' => 'lock_touch_grace_override',
+            ],
+        ];
+
+        return [
+            'override'       => true,
+            'reason'         => 'lock_touch_grace_override',
+            'momentum_broken'=> false,
+            'state_updates'  => $stateUpdates,
+        ];
+    }
+
+    /**
+     * Check whether an impulse-hold lock-touch override should be applied.
+     *
+     * Safety conditions that must all pass for an override to be granted:
+     *   - impulse_hold_skip_first_lock_touch = true
+     *   - override_count < impulse_hold_max_override_count
+     *   - impulse hold age <= impulse_hold_max_minutes
+     *   - roi >= impulse_hold_hard_profit_floor_roi
+     *   - (peak_roi - roi) <= impulse_hold_max_giveback_roi
+     *   - momentum has not broken (when require_momentum_break_to_close = true)
+     *
+     * @param array $position      Normalized position
+     * @param array $positionState Current per-symbol state
+     * @param array $impulseCtx    Impulse context from computeImpulseContext()
+     * @param float $roi           Current ROI %
+     * @param float $peakRoi       Peak ROI %
+     * @param int   $nowTs         Current unix timestamp
+     * @return array{override:bool, reason:string, momentum_broken:bool, state_updates:array}
+     */
+    private function checkImpulseHoldOverride(
+        array $position,
+        array $positionState,
+        array $impulseCtx,
+        float $roi,
+        float $peakRoi,
+        int   $nowTs
+    ): array {
+        $cfg = $this->config;
+
+        $skipFirst     = !empty($cfg['impulse_hold_skip_first_lock_touch']);
+        $maxOverrides  = (int)   ($cfg['impulse_hold_max_override_count']       ?? 3);
+        $maxMinutes    = (float) ($cfg['impulse_hold_max_minutes']              ?? 45);
+        $hardFloor     = (float) ($cfg['impulse_hold_hard_profit_floor_roi']    ?? 6.0);
+        $maxGiveback   = (float) ($cfg['impulse_hold_max_giveback_roi']         ?? 12.0);
+        $requireMoment = !empty($cfg['impulse_hold_require_momentum_break_to_close']);
+
+        $overrideCnt   = (int) ($positionState['impulse_lock_touch_override_count'] ?? 0);
+        $holdStartedAt = isset($positionState['impulse_hold_started_at'])
+            ? (int) $positionState['impulse_hold_started_at']
+            : null;
+
+        $failReason     = null;
+        $momentumBroken = false;
+
+        if (!$skipFirst) {
+            $failReason = 'skip_first_disabled';
+        } elseif ($overrideCnt >= $maxOverrides) {
+            $failReason = 'max_overrides_reached';
+        } elseif ($holdStartedAt !== null && ($nowTs - $holdStartedAt) > ((int) ($maxMinutes * 60))) {
+            $failReason = 'max_minutes_exceeded';
+        } elseif ($roi < $hardFloor) {
+            $failReason = 'below_hard_profit_floor';
+        } elseif (($peakRoi - $roi) > $maxGiveback) {
+            $failReason = 'giveback_exceeded';
+        } elseif ($requireMoment) {
+            // require_momentum_break_to_close = true means: only allow close when momentum is broken.
+            // Equivalently: do NOT override if momentum has broken.
+            $momentumResult = $this->isMomentumBroken($impulseCtx, $roi, $peakRoi, $hardFloor, $maxGiveback);
+            if ($momentumResult['momentum_broken']) {
+                $failReason     = 'momentum_broken';
+                $momentumBroken = true;
+            }
+        }
+
+        if ($failReason !== null) {
+            $stateUpdates = [];
+            if ($momentumBroken || in_array($failReason, ['below_hard_profit_floor', 'giveback_exceeded'], true)) {
+                $stateUpdates['impulse_hold_active'] = false;
+            }
+            $stateUpdates['last_impulse_decision'] = [
+                'ts'          => $nowTs,
+                'action'      => 'would_close_on_lock_touch',
+                'reason'      => $momentumBroken
+                    ? 'lock_touch_impulse_broken'
+                    : 'lock_touch_impulse_safety_failed',
+                'fail_reason' => $failReason,
+            ];
+            return [
+                'override'       => false,
+                'reason'         => $momentumBroken
+                    ? 'lock_touch_impulse_broken'
+                    : 'lock_touch_impulse_safety_failed',
+                'momentum_broken'=> $momentumBroken,
+                'state_updates'  => $stateUpdates,
+            ];
+        }
+
+        // Apply impulse hold override
+        $newOverrideCnt = $overrideCnt + 1;
+        $holdStartedAt  = $holdStartedAt ?? $nowTs;
+
+        $stateUpdates = [
+            'impulse_hold_active'               => true,
+            'impulse_score'                     => $impulseCtx['impulse_score'] ?? 0,
+            'impulse_class'                     => $impulseCtx['impulse_class'] ?? 'weak',
+            'impulse_hold_started_at'           => $holdStartedAt,
+            'impulse_lock_touch_override_count' => $newOverrideCnt,
+            'last_impulse_context'              => $impulseCtx,
+            'last_impulse_decision'             => [
+                'ts'     => $nowTs,
+                'action' => 'hold_override_lock_touch',
+                'reason' => 'impulse_hold_lock_touch_override',
+            ],
+        ];
+
+        return [
+            'override'       => true,
+            'reason'         => 'impulse_hold_lock_touch_override',
+            'momentum_broken'=> false,
+            'state_updates'  => $stateUpdates,
         ];
     }
 

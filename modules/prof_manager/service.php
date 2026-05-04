@@ -200,6 +200,29 @@ final class ProfManagerService
             $shortCloseExamples            = [];
             $shortSkipExamples             = [];
 
+            // Long impulse-hold diagnostic counters
+            $impulseHoldCheckedTotal             = 0;
+            $impulseHoldStrongTotal              = 0;
+            $impulseHoldVeryStrongTotal          = 0;
+            $impulseHoldLockTouchOverrideTotal   = 0;
+            $impulseHoldLockTouchCloseAllowedTotal = 0;
+            $impulseHoldMomentumBrokenTotal      = 0;
+            $impulseHoldMissingMetricsTotal      = 0;
+            $impulseHoldExamples                 = [];
+            $impulseHoldOverrideExamples         = [];
+            $impulseHoldCloseExamples            = [];
+
+            // Long lock-touch grace diagnostic counters
+            $graceCheckedTotal           = 0;
+            $graceOverrideTotal          = 0;
+            $graceCloseAllowedTotal      = 0;
+            $graceExpiredTotal           = 0;
+            $graceMomentumBrokenTotal    = 0;
+            $graceSafetyFloorFailedTotal = 0;
+            $graceExamples               = [];
+            $graceOverrideExamples       = [];
+            $graceCloseExamples          = [];
+
             foreach ($rawPositions as $pos) {
                 if (!is_array($pos)) {
                     continue;
@@ -260,9 +283,11 @@ final class ProfManagerService
                     $posSymbol    = (string)($pos['symbol'] ?? '');
                     $posSide      = (string)($pos['side']   ?? '');
                     $posSize      = (float)($pos['size']    ?? 0.0);
+                    // Use close_reason_hint from long profile when available (e.g. lock_touch_impulse_broken)
+                    $closeReasonHint  = ($side === 'long') ? ($profileResult['close_reason_hint'] ?? null) : null;
                     $closeReasonValue = ($pmAction === 'hybrid_close_confirmed')
                         ? 'hybrid_confirmed'
-                        : 'lock_touch';
+                        : ($closeReasonHint ?? 'lock_touch');
 
                     if ($posExecMode === 'mode_mismatch') {
                         // Cross-gateway safety: position mode differs from PM module mode.
@@ -394,6 +419,121 @@ final class ProfManagerService
                     if (count($shortPositionExamples) < 5)     { $shortPositionExamples[] = $shortEx; }
                 }
 
+                // ── Long-profile impulse / grace diagnostic tracking ───────────
+                if ($side === 'long') {
+                    $impulseClass   = $profileResult['impulse_class']   ?? null;
+                    $impulseBroken  = !empty($profileResult['momentum_broken']);
+                    $overrideAction = $profileResult['lock_touch_override_action'] ?? null;
+                    $overrideReason = $profileResult['lock_touch_override_reason'] ?? null;
+                    $graceActive    = !empty($profileResult['grace_checked']);
+
+                    if (!empty($profileResult['impulse_checked'])) {
+                        $impulseHoldCheckedTotal++;
+                        if ($impulseClass === 'strong')      { $impulseHoldStrongTotal++;     }
+                        if ($impulseClass === 'very_strong') { $impulseHoldVeryStrongTotal++; }
+                        if (!empty($profileResult['missing_metrics'])) { $impulseHoldMissingMetricsTotal++; }
+                        if ($impulseBroken) { $impulseHoldMomentumBrokenTotal++; }
+
+                        // Was an impulse-hold lock-touch override applied?
+                        if ($overrideAction === 'hold_override_lock_touch'
+                            && $overrideReason === 'impulse_hold_lock_touch_override'
+                        ) {
+                            $impulseHoldLockTouchOverrideTotal++;
+                        }
+                        // Was the lock-touch close allowed through (no impulse override)?
+                        if ($overrideAction === null
+                            && in_array($action, ['would_close_on_lock_touch', 'demo_close_submitted', 'live_close_submitted'], true)
+                            && $overrideReason !== null
+                            && str_starts_with((string) $overrideReason, 'lock_touch_impulse')
+                        ) {
+                            $impulseHoldLockTouchCloseAllowedTotal++;
+                        }
+
+                        // Build impulse example record
+                        $impulseCtxData = $profileResult['impulse_context'] ?? [];
+                        $impulseEx = [
+                            'symbol'                        => $pos['symbol'] ?? '',
+                            'side'                          => 'long',
+                            'entry_price'                   => (float) ($pos['entry_price'] ?? $pos['avg_price'] ?? 0.0),
+                            'current_price'                 => (float) ($pos['current_price'] ?? 0.0),
+                            'roi'                           => $profileResult['roi'] ?? null,
+                            'peak_roi'                      => $profileResult['peak_roi'] ?? null,
+                            'lock_price'                    => $profileResult['lock_price'] ?? null,
+                            'impulse_score'                 => $profileResult['impulse_score'] ?? null,
+                            'impulse_class'                 => $impulseClass,
+                            'price_change_1m_pct'           => $impulseCtxData['price_change_1m_pct']  ?? null,
+                            'price_change_3m_pct'           => $impulseCtxData['price_change_3m_pct']  ?? null,
+                            'price_change_5m_pct'           => $impulseCtxData['price_change_5m_pct']  ?? null,
+                            'price_change_15m_pct'          => $impulseCtxData['price_change_15m_pct'] ?? null,
+                            'price_change_30m_pct'          => $impulseCtxData['price_change_30m_pct'] ?? null,
+                            'turnover_growth_pct'           => $impulseCtxData['turnover_growth_pct']  ?? null,
+                            'open_interest_value_growth_pct'=> $impulseCtxData['open_interest_value_growth_pct'] ?? null,
+                            'override_count'                => $profileResult['grace_override_count']  ?? 0,
+                            'action'                        => $action,
+                            'reason'                        => $overrideReason,
+                            'break_reasons'                 => $impulseCtxData['evidence'] ?? [],
+                            'missing_metrics'               => $impulseCtxData['missing_metrics'] ?? [],
+                        ];
+
+                        if (count($impulseHoldExamples) < 10)       { $impulseHoldExamples[] = $impulseEx; }
+                        if ($overrideAction === 'hold_override_lock_touch'
+                            && $overrideReason === 'impulse_hold_lock_touch_override'
+                        ) {
+                            if (count($impulseHoldOverrideExamples) < 5) { $impulseHoldOverrideExamples[] = $impulseEx; }
+                        }
+                        if (in_array($action, ['would_close_on_lock_touch', 'demo_close_submitted', 'live_close_submitted'], true)
+                            && $overrideReason !== null && str_starts_with((string) $overrideReason, 'lock_touch_impulse')
+                        ) {
+                            if (count($impulseHoldCloseExamples) < 5) { $impulseHoldCloseExamples[] = $impulseEx; }
+                        }
+                    }
+
+                    if ($graceActive) {
+                        $graceCheckedTotal++;
+                        $graceOverrideReason = $overrideReason ?? '';
+                        if ($overrideAction === 'hold_override_lock_touch'
+                            && $overrideReason === 'lock_touch_grace_override'
+                        ) {
+                            $graceOverrideTotal++;
+                        } elseif (str_contains($graceOverrideReason, 'grace_window_expired')) {
+                            $graceExpiredTotal++;
+                            $graceCloseAllowedTotal++;
+                        } elseif (str_contains($graceOverrideReason, 'momentum_broken')) {
+                            $graceMomentumBrokenTotal++;
+                            $graceCloseAllowedTotal++;
+                        } elseif (str_contains($graceOverrideReason, 'hard_profit_floor')
+                                  || str_contains($graceOverrideReason, 'giveback_exceeded')
+                        ) {
+                            $graceSafetyFloorFailedTotal++;
+                            $graceCloseAllowedTotal++;
+                        } elseif (in_array($action, ['would_close_on_lock_touch', 'demo_close_submitted', 'live_close_submitted'], true)) {
+                            $graceCloseAllowedTotal++;
+                        }
+
+                        // Build grace example record
+                        $graceEx = [
+                            'symbol'       => $pos['symbol'] ?? '',
+                            'side'         => 'long',
+                            'entry_price'  => (float) ($pos['entry_price'] ?? $pos['avg_price'] ?? 0.0),
+                            'current_price'=> (float) ($pos['current_price'] ?? 0.0),
+                            'roi'          => $profileResult['roi'] ?? null,
+                            'peak_roi'     => $profileResult['peak_roi'] ?? null,
+                            'lock_price'   => $profileResult['lock_price'] ?? null,
+                            'override_count'=> $profileResult['grace_override_count'] ?? 0,
+                            'action'       => $action,
+                            'reason'       => $overrideReason,
+                        ];
+
+                        if (count($graceExamples) < 10) { $graceExamples[] = $graceEx; }
+                        if ($overrideAction === 'hold_override_lock_touch' && $overrideReason === 'lock_touch_grace_override') {
+                            if (count($graceOverrideExamples) < 5) { $graceOverrideExamples[] = $graceEx; }
+                        }
+                        if (in_array($action, ['would_close_on_lock_touch', 'demo_close_submitted', 'live_close_submitted'], true)) {
+                            if (count($graceCloseExamples) < 5) { $graceCloseExamples[] = $graceEx; }
+                        }
+                    }
+                }
+
                 // ── Build per-position runtime record ─────────────────────────
                 $currentRoi       = $profileResult['roi'] ?? null;
                 $activationRoi    = $profileResult['activation_roi'] ?? null;
@@ -434,6 +574,16 @@ final class ProfManagerService
                     'hybrid_price_source'        => $profileResult['hybrid_price_source']        ?? 'none',
                     'hybrid_price_points'        => $profileResult['hybrid_price_points']        ?? 0,
                     'hybrid_min_close_roi'       => $profileResult['hybrid_min_close_roi']       ?? null,
+                    // Impulse hold / grace diagnostics (long only; null for short)
+                    'impulse_checked'            => $profileResult['impulse_checked']            ?? false,
+                    'impulse_score'              => $profileResult['impulse_score']              ?? null,
+                    'impulse_class'              => $profileResult['impulse_class']              ?? null,
+                    'impulse_hold_active'        => $profileResult['impulse_hold_active']        ?? false,
+                    'lock_touch_override_action' => $profileResult['lock_touch_override_action'] ?? null,
+                    'lock_touch_override_reason' => $profileResult['lock_touch_override_reason'] ?? null,
+                    'grace_active'               => $profileResult['grace_active']               ?? false,
+                    'grace_override_count'       => $profileResult['grace_override_count']       ?? null,
+                    'momentum_broken'            => $profileResult['momentum_broken']            ?? false,
                     // Close execution output (null when no close was attempted this tick)
                     'close_attempted'            => $closeAttemptResult['close_attempted']    ?? null,
                     'close_ok'                   => $closeAttemptResult['close_ok']           ?? null,
@@ -530,6 +680,27 @@ final class ProfManagerService
                 'short_lock_examples'                 => $shortLockExamples,
                 'short_close_examples'                => $shortCloseExamples,
                 'short_skip_examples'                 => $shortSkipExamples,
+                // Long impulse hold diagnostics
+                'impulse_hold_checked_total'              => $impulseHoldCheckedTotal,
+                'impulse_hold_strong_total'               => $impulseHoldStrongTotal,
+                'impulse_hold_very_strong_total'          => $impulseHoldVeryStrongTotal,
+                'impulse_hold_lock_touch_override_total'  => $impulseHoldLockTouchOverrideTotal,
+                'impulse_hold_lock_touch_close_allowed_total' => $impulseHoldLockTouchCloseAllowedTotal,
+                'impulse_hold_momentum_broken_total'      => $impulseHoldMomentumBrokenTotal,
+                'impulse_hold_missing_metrics_total'      => $impulseHoldMissingMetricsTotal,
+                'impulse_hold_examples'                   => $impulseHoldExamples,
+                'impulse_hold_override_examples'          => $impulseHoldOverrideExamples,
+                'impulse_hold_close_examples'             => $impulseHoldCloseExamples,
+                // Long lock-touch grace diagnostics
+                'lock_touch_grace_checked_total'          => $graceCheckedTotal,
+                'lock_touch_grace_override_total'         => $graceOverrideTotal,
+                'lock_touch_grace_close_allowed_total'    => $graceCloseAllowedTotal,
+                'lock_touch_grace_expired_total'          => $graceExpiredTotal,
+                'lock_touch_grace_momentum_broken_total'  => $graceMomentumBrokenTotal,
+                'lock_touch_grace_safety_floor_failed_total' => $graceSafetyFloorFailedTotal,
+                'lock_touch_grace_examples'               => $graceExamples,
+                'lock_touch_grace_override_examples'      => $graceOverrideExamples,
+                'lock_touch_grace_close_examples'         => $graceCloseExamples,
             ], $configSnapshot);
 
             $this->store->writeLastRun($result);

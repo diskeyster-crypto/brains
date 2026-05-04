@@ -210,6 +210,29 @@ function renderDashboardHub(): string
     $pmCfgShortMaxUpdates   = (string) ($pmCfgShortProfileCfg['max_updates_per_run']    ?? 20);
     $pmCfgShortTickSize     = (string) ($pmCfgShortProfileCfg['default_tick_size']      ?? 0.0001);
 
+    // ── Long lock-touch grace config vars ─────────────────────────────────
+    $pmCfgGraceEnabled     = ($pmCfgProfileCfg['lock_touch_grace_enabled']               ?? true) ? '1' : '0';
+    $pmCfgGraceMinRoi      = (string) ($pmCfgProfileCfg['lock_touch_grace_min_roi']              ?? 6.0);
+    $pmCfgGraceWindowSec   = (string) ($pmCfgProfileCfg['lock_touch_grace_window_seconds']       ?? 180);
+    $pmCfgGraceMaxOverrides= (string) ($pmCfgProfileCfg['lock_touch_grace_max_overrides']        ?? 2);
+    $pmCfgGraceHardFloor   = (string) ($pmCfgProfileCfg['lock_touch_grace_hard_profit_floor_roi']?? 4.0);
+    $pmCfgGraceMaxGiveback = (string) ($pmCfgProfileCfg['lock_touch_grace_max_giveback_roi']     ?? 8.0);
+    $pmCfgGraceEnYes       = ($pmCfgGraceEnabled === '1') ? ' selected' : '';
+    $pmCfgGraceEnNo        = ($pmCfgGraceEnabled !== '1') ? ' selected' : '';
+
+    // ── Long impulse hold config vars ─────────────────────────────────────
+    $pmCfgImpulseEnabled    = ($pmCfgProfileCfg['impulse_hold_enabled']               ?? true) ? '1' : '0';
+    $pmCfgImpulseMinRoi     = (string) ($pmCfgProfileCfg['impulse_hold_min_roi']              ?? 8.0);
+    $pmCfgImpulseStrongScore= (string) ($pmCfgProfileCfg['impulse_hold_strong_score']         ?? 4);
+    $pmCfgImpulseMaxOvrd    = (string) ($pmCfgProfileCfg['impulse_hold_max_override_count']   ?? 3);
+    $pmCfgImpulseMaxMin     = (string) ($pmCfgProfileCfg['impulse_hold_max_minutes']          ?? 45);
+    $pmCfgImpulseHardFloor  = (string) ($pmCfgProfileCfg['impulse_hold_hard_profit_floor_roi']?? 6.0);
+    $pmCfgImpulseMaxGiveback= (string) ($pmCfgProfileCfg['impulse_hold_max_giveback_roi']     ?? 12.0);
+    $pmCfgImpulseTurnGrowth = (string) ($pmCfgProfileCfg['impulse_min_turnover_growth_pct']   ?? 1.5);
+    $pmCfgImpulseOiGrowth   = (string) ($pmCfgProfileCfg['impulse_min_open_interest_value_growth_pct'] ?? 1.5);
+    $pmCfgImpulseEnYes      = ($pmCfgImpulseEnabled === '1') ? ' selected' : '';
+    $pmCfgImpulseEnNo       = ($pmCfgImpulseEnabled !== '1') ? ' selected' : '';
+
     // ── flash message ─────────────────────────────────────────────────────
     $flash = null;
     if (session_status() === PHP_SESSION_NONE) {
@@ -5328,6 +5351,99 @@ BLCK;
           </div>
         </div>
 
+        <!-- Long lock-touch grace settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#3fb950;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Long lock-touch grace
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Grace включён</label>
+            <select name="long_lock_touch_grace_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgGraceEnYes}>Да</option>
+              <option value="0"{$pmCfgGraceEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Grace Min ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_lock_touch_grace_min_roi"
+              value="{$pmCfgGraceMinRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Grace Window (сек)</label>
+            <input type="number" step="1" min="0" name="long_lock_touch_grace_window_seconds"
+              value="{$pmCfgGraceWindowSec}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Grace Max overrides</label>
+            <input type="number" step="1" min="0" name="long_lock_touch_grace_max_overrides"
+              value="{$pmCfgGraceMaxOverrides}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Grace Hard floor ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_lock_touch_grace_hard_profit_floor_roi"
+              value="{$pmCfgGraceHardFloor}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Grace Max giveback ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_lock_touch_grace_max_giveback_roi"
+              value="{$pmCfgGraceMaxGiveback}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+
+        <!-- Long impulse hold settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#3fb950;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Long impulse hold
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Impulse включён</label>
+            <select name="long_impulse_hold_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgImpulseEnYes}>Да</option>
+              <option value="0"{$pmCfgImpulseEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Impulse Min ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_impulse_hold_min_roi"
+              value="{$pmCfgImpulseMinRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Impulse Strong score</label>
+            <input type="number" step="1" min="1" max="6" name="long_impulse_hold_strong_score"
+              value="{$pmCfgImpulseStrongScore}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Impulse Max overrides</label>
+            <input type="number" step="1" min="0" name="long_impulse_hold_max_override_count"
+              value="{$pmCfgImpulseMaxOvrd}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Impulse Max hold (мин)</label>
+            <input type="number" step="1" min="1" name="long_impulse_hold_max_minutes"
+              value="{$pmCfgImpulseMaxMin}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Impulse Hard floor ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_impulse_hold_hard_profit_floor_roi"
+              value="{$pmCfgImpulseHardFloor}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Impulse Max giveback ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_impulse_hold_max_giveback_roi"
+              value="{$pmCfgImpulseMaxGiveback}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Impulse Min turnover growth%</label>
+            <input type="number" step="0.1" min="0" name="long_impulse_min_turnover_growth_pct"
+              value="{$pmCfgImpulseTurnGrowth}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Impulse Min OI growth%</label>
+            <input type="number" step="0.1" min="0" name="long_impulse_min_open_interest_value_growth_pct"
+              value="{$pmCfgImpulseOiGrowth}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+
         <!-- Short profile settings -->
         <div style="margin-bottom:6px;font-size:12px;color:#58a6ff;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
           Short профиль — {$e($pmShortProfile)}
@@ -7495,6 +7611,50 @@ function handleDashboardPmConfigSave(): void
             $longProfileData[$field] = isset($rules['int']) ? (int) $raw : $raw;
         }
     }
+
+    // ── Long lock-touch grace fields ──────────────────────────────────────
+    if (isset($_POST['long_lock_touch_grace_enabled'])) {
+        $longProfileData['lock_touch_grace_enabled'] = (bool)(int)$_POST['long_lock_touch_grace_enabled'];
+    }
+    $graceNumeric = [
+        'lock_touch_grace_min_roi'               => ['min' => 0.0],
+        'lock_touch_grace_window_seconds'        => ['min' => 0.0, 'int' => true],
+        'lock_touch_grace_max_overrides'         => ['min' => 0.0, 'int' => true],
+        'lock_touch_grace_hard_profit_floor_roi' => ['min' => 0.0],
+        'lock_touch_grace_max_giveback_roi'      => ['min' => 0.0],
+    ];
+    foreach ($graceNumeric as $field => $rules) {
+        $postKey = 'long_' . $field;
+        if (isset($_POST[$postKey])) {
+            $raw = (float) $_POST[$postKey];
+            if ($raw < $rules['min']) { $raw = (float) $rules['min']; }
+            $longProfileData[$field] = isset($rules['int']) ? (int) $raw : $raw;
+        }
+    }
+
+    // ── Long impulse hold fields ──────────────────────────────────────────
+    if (isset($_POST['long_impulse_hold_enabled'])) {
+        $longProfileData['impulse_hold_enabled'] = (bool)(int)$_POST['long_impulse_hold_enabled'];
+    }
+    $impulseNumeric = [
+        'impulse_hold_min_roi'               => ['min' => 0.0],
+        'impulse_hold_strong_score'          => ['min' => 1.0, 'int' => true],
+        'impulse_hold_max_override_count'    => ['min' => 0.0, 'int' => true],
+        'impulse_hold_max_minutes'           => ['min' => 1.0, 'int' => true],
+        'impulse_hold_hard_profit_floor_roi' => ['min' => 0.0],
+        'impulse_hold_max_giveback_roi'      => ['min' => 0.0],
+        'impulse_min_turnover_growth_pct'    => ['min' => 0.0],
+        'impulse_min_open_interest_value_growth_pct' => ['min' => 0.0],
+    ];
+    foreach ($impulseNumeric as $field => $rules) {
+        $postKey = 'long_' . $field;
+        if (isset($_POST[$postKey])) {
+            $raw = (float) $_POST[$postKey];
+            if ($raw < $rules['min']) { $raw = (float) $rules['min']; }
+            $longProfileData[$field] = isset($rules['int']) ? (int) $raw : $raw;
+        }
+    }
+
     $existing['profiles']['long'] = $longProfileData;
 
     // ── Short profile numeric fields ──────────────────────────────────────

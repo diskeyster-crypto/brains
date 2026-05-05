@@ -93,14 +93,14 @@ final class ProfManagerService
         if (is_file($obcDir . '/service.php')) {
             try {
                 require_once $obcDir . '/service.php';
-                $wallConfig = array_merge(
-                    (array)($this->config['wall_exit_enabled']              !== null ? ['wall_exit_enabled'              => $this->config['wall_exit_enabled']]              : []),
-                    (array)($this->config['wall_exit_min_roi']              !== null ? ['wall_exit_min_roi'              => $this->config['wall_exit_min_roi']]              : []),
-                    (array)($this->config['wall_exit_distance_pct']        !== null ? ['wall_exit_distance_pct'        => $this->config['wall_exit_distance_pct']]        : []),
-                    (array)($this->config['wall_exit_fail_checks']         !== null ? ['wall_exit_fail_checks'         => $this->config['wall_exit_fail_checks']]         : []),
-                    (array)($this->config['wall_exit_action']              !== null ? ['wall_exit_action'              => $this->config['wall_exit_action']]              : []),
-                    (array)($this->config['wall_exit_tighten_lock_buffer_roi'] !== null ? ['wall_exit_tighten_lock_buffer_roi' => $this->config['wall_exit_tighten_lock_buffer_roi']] : [])
-                );
+                $wallConfig = array_filter([
+                    'wall_exit_enabled'                    => $this->config['wall_exit_enabled'] ?? null,
+                    'wall_exit_min_roi'                    => $this->config['wall_exit_min_roi'] ?? null,
+                    'wall_exit_distance_pct'               => $this->config['wall_exit_distance_pct'] ?? null,
+                    'wall_exit_fail_checks'                => $this->config['wall_exit_fail_checks'] ?? null,
+                    'wall_exit_action'                     => $this->config['wall_exit_action'] ?? null,
+                    'wall_exit_tighten_lock_buffer_roi'    => $this->config['wall_exit_tighten_lock_buffer_roi'] ?? null,
+                ], fn($v) => $v !== null);
                 $this->obcService = new \OrderBookContextService($obcDir, $wallConfig);
             } catch (\Throwable) {
                 $this->obcService = null;

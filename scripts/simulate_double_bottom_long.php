@@ -207,76 +207,92 @@ if (empty($regime)) {
 echo "\n── 3. Active signals quality ────────────────────────────\n";
 
 if (empty($signals)) {
-    info('No active signals in storage/signals.json — run a scan cycle first');
+    info('No signals in storage/signals.json — run a scan cycle first');
 } else {
-    $total = count($signals);
-    info("Active signals: {$total}");
+    $totalInStorage = count($signals);
+    // Split by lifecycle state
+    $activeSignals  = array_filter($signals, fn($s) => ($s['active_final'] ?? null) === true  && !(bool)($s['stale'] ?? false));
+    $staleSignals   = array_filter($signals, fn($s) => (bool)($s['stale'] ?? false));
+    $handoffReady   = array_filter($signals, fn($s) => ($s['active_final'] ?? null) === true  && !(bool)($s['stale'] ?? false) && (bool)($s['handoff_ready'] ?? false));
 
-    $qualityScores   = array_column($signals, 'candidate_quality_score');
-    $necklineScores  = array_column($signals, 'neckline_score');
-    $avgQuality      = $total > 0 ? array_sum($qualityScores) / $total : 0.0;
-    $avgNeckline     = $total > 0 ? array_sum($necklineScores) / $total : 0.0;
+    $total = count($activeSignals);
+    info("Total signals in storage: {$totalInStorage}");
+    info("Active final signals (active_final=true, stale=false): {$total}");
+    info("Stale/withdrawn signals: " . count($staleSignals));
+    info("Executable handoff-ready signals: " . count($handoffReady));
 
-    info(sprintf('Avg quality score: %.4f (min expected: 0.68)', $avgQuality));
-    info(sprintf('Avg neckline score: %.4f (min expected: 0.55)', $avgNeckline));
-
-    if ($avgQuality >= 0.68) {
-        ok('Avg quality score ≥ 0.68');
+    if ($total === 0) {
+        info('No active final signals — pool may be stale or no scan has run recently');
     } else {
-        fail(sprintf('Avg quality score %.4f < 0.68', $avgQuality));
-    }
+        $qualityScores   = array_column(array_values($activeSignals), 'candidate_quality_score');
+        $necklineScores  = array_column(array_values($activeSignals), 'neckline_score');
+        $avgQuality      = $total > 0 ? array_sum($qualityScores) / $total : 0.0;
+        $avgNeckline     = $total > 0 ? array_sum($necklineScores) / $total : 0.0;
 
-    if ($avgNeckline >= 0.55) {
-        ok('Avg neckline score ≥ 0.55');
-    } else {
-        warn(sprintf('Avg neckline score %.4f < 0.55 (may be OK if pool is old)', $avgNeckline));
-    }
+        info(sprintf('Avg quality score: %.4f (min expected: 0.68)', $avgQuality));
+        info(sprintf('Avg neckline score: %.4f (min expected: 0.55)', $avgNeckline));
 
-    // Trend direction
-    $nonBullish = array_filter($signals, fn($s) => ($s['trend_direction'] ?? '') !== 'bullish');
-    if (count($nonBullish) === 0) {
-        ok('All active signals have trend_direction = "bullish"');
-    } else {
-        fail(count($nonBullish) . ' signals have non-bullish trend (should be 0 with hard gate)');
-    }
+        if ($avgQuality >= 0.68) {
+            ok('Avg quality score ≥ 0.68');
+        } else {
+            fail(sprintf('Avg quality score %.4f < 0.68', $avgQuality));
+        }
 
-    // Stop loss presence
-    $noSlPrice = array_filter($signals, fn($s) => !isset($s['stop_loss_price']) || $s['stop_loss_price'] === null);
-    if (count($noSlPrice) === 0) {
-        ok('All signals carry stop_loss_price');
-    } else {
-        fail(count($noSlPrice) . ' signals are missing stop_loss_price');
-    }
+        if ($avgNeckline >= 0.55) {
+            ok('Avg neckline score ≥ 0.55');
+        } else {
+            warn(sprintf('Avg neckline score %.4f < 0.55 (may be OK if pool is old)', $avgNeckline));
+        }
 
-    // TP presence
-    $noTp = array_filter($signals, fn($s) => !isset($s['tp_price']) || $s['tp_price'] === null);
-    if (count($noTp) === 0) {
-        ok('All signals carry tp_price');
-    } else {
-        fail(count($noTp) . ' signals are missing tp_price');
-    }
+        // Trend direction — only check active signals, not stale/withdrawn
+        $nonBullish = array_filter($activeSignals, fn($s) => ($s['trend_direction'] ?? '') !== 'bullish');
+        if (count($nonBullish) === 0) {
+            ok('All active final signals have trend_direction = "bullish"');
+        } else {
+            fail(count($nonBullish) . ' active signals have non-bullish trend (should be 0 with hard gate)');
+        }
 
-    // SL width
-    $maxSlPct = (float)($config['max_stop_loss_pct'] ?? 0.05);
-    $wideSl   = array_filter($signals, fn($s) => isset($s['stop_loss_pct']) && (float)$s['stop_loss_pct'] > $maxSlPct);
-    if (count($wideSl) === 0) {
-        ok("No signals with stop_loss_pct > {$maxSlPct} (max_stop_loss_pct gate working)");
-    } else {
-        fail(count($wideSl) . " signals have stop_loss_pct > {$maxSlPct}");
-    }
+        // Stop loss presence — active signals only
+        $noSlPrice = array_filter($activeSignals, fn($s) => !isset($s['stop_loss_price']) || $s['stop_loss_price'] === null);
+        if (count($noSlPrice) === 0) {
+            ok('All active final signals carry stop_loss_price');
+        } else {
+            fail(count($noSlPrice) . ' active signals are missing stop_loss_price');
+        }
 
-    if ($showSignals) {
-        echo "\n  Active signals (first {$limit}):\n";
-        foreach (array_slice($signals, 0, $limit) as $s) {
-            printf(
-                "    %-24s quality=%.3f neckline=%.3f sl_pct=%-6s tp=%-8s trend=%s\n",
-                $s['symbol'] ?? '?',
-                (float)($s['candidate_quality_score'] ?? 0),
-                (float)($s['neckline_score'] ?? 0),
-                $s['stop_loss_pct'] !== null ? sprintf('%.4f', $s['stop_loss_pct']) : 'null',
-                $s['tp_price']      !== null ? sprintf('%.6f', $s['tp_price'])      : 'null',
-                $s['trend_direction'] ?? '?'
-            );
+        // TP presence — active signals only
+        $noTp = array_filter($activeSignals, fn($s) => !isset($s['tp_price']) || $s['tp_price'] === null);
+        if (count($noTp) === 0) {
+            ok('All active final signals carry tp_price');
+        } else {
+            fail(count($noTp) . ' active signals are missing tp_price');
+        }
+
+        // SL width — active signals only (adaptive stop is now quality-gated)
+        $maxSlPct = (float)($config['max_stop_loss_pct'] ?? 0.05);
+        $wideSl   = array_filter($activeSignals, fn($s) =>
+            isset($s['stop_loss_pct'])
+            && (float)$s['stop_loss_pct'] > ($s['effective_stop_loss_pct_limit'] ?? $maxSlPct)
+        );
+        if (count($wideSl) === 0) {
+            ok("No active signals exceed their effective_stop_loss_pct_limit");
+        } else {
+            fail(count($wideSl) . " active signals exceed their effective stop limit");
+        }
+
+        if ($showSignals) {
+            echo "\n  Active final signals (first {$limit}):\n";
+            foreach (array_slice(array_values($activeSignals), 0, $limit) as $s) {
+                printf(
+                    "    %-24s quality=%.3f neckline=%.3f sl_pct=%-6s tp=%-8s trend=%s\n",
+                    $s['symbol'] ?? '?',
+                    (float)($s['candidate_quality_score'] ?? 0),
+                    (float)($s['neckline_score'] ?? 0),
+                    $s['stop_loss_pct'] !== null ? sprintf('%.4f', $s['stop_loss_pct']) : 'null',
+                    $s['tp_price']      !== null ? sprintf('%.6f', $s['tp_price'])      : 'null',
+                    $s['trend_direction'] ?? '?'
+                );
+            }
         }
     }
 }

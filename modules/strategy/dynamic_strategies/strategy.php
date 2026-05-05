@@ -446,6 +446,7 @@ final class DynamicStrategiesStrategy
                 $candidates[$idx]['trend_30m']                 = $matchedRec !== null ? ($matchedRec['trend_30m']          ?? null) : null;
                 $candidates[$idx]['replay_match_mode']         = $replayMeta['replay_match_mode']          ?? ($matchedRec !== null ? 'unknown' : null);
                 $candidates[$idx]['replay_matched_context_ids']= $replayMeta['replay_matched_context_ids'] ?? [];
+                $candidates[$idx]['replay_context_type_matched']= $replayMeta['replay_context_type_matched'] ?? false;
                 $candidates[$idx]['replay_record_observed_at'] = $replayMeta['replay_record_observed_at']  ?? null;
                 $candidates[$idx]['replay_record_age_seconds'] = $replayMeta['replay_record_age_seconds']  ?? null;
                 // Extract replay confirmation fields from confirmations sub-array (new format),
@@ -466,10 +467,16 @@ final class DynamicStrategiesStrategy
                         $replayCnt = (int)($matchedRec['confirmation_count'] ?? 0);
                     }
                 }
-                $candidates[$idx]['replay_confirmation_count']      = $replayCnt;
-                $candidates[$idx]['replay_confirmation_passed']     = $replayConfPassed;
-                $candidates[$idx]['replay_confirmation_confidence'] = $replayConfConfidence;
-                $candidates[$idx]['replay_price_change_pct']        = $replayPriceChangePct;
+                $candidates[$idx]['replay_confirmation_count']          = $replayCnt;
+                $candidates[$idx]['replay_confirmation_passed']         = $replayConfPassed;
+                $candidates[$idx]['replay_confirmation_confidence']     = $replayConfConfidence;
+                $candidates[$idx]['replay_price_change_pct']            = $replayPriceChangePct;
+                // Required confirmation count (from config, for context in diagnostics)
+                $candidates[$idx]['replay_required_confirmation_count'] = (int)($config['dynamic_handoff_min_confirmations_with_replay'] ?? 3);
+                // context_type_matched flag: true when the replay record was found via
+                // context_type match rather than exact source_context_ids match.
+                $candidates[$idx]['replay_context_type_matched']        = isset($replayMeta['replay_match_mode'])
+                    && $replayMeta['replay_match_mode'] === 'context_type';
                 // Stable idea key for diagnostics/dedupe — does not change signal_id consumers
                 $ideaObsAt    = $cand['observed_at'] ?? null;
                 $ideaTsRaw    = $ideaObsAt !== null ? (is_int($ideaObsAt) ? $ideaObsAt : (int)strtotime((string)$ideaObsAt)) : time();
@@ -880,6 +887,7 @@ final class DynamicStrategiesStrategy
             $stratSignalCtx = [
                 'strategy_id'          => self::STRATEGY_ID,
                 'dynamic_rule'         => $ruleId,
+                'dynamic_idea_key'     => $cand['dynamic_idea_key'] ?? null,
                 'source_context_ids'   => $cand['source_context_ids'],
                 'source_strategies'    => $cand['source_strategies'],
                 'source_signal_ids'    => $cand['source_signal_ids'] ?? [],
@@ -903,6 +911,16 @@ final class DynamicStrategiesStrategy
                 'trend_15m_price_change_pct' => is_array($cand['trend_15m'] ?? null) ? ($cand['trend_15m']['price_change_pct'] ?? null) : null,
                 'trend_30m_price_change_pct' => is_array($cand['trend_30m'] ?? null) ? ($cand['trend_30m']['price_change_pct'] ?? null) : null,
                 'replay_gate_applied'        => $requireReplayGate && $candSide === 'short',
+                // Full replay diagnostics — propagated from candidate pre-enrichment
+                'replay_match_mode'                  => $cand['replay_match_mode']                  ?? null,
+                'replay_matched_context_ids'         => $cand['replay_matched_context_ids']         ?? [],
+                'replay_context_type_matched'        => $cand['replay_context_type_matched']        ?? null,
+                'replay_record_observed_at'          => $cand['replay_record_observed_at']          ?? null,
+                'replay_record_age_seconds'          => $cand['replay_record_age_seconds']          ?? null,
+                'replay_confirmation_count'          => $cand['replay_confirmation_count']          ?? null,
+                'replay_required_confirmation_count' => $cand['replay_required_confirmation_count'] ?? null,
+                'replay_confirmation_passed'         => $cand['replay_confirmation_passed']         ?? null,
+                'replay_confirmation_confidence'     => $cand['replay_confirmation_confidence']     ?? null,
                 // Wall entry gate fields
                 'entry_wall_risk'            => $entryWallRisk,
                 'nearest_ask_wall'           => $nearestAskWallCtx,
@@ -954,6 +972,17 @@ final class DynamicStrategiesStrategy
                 'reason_codes'                => $cand['reason_codes'],
                 'warnings'                    => $warnings,
                 'dynamic_idea_key'            => $cand['dynamic_idea_key'] ?? null,
+                // Replay diagnostics at signal top-level for consumers that do not
+                // read strategy_signal_context (e.g. bot, stop_manager).
+                'replay_match_mode'                  => $cand['replay_match_mode']                  ?? null,
+                'replay_matched_context_ids'         => $cand['replay_matched_context_ids']         ?? [],
+                'replay_context_type_matched'        => $cand['replay_context_type_matched']        ?? null,
+                'replay_record_observed_at'          => $cand['replay_record_observed_at']          ?? null,
+                'replay_record_age_seconds'          => $cand['replay_record_age_seconds']          ?? null,
+                'replay_confirmation_count'          => $cand['replay_confirmation_count']          ?? null,
+                'replay_required_confirmation_count' => $cand['replay_required_confirmation_count'] ?? null,
+                'replay_confirmation_passed'         => $cand['replay_confirmation_passed']         ?? null,
+                'replay_confirmation_confidence'     => $cand['replay_confirmation_confidence']     ?? null,
                 // Nested context for bot
                 'strategy_signal_context'     => $stratSignalCtx,
             ];
@@ -1003,6 +1032,7 @@ final class DynamicStrategiesStrategy
                         'expires_at'             => $sig['expires_at'],
                         // ── Dynamic context ───────────────────────────────────
                         'dynamic_rule'           => $sig['dynamic_rule'],
+                        'dynamic_idea_key'       => $sig['dynamic_idea_key'] ?? null,
                         'confidence_score'       => $sig['confidence_score'],
                         'confirmations'          => $sig['confirmations'],
                         'confirmation_count'     => $sig['confirmation_count'],
@@ -1011,6 +1041,16 @@ final class DynamicStrategiesStrategy
                         'source_signal_ids'      => $sig['source_signal_ids'] ?? [],
                         'reason_codes'           => $sig['reason_codes'],
                         'warnings'               => $sig['warnings'],
+                        // ── Replay diagnostics ────────────────────────────────
+                        'replay_match_mode'                  => $sig['replay_match_mode']                  ?? null,
+                        'replay_matched_context_ids'         => $sig['replay_matched_context_ids']         ?? [],
+                        'replay_context_type_matched'        => $sig['replay_context_type_matched']        ?? null,
+                        'replay_record_observed_at'          => $sig['replay_record_observed_at']          ?? null,
+                        'replay_record_age_seconds'          => $sig['replay_record_age_seconds']          ?? null,
+                        'replay_confirmation_count'          => $sig['replay_confirmation_count']          ?? null,
+                        'replay_required_confirmation_count' => $sig['replay_required_confirmation_count'] ?? null,
+                        'replay_confirmation_passed'         => $sig['replay_confirmation_passed']         ?? null,
+                        'replay_confirmation_confidence'     => $sig['replay_confirmation_confidence']     ?? null,
                         // ── Bot context ───────────────────────────────────────
                         'strategy_signal_context' => $sig['strategy_signal_context'] ?? null,
                     ];
@@ -2639,6 +2679,7 @@ final class DynamicStrategiesStrategy
                 unset($best['_intersection_count']);
                 $best['_replay_match_meta'] = [
                     'replay_match_mode'             => 'exact_source_context',
+                    'replay_context_type_matched'   => false,
                     'replay_matched_context_ids'    => $matchedCtxIds,
                     'replay_record_observed_at'     => $best['observed_at'] ?? null,
                     'replay_record_age_seconds'     => ($best['observed_at'] ?? null) !== null
@@ -2672,7 +2713,12 @@ final class DynamicStrategiesStrategy
                 usort($typeMatches, $sortByRecent);
                 $best = $typeMatches[0];
                 $best['_replay_match_meta'] = [
-                    'replay_match_mode'          => 'context_type',
+                    // Normalised to 'time_bucket': context_type matching shares the same
+                    // semantics as time_bucket (no exact source_context_ids intersection).
+                    // replay_context_type_matched=true distinguishes it from a pure
+                    // time_bucket fallback (which carries no context_type match).
+                    'replay_match_mode'          => 'time_bucket',
+                    'replay_context_type_matched'=> true,
                     'replay_matched_context_ids' => [],
                     'replay_record_observed_at'  => $best['observed_at'] ?? null,
                     'replay_record_age_seconds'  => ($best['observed_at'] ?? null) !== null
@@ -2690,6 +2736,7 @@ final class DynamicStrategiesStrategy
         $best = $ageFiltered[0];
         $best['_replay_match_meta'] = [
             'replay_match_mode'          => 'symbol_context_fallback',
+            'replay_context_type_matched'=> false,
             'replay_matched_context_ids' => [],
             'replay_record_observed_at'  => $best['observed_at'] ?? null,
             'replay_record_age_seconds'  => ($best['observed_at'] ?? null) !== null

@@ -987,22 +987,39 @@ final class ProfManagerService
 
             // ── Clean stale long profile state/locks ──────────────────────────
             // Build the set of active long position keys seen this tick.
+            // Include both the identity key (mode:symbol:side:signal_id:opened_at)
+            // and the legacy symbol_side key so no active state is accidentally removed.
             $activeLongKeys = [];
-            foreach ($positionsRuntime as $pr) {
-                if (($pr['side'] ?? '') === 'long') {
-                    $activeLongKeys[] = strtolower($pr['symbol']) . '_long';
+            foreach ($rawPositions as $rp) {
+                if (!is_array($rp)) { continue; }
+                $rpSide = strtolower(trim((string)($rp['side'] ?? '')));
+                if ($rpSide === 'buy') { $rpSide = 'long'; }
+                if ($rpSide !== 'long') { continue; }
+                $identityKey = \Modules\ProfManager\Profiles\Long\LongProfile::buildPositionIdentityKey($rp, 'long');
+                $activeLongKeys[] = $identityKey;
+                // Legacy fallback key
+                $legacySym = strtolower((string)($rp['symbol'] ?? ''));
+                if ($legacySym !== '') {
+                    $activeLongKeys[] = $legacySym . '_long';
                 }
             }
-            $cleanResult = $this->longProfile->cleanStale($activeLongKeys);
+            $cleanResult = $this->longProfile->cleanStale(array_unique($activeLongKeys));
 
             // ── Clean stale short profile state/locks ─────────────────────────
             $activeShortKeys = [];
-            foreach ($positionsRuntime as $pr) {
-                if (($pr['side'] ?? '') === 'short') {
-                    $activeShortKeys[] = strtolower($pr['symbol']) . '_short';
+            foreach ($rawPositions as $rp) {
+                if (!is_array($rp)) { continue; }
+                $rpSide = strtolower(trim((string)($rp['side'] ?? '')));
+                if ($rpSide === 'sell') { $rpSide = 'short'; }
+                if ($rpSide !== 'short') { continue; }
+                $identityKey = \Modules\ProfManager\Profiles\Short\ShortProfile::buildPositionIdentityKey($rp, 'short');
+                $activeShortKeys[] = $identityKey;
+                $legacySym = strtolower((string)($rp['symbol'] ?? ''));
+                if ($legacySym !== '') {
+                    $activeShortKeys[] = $legacySym . '_short';
                 }
             }
-            $shortCleanResult = $this->shortProfile->cleanStale($activeShortKeys);
+            $shortCleanResult = $this->shortProfile->cleanStale(array_unique($activeShortKeys));
 
             $configSnapshot = $this->buildConfigSnapshot();
 
@@ -1175,10 +1192,14 @@ final class ProfManagerService
      * Intended to be called by tickFastLoop(). May also be called directly
      * (e.g. from CLI or a standalone cron) when $calledFromLoop = false.
      *
-     * All close and lock logic is handled by the existing tick() internals.
-     * The fast_tick_allow_close / fast_tick_allow_lock_move config keys are
-     * stored for diagnostics; enforcement would require profile-level changes
-     * which are out of scope for this module.
+     * Fast-tick enforcement:
+     *   - When fast_tick_allow_close=false, any close action computed by the
+     *     profile is blocked (action overridden to 'skip' with
+     *     skip_reason='fast_tick_close_blocked_by_config').  Counter:
+     *     fast_tick_close_blocked_by_config_total.
+     *   - When fast_tick_allow_lock_move=false, profiles receive
+     *     allow_state_write=false so writeState/writeLocks are skipped.
+     *     Counter: fast_tick_lock_move_blocked_by_config_total.
      *
      * @param bool $calledFromLoop Set true when called from tickFastLoop() to
      *                             avoid acquiring a redundant per-tick lock.
@@ -2400,8 +2421,24 @@ final class ProfManagerService
                 continue;
             }
 
-            // Throttle check
-            $stateKey    = "{$symbol}_{$side}";
+            // Throttle check — use PM identity key so a new position on the same
+            // symbol/side does not inherit the previous position's throttle state.
+            $rawPosForKey = $rawPos ?? [];
+            $stateKey    = \Modules\ProfManager\Profiles\Long\LongProfile::buildPositionIdentityKey(
+                array_merge($rawPosForKey, ['symbol' => $symbol, 'side' => $side]),
+                $side
+            );
+            // Legacy fallback: check old symbol_side slot if identity key slot is empty
+            if (!isset($syncState[$stateKey])) {
+                $legacyKey = "{$symbol}_{$side}";
+                if (isset($syncState[$legacyKey])) {
+                    // Legacy entry present — use it only if it belongs to the same
+                    // position (no identity fields in legacy → discard to prevent
+                    // a new position inheriting old throttle state).
+                    // Since legacy entries have no identity fields, we always discard.
+                    unset($syncState[$legacyKey]);
+                }
+            }
             $posState    = $syncState[$stateKey] ?? null;
             $lastSetTs   = (int)($posState['last_set_ts']    ?? 0);
             $lastFloorRoi= (float)($posState['last_floor_roi'] ?? 0.0);

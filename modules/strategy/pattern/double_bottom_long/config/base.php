@@ -99,7 +99,7 @@ return [
     ],
     // Minimum quality score required to allow adaptive wide-stop bypass for A/B synthetic setups.
     // 0.0 = disabled (allow any quality); set to e.g. 0.72 to require strong quality.
-    'final_stop_width_adaptive_min_quality_score' => 0.0,
+    'final_stop_width_adaptive_min_quality_score' => 0.72,
 
     // ── OrderBook Wall Context entry gate ─────────────────────────────────────
     // Fetches OBC wall context only after cheap filters pass (serious candidates only).

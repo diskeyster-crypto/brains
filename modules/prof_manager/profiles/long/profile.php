@@ -65,7 +65,7 @@ class LongProfile
     {
         $allowStateWrite = (bool)($ctx['allow_state_write'] ?? true);
         $symbol = (string) ($position['symbol'] ?? '');
-        $key    = $this->positionKey($symbol, 'long');
+        $key    = self::buildPositionIdentityKey($position, 'long');
 
         // ── Append current price to PM-owned price history ────────────────────
         $posPrice = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
@@ -86,14 +86,34 @@ class LongProfile
 
         // ── Position identity validation ───────────────────────────────────────
         // Detect stale lock/position state that belongs to a previous position
-        // on the same symbol+side.  If identity fields mismatch (or are absent
-        // on a legacy record), discard the stored state so the new position
-        // starts fresh and does not inherit an old lock_price.
+        // on the same key slot.  If identity fields mismatch (or are absent on
+        // a legacy record), discard the stored state so the new position starts
+        // fresh and does not inherit old peak_roi/current_roi/lock state.
         $identityMismatch  = false;
         $legacyKeyIgnored  = false;
         $curSignalId   = (string)($position['signal_id']       ?? '');
         $curOpenedAt   = (string)($position['opened_at']       ?? $position['bot_submitted_at'] ?? $position['created_at'] ?? '');
         $curEntryPrice = (float)($position['entry_price']      ?? $position['avg_price'] ?? 0.0);
+
+        // Helper: checks whether stored identity fields mismatch current position.
+        $identityFieldsMismatch = function (array $stored) use ($curSignalId, $curOpenedAt, $curEntryPrice): bool {
+            $storedSigId      = (string)($stored['position_signal_id']  ?? '');
+            $storedOpenedAt   = (string)($stored['position_opened_at']  ?? '');
+            $storedEntryPrice = (float)($stored['position_entry_price'] ?? 0.0);
+            if ($storedSigId !== '' && $curSignalId !== '' && $storedSigId !== $curSignalId) {
+                return true;
+            }
+            if ($storedOpenedAt !== '' && $curOpenedAt !== '' && $storedOpenedAt !== $curOpenedAt) {
+                return true;
+            }
+            if ($storedEntryPrice > 0.0 && $curEntryPrice > 0.0) {
+                $tol = 0.001 * max($storedEntryPrice, $curEntryPrice);
+                if (abs($storedEntryPrice - $curEntryPrice) > $tol) {
+                    return true;
+                }
+            }
+            return false;
+        };
 
         if (!empty($lockState)) {
             $hasIdentity = array_key_exists('position_signal_id',   $lockState)
@@ -102,32 +122,30 @@ class LongProfile
 
             if (!$hasIdentity) {
                 // Legacy record — written before identity fields were introduced.
-                // Discard silently so the new position is not contaminated.
                 $legacyKeyIgnored = true;
                 $lockState        = [];
                 $positionState    = [];
-            } else {
-                $storedSigId      = (string)($lockState['position_signal_id']  ?? '');
-                $storedOpenedAt   = (string)($lockState['position_opened_at']  ?? '');
-                $storedEntryPrice = (float)($lockState['position_entry_price'] ?? 0.0);
+            } elseif ($identityFieldsMismatch($lockState)) {
+                $identityMismatch = true;
+                $lockState        = [];
+                $positionState    = [];
+            }
+        }
 
-                $mismatch = false;
-                if ($storedSigId !== '' && $curSignalId !== '' && $storedSigId !== $curSignalId) {
-                    $mismatch = true;
-                } elseif ($storedOpenedAt !== '' && $curOpenedAt !== '' && $storedOpenedAt !== $curOpenedAt) {
-                    $mismatch = true;
-                } elseif ($storedEntryPrice > 0.0 && $curEntryPrice > 0.0) {
-                    $tol = 0.001 * max($storedEntryPrice, $curEntryPrice);
-                    if (abs($storedEntryPrice - $curEntryPrice) > $tol) {
-                        $mismatch = true;
-                    }
-                }
-
-                if ($mismatch) {
-                    $identityMismatch = true;
-                    $lockState        = [];
-                    $positionState    = [];
-                }
+        // Guard positionState even when lockState is empty: if the stored
+        // positionState carries identity fields from a previous position,
+        // discard it so peak_roi/current_roi are not inherited.
+        if (!$identityMismatch && !$legacyKeyIgnored && !empty($positionState)) {
+            $psHasIdentity = array_key_exists('position_signal_id',   $positionState)
+                          || array_key_exists('position_opened_at',    $positionState)
+                          || array_key_exists('position_entry_price',  $positionState);
+            if ($psHasIdentity && $identityFieldsMismatch([
+                'position_signal_id'   => $positionState['position_signal_id']   ?? '',
+                'position_opened_at'   => $positionState['position_opened_at']   ?? '',
+                'position_entry_price' => $positionState['position_entry_price'] ?? 0.0,
+            ])) {
+                $identityMismatch = true;
+                $positionState    = [];
             }
         }
 
@@ -1450,6 +1468,38 @@ class LongProfile
         $initRoi    = (float) ($profileConfig['init_roi'] ?? 2.0);
 
         if ($currentRoi === null || $currentRoi < $initRoi) {
+            // Update top-level state even below init so consumers always see
+            // current values (prevents stale current_roi / current_price fields).
+            $currentPriceBelow = (float)($position['current_price'] ?? $position['mark_price'] ?? 0.0);
+            $entryPriceBelow   = (float)($position['entry_price']   ?? $position['avg_price']  ?? 0.0);
+            $peakRoiBelow      = (float)($positionState['peak_roi'] ?? ($currentRoi ?? 0.0));
+            $positionState = array_merge($positionState, [
+                'symbol'        => $symbol,
+                'side'          => $side,
+                'mode'          => (string)($position['execution_mode'] ?? $position['mode'] ?? ''),
+                'signal_id'     => (string)($position['signal_id'] ?? ''),
+                'opened_at'     => (string)($position['opened_at'] ?? $position['bot_submitted_at'] ?? $position['created_at'] ?? ''),
+                'entry_price'   => $entryPriceBelow,
+                'current_price' => $currentPriceBelow > 0.0 ? $currentPriceBelow : ($positionState['current_price'] ?? null),
+                'current_roi'   => $currentRoi,
+                // peak_roi never decreases
+                'peak_roi'      => $peakRoiBelow,
+                'updated_at'    => date('c', $nowTs),
+                'updated_at_ts' => $nowTs,
+                // Identity fields in positionState so below-init state is also
+                // discarded on a new position even without an existing lock.
+                'position_signal_id'   => (string)($position['signal_id']   ?? ''),
+                'position_opened_at'   => (string)($position['opened_at']   ?? $position['bot_submitted_at'] ?? $position['created_at'] ?? ''),
+                'position_entry_price' => $entryPriceBelow,
+            ]);
+            if (!isset($positionState['tracked_since'])) {
+                $positionState['tracked_since']    = date('c', $nowTs);
+                $positionState['tracked_since_ts'] = $nowTs;
+            }
+            // Append ROI sample even below init if price is valid
+            if ($currentRoi !== null && $currentPriceBelow > 0.0) {
+                $this->appendRoiSample($positionState, $currentRoi, $currentPriceBelow, $nowTs);
+            }
             return [
                 'plan' => [
                     'action'       => 'skip',
@@ -1457,7 +1507,7 @@ class LongProfile
                     'side'         => $side,
                     'skip_reason'  => $currentRoi === null ? 'cannot_calculate_roi' : 'below_init_roi',
                     'current_roi'  => $currentRoi,
-                    'peak_roi'     => null,
+                    'peak_roi'     => $peakRoiBelow,
                     'proposed_lock'=> null,
                     'proposed_roi' => null,
                     'note'         => null,
@@ -1477,12 +1527,20 @@ class LongProfile
         $positionState = array_merge($positionState, [
             'symbol'        => $symbol,
             'side'          => $side,
+            'mode'          => (string)($position['execution_mode'] ?? $position['mode'] ?? ''),
+            'signal_id'     => (string)($position['signal_id'] ?? ''),
+            'opened_at'     => (string)($position['opened_at'] ?? $position['bot_submitted_at'] ?? $position['created_at'] ?? ''),
             'entry_price'   => $entryPrice,
             'leverage'      => (float) ($position['leverage'] ?? 0.0),
             'current_roi'   => $currentRoi,
             'peak_roi'      => $peakRoi,
             'updated_at'    => date('c', $nowTs),
             'updated_at_ts' => $nowTs,
+            // Identity fields: allow positionState identity validation on next tick
+            // even when lockState is empty (e.g. below activation_roi).
+            'position_signal_id'   => (string)($position['signal_id']   ?? ''),
+            'position_opened_at'   => (string)($position['opened_at']   ?? $position['bot_submitted_at'] ?? $position['created_at'] ?? ''),
+            'position_entry_price' => $entryPrice,
         ]);
 
         if (!isset($positionState['tracked_since'])) {
@@ -2306,6 +2364,34 @@ class LongProfile
             json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n",
             LOCK_EX
         );
+    }
+
+    /**
+     * Build a per-position identity key used as the storage key in state.json and locks.json.
+     *
+     * Format: mode:symbol:side:signal_id:opened_at   (full identity key)
+     * Fallback: symbol_side   (legacy — when signal_id or opened_at is unavailable)
+     *
+     * Using the full key ensures each unique position (by signal_id + opened_at)
+     * gets its own slot, preventing a new position from inheriting peak_roi/lock
+     * state written by a previous position on the same symbol+side.
+     */
+    public static function buildPositionIdentityKey(array $position, string $side): string
+    {
+        $symbol   = strtolower((string)($position['symbol']    ?? ''));
+        $signalId = (string)($position['signal_id']            ?? '');
+        $openedAt = (string)($position['opened_at']            ?? $position['bot_submitted_at'] ?? $position['created_at'] ?? '');
+        $mode     = (string)($position['execution_mode']       ?? $position['mode'] ?? '');
+
+        if ($symbol !== '' && $signalId !== '' && $openedAt !== '') {
+            return ($mode !== '' ? $mode : 'unknown')
+                . ':' . $symbol
+                . ':' . strtolower($side)
+                . ':' . $signalId
+                . ':' . $openedAt;
+        }
+        // Fallback: legacy symbol_side key
+        return $symbol . '_' . strtolower($side);
     }
 
     private function positionKey(string $symbol, string $side): string

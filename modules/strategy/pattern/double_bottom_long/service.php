@@ -701,18 +701,21 @@ final class DoubleBottomLongService
                         }
                     }
                     $sig['missing_diagnostic_fields'] = $missingTraceFields ?: null;
-                    // Trace counter (Task 4)
+                    // Trace counter (Task 4): only counts signals emitted in the current run
+                    // (this block executes only for final_signal_status=emitted, not stale signals)
                     if (empty($missingTraceFields)) {
                         $emittedSignalsWithTraceTotal++;
                     } else {
                         $emittedSignalsMissingTraceTotal++;
                         if (count($missingTraceExamples) < 5) {
                             $missingTraceExamples[] = [
-                                'symbol'        => $sig['symbol'] ?? $symbol,
-                                'signal_id'     => $sig['signal_id'] ?? null,
-                                'missing_fields' => $missingTraceFields,
-                                'setup_class'   => $sig['setup_class'] ?? null,
-                                'reason'        => 'missing_at_emission',
+                                'symbol'          => $sig['symbol'] ?? $symbol,
+                                'signal_id'       => $sig['signal_id'] ?? null,
+                                'missing_fields'  => $missingTraceFields,
+                                'setup_class'     => $sig['setup_class'] ?? null,
+                                'quality_source'  => $sig['quality_source'] ?? null,
+                                'is_current_run'  => true,
+                                'reason'          => 'missing_at_emission',
                             ];
                         }
                     }
@@ -3524,7 +3527,10 @@ final class DoubleBottomLongService
                             $stopWidthHardRejectTotal++;
                             $s['adaptive_stop_width_allowed']         = false;
                             $s['adaptive_stop_width_reason']          = 'adaptive_stop_quality_too_low';
+                            $s['adaptive_stop_min_quality_score']     = $adaptiveStopMinQuality;
+                            $s['adaptive_stop_quality_ok']            = false;
                             $s['configured_max_stop_loss_pct']        = $maxStopLossPct;
+                            // effective limit when quality gate fails is the warning threshold
                             $s['effective_stop_loss_pct_limit']       = $stopWarnPct;
                             $s['effective_stop_loss_pct']             = $slPct;
                             $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_stop_too_wide'];
@@ -3538,19 +3544,26 @@ final class DoubleBottomLongService
                         $s['final_stop_width_gate_bypassed_for_synthetic_setup'] = true;
                         $s['adaptive_stop_width_allowed']         = true;
                         $s['adaptive_stop_width_reason']          = 'setup_class_whitelisted_quality_ok';
+                        $s['adaptive_stop_min_quality_score']     = $adaptiveStopMinQuality;
+                        $s['adaptive_stop_quality_ok']            = true;
                         $s['configured_max_stop_loss_pct']        = $maxStopLossPct;
-                        $s['effective_stop_loss_pct_limit']       = $stopWarnPct;
+                        // When adaptive wide stop is allowed, the actual enforced limit
+                        // is stopHardPct (not stopWarnPct).  Setting limit=stopWarnPct
+                        // was inconsistent (signal allowed above limit).
+                        $s['effective_stop_loss_pct_limit']       = $stopHardPct;
                         $s['effective_stop_loss_pct']             = $slPct;
                         // keep eligible
                     } else {
                         // Within warning threshold: no issue
                         $s['final_stop_width_warning'] = false;
                         $s['final_stop_width_gate_bypassed_for_synthetic_setup'] = false;
-                        $s['adaptive_stop_width_allowed']   = true;
-                        $s['adaptive_stop_width_reason']    = 'within_warning_threshold';
-                        $s['configured_max_stop_loss_pct']  = $maxStopLossPct;
-                        $s['effective_stop_loss_pct_limit'] = $stopWarnPct;
-                        $s['effective_stop_loss_pct']       = $slPct ?? 0.0;
+                        $s['adaptive_stop_width_allowed']     = true;
+                        $s['adaptive_stop_width_reason']      = 'within_warning_threshold';
+                        $s['adaptive_stop_min_quality_score'] = $adaptiveStopMinQuality;
+                        $s['adaptive_stop_quality_ok']        = true;
+                        $s['configured_max_stop_loss_pct']    = $maxStopLossPct;
+                        $s['effective_stop_loss_pct_limit']   = $stopWarnPct;
+                        $s['effective_stop_loss_pct']         = $slPct ?? 0.0;
                     }
                     // Always stamp gate-mode diagnostics
                     $s['final_stop_width_gate_mode']    = $stopGateMode;

@@ -44,6 +44,12 @@ final class DoubleBottomLongService
     private int $obWallSoftDemoteTotal    = 0;
     private int $obWallPendingTotal       = 0;
     private int $obWallHardRejectTotal    = 0;
+    // OBC skip counters — gate enabled but fetch skipped for various reasons
+    private int $obWallSkipQualityBelowThresholdTotal = 0;
+    private int $obWallSkipServiceUnavailableTotal     = 0;
+    private int $obWallSkipMissingEntryPriceTotal      = 0;
+    /** @var list<array<string,mixed>> */
+    private array $obWallSkipExamples = [];
 
     // ── Per-tick entry-context fetch counters (reset at start of each tickBatch) ──
     private int $ctxFetchAttemptedThisTick       = 0;
@@ -388,6 +394,10 @@ final class DoubleBottomLongService
         $this->obWallSoftDemoteTotal   = 0;
         $this->obWallPendingTotal      = 0;
         $this->obWallHardRejectTotal   = 0;
+        $this->obWallSkipQualityBelowThresholdTotal = 0;
+        $this->obWallSkipServiceUnavailableTotal     = 0;
+        $this->obWallSkipMissingEntryPriceTotal      = 0;
+        $this->obWallSkipExamples                    = [];
         // Reset per-tick scan suppression counters.
         $this->scanSuppressionSkippedThisTick   = 0;
         $this->scanSuppressionAddedThisTick     = 0;
@@ -678,6 +688,15 @@ final class DoubleBottomLongService
                     $sig['candidate_trigger']      = $sig['entry_price'] ?? null;
                     $sig['neckline_level']         = $result['neckline_level']                    ?? null;
                     $sig['reclaim_level']          = $result['reclaim_level']                     ?? null;
+                    // A-class: reclaim_level = intraday neckline (price reclaimed above it).
+                    // coinCtx reclaim_after_flat may be null when there is no flat_base reclaim.
+                    if ($sig['reclaim_level'] === null
+                        && ($sig['setup_class'] ?? null) === 'classic_intraday_double_bottom_reclaim'
+                    ) {
+                        $sig['reclaim_level'] = $result['intraday_db_neckline_level']
+                            ?? $result['neckline_level']
+                            ?? null;
+                    }
                     $sig['entry_distance_from_neckline_pct'] = $result['entry_distance_from_neckline_pct'] ?? null;
                     // entry_distance_from_reclaim_pct may already be in signal; carry from diagBase if not
                     if (!isset($sig['entry_distance_from_reclaim_pct'])) {
@@ -1457,6 +1476,7 @@ final class DoubleBottomLongService
             'current_cycle_signals_emitted_total' => (int)($cycleStats['signals_emitted_total'] ?? 0),
             'current_cycle_final_signals_total'   => $cycleNewWinnerCount,
             'active_pool_signals_total'           => count($signals),
+            'active_pool_note'                    => 'rolling pool may include stale/withdrawn signals; use final_signals_active_final_total for executable active signals',
             // Task 2: Signal lifecycle counters
             'signals_marked_stale_total'      => $sigMarkedStale,
             'signals_active_current_total'    => $sigActiveTotal,
@@ -1565,6 +1585,11 @@ final class DoubleBottomLongService
             'orderbook_wall_hard_reject_total'     => $this->obWallHardRejectTotal,
             'orderbook_wall_gate_enabled'          => (bool)($config['orderbook_entry_wall_gate_enabled'] ?? false),
             'orderbook_wall_gate_mode'             => (string)($config['orderbook_entry_wall_gate_mode']  ?? 'soft_demote'),
+            // OBC skip diagnostic counters (gate enabled, fetch skipped for candidate-level reasons)
+            'orderbook_wall_skip_quality_below_threshold_total' => $this->obWallSkipQualityBelowThresholdTotal,
+            'orderbook_wall_skip_service_unavailable_total'     => $this->obWallSkipServiceUnavailableTotal,
+            'orderbook_wall_skip_missing_entry_price_total'     => $this->obWallSkipMissingEntryPriceTotal,
+            'orderbook_wall_skip_examples'                     => $this->obWallSkipExamples,
             // Entry-context fetch counters for this tick
             'entry_context_fetch_attempted_total'       => $this->ctxFetchAttemptedThisTick,
             'entry_context_fetch_success_total'         => $this->ctxFetchSuccessThisTick,
@@ -2159,7 +2184,12 @@ final class DoubleBottomLongService
                     'primary_pattern'         => 'double_bottom',
                     'candidate_score'         => $sqScore,
                     'neckline_level'          => $neckline > 0.0 ? $neckline : ($entry['neckline_level'] ?? null),
-                    'reclaim_level'           => $entry['reclaim_level'] ?? null,
+                    // A-class: reclaim_level = intraday neckline when flat_base reclaim is absent.
+                    'reclaim_level'           => $entry['reclaim_level'] ?? (
+                        $setupClass === 'classic_intraday_double_bottom_reclaim'
+                        ? ($entry['neckline_level'] ?? ($neckline > 0.0 ? $neckline : null))
+                        : null
+                    ),
                     // Stop-loss (reconstructed)
                     'stop_loss_price'         => $slPrice,
                     'stop_loss_pct'           => $slPct,
@@ -3243,7 +3273,19 @@ final class DoubleBottomLongService
         array  $diagBase
     ): array {
         $gateEnabled = (bool)($config['orderbook_entry_wall_gate_enabled'] ?? false);
-        if (!$gateEnabled || $this->obcService === null) {
+        if (!$gateEnabled) {
+            return [];
+        }
+        if ($this->obcService === null) {
+            $this->obWallSkipServiceUnavailableTotal++;
+            if (count($this->obWallSkipExamples) < 5) {
+                $this->obWallSkipExamples[] = [
+                    'symbol'                  => $symbol,
+                    'candidate_quality_score' => $diagBase['candidate_quality_score'] ?? null,
+                    'required_quality_score'  => (float)($config['orderbook_entry_wall_fetch_after_quality_score'] ?? 0.0),
+                    'reason'                  => 'obc_service_unavailable',
+                ];
+            }
             return [];
         }
 
@@ -3251,12 +3293,22 @@ final class DoubleBottomLongService
         $fetchAfterScore = (float)($config['orderbook_entry_wall_fetch_after_quality_score'] ?? 0.0);
         $qualScore = (float)($diagBase['candidate_quality_score'] ?? 0.0);
         if ($fetchAfterScore > 0.0 && $qualScore < $fetchAfterScore) {
+            $this->obWallSkipQualityBelowThresholdTotal++;
+            if (count($this->obWallSkipExamples) < 5) {
+                $this->obWallSkipExamples[] = [
+                    'symbol'                  => $symbol,
+                    'candidate_quality_score' => $qualScore,
+                    'required_quality_score'  => $fetchAfterScore,
+                    'reason'                  => 'quality_below_threshold',
+                ];
+            }
             return [];
         }
 
         // Use neckline level as the entry price reference
         $entryPrice = (float)($candidate['neckline'] ?? $candidate['entry_price'] ?? 0.0);
         if ($entryPrice <= 0.0) {
+            $this->obWallSkipMissingEntryPriceTotal++;
             return [];
         }
 

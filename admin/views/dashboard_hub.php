@@ -827,10 +827,20 @@ function renderDashboardHub(): string
                 $_dblKillFinal   = (int)($stratLastRun['setup_allowed_final_eligibility_failed_total']  ?? 0);
                 // Use current-cycle count. Fallback chain: current_cycle → active pool → cumulative.
                 $_dblSigCurrent  = (int)($stratLastRun['current_cycle_signals_emitted_total']           ?? 0);
+                // Pool total = all signals in rolling pool (active_final + stale); use final_signals_active_final_total for non-stale count.
                 $_dblSigPool     = (int)($stratLastRun['active_pool_signals_total']                     ?? $slrPoolTotal);
+                $_dblSigActiveFinal = (int)($stratLastRun['final_signals_active_final_total']           ?? -1);
                 $_dblPendActive  = (int)($stratLastRun['pending_confirmation_active_total']             ?? 0);
                 $_dblPendConf    = (int)($stratLastRun['pending_confirmation_confirmed_total']          ?? 0);
                 $_dblPendInval   = (int)($stratLastRun['pending_confirmation_invalidated_total']        ?? 0);
+                // OBC wall gate counters
+                $_dblObGateEn    = (bool)($stratLastRun['orderbook_wall_gate_enabled']         ?? false);
+                $_dblObChecked   = (int)($stratLastRun['orderbook_wall_checked_total']         ?? 0);
+                $_dblObFetchOk   = (int)($stratLastRun['orderbook_wall_fetch_success_total']   ?? 0);
+                $_dblObFetchFail = (int)($stratLastRun['orderbook_wall_fetch_failed_total']    ?? 0);
+                $_dblObAskRisk   = (int)($stratLastRun['orderbook_wall_ask_risk_total']        ?? 0);
+                $_dblObDemote    = (int)($stratLastRun['orderbook_wall_soft_demote_total']     ?? 0);
+                $_dblObReject    = (int)($stratLastRun['orderbook_wall_hard_reject_total']     ?? 0);
                 $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
                     . ' · обработано <code>' . $_dblScanned . '/' . $_dblTotal . '</code>'
                     . ' · ctx fetch <code>' . $_dblCtxFetch . '</code>'
@@ -847,7 +857,15 @@ function renderDashboardHub(): string
                             . ($_dblPendInval > 0 ? ' invalid <code>' . $_dblPendInval . '</code>' : '')
                         : '')
                     . ' · сигналов <code>' . $_dblSigCurrent . '</code>'
-                    . ' · активных <code>' . $_dblSigPool . '</code>';
+                    . ' · пул <code>' . $_dblSigPool . '</code>'
+                    . ($_dblSigActiveFinal >= 0 ? ' · active_final <code>' . $_dblSigActiveFinal . '</code>' : '')
+                    . ($_dblObGateEn
+                        ? ' · obc <code>' . $_dblObChecked . '</code>'
+                            . ($_dblObFetchFail > 0 ? ' fail <code>' . $_dblObFetchFail . '</code>' : '')
+                            . ($_dblObAskRisk > 0 ? ' ask-risk <code>' . $_dblObAskRisk . '</code>' : '')
+                            . ($_dblObDemote > 0 ? ' demote <code>' . $_dblObDemote . '</code>' : '')
+                            . ($_dblObReject > 0 ? ' <span style="color:#f87171;">reject <code>' . $_dblObReject . '</code></span>' : '')
+                        : '');
             } elseif ($stratId === 'corridor_bottom_long') {
                 $_cblValidated    = (int)($stratLastRun['candidates_validated']    ?? 0);
                 $_cblHandoffReady = (int)($stratLastRun['handoff_ready'] ?? $slrHandoffReady);

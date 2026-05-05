@@ -21,4 +21,12 @@ return [
     'handoff_enabled'    => true,
     'batch_size'         => 50,
     'max_symbols_per_run'=> 50,
+
+    // OrderBook wall context entry gate — safe demo defaults.
+    // Mode: soft_demote (tag signals with wall risk; do not hard-reject).
+    // Only fetch OBC for serious candidates (quality_score >= 0.72).
+    'orderbook_entry_wall_gate_enabled'              => true,
+    'orderbook_entry_wall_gate_mode'                 => 'soft_demote',
+    'orderbook_entry_wall_fetch_after_quality_score' => 0.72,
+    'orderbook_entry_wall_pending_enabled'           => false,
 ];

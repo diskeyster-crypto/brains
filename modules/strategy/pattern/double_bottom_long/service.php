@@ -500,6 +500,39 @@ final class DoubleBottomLongService
             foreach ($pendingRecheckResult['newly_emitted'] as $sig) {
                 $sig['_setup_signal_allowed'] = true;
                 $newlyEmitted[] = $sig;
+                // Trace check for pending-confirmation emissions
+                // (these bypass the per-symbol emission trace check below).
+                $traceFieldsAlwaysPending = ['quality_source'];
+                $isPendingSynth = (string)($sig['quality_source'] ?? '') === 'synthetic_intraday_setup';
+                $traceFieldsSynthPending  = $isPendingSynth ? [
+                    'neckline_level', 'reclaim_level', 'entry_distance_from_neckline_pct',
+                    'entry_distance_from_reclaim_pct', 'synthetic_quality_score',
+                    'setup_class_score', 'intraday_double_bottom_score',
+                    'synthetic_quality_pass',
+                ] : [];
+                $pendingTraceFields   = array_merge($traceFieldsAlwaysPending, $traceFieldsSynthPending);
+                $pendingMissingFields = [];
+                foreach ($pendingTraceFields as $ptf) {
+                    if (($sig[$ptf] ?? null) === null) {
+                        $pendingMissingFields[] = $ptf;
+                    }
+                }
+                if (empty($pendingMissingFields)) {
+                    $emittedSignalsWithTraceTotal++;
+                } else {
+                    $emittedSignalsMissingTraceTotal++;
+                    if (count($missingTraceExamples) < 5) {
+                        $missingTraceExamples[] = [
+                            'symbol'          => $sig['symbol'] ?? null,
+                            'signal_id'       => $sig['signal_id'] ?? null,
+                            'missing_fields'  => $pendingMissingFields,
+                            'setup_class'     => $sig['setup_class'] ?? null,
+                            'quality_source'  => $sig['quality_source'] ?? null,
+                            'is_current_run'  => true,
+                            'reason'          => 'missing_at_pending_confirmation_emission',
+                        ];
+                    }
+                }
             }
             $pendingConfirmationStats['loaded_total']      = $pendingRecheckResult['loaded_total'];
             $pendingConfirmationStats['rechecked_total']   = $pendingRecheckResult['rechecked_total'];
@@ -1168,7 +1201,8 @@ final class DoubleBottomLongService
         $state['current_cycle_signals_emitted_total'] = (int)($cycleStats['signals_emitted_total'] ?? 0);
         $state['current_cycle_final_signals_total']   = $cycleNewWinnerCount;
         $state['current_cycle_signals_active_final']  = count($signals);
-        // active_pool_signals_total = size of the current rolling winner pool (signals.json)
+        // active_pool_signals_total = total signals in rolling pool (active_final + stale).
+        // Use final_signals_active_final_total for the non-stale subset.
         $state['active_pool_signals_total']           = count($signals);
         $state['cumulative_signals_emitted_total']    = (int)($stats['signals_emitted_total']       ?? 0);
         $state['cumulative_signals_active_final']     = count($signals);
@@ -1209,6 +1243,7 @@ final class DoubleBottomLongService
         // Required for "with trace": signal_id, symbol, side, strategy_id/owner_strategy,
         // setup_class (either location), quality_source (either location),
         // at least one quality score.
+        // is_current_run=false marks these as handoff-check examples, not emission-loop examples.
         foreach ($handoffStats['active_records'] as $hr) {
             $ctx      = is_array($hr['strategy_signal_context'] ?? null) ? $hr['strategy_signal_context'] : [];
             $setupCls = $hr['setup_class'] ?? $ctx['setup_class'] ?? null;
@@ -1238,6 +1273,8 @@ final class DoubleBottomLongService
                         'signal_id'      => $hr['signal_id'] ?? null,
                         'missing_fields' => $missingF,
                         'setup_class'    => $setupCls,
+                        'quality_source' => $qualSrc,
+                        'is_current_run' => false,
                         'reason'         => 'missing_in_handoff_record',
                     ];
                 }

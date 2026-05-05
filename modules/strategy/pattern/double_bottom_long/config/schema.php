@@ -94,6 +94,16 @@ return [
     'max_symbols_per_run'  => 'int',
     'max_runtime_seconds'  => 'int',
 
+    // OrderBook wall context entry gate
+    'orderbook_entry_wall_gate_enabled'              => 'bool',
+    'orderbook_entry_wall_gate_mode'                 => 'string',
+    'orderbook_entry_wall_fetch_after_quality_score' => 'float',
+    'orderbook_entry_wall_near_pct'                  => 'float',
+    'orderbook_entry_wall_persistent_required'       => 'bool',
+    'orderbook_entry_wall_support_bonus_enabled'     => 'bool',
+    'orderbook_entry_wall_ask_eaten_bonus_enabled'   => 'bool',
+    'orderbook_entry_wall_pending_enabled'           => 'bool',
+
     // Handoff signal freshness gates
     'handoff_signal_max_age_minutes'           => 'int',
     'signal_requires_current_run_for_handoff'  => 'bool',

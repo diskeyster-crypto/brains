@@ -162,6 +162,12 @@ if ($action === 'save_config') {
         'tp_mode'                         => in_array($p['tp_mode'] ?? '', ['fixed_r','fixed_price'], true)
                                                 ? (string)$p['tp_mode'] : 'fixed_r',
         'tp_value'                        => max(0.0, (float)($p['tp_value'] ?? 2.0)),
+        // OrderBook wall context entry gate
+        'orderbook_entry_wall_gate_enabled'              => ($p['orderbook_entry_wall_gate_enabled'] ?? '0') === '1',
+        'orderbook_entry_wall_gate_mode'                 => in_array($p['orderbook_entry_wall_gate_mode'] ?? '', ['soft_demote','hard_reject'], true)
+                                                               ? (string)$p['orderbook_entry_wall_gate_mode'] : 'soft_demote',
+        'orderbook_entry_wall_fetch_after_quality_score' => max(0.0, min(1.0, (float)($p['orderbook_entry_wall_fetch_after_quality_score'] ?? 0.0))),
+        'orderbook_entry_wall_pending_enabled'           => ($p['orderbook_entry_wall_pending_enabled'] ?? '0') === '1',
     ];
 
     try {

@@ -259,6 +259,45 @@ $fMode    = (string)($config['mode']  ?? 'passive');
            onclick="return confirm('Сбросить все переопределения к базовым значениям?')">Сброс к базовым</a>
 
         <div class="cfg-section mt-4">
+            <h6>OrderBook Wall Context (OBC) — вход</h6>
+            <div class="row g-3">
+                <div class="col-sm-3">
+                    <label class="form-label">OBC gate включён</label>
+                    <select name="orderbook_entry_wall_gate_enabled" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['orderbook_entry_wall_gate_enabled'] ?? false) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['orderbook_entry_wall_gate_enabled'] ?? false) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Включить слой проверки стакана перед входом</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Режим OBC gate</label>
+                    <select name="orderbook_entry_wall_gate_mode" class="form-select form-select-sm">
+                        <option value="soft_demote" <?= ($config['orderbook_entry_wall_gate_mode'] ?? 'soft_demote') === 'soft_demote' ? 'selected' : '' ?>>soft_demote</option>
+                        <option value="hard_reject" <?= ($config['orderbook_entry_wall_gate_mode'] ?? 'soft_demote') === 'hard_reject' ? 'selected' : '' ?>>hard_reject</option>
+                    </select>
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">soft_demote = тег риска, не блокировать</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Мин. quality score для запроса OBC</label>
+                    <input type="number" name="orderbook_entry_wall_fetch_after_quality_score"
+                           class="form-control form-control-sm" step="0.01" min="0" max="1"
+                           value="<?= number_format((float)($config['orderbook_entry_wall_fetch_after_quality_score'] ?? 0.0), 2, '.', '') ?>">
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">0 = всегда; 0.72 = только серьёзные кандидаты</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Pending вместо reject</label>
+                    <select name="orderbook_entry_wall_pending_enabled" class="form-select form-select-sm">
+                        <option value="0" <?= !($config['orderbook_entry_wall_pending_enabled'] ?? false) ? 'selected' : '' ?>>Нет</option>
+                        <option value="1" <?= ($config['orderbook_entry_wall_pending_enabled'] ?? false) ? 'selected' : '' ?>>Да</option>
+                    </select>
+                </div>
+            </div>
+            <div style="font-size:11px;color:#64748b;margin-top:8px;">
+                OBC запрашивается только после дешёвых фильтров (cheap gates). Не добавлять short-логику в double_bottom_long.
+            </div>
+        </div>
+
+        <div class="cfg-section mt-4">
             <h6>Стоп / ликвидационная зона</h6>
             <div class="row g-3">
                 <div class="col-sm-3">

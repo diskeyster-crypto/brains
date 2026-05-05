@@ -475,8 +475,7 @@ final class DynamicStrategiesStrategy
                 $candidates[$idx]['replay_required_confirmation_count'] = (int)($config['dynamic_handoff_min_confirmations_with_replay'] ?? 3);
                 // context_type_matched flag: true when the replay record was found via
                 // context_type match rather than exact source_context_ids match.
-                $candidates[$idx]['replay_context_type_matched']        = isset($replayMeta['replay_match_mode'])
-                    && $replayMeta['replay_match_mode'] === 'context_type';
+                $candidates[$idx]['replay_context_type_matched']        = (bool)($replayMeta['replay_context_type_matched'] ?? false);
                 // Stable idea key for diagnostics/dedupe — does not change signal_id consumers
                 $ideaObsAt    = $cand['observed_at'] ?? null;
                 $ideaTsRaw    = $ideaObsAt !== null ? (is_int($ideaObsAt) ? $ideaObsAt : (int)strtotime((string)$ideaObsAt)) : time();

@@ -1370,12 +1370,15 @@ final class BotService
             'handoff_blocked_needs_revalidation_after_symbol_block_total' => $result['handoff_blocked_needs_revalidation_after_symbol_block_total'] ?? 0,
             'stale_handoff_block_examples'                                => $result['stale_handoff_block_examples']                              ?? [],
             'revalidation_required_examples'                              => $result['revalidation_required_examples']                            ?? [],
-            // ── Live-promotion guard diagnostics ─────────────────────────────────
-            'handoff_live_promotion_blocked_total'        => $result['handoff_live_promotion_blocked_total']         ?? 0,
-            'handoff_demo_signal_seen_by_live_bot_total'  => $result['handoff_demo_signal_seen_by_live_bot_total']   ?? 0,
-            'handoff_signal_live_forbidden_total'         => $result['handoff_signal_live_forbidden_total']          ?? 0,
-            'handoff_signal_execution_mode_preserved_total' => $result['handoff_signal_execution_mode_preserved_total'] ?? 0,
-            'handoff_live_promotion_blocked_examples'     => $result['handoff_live_promotion_blocked_examples']      ?? [],
+            // ── Execution mode neutral diagnostics (strategy signals are environment-neutral) ──
+            'handoff_strategy_signals_seen_total'          => $result['handoff_strategy_signals_seen_total']          ?? 0,
+            'handoff_strategy_signals_used_total'          => $result['handoff_strategy_signals_used_total']          ?? 0,
+            'handoff_execution_mode_from_bot_total'        => $result['handoff_execution_mode_from_bot_total']        ?? 0,
+            'handoff_missing_execution_mode_ignored_total' => $result['handoff_missing_execution_mode_ignored_total'] ?? 0,
+            'handoff_blocked_global_live_disabled_total'   => $result['handoff_blocked_global_live_disabled_total']   ?? 0,
+            'handoff_blocked_gateway_unavailable_total'    => $result['handoff_blocked_gateway_unavailable_total']    ?? 0,
+            'deprecated_strategy_mode_keys_seen_total'     => $result['deprecated_strategy_mode_keys_seen_total']    ?? 0,
+            'deprecated_strategy_mode_keys_ignored_total'  => $result['deprecated_strategy_mode_keys_ignored_total'] ?? 0,
             // ── Task 3: Order queue diagnostics for double_bottom_long ───────────
             'order_queue_double_bottom_items_total'          => $dbqTotal,
             'order_queue_double_bottom_stale_source_total'   => $dbqStaleSourceTotal,
@@ -1989,11 +1992,14 @@ final class BotService
         $handoffNeedsRevalidationTotal              = 0;
         $staleHandoffBlockExamples                  = [];
         $revalidationRequiredExamples               = [];
-        $livePromotionBlockedTotal                  = 0;
-        $demoSignalSeenByLiveBotTotal               = 0;
-        $signalLiveForbiddenTotal                   = 0;
-        $signalExecModePreservedTotal               = 0;
-        $livePromotionBlockedExamples               = [];
+        $handoffStrategySignalsSeenTotal            = 0;
+        $handoffStrategySignalsUsedTotal            = 0;
+        $handoffExecutionModeFromBotTotal           = 0;
+        $handoffMissingExecutionModeIgnoredTotal    = 0;
+        $handoffBlockedGlobalLiveDisabledTotal      = 0;
+        $handoffBlockedGatewayUnavailableTotal      = 0;
+        $handoffDeprecatedModeKeysSeenTotal         = 0;
+        $handoffDeprecatedModeKeysIgnoredTotal      = 0;
         $result                                     = [];
         $activeKeys                                 = [];
 
@@ -2050,7 +2056,18 @@ final class BotService
             // Applies regardless of bot-side age gate to ensure queue hygiene.
             $sigSymbol = (string)($signal['symbol'] ?? '');
             $sigSide   = (string)($signal['side']   ?? '');
-            $sigMode   = (string)($signal['execution_mode'] ?? $signal['mode'] ?? $botMode);
+            // Execution mode is always determined by Bot environment, not strategy signal.
+            // Strategy signals are environment-neutral; per-strategy mode fields are deprecated.
+            $sigMode   = $botMode;
+            $handoffStrategySignalsSeenTotal++;
+            $handoffExecutionModeFromBotTotal++;
+            // Track deprecated strategy-mode keys for diagnostics (do not block on them)
+            if (isset($signal['execution_mode']) || isset($signal['mode'])
+                || isset($signal['live_enabled']) || isset($signal['live_forbidden'])
+            ) {
+                $handoffDeprecatedModeKeysSeenTotal++;
+                $handoffDeprecatedModeKeysIgnoredTotal++;
+            }
             if (($signal['executable'] ?? null) === false
                 || ($signal['handoff_ready'] ?? null) === false
             ) {
@@ -2213,85 +2230,7 @@ final class BotService
                 continue;
             }
 
-            // ── Live-promotion guard ──────────────────────────────────────────
-            // Strategy signals carry their own execution_mode (demo/live).
-            // Bot must not silently promote a demo signal to live just because
-            // bot.mode = live.  Also honours signal.live_forbidden as a hard block.
-            //
-            // Resolution: signal.execution_mode → signal.mode → botMode
-            // $sigMode is already resolved above (line ~2042).
-            if ($botMode === 'live') {
-                $sigLiveForbidden  = (bool)($signal['live_forbidden']  ?? false);
-                $sigLiveEnabled    = (bool)($signal['live_enabled']    ?? false);
-
-                if ($sigLiveForbidden) {
-                    // Hard block: signal explicitly forbids live execution
-                    $signalLiveForbiddenTotal++;
-                    $livePromotionBlockedTotal++;
-                    if (count($livePromotionBlockedExamples) < 5) {
-                        $livePromotionBlockedExamples[] = [
-                            'symbol'               => $sigSymbol,
-                            'strategy_id'          => $stratId,
-                            'signal_id'            => $signalId,
-                            'signal_mode'          => (string)($signal['mode'] ?? ''),
-                            'signal_execution_mode'=> $sigMode,
-                            'bot_mode'             => $botMode,
-                            'live_enabled'         => $sigLiveEnabled,
-                            'live_forbidden'       => true,
-                            'action'               => 'blocked',
-                            'reason'               => 'signal_live_forbidden',
-                        ];
-                    }
-                    continue;
-                }
-
-                if ($sigMode !== 'live') {
-                    // Signal is demo-only; do not promote to live
-                    $demoSignalSeenByLiveBotTotal++;
-                    $livePromotionBlockedTotal++;
-                    if (count($livePromotionBlockedExamples) < 5) {
-                        $livePromotionBlockedExamples[] = [
-                            'symbol'               => $sigSymbol,
-                            'strategy_id'          => $stratId,
-                            'signal_id'            => $signalId,
-                            'signal_mode'          => (string)($signal['mode'] ?? ''),
-                            'signal_execution_mode'=> $sigMode,
-                            'bot_mode'             => $botMode,
-                            'live_enabled'         => $sigLiveEnabled,
-                            'live_forbidden'       => false,
-                            'action'               => 'blocked',
-                            'reason'               => 'strategy_signal_not_live_enabled',
-                        ];
-                    }
-                    continue;
-                }
-
-                if (!$sigLiveEnabled) {
-                    // Signal is live-mode but live_enabled flag is false
-                    $livePromotionBlockedTotal++;
-                    if (count($livePromotionBlockedExamples) < 5) {
-                        $livePromotionBlockedExamples[] = [
-                            'symbol'               => $sigSymbol,
-                            'strategy_id'          => $stratId,
-                            'signal_id'            => $signalId,
-                            'signal_mode'          => (string)($signal['mode'] ?? ''),
-                            'signal_execution_mode'=> $sigMode,
-                            'bot_mode'             => $botMode,
-                            'live_enabled'         => false,
-                            'live_forbidden'       => false,
-                            'action'               => 'blocked',
-                            'reason'               => 'strategy_signal_not_live_enabled',
-                        ];
-                    }
-                    continue;
-                }
-            }
-
-            // Track when signal execution_mode is preserved vs. defaulting to botMode
-            if (isset($signal['execution_mode']) || isset($signal['mode'])) {
-                $signalExecModePreservedTotal++;
-            }
-
+            $handoffStrategySignalsUsedTotal++;
             $activeKeys[$key] = true;
 
             if (isset($queueMap[$key])) {
@@ -2412,12 +2351,15 @@ final class BotService
             'handoff_blocked_needs_revalidation_after_symbol_block_total' => $handoffNeedsRevalidationTotal,
             'stale_handoff_block_examples'                              => $staleHandoffBlockExamples,
             'revalidation_required_examples'                            => $revalidationRequiredExamples,
-            // ── Live-promotion guard diagnostics ─────────────────────────────────
-            'handoff_live_promotion_blocked_total'        => $livePromotionBlockedTotal,
-            'handoff_demo_signal_seen_by_live_bot_total'  => $demoSignalSeenByLiveBotTotal,
-            'handoff_signal_live_forbidden_total'         => $signalLiveForbiddenTotal,
-            'handoff_signal_execution_mode_preserved_total' => $signalExecModePreservedTotal,
-            'handoff_live_promotion_blocked_examples'     => $livePromotionBlockedExamples,
+            // ── Execution mode neutral diagnostics ───────────────────────────────
+            'handoff_strategy_signals_seen_total'            => $handoffStrategySignalsSeenTotal,
+            'handoff_strategy_signals_used_total'            => $handoffStrategySignalsUsedTotal,
+            'handoff_execution_mode_from_bot_total'          => $handoffExecutionModeFromBotTotal,
+            'handoff_missing_execution_mode_ignored_total'   => $handoffMissingExecutionModeIgnoredTotal,
+            'handoff_blocked_global_live_disabled_total'     => $handoffBlockedGlobalLiveDisabledTotal,
+            'handoff_blocked_gateway_unavailable_total'      => $handoffBlockedGatewayUnavailableTotal,
+            'deprecated_strategy_mode_keys_seen_total'       => $handoffDeprecatedModeKeysSeenTotal,
+            'deprecated_strategy_mode_keys_ignored_total'    => $handoffDeprecatedModeKeysIgnoredTotal,
         ];
     }
 

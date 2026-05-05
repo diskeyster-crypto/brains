@@ -20,15 +20,17 @@ declare(strict_types=1);
  *   9. score candidates
  *  10. filter candidates by side_mode (short / long / all)
  *  11. build signals from high-confidence candidates
- *  12. build bot_handoff_queue (empty unless handoff_enabled + emit_bot_handoff + mode/live gates pass)
+ *  12. build bot_handoff_queue (executable when handoff_enabled + emit_bot_handoff + threshold + entry_price pass)
  *  13. write all storage files + last_run.json
  *
- * SAFETY RULES:
+ * ARCHITECTURE:
+ *   - Strategies are environment-neutral: they emit trading signals only.
+ *   - Bot environment owns execution mode (demo/live) based on its own config.
  *   - handoff_enabled = false → no handoff queue entries (observation-only mode)
- *   - mode = demo, handoff_enabled = true → executable demo handoff
- *   - mode = live → requires live_enabled = true AND live_handoff_enabled = true
- *   - live_enabled = false (default) → no live signals
+ *   - handoff_enabled = true + emit_bot_handoff = true → executable handoff when thresholds pass
  *   - side_mode = short/long/all → gates which candidate sides proceed to signals
+ *   - Config keys mode/live_enabled/live_handoff_enabled are deprecated as execution gates
+ *     (kept for backward compat; ignored for handoff gating)
  *   - Does NOT scan market data directly
  *   - Does NOT modify source strategy storage
  *   - Does NOT open real orders
@@ -164,11 +166,15 @@ final class DynamicStrategiesStrategy
 
         $shadowOnly          = (bool)($config['shadow_only']          ?? false);  // deprecated; kept for compat
         $handoffEnabled      = (bool)($config['handoff_enabled']       ?? true);
-        $liveEnabled         = (bool)($config['live_enabled']          ?? false);
-        $liveHandoffEnabled  = (bool)($config['live_handoff_enabled']  ?? false);
+        // Deprecated execution-gate keys — read for backward compat but not used for handoff gating.
+        // Execution mode is owned by Bot environment, not strategy config.
+        $liveEnabled         = (bool)($config['live_enabled']          ?? false);   // deprecated gate
+        $liveHandoffEnabled  = (bool)($config['live_handoff_enabled']  ?? false);   // deprecated gate
         $emitHandoff         = (bool)($config['emit_bot_handoff']      ?? true);
-        $mode                = (string)($config['mode']                ?? 'demo');
+        $mode                = (string)($config['mode']                ?? 'demo');  // deprecated gate; kept for compat
         $sideMode            = (string)($config['side_mode']           ?? 'short');  // short | long | all
+        // Track whether deprecated mode keys are present (for diagnostics)
+        $deprecatedModeKeysSeen = isset($config['mode']) || isset($config['live_enabled']) || isset($config['live_handoff_enabled']);
 
         $maxAgeMinutes = (int)($config['context_max_age_minutes'] ?? 180);
         $maxContexts   = (int)($config['max_contexts_per_run']    ?? 100);
@@ -453,12 +459,8 @@ final class DynamicStrategiesStrategy
         // ── 10. Build signals ──────────────────────────────────────────────────
         $signals             = [];
         $nonExecutableSignals = [];
-        $demoSignalsTotal    = 0;
-        $liveSignalsTotal    = 0;
         $executableTotal     = 0;
         $nonExecutableTotal  = 0;
-        $liveBlockedTotal    = 0;
-        $liveBlockedExamples = [];
         $maxSigPerRun   = (int)($config['max_signals_per_run']    ?? 20);
         $maxSigPerSym   = (int)($config['max_signals_per_symbol'] ?? 1);
         $ttlMinutes     = (int)($config['signal_ttl_minutes']     ?? 120);
@@ -530,9 +532,8 @@ final class DynamicStrategiesStrategy
                 ? (float)$ruleCfg['min_confidence_live']
                 : $globalMinLiveScore;
 
-            // Use per-mode thresholds
+            // Use per-mode thresholds (demo thresholds are the primary gate)
             $qualifiesForDemo = $confCnt >= $minDemoConf && $score >= $minDemoScore;
-            $qualifiesForLive = $liveEnabled && $liveHandoffEnabled && $confCnt >= $minLiveConf && $score >= $minLiveScore;
 
             if (!$qualifiesForDemo) {
                 $thresholdFailedTotal++;
@@ -589,50 +590,17 @@ final class DynamicStrategiesStrategy
                 $entryPriceMissingTotal++;
             }
 
-            // Determine executability
+            // Determine executability — strategy is environment-neutral.
+            // Handoff is executable when handoff_enabled + emit_bot_handoff + thresholds pass.
+            // Bot environment decides demo/live execution from its own config.
             $isExecutable = false;
-            $executionMode = $mode;
+            $executionMode = null;  // not set by strategy; Bot environment owns this
             $handoffReady  = false;
             $blockReason   = null;
 
             if ($handoffEnabled && $emitHandoff) {
-                if ($mode === 'demo') {
-                    $isExecutable  = true;
-                    $handoffReady  = true;
-                    $executionMode = 'demo';
-                    $demoSignalsTotal++;
-                } elseif ($mode === 'live') {
-                    if ($liveEnabled && $liveHandoffEnabled && $qualifiesForLive) {
-                        $isExecutable  = true;
-                        $handoffReady  = true;
-                        $executionMode = 'live';
-                        $liveSignalsTotal++;
-                    } else {
-                        // Live blocked
-                        $blockReason = 'live_disabled_or_not_confirmed';
-                        if (!$liveEnabled) {
-                            $warnings[] = 'live_disabled_by_config';
-                            $blockReason = 'live_enabled=false';
-                        } elseif (!$liveHandoffEnabled) {
-                            $warnings[] = 'live_handoff_disabled_by_config';
-                            $blockReason = 'live_handoff_enabled=false';
-                        } elseif (!$qualifiesForLive) {
-                            $warnings[] = 'live_threshold_not_met';
-                            $blockReason = 'live_threshold_not_met';
-                        }
-                        $liveBlockedTotal++;
-                        if (count($liveBlockedExamples) < 5) {
-                            $liveBlockedExamples[] = [
-                                'symbol'       => $sym,
-                                'dynamic_rule' => $cand['dynamic_rule'],
-                                'block_reason' => $blockReason,
-                                'score'        => $score,
-                                'conf_count'   => $confCnt,
-                            ];
-                        }
-                        $executionMode = 'demo'; // downgrade to demo for diagnostic
-                    }
-                }
+                $isExecutable  = true;
+                $handoffReady  = true;
             } else {
                 // handoff disabled — observation only
                 $blockReason = 'handoff_disabled';
@@ -799,8 +767,8 @@ final class DynamicStrategiesStrategy
                 'owner_strategy'              => self::STRATEGY_ID,
                 'dynamic_rule'                => $cand['dynamic_rule'],
                 'confidence_score'            => $score,
-                'mode'                        => $executionMode,
-                'execution_mode'              => $executionMode,
+                // execution_mode is intentionally omitted — Bot environment owns execution mode.
+                // Strategy signals are environment-neutral.
                 'side_mode'                   => $sideMode,
                 'handoff_ready'               => $handoffReady,
                 'executable'                  => $isExecutable,
@@ -828,9 +796,6 @@ final class DynamicStrategiesStrategy
                 'warnings'                    => $warnings,
                 // Nested context for bot
                 'strategy_signal_context'     => $stratSignalCtx,
-                // Live safety
-                'live_enabled'                => false,
-                'live_forbidden'              => true,
             ];
             if ($blockReason !== null) {
                 $signal['block_reason'] = $blockReason;
@@ -841,13 +806,13 @@ final class DynamicStrategiesStrategy
         }
 
         // ── 11. Build handoff queue ────────────────────────────────────────────
-        // Executable entries written when handoff_enabled + emit_bot_handoff + mode/live gates pass.
+        // Executable entries written when handoff_enabled + emit_bot_handoff + threshold + entry_price pass.
+        // Strategy signals are environment-neutral; Bot environment owns execution mode.
         // Non-executable diagnostic rows written when handoff disabled (aids debugging).
         $handoffQueue        = [];
         $handoffExecutable   = 0;
         $handoffReadyTotal   = 0;
         $handoffWrittenTotal = 0;
-        $handoffQueueLiveTotal = 0;
 
         if ($handoffEnabled && $emitHandoff) {
             foreach ($signals as $sig) {
@@ -863,8 +828,7 @@ final class DynamicStrategiesStrategy
                         'side'                   => $sig['side'],
                         'timeframe'              => 'dynamic',
                         // ── Execution ─────────────────────────────────────────
-                        'mode'                   => $sig['mode'],
-                        'execution_mode'         => $sig['execution_mode'],
+                        // execution_mode intentionally omitted — Bot environment owns this.
                         'entry_mode'             => 'limit',
                         'entry_type'             => 'dynamic_context',
                         'entry_price'            => $sigEntryPrice > 0.0 ? $sigEntryPrice : null,
@@ -889,9 +853,6 @@ final class DynamicStrategiesStrategy
                         'warnings'               => $sig['warnings'],
                         // ── Bot context ───────────────────────────────────────
                         'strategy_signal_context' => $sig['strategy_signal_context'] ?? null,
-                        // ── Safety ────────────────────────────────────────────
-                        'live_enabled'           => false,
-                        'live_forbidden'         => true,
                     ];
                     $handoffQueue[]    = $handoffEntry;
                     $handoffExecutable++;
@@ -908,9 +869,6 @@ final class DynamicStrategiesStrategy
                             'executable'        => true,
                         ];
                     }
-                    if (($sig['execution_mode'] ?? '') === 'live') {
-                        $handoffQueueLiveTotal++;
-                    }
                 }
             }
         } else {
@@ -924,8 +882,6 @@ final class DynamicStrategiesStrategy
                     'owner_strategy'          => self::STRATEGY_ID,
                     'dynamic_rule'            => $sig['dynamic_rule'],
                     'confidence_score'        => $sig['confidence_score'],
-                    'mode'                    => $sig['mode'],
-                    'execution_mode'          => $sig['execution_mode'],
                     'handoff_ready'           => false,
                     'executable'              => false,
                     'diagnostic_only'         => true,
@@ -935,8 +891,6 @@ final class DynamicStrategiesStrategy
                     'expires_at'              => $sig['expires_at'],
                     'source_context_ids'      => $sig['source_context_ids'],
                     'strategy_signal_context' => $sig['strategy_signal_context'] ?? null,
-                    'live_enabled'            => false,
-                    'live_forbidden'          => true,
                 ];
                 $botHandoffPayloadInvalidTotal++;
                 if (count($botHandoffPayloadInvalidExamples) < 5) {
@@ -960,12 +914,13 @@ final class DynamicStrategiesStrategy
             'finished_at'                     => $finishedAt,
             'duration_ms'                     => $durationMs,
             'enabled'                         => true,
-            'mode'                            => $mode,
+            'mode'                            => $mode,       // kept for backward compat; not used as execution gate
             'side_mode'                       => $sideMode,
             'handoff_enabled'                 => $handoffEnabled,
             'emit_bot_handoff'                => $emitHandoff,
-            'live_enabled'                    => $liveEnabled,
-            'live_handoff_enabled'            => $liveHandoffEnabled,
+            // Deprecated execution-gate fields — kept for backward compat; ignored for handoff gating
+            'deprecated_mode_fields'          => true,
+            'deprecated_mode_keys_seen'       => $deprecatedModeKeysSeen,
             // Backward-compat shadow fields (deprecated; always false)
             'shadow_only'                     => false,
             'shadow_signals_total'            => 0,
@@ -1001,16 +956,12 @@ final class DynamicStrategiesStrategy
             'candidates_threshold_global_fallback_total' => $thresholdGlobalFallbackTotal,
             // ── Signals ──────────────────────────────────────────────────────
             'signals_total'                   => count($signals),
-            'demo_signals_total'              => $demoSignalsTotal,
-            'live_signals_total'              => $liveSignalsTotal,
             'executable_signals_total'        => $executableTotal,
             'non_executable_signals_total'    => $nonExecutableTotal,
-            'live_signals_blocked_total'      => $liveBlockedTotal,
             // ── Handoff queue ─────────────────────────────────────────────────
             'bot_handoff_ready_total'         => $handoffReadyTotal,
             'bot_handoff_queue_written_total' => $handoffWrittenTotal,
             'bot_handoff_queue_executable_total' => $handoffExecutable,
-            'bot_handoff_queue_live_total'    => $handoffQueueLiveTotal,
             'errors_total'                    => 0,
             // ── Entry price diagnostics ───────────────────────────────────────
             'dynamic_entry_price_resolved_total'             => $entryPriceResolvedTotal,
@@ -1024,7 +975,6 @@ final class DynamicStrategiesStrategy
             'signal_examples'                 => array_slice($signals, 0, 5),
             'handoff_examples'                => array_slice($handoffQueue, 0, 5),
             'side_filtered_examples'          => $sideFilteredExamples,
-            'live_blocked_examples'           => $liveBlockedExamples,
             'threshold_passed_examples'       => $thresholdPassedExamples,
             'threshold_failed_examples'       => $thresholdFailedExamples,
             'dynamic_handoff_blocked_missing_entry_price_examples' => $handoffBlockedMissingPriceExamples,

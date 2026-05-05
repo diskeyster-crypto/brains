@@ -7,12 +7,15 @@ declare(strict_types=1);
  *
  * Standalone strategy-layer module that consumes useful rejected/failed/diagnostic
  * contexts from ordinary strategies (e.g. double_bottom_long) and generates
- * short-watch candidates and demo signals.
+ * short-watch candidates and trading signals.
  *
  * Override individual values in active.php without touching this file.
  *
- * SAFETY: live_enabled = false, live_handoff_enabled = false by default.
- * Live execution requires explicit manual enable.
+ * ARCHITECTURE: Strategies are environment-neutral. Execution mode (demo/live) is owned
+ * by the Bot environment based on its own config. Strategy signals are just signals.
+ * Keys mode/live_enabled/live_handoff_enabled are kept for backward compatibility only
+ * and are NOT used as handoff execution gates.
+ *
  * Observation-only mode: set handoff_enabled = false (no executable handoff).
  */
 
@@ -20,16 +23,18 @@ return [
     // ── Identity ─────────────────────────────────────────────────────────────
     'strategy_id'     => 'dynamic_strategies',
     'enabled'         => true,
-    'mode'            => 'demo',
+    'mode'            => 'demo',   // deprecated execution gate — kept for backward compat; ignored by Bot
     'side_mode'       => 'short',   // short | long | all — filters which candidate sides are allowed
 
     // ── Execution gates ───────────────────────────────────────────────────────
     'handoff_enabled'          => true,   // true = write executable rows to bot_handoff_queue.json
     'emit_bot_handoff'         => true,   // combined gate: handoff_enabled AND emit_bot_handoff both required
-    'live_enabled'             => false,  // must be explicitly set true to allow live signals
-    'live_handoff_enabled'     => false,  // additional live gate; must be true to emit live handoff
-    'live_requires_manual_enable'   => true,
-    'live_requires_governor_later'  => true,
+    // Deprecated execution gates — kept for backward compat; NOT used for handoff gating.
+    // Bot environment owns execution mode; see modules/bot/service.php.
+    'live_enabled'             => false,  // deprecated; kept for backward compat
+    'live_handoff_enabled'     => false,  // deprecated; kept for backward compat
+    'live_requires_manual_enable'   => true,   // informational only; not enforced
+    'live_requires_governor_later'  => true,   // informational only; not enforced
 
     // ── Backward-compat shadow flag (deprecated; kept false; not used as execution gate) ──
     'shadow_only'       => false,  // deprecated — use handoff_enabled=false for observation-only mode

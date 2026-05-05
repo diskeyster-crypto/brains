@@ -1458,6 +1458,12 @@ HTML;
     $trPmRegConsumed   = (int)($lastRun['pm_close_registry_consumed_retained_total'] ?? 0);
     $trPmRegExpired    = (int)($lastRun['pm_close_registry_expired_removed_total']   ?? 0);
 
+    // ── Bot tab: execution mode neutral diagnostics ───────────────────────
+    $lrHoSeen        = (int)($lastRun['handoff_strategy_signals_seen_total']          ?? 0);
+    $lrHoUsed        = (int)($lastRun['handoff_strategy_signals_used_total']          ?? 0);
+    $lrHoFromBot     = (int)($lastRun['handoff_execution_mode_from_bot_total']        ?? 0);
+    $lrHoDeprecated  = (int)($lastRun['deprecated_strategy_mode_keys_seen_total']     ?? 0);
+
     // ── Bot tab: signal source selector status ────────────────────────────
     $lrSignalSourceMode           = (string)($lastRun['signal_source_mode']                         ?? ($botConfig['signal_source_mode'] ?? 'direct_strategy_handoff'));
     $lrSignalSourceEffectiveExec  = (string)($lastRun['signal_source_effective_execution']          ?? 'direct_strategy_handoff');
@@ -1604,6 +1610,21 @@ HTML;
 <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">проигнор.: режим входа</td><td style="color:#8b949e;">{$e($trIgnMode)}</td></tr>
 {$pmCloseRows}{$pmRegStateRows}<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Очередь всего (после тика)</td><td style="border-top:1px solid var(--ui-border);padding-top:6px;"><strong style="color:#f0883e;">{$e($trQueueTotal)}</strong></td></tr>
 ROWS;
+
+    // Execution mode neutral rows (shown when Bot has seen strategy signals this tick)
+    $lrExecModeRows = '';
+    if ($lrHoSeen > 0 || $lrHoFromBot > 0) {
+        $lrExecModeRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;border-top:1px solid var(--ui-border);padding-top:6px;">Handoff сигналов (Bot)</td>'
+            . '<td style="border-top:1px solid var(--ui-border);padding-top:6px;"><strong>' . $e($lrHoSeen) . '</strong></td></tr>';
+        $lrExecModeRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">→ использовано</td>'
+            . '<td style="color:#3fb950;">' . $e($lrHoUsed) . '</td></tr>';
+        $lrExecModeRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">→ режим от Bot</td>'
+            . '<td style="color:#58a6ff;">' . $e($lrHoFromBot) . '</td></tr>';
+        if ($lrHoDeprecated > 0) {
+            $lrExecModeRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">→ deprecated mode keys</td>'
+                . '<td style="color:#8b949e;">' . $e($lrHoDeprecated) . '</td></tr>';
+        }
+    }
 
     // ── Bot tab: stats rows ───────────────────────────────────────────────
     $statsRows = '';
@@ -5327,6 +5348,7 @@ BLCK;
     <div class="card-body" style="padding:12px 16px;">
       <table style="width:100%;font-size:13px;border-collapse:collapse;">
         {$tickTraceRows}
+        {$lrExecModeRows}
       </table>
     </div>
   </div>

@@ -49,8 +49,9 @@ class ShortProfile
      *               profile_used, notes, init_roi, activation_roi,
      *               distance_pct, min_required_distance_pct, side_supported}
      */
-    public function process(array $position, int $nowTs, array $wallContext = []): array
+    public function process(array $position, int $nowTs, array $wallContext = [], array $ctx = []): array
     {
+        $allowStateWrite = (bool)($ctx['allow_state_write'] ?? true);
         $symbol = (string) ($position['symbol'] ?? '');
         $key    = $this->positionKey($symbol, 'short');
 
@@ -114,7 +115,9 @@ class ShortProfile
         if ($currentRoi === null || $currentRoi < $initRoi) {
             // Persist state entry (unchanged) so symbol is tracked in storage
             $positionsState[$key] = $positionState;
-            $this->writeState($positionsState);
+            if ($allowStateWrite) {
+                $this->writeState($positionsState);
+            }
 
             return [
                 'action'                    => 'skip',
@@ -160,7 +163,9 @@ class ShortProfile
         // ── STEP 3: Activation gate ───────────────────────────────────────────
         if ($peakRoi < $activationRoi) {
             $positionsState[$key] = $positionState;
-            $this->writeState($positionsState);
+            if ($allowStateWrite) {
+                $this->writeState($positionsState);
+            }
 
             return [
                 'action'                    => 'skip',
@@ -209,8 +214,10 @@ class ShortProfile
         }
 
         $positionsState[$key] = $positionState;
-        $this->writeState($positionsState);
-        $this->writeLocks($locks);
+        if ($allowStateWrite) {
+            $this->writeState($positionsState);
+            $this->writeLocks($locks);
+        }
 
         $lockRecord = $locks[$key] ?? [];
         $lockPrice  = isset($lockRecord['lock_price']) ? (float) $lockRecord['lock_price'] : null;
@@ -275,10 +282,13 @@ class ShortProfile
 
         // Re-persist state with any wall exit counter updates
         $positionsState[$key] = $positionState;
-        $this->writeState($positionsState);
+        if ($allowStateWrite) {
+            $this->writeState($positionsState);
+        }
 
         return [
             'action'                     => $planAction,
+            'allow_state_write_blocked'  => !$allowStateWrite,
             'skip_reason'                => $planAction === 'wall_exit_close' ? null : ($plan['skip_reason'] ?? null),
             'roi'                        => $currentRoi,
             'peak_roi'                   => $peakRoi,

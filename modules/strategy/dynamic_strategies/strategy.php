@@ -438,11 +438,16 @@ final class DynamicStrategiesStrategy
                 $matchedRec = $this->findReplayRecordForCandidate(
                     $cand, $replayBySymbol, $replayMatchAgeMinutes
                 );
+                $replayMeta = $matchedRec !== null ? ($matchedRec['_replay_match_meta'] ?? []) : [];
                 $candidates[$idx]['replay_status']             = $matchedRec !== null ? ($matchedRec['status']             ?? null) : null;
                 $candidates[$idx]['replay_reject_reason']      = $matchedRec !== null ? ($matchedRec['reject_reason']      ?? null) : null;
                 $candidates[$idx]['trend_5m']                  = $matchedRec !== null ? ($matchedRec['trend_5m']           ?? null) : null;
                 $candidates[$idx]['trend_15m']                 = $matchedRec !== null ? ($matchedRec['trend_15m']          ?? null) : null;
                 $candidates[$idx]['trend_30m']                 = $matchedRec !== null ? ($matchedRec['trend_30m']          ?? null) : null;
+                $candidates[$idx]['replay_match_mode']         = $replayMeta['replay_match_mode']          ?? ($matchedRec !== null ? 'unknown' : null);
+                $candidates[$idx]['replay_matched_context_ids']= $replayMeta['replay_matched_context_ids'] ?? [];
+                $candidates[$idx]['replay_record_observed_at'] = $replayMeta['replay_record_observed_at']  ?? null;
+                $candidates[$idx]['replay_record_age_seconds'] = $replayMeta['replay_record_age_seconds']  ?? null;
                 // Extract replay confirmation fields from confirmations sub-array (new format),
                 // with fallback to top-level confirmation_count for legacy records.
                 $replayCnt            = 0;
@@ -465,6 +470,17 @@ final class DynamicStrategiesStrategy
                 $candidates[$idx]['replay_confirmation_passed']     = $replayConfPassed;
                 $candidates[$idx]['replay_confirmation_confidence'] = $replayConfConfidence;
                 $candidates[$idx]['replay_price_change_pct']        = $replayPriceChangePct;
+                // Stable idea key for diagnostics/dedupe — does not change signal_id consumers
+                $ideaObsAt    = $cand['observed_at'] ?? null;
+                $ideaTsRaw    = $ideaObsAt !== null ? (is_int($ideaObsAt) ? $ideaObsAt : (int)strtotime((string)$ideaObsAt)) : time();
+                $ideaHrBucket = (int)floor($ideaTsRaw / 3600);
+                $candidates[$idx]['dynamic_idea_key'] = implode(':', [
+                    strtoupper((string)($cand['symbol']    ?? '')),
+                    strtolower((string)($cand['side']      ?? 'none')),
+                    (string)($cand['dynamic_rule']         ?? 'none'),
+                    (string)($cand['context_type']         ?? 'none'),
+                    (string)$ideaHrBucket,
+                ]);
             }
         }
 
@@ -937,6 +953,7 @@ final class DynamicStrategiesStrategy
                 'confirmation_count'          => $confCnt,
                 'reason_codes'                => $cand['reason_codes'],
                 'warnings'                    => $warnings,
+                'dynamic_idea_key'            => $cand['dynamic_idea_key'] ?? null,
                 // Nested context for bot
                 'strategy_signal_context'     => $stratSignalCtx,
             ];
@@ -2530,38 +2547,44 @@ final class DynamicStrategiesStrategy
      *
      * Returns the most recent matching record, or null if none found.
      */
+    /**
+     * Find the most recent matching replay record for a given candidate.
+     *
+     * Matching priority:
+     *   1. source_context_ids intersection (exact source context match)
+     *   2. context_type match within symbol
+     *   3. observed_at time bucket (age filter)
+     *   4. dynamic_rule when available
+     *
+     * Returns the best matching record along with the match mode used, or null if none found.
+     * The returned array has an extra '_replay_match_meta' key with diagnostics.
+     */
     private function findReplayRecordForCandidate(
         array $candidate,
         array $replayBySymbol,
         int   $maxAgeMinutes
     ): ?array {
-        $sym             = (string)($candidate['symbol'] ?? '');
-        $srcContextTypes = (array)($candidate['source_context_types'] ?? []);
-        $now             = time();
-        $cutoff          = $now - ($maxAgeMinutes * 60);
+        $sym                = (string)($candidate['symbol'] ?? '');
+        $srcContextTypes    = (array)($candidate['source_context_types'] ?? []);
+        $srcContextIds      = (array)($candidate['source_context_ids']   ?? []);
+        $candDynamicRule    = (string)($candidate['dynamic_rule']        ?? '');
+        $now                = time();
+        $cutoff             = $now - ($maxAgeMinutes * 60);
 
         $records = $replayBySymbol[$sym] ?? [];
         if (empty($records)) {
             return null;
         }
 
-        $matching = [];
+        // Age filter + skip no-data records
+        $ageFiltered = [];
         foreach ($records as $rec) {
             if (!is_array($rec)) {
                 continue;
             }
-            // Skip records with no usable trend data
             if (($rec['status'] ?? '') === 'skipped_candles_unavailable') {
                 continue;
             }
-            // Context-type filter when candidate has source_context_types
-            if (!empty($srcContextTypes)) {
-                $recType = (string)($rec['context_type'] ?? '');
-                if (!in_array($recType, $srcContextTypes, true)) {
-                    continue;
-                }
-            }
-            // Age filter
             $obsAt = $rec['observed_at'] ?? null;
             if ($obsAt !== null) {
                 $recTs = is_int($obsAt) ? $obsAt : (int)strtotime((string)$obsAt);
@@ -2569,23 +2592,111 @@ final class DynamicStrategiesStrategy
                     continue;
                 }
             }
-            $matching[] = $rec;
+            $ageFiltered[] = $rec;
         }
 
-        if (empty($matching)) {
+        if (empty($ageFiltered)) {
             return null;
         }
 
-        // Return most recent
-        usort($matching, static function (array $a, array $b): int {
+        // Helper: sort by most recent observed_at
+        $sortByRecent = static function (array $a, array $b): int {
             $oaA = $a['observed_at'] ?? null;
             $oaB = $b['observed_at'] ?? null;
             $ta  = $oaA !== null ? (is_int($oaA) ? $oaA : (int)strtotime((string)$oaA)) : 0;
             $tb  = $oaB !== null ? (is_int($oaB) ? $oaB : (int)strtotime((string)$oaB)) : 0;
             return $tb - $ta;
-        });
+        };
 
-        return $matching[0];
+        // ── Priority 1: exact source_context_ids intersection ────────────────
+        if (!empty($srcContextIds)) {
+            $exactMatches = [];
+            foreach ($ageFiltered as $rec) {
+                $recCtxIds = (array)($rec['source_context_ids'] ?? []);
+                if (!empty($recCtxIds)) {
+                    $intersection = array_intersect($srcContextIds, $recCtxIds);
+                    if (!empty($intersection)) {
+                        $recCopy = $rec;
+                        $recCopy['_intersection_count'] = count($intersection);
+                        $exactMatches[] = $recCopy;
+                    }
+                }
+            }
+            if (!empty($exactMatches)) {
+                // Sort by intersection size desc, then by most recent
+                usort($exactMatches, static function (array $a, array $b) use ($sortByRecent): int {
+                    $intDiff = ($b['_intersection_count'] ?? 0) - ($a['_intersection_count'] ?? 0);
+                    if ($intDiff !== 0) {
+                        return $intDiff;
+                    }
+                    return $sortByRecent($a, $b);
+                });
+                $best = $exactMatches[0];
+                $matchedCtxIds = array_values(array_intersect(
+                    $srcContextIds,
+                    (array)($best['source_context_ids'] ?? [])
+                ));
+                unset($best['_intersection_count']);
+                $best['_replay_match_meta'] = [
+                    'replay_match_mode'             => 'exact_source_context',
+                    'replay_matched_context_ids'    => $matchedCtxIds,
+                    'replay_record_observed_at'     => $best['observed_at'] ?? null,
+                    'replay_record_age_seconds'     => ($best['observed_at'] ?? null) !== null
+                        ? max(0, $now - (is_int($best['observed_at']) ? $best['observed_at'] : (int)strtotime((string)$best['observed_at'])))
+                        : null,
+                ];
+                return $best;
+            }
+        }
+
+        // ── Priority 2: context_type match ───────────────────────────────────
+        if (!empty($srcContextTypes)) {
+            $typeMatches = [];
+            foreach ($ageFiltered as $rec) {
+                $recType = (string)($rec['context_type'] ?? '');
+                if (in_array($recType, $srcContextTypes, true)) {
+                    $typeMatches[] = $rec;
+                }
+            }
+            if (!empty($typeMatches)) {
+                // Sub-prioritise by dynamic_rule match if available
+                if ($candDynamicRule !== '') {
+                    $ruleMatches = array_filter($typeMatches, static function (array $rec) use ($candDynamicRule): bool {
+                        $recRule = (string)($rec['dynamic_rule'] ?? '');
+                        return $recRule !== '' && $recRule === $candDynamicRule;
+                    });
+                    if (!empty($ruleMatches)) {
+                        $typeMatches = array_values($ruleMatches);
+                    }
+                }
+                usort($typeMatches, $sortByRecent);
+                $best = $typeMatches[0];
+                $best['_replay_match_meta'] = [
+                    'replay_match_mode'          => 'context_type',
+                    'replay_matched_context_ids' => [],
+                    'replay_record_observed_at'  => $best['observed_at'] ?? null,
+                    'replay_record_age_seconds'  => ($best['observed_at'] ?? null) !== null
+                        ? max(0, $now - (is_int($best['observed_at']) ? $best['observed_at'] : (int)strtotime((string)$best['observed_at'])))
+                        : null,
+                ];
+                return $best;
+            }
+        }
+
+        // ── Priority 3: fallback — any record for this symbol (time_bucket) ──
+        // Conservative fallback: use the most recent record for the symbol.
+        // This is explicit (not silent) and labelled 'symbol_context_fallback'.
+        usort($ageFiltered, $sortByRecent);
+        $best = $ageFiltered[0];
+        $best['_replay_match_meta'] = [
+            'replay_match_mode'          => 'symbol_context_fallback',
+            'replay_matched_context_ids' => [],
+            'replay_record_observed_at'  => $best['observed_at'] ?? null,
+            'replay_record_age_seconds'  => ($best['observed_at'] ?? null) !== null
+                ? max(0, $now - (is_int($best['observed_at']) ? $best['observed_at'] : (int)strtotime((string)$best['observed_at'])))
+                : null,
+        ];
+        return $best;
     }
 
     /**

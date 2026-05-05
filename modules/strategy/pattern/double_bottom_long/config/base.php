@@ -97,6 +97,9 @@ return [
         'classic_intraday_double_bottom_reclaim',
         'post_dump_base_reclaim',
     ],
+    // Minimum quality score required to allow adaptive wide-stop bypass for A/B synthetic setups.
+    // 0.0 = disabled (allow any quality); set to e.g. 0.72 to require strong quality.
+    'final_stop_width_adaptive_min_quality_score' => 0.0,
     'reverse_pattern_close_enabled'=> false,
     'tp_enabled'                   => true,   // take-profit enabled
     'tp_mode'                      => 'fixed_r',   // fixed_r | fixed_price

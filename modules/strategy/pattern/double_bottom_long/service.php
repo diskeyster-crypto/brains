@@ -640,12 +640,19 @@ final class DoubleBottomLongService
                     $sig['pending_confirmed_at']              = $sig['pending_confirmed_at']                 ?? null;
                     $sig['pending_invalidated_reason']        = null; // emitted = not invalidated
                     // Detect and list any fields that are unavailable (null) — do not fill with fake defaults
-                    $traceFields = [
+                    // Fields always required for trace completeness
+                    $traceFieldsAlways = [
+                        'quality_source',
+                    ];
+                    // Fields only required when signal uses synthetic intraday quality path
+                    $isSyntheticQuality = (string)($sig['quality_source'] ?? '') === 'synthetic_intraday_setup';
+                    $traceFieldsSynth = $isSyntheticQuality ? [
                         'neckline_level', 'reclaim_level', 'entry_distance_from_neckline_pct',
                         'entry_distance_from_reclaim_pct', 'synthetic_quality_score',
                         'setup_class_score', 'intraday_double_bottom_score',
-                        'synthetic_quality_pass', 'quality_source',
-                    ];
+                        'synthetic_quality_pass',
+                    ] : [];
+                    $traceFields = array_merge($traceFieldsAlways, $traceFieldsSynth);
                     $missingTraceFields = [];
                     foreach ($traceFields as $tf) {
                         if (($sig[$tf] ?? null) === null) {
@@ -1348,7 +1355,7 @@ final class DoubleBottomLongService
             },
             'started_at'        => $state['started_at']      ?? null,
             'updated_at'        => date('c'),
-            'finished_at'       => ($isDone && !$continuousEnabled) ? $finishedAt : null,
+            'finished_at'       => $isDone ? $finishedAt : null,
             // current_cycle_id is the cycle actively running right now (post-increment if just rolled over)
             'current_cycle_id'          => (int)($state['cycle_id'] ?? 0),
             // last_completed_cycle_id is the cycle that just finished in this tick (null while still in progress)
@@ -1364,7 +1371,7 @@ final class DoubleBottomLongService
             'found'             => $totalFound,
             'signals_semantics' => 'signals.json = active rolling pool across cycles with TTL expiry',
             'signals_emitted_total'      => (int)($stats['signals_emitted_total'] ?? 0),
-            'signals_active_final_total' => count($signals),
+            'signals_active_final_total' => $sigActiveTotal,
             // Explicit semantic separation: cycle-local vs active pool vs handoff
             'current_cycle_signals_emitted_total' => (int)($cycleStats['signals_emitted_total'] ?? 0),
             'current_cycle_final_signals_total'   => $cycleNewWinnerCount,
@@ -1380,7 +1387,11 @@ final class DoubleBottomLongService
             'bot_handoff_new_total'       => $handoffStats['new_total'],
             'bot_handoff_refreshed_total' => $handoffStats['refreshed_total'],
             'bot_handoff_expired_total'   => $handoffStats['expired_total'],
-            'final_signals_total'        => count($signals),
+            'final_signals_total'                         => count($signals),
+            'final_signals_produced_this_run_total'       => $cycleNewWinnerCount,
+            'final_signals_active_final_total'            => $sigActiveTotal,
+            'final_signals_stale_withdrawn_total'         => $sigStaleTotal,
+            'final_signals_executable_handoff_ready_total' => $handoffStats['ready_total'],
             'last_cycle_summary' => $state['last_cycle_summary'] ?? null,
             'regime'       => $regimeSummary,
             'pipeline_summary' => [
@@ -1405,7 +1416,7 @@ final class DoubleBottomLongService
                 'candidate_expired'          => $cycleStats['candidate_expired_total']          ?? 0,
                 'candidate_confirm_failed'   => $cycleStats['candidate_confirm_failed_total']   ?? 0,
                 'signals_emitted_total'      => $cycleStats['signals_emitted_total']         ?? 0,
-                'signals_active_final_total' => count($signals),
+                'signals_active_final_total' => $sigActiveTotal,
                 'signals_before_winner_selection'   => $cycleStats['signals_before_winner_selection_total']   ?? 0,
                 'signals_after_winner_selection'    => $cycleStats['signals_after_winner_selection_total']    ?? 0,
                 'signals_rejected_missing_quality'  => $cycleStats['signals_rejected_missing_quality_total']  ?? 0,
@@ -3191,6 +3202,7 @@ final class DoubleBottomLongService
         $stopWarnClasses     = (array)($config['final_stop_width_warn_setup_classes'] ?? [
             'classic_intraday_double_bottom_reclaim', 'post_dump_base_reclaim',
         ]);
+        $adaptiveStopMinQuality  = (float)($config['final_stop_width_adaptive_min_quality_score'] ?? 0.0);
 
         $finalRejectDist  = [];
 
@@ -3297,17 +3309,42 @@ final class DoubleBottomLongService
                         $finalRejectDist['final_stop_too_wide'] = ($finalRejectDist['final_stop_too_wide'] ?? 0) + 1;
                         continue;
                     } elseif ($slPct > $stopWarnPct) {
-                        // Moderately wide: warning only, still eligible
+                        // Moderately wide: warning only for whitelisted A/B synthetic classes.
+                        // If adaptive_min_quality_score is configured, require quality to be strong.
+                        $qualScore = (float)($s['candidate_quality_score'] ?? 0.0);
+                        $qualOk    = $adaptiveStopMinQuality <= 0.0 || $qualScore >= $adaptiveStopMinQuality;
+                        if (!$qualOk && $adaptiveStopMinQuality > 0.0) {
+                            // Quality too low for adaptive wide-stop bypass → hard reject
+                            $stopWidthHardRejectTotal++;
+                            $s['adaptive_stop_width_allowed']         = false;
+                            $s['adaptive_stop_width_reason']          = 'adaptive_stop_quality_too_low';
+                            $s['configured_max_stop_loss_pct']        = $maxStopLossPct;
+                            $s['effective_stop_loss_pct_limit']       = $stopWarnPct;
+                            $s['effective_stop_loss_pct']             = $slPct;
+                            $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_stop_too_wide'];
+                            $finalRejectDist['final_stop_too_wide'] = ($finalRejectDist['final_stop_too_wide'] ?? 0) + 1;
+                            continue;
+                        }
                         $stopWidthWarningTotal++;
                         $stopWidthBypassedForSynthTotal++;
                         $s['final_stop_width_warning']        = true;
                         $s['final_stop_width_warning_reason'] = 'final_stop_width_above_warning_threshold';
                         $s['final_stop_width_gate_bypassed_for_synthetic_setup'] = true;
+                        $s['adaptive_stop_width_allowed']         = true;
+                        $s['adaptive_stop_width_reason']          = 'setup_class_whitelisted_quality_ok';
+                        $s['configured_max_stop_loss_pct']        = $maxStopLossPct;
+                        $s['effective_stop_loss_pct_limit']       = $stopWarnPct;
+                        $s['effective_stop_loss_pct']             = $slPct;
                         // keep eligible
                     } else {
                         // Within warning threshold: no issue
                         $s['final_stop_width_warning'] = false;
                         $s['final_stop_width_gate_bypassed_for_synthetic_setup'] = false;
+                        $s['adaptive_stop_width_allowed']   = true;
+                        $s['adaptive_stop_width_reason']    = 'within_warning_threshold';
+                        $s['configured_max_stop_loss_pct']  = $maxStopLossPct;
+                        $s['effective_stop_loss_pct_limit'] = $stopWarnPct;
+                        $s['effective_stop_loss_pct']       = $slPct ?? 0.0;
                     }
                     // Always stamp gate-mode diagnostics
                     $s['final_stop_width_gate_mode']    = $stopGateMode;
@@ -3315,13 +3352,24 @@ final class DoubleBottomLongService
                     $s['final_stop_width_warning_pct']  = $stopWarnPct;
                     $s['stop_loss_pct']                 = $slPct;
                 } elseif ($maxStopLossPct > 0.0) {
-                    // Classic hard-reject path
+                    // Classic hard-reject path — max_stop_loss_pct is the hard cap
                     if ($slPct === null || $slPct > $maxStopLossPct) {
                         $stopWidthHardRejectTotal++;
+                        $s['adaptive_stop_width_allowed']   = false;
+                        $s['adaptive_stop_width_reason']    = 'classic_hard_cap_exceeded';
+                        $s['configured_max_stop_loss_pct']  = $maxStopLossPct;
+                        $s['effective_stop_loss_pct_limit'] = $maxStopLossPct;
+                        $s['effective_stop_loss_pct']       = $slPct;
                         $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_stop_too_wide'];
                         $finalRejectDist['final_stop_too_wide'] = ($finalRejectDist['final_stop_too_wide'] ?? 0) + 1;
                         continue;
                     }
+                    // Within classic cap — stamp diagnostics
+                    $s['adaptive_stop_width_allowed']   = true;
+                    $s['adaptive_stop_width_reason']    = 'within_classic_hard_cap';
+                    $s['configured_max_stop_loss_pct']  = $maxStopLossPct;
+                    $s['effective_stop_loss_pct_limit'] = $maxStopLossPct;
+                    $s['effective_stop_loss_pct']       = $slPct;
                 }
             }
 

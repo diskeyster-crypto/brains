@@ -127,8 +127,11 @@ final class ProfManagerService
      *
      * @return array Structured result
      */
-    public function tick(): array
+    public function tick(array $tickCtx = []): array
     {
+        $fastTick          = (bool)($tickCtx['fast_tick'] ?? false);
+        $fastTickAllowClose    = (bool)($this->config['fast_tick_allow_close']     ?? true);
+        $fastTickAllowLockMove = (bool)($this->config['fast_tick_allow_lock_move'] ?? true);
         $nowTs      = time();
         $ts         = date('c', $nowTs);
 
@@ -249,6 +252,11 @@ final class ProfManagerService
             $pmStateLegacyKeyIgnoredTotal = 0;
             $pmStateIdentityMismatchExamples = [];
 
+            // Fast-tick enforcement counters
+            $fastTickCloseBlockedTotal        = 0;
+            $fastTickComputedCloseNotExecTotal = 0;
+            $fastTickLockMoveBlockedTotal      = 0;
+
             // Long impulse-hold diagnostic counters
             $impulseHoldCheckedTotal             = 0;
             $impulseHoldStrongTotal              = 0;
@@ -346,10 +354,14 @@ final class ProfManagerService
 
                 if ($side === 'long') {
                     $positionsLong++;
-                    $profileResult = $this->longProfile->process($pos, $nowTs, $posWallContext);
+                    $profileResult = $this->longProfile->process($pos, $nowTs, $posWallContext, [
+                        'allow_state_write' => !($fastTick && !$fastTickAllowLockMove),
+                    ]);
                 } elseif ($side === 'short') {
                     $positionsShort++;
-                    $profileResult = $this->shortProfile->process($pos, $nowTs, $posWallContext);
+                    $profileResult = $this->shortProfile->process($pos, $nowTs, $posWallContext, [
+                        'allow_state_write' => !($fastTick && !$fastTickAllowLockMove),
+                    ]);
                 } else {
                     $profileResult = [
                         'action'       => 'skip',
@@ -397,6 +409,23 @@ final class ProfManagerService
                 }
 
                 if (in_array($pmAction, $pmCloseActions, true)) {
+                    // Fast-tick close enforcement
+                    if ($fastTick && !$fastTickAllowClose) {
+                        $fastTickCloseBlockedTotal++;
+                        $fastTickComputedCloseNotExecTotal++;
+                        $profileResult['action']           = 'skip';
+                        $profileResult['skip_reason']      = 'fast_tick_close_blocked_by_config';
+                        $closeAttemptResult = [
+                            'close_attempted'    => false,
+                            'close_ok'           => false,
+                            'close_ret_code'     => null,
+                            'close_ret_msg'      => null,
+                            'close_reason'       => 'fast_tick_close_blocked_by_config',
+                            'close_source'       => 'profit_manager_fast_tick',
+                            'close_order_id'     => null,
+                            'close_error_reason' => 'fast_tick_close_blocked_by_config',
+                        ];
+                    } else {
                     $posExecMode  = $this->resolveCloseMode($pos, $moduleMode);
                     $posSymbol    = (string)($pos['symbol'] ?? '');
                     $posSide      = (string)($pos['side']   ?? '');
@@ -477,6 +506,7 @@ final class ProfManagerService
                         ];
                         $profileResult['action'] = 'close_failed';
                     }
+                    } // end fast_tick else
                 }
 
                 // Track actions summary
@@ -544,6 +574,12 @@ final class ProfManagerService
                     }
 
                     if (count($shortPositionExamples) < 5)     { $shortPositionExamples[] = $shortEx; }
+
+                    if ($fastTick && !$fastTickAllowLockMove
+                        && in_array($action, ['would_set_profit_lock', 'would_move_profit_lock'], true)
+                    ) {
+                        $fastTickLockMoveBlockedTotal++;
+                    }
                 }
 
                 // ── Long-profile impulse / grace diagnostic tracking ───────────
@@ -613,6 +649,12 @@ final class ProfManagerService
                         ) {
                             if (count($impulseHoldCloseExamples) < 5) { $impulseHoldCloseExamples[] = $impulseEx; }
                         }
+                    }
+
+                    if ($fastTick && !$fastTickAllowLockMove
+                        && in_array($action, ['would_set_profit_lock', 'would_move_profit_lock'], true)
+                    ) {
+                        $fastTickLockMoveBlockedTotal++;
                     }
 
                     if ($graceActive) {
@@ -1006,6 +1048,13 @@ final class ProfManagerService
                 // PM state identity diagnostics
                 'pm_state_identity_mismatch_total'    => $pmStateIdentityMismatchTotal,
                 'pm_state_legacy_key_ignored_total'   => $pmStateLegacyKeyIgnoredTotal,
+                // Fast-tick enforcement diagnostics
+                'fast_tick'                                     => $fastTick,
+                'fast_tick_allow_close'                         => $fastTickAllowClose,
+                'fast_tick_allow_lock_move'                     => $fastTickAllowLockMove,
+                'fast_tick_close_blocked_by_config_total'       => $fastTickCloseBlockedTotal,
+                'fast_tick_computed_close_but_not_executed_total' => $fastTickComputedCloseNotExecTotal,
+                'fast_tick_lock_move_blocked_by_config_total'   => $fastTickLockMoveBlockedTotal,
                 'pm_state_stale_removed_total'        => $cleanResult['long_state_cleaned']
                                                        + $cleanResult['long_locks_cleaned']
                                                        + $shortCleanResult['short_state_cleaned']
@@ -1150,8 +1199,8 @@ final class ProfManagerService
             ];
         }
 
-        // Run standard tick — all business logic lives there
-        $result = $this->tick();
+        // Run standard tick with fast_tick context flag
+        $result = $this->tick(['fast_tick' => true]);
 
         // Tag result as fast-tick for diagnostics
         $result['fast_tick']        = true;

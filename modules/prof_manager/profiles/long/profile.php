@@ -61,8 +61,9 @@ class LongProfile
      *               hybrid_simulation_enabled,
      *               hybrid_detection_score, hybrid_support_level, hybrid_detection_evidence}
      */
-    public function process(array $position, int $nowTs, array $wallContext = []): array
+    public function process(array $position, int $nowTs, array $wallContext = [], array $ctx = []): array
     {
+        $allowStateWrite = (bool)($ctx['allow_state_write'] ?? true);
         $symbol = (string) ($position['symbol'] ?? '');
         $key    = $this->positionKey($symbol, 'long');
 
@@ -490,14 +491,17 @@ class LongProfile
 
         // Persist updated state (includes hybrid fields)
         $positionsState[$key] = $positionState;
-        $this->writeState($positionsState);
-        $this->writeLocks($locks);
+        if ($allowStateWrite) {
+            $this->writeState($positionsState);
+            $this->writeLocks($locks);
+        }
 
         $lockRecord = $locks[$key] ?? [];
         $lockPrice  = isset($lockRecord['lock_price']) ? (float) $lockRecord['lock_price'] : null;
 
         return [
             'action'                    => $plan['action']               ?? 'skip',
+            'allow_state_write_blocked' => !$allowStateWrite,
             'skip_reason'               => $plan['skip_reason']          ?? null,
             'roi'                       => $plan['current_roi']          ?? null,
             'peak_roi'                  => $plan['peak_roi']             ?? null,

@@ -109,6 +109,22 @@ final class ProfManagerService
     {
         $nowTs      = time();
         $ts         = date('c', $nowTs);
+
+        // ── Effective mode: inherit global_runtime_mode from bot config if present ──
+        // The global_runtime_mode is written by the top DEMO/LIVE dashboard button.
+        // Fallback to this module's own mode config for backward compatibility.
+        $pmBotConfig         = $this->loadBotConfig();
+        $pmGlobalRuntimeMode = (string)($pmBotConfig['global_runtime_mode'] ?? '');
+        $pmLocalMode         = (string)($this->config['mode'] ?? 'demo');
+        if ($pmGlobalRuntimeMode !== '' && in_array($pmGlobalRuntimeMode, ['demo', 'live'], true)) {
+            $this->config['mode']    = $pmGlobalRuntimeMode;
+            $pmEffectiveModeSource   = 'global_runtime_mode';
+            $pmDeprecatedLocalMode   = $pmLocalMode !== '' && $pmLocalMode !== $pmGlobalRuntimeMode;
+        } else {
+            $pmEffectiveModeSource   = 'legacy_mode_fallback';
+            $pmDeprecatedLocalMode   = false;
+        }
+
         $moduleMode = $this->moduleMode();
         $account    = ($moduleMode === 'live') ? 'bybit_live' : 'bybit_demo';
         $sourceLabel= ($moduleMode === 'live') ? 'bybit_live_positions_cache' : 'bybit_demo_positions_cache';
@@ -121,6 +137,9 @@ final class ProfManagerService
                     'ts'             => $ts,
                     'enabled'        => false,
                     'mode'           => $moduleMode,
+                    'pm_effective_mode_source'     => $pmEffectiveModeSource,
+                    'global_runtime_mode'          => $pmGlobalRuntimeMode !== '' ? $pmGlobalRuntimeMode : null,
+                    'deprecated_local_mode_ignored'=> $pmDeprecatedLocalMode,
                     'account'        => $account,
                     'active_profile' => 'auto',
                     'skipped'        => 'module_disabled',
@@ -150,6 +169,9 @@ final class ProfManagerService
                     'ts'             => $ts,
                     'enabled'        => true,
                     'mode'           => $moduleMode,
+                    'pm_effective_mode_source'     => $pmEffectiveModeSource,
+                    'global_runtime_mode'          => $pmGlobalRuntimeMode !== '' ? $pmGlobalRuntimeMode : null,
+                    'deprecated_local_mode_ignored'=> $pmDeprecatedLocalMode,
                     'account'        => $account,
                     'active_profile' => 'auto',
                     'positions_total'=> 0,
@@ -850,6 +872,9 @@ final class ProfManagerService
                 'ts'                   => $ts,
                 'enabled'              => true,
                 'mode'                 => $moduleMode,
+                'pm_effective_mode_source'    => $pmEffectiveModeSource,
+                'global_runtime_mode'         => $pmGlobalRuntimeMode !== '' ? $pmGlobalRuntimeMode : null,
+                'deprecated_local_mode_ignored'=> $pmDeprecatedLocalMode,
                 'account'              => $account,
                 'active_profile'       => 'auto',
                 'positions_total'      => $positionsTotal,

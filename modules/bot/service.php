@@ -331,8 +331,14 @@ final class BotService
             }
         }
 
+        // ── Effective mode: global_runtime_mode takes precedence over legacy mode ──
+        // global_runtime_mode is written by the top DEMO/LIVE button and is the
+        // single source of truth. Fallback to mode for backward compatibility.
+        $globalRuntimeMode   = (string)($config['global_runtime_mode'] ?? '');
+        $botMode             = $globalRuntimeMode !== '' ? $globalRuntimeMode : (string)($config['mode'] ?? 'demo');
+        $effectiveModeSource = $globalRuntimeMode !== '' ? 'global_runtime_mode' : 'legacy_mode_fallback';
+
         // ── Demo credentials diagnostics ─────────────────────────────────────
-        $botMode            = (string)($config['mode'] ?? 'demo');
         $demoApiKey         = (string)($config['demo_api_key']    ?? '');
         $demoApiSecret      = (string)($config['demo_api_secret'] ?? '');
         $demoCredsConfigured = ($demoApiKey !== '' && $demoApiSecret !== '');
@@ -385,6 +391,8 @@ final class BotService
                     'bot_enabled'                  => false,
                     'bot_mode'                     => $botMode,
                     'mode'                         => $botMode,
+                    'global_runtime_mode'          => $globalRuntimeMode !== '' ? $globalRuntimeMode : null,
+                    'effective_mode_source'        => $effectiveModeSource,
                     'account'                      => $account,
                     'demo_credentials_configured'  => $demoCredsConfigured,
                     'demo_connected'               => $demoConnected,
@@ -1152,13 +1160,15 @@ final class BotService
         }
 
         $lastRun = [
-            'status'      => 'ok',
-            'tick_at'     => $tickAt,
-            'elapsed_sec' => $elapsed,
-            'bot_enabled' => true,
-            'bot_mode'    => $botMode,
-            'mode'        => $botMode,
-            'account'     => $account,
+            'status'               => 'ok',
+            'tick_at'              => $tickAt,
+            'elapsed_sec'          => $elapsed,
+            'bot_enabled'          => true,
+            'bot_mode'             => $botMode,
+            'mode'                 => $botMode,
+            'global_runtime_mode'  => $globalRuntimeMode !== '' ? $globalRuntimeMode : null,
+            'effective_mode_source'=> $effectiveModeSource,
+            'account'              => $account,
             'demo_credentials_configured' => $demoCredsConfigured,
             'demo_connected'              => $demoConnected,
             'demo_connection_error'       => $demoConnError,
@@ -1374,6 +1384,7 @@ final class BotService
             'handoff_strategy_signals_seen_total'          => $result['handoff_strategy_signals_seen_total']          ?? 0,
             'handoff_strategy_signals_used_total'          => $result['handoff_strategy_signals_used_total']          ?? 0,
             'handoff_execution_mode_from_bot_total'        => $result['handoff_execution_mode_from_bot_total']        ?? 0,
+            'handoff_execution_mode_from_global_total'     => $effectiveModeSource === 'global_runtime_mode' ? ($result['handoff_execution_mode_from_bot_total'] ?? 0) : 0,
             'handoff_missing_execution_mode_ignored_total' => $result['handoff_missing_execution_mode_ignored_total'] ?? 0,
             'handoff_blocked_global_live_disabled_total'   => $result['handoff_blocked_global_live_disabled_total']   ?? 0,
             'handoff_blocked_gateway_unavailable_total'    => $result['handoff_blocked_gateway_unavailable_total']    ?? 0,

@@ -235,6 +235,11 @@ HTML;
         $cfgEnNo   = !$config['enabled'] ? ' selected' : '';
         $cfgModeDe = ($config['mode'] ?? '') !== 'live' ? ' selected' : '';
         $cfgModeLi = ($config['mode'] ?? '') === 'live' ? ' selected' : '';
+        // Read-only inherited mode badge for standalone SM config page
+        $cfgModeVal       = ($config['mode'] ?? 'demo');
+        $cfgModeColor     = $cfgModeVal === 'live' ? '#f85149' : '#f0883e';
+        $cfgModeBadgeHtml = '<span style="color:' . $cfgModeColor . ';font-weight:700;">'
+            . $e(strtoupper($cfgModeVal)) . '</span>';
         $cfgBeEnYes = ($config['breakeven_enabled'] ?? false) ? ' selected' : '';
         $cfgBeEnNo  = !($config['breakeven_enabled'] ?? false) ? ' selected' : '';
 
@@ -394,11 +399,11 @@ HTML;
             </select>
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
-            <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="demo"{$cfgModeDe}>demo</option>
-              <option value="live"{$cfgModeLi}>live</option>
-            </select>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим среды</label>
+            <div style="height:32px;display:flex;align-items:center;font-size:13px;padding:2px 8px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;">
+              {$cfgModeBadgeHtml}
+              <span style="font-size:11px;color:var(--ui-text-muted);margin-left:8px;">← DEMO/LIVE кнопки в Оперативном центре</span>
+            </div>
           </div>
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Stop mode</label>
@@ -601,9 +606,9 @@ HTML;
 
             // ── Core fields ────────────────────────────────────────────────
             $existing['enabled']                   = (bool)(int)($_POST['enabled']                   ?? 0);
-            $existing['mode']                      = in_array($_POST['mode'] ?? '', ['demo', 'live'], true)
-                ? (string)$_POST['mode']
-                : 'demo';
+            // mode is no longer saved from the quick UI — it is inherited from global_runtime_mode
+            // (written by the top DEMO/LIVE button via handleDashboardSwitchMode).
+            // Preserve the existing mode value for backward compatibility.
             if (isset($_POST['live_protective_stops_enabled'])) {
                 $existing['live_protective_stops_enabled'] = (bool)(int)$_POST['live_protective_stops_enabled'];
             }

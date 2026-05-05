@@ -215,6 +215,10 @@ function renderDashboardHub(): string
     $pmCfgEnNo  = !($pmCfg['enabled'] ?? false) ? ' selected' : '';
     $pmCfgModeDemoSel = ((string)($pmCfg['mode'] ?? 'demo') !== 'live') ? ' selected' : '';
     $pmCfgModeLiveSel = ((string)($pmCfg['mode'] ?? 'demo') === 'live') ? ' selected' : '';
+    // Read-only inherited mode badge for PM quick settings
+    $pmInheritedModeColor    = $pmMode === 'live' ? '#f85149' : '#f0883e';
+    $pmInheritedModeBadgeHtml = '<span style="color:' . $pmInheritedModeColor . ';font-weight:700;">'
+        . $e(strtoupper($pmMode)) . '</span>';
 
     $pmCfgInitRoi      = (string) ($pmCfgProfileCfg['init_roi']               ?? 2.0);
     $pmCfgActivRoi     = (string) ($pmCfgProfileCfg['activation_roi']         ?? 10.0);
@@ -485,8 +489,8 @@ function renderDashboardHub(): string
     $posCount    = count($positions);
 
     // ── Queue mode-diagnostics (Part 6) ──────────────────────────────────
-    // Use current config mode (most up-to-date) for stale detection
-    $cfgCurrentMode     = (string)($botConfig['mode'] ?? $botMode);
+    // Use current config global_runtime_mode (single source of truth) for stale detection
+    $cfgCurrentMode     = (string)($botConfig['global_runtime_mode'] ?? $botConfig['mode'] ?? $botMode);
     $queueReadyLiveCount      = 0;
     $queueSubmittedDemoCount  = 0;
     $queueStaleOtherModeCount = 0;
@@ -1156,10 +1160,6 @@ HTG;
         <td style="padding:3px 0;">{$signalStr}</td>
       </tr>
       <tr>
-        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);">Режим</td>
-        <td colspan="3" style="padding:3px 0;"><code>{$esMode}</code></td>
-      </tr>
-      <tr>
         <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Runtime</td>
         <td colspan="3" style="padding:3px 0;">
           <code style="font-size:11px;">{$rsStatus}</code>
@@ -1270,6 +1270,12 @@ HTML;
     // ── Control tab: global bot config ───────────────────────────────────
     $cfgEnabled     = ($botConfig['enabled'] ?? false) ? '1' : '0';
     $cfgMode        = $e($botConfig['mode']              ?? 'demo');
+    // Global runtime mode (single source of truth from top DEMO/LIVE button)
+    $cfgGlobalRuntimeMode     = (string)($botConfig['global_runtime_mode'] ?? $botConfig['mode'] ?? 'demo');
+    $cfgGlobalRuntimeModeUp   = strtoupper($cfgGlobalRuntimeMode);
+    $cfgGlobalModeColor       = $cfgGlobalRuntimeMode === 'live' ? '#f85149' : '#f0883e';
+    $cfgGlobalModeBadgeHtml   = '<span style="color:' . $cfgGlobalModeColor . ';font-weight:700;">'
+        . $e($cfgGlobalRuntimeModeUp) . '</span>';
     $cfgMaxBudget   = (float)($botConfig['max_bot_budget']   ?? 0.0);
     $cfgMaxLeverage = (int)($botConfig['max_bot_leverage']   ?? 0);
     $cfgDefEntry    = $e($botConfig['default_entry_mode']    ?? '');
@@ -1896,6 +1902,10 @@ ROWS;
     $smCfgEnNo   = !($smConfig['enabled'] ?? false) ? ' selected' : '';
     $smCfgModeDe = $smMode !== 'live' ? ' selected' : '';
     $smCfgModeLi = $smMode === 'live' ? ' selected' : '';
+    // Read-only inherited mode badge for SM quick settings
+    $smInheritedModeColor   = $smMode === 'live' ? '#f85149' : '#f0883e';
+    $smInheritedModeBadgeHtml = '<span style="color:' . $smInheritedModeColor . ';font-weight:700;">'
+        . $e(strtoupper($smMode)) . '</span>';
     $smCfgLiveProtYes = ($smConfig['live_protective_stops_enabled'] ?? false) ? ' selected' : '';
     $smCfgLiveProtNo  = !($smConfig['live_protective_stops_enabled'] ?? false) ? ' selected' : '';
     $smCfgBeEnYes = ($smConfig['breakeven_enabled'] ?? false) ? ' selected' : '';
@@ -2299,24 +2309,28 @@ ROWS;
         . '</div>';
 
     // ── Mode mismatch warning ─────────────────────────────────────────────
+    // After the global_runtime_mode refactor, mode is propagated from the top
+    // DEMO/LIVE button to all modules. Mismatches indicate legacy local mode values
+    // that were set before the global mode was introduced.
     $modeMismatchHtml = '';
-    $botModeForMismatch = $botMode;
-    // Only warn when bot is in a meaningful execution mode (live/demo)
+    $globalRuntimeModeForUi = (string)($botConfig['global_runtime_mode'] ?? '');
+    $botModeForMismatch = $globalRuntimeModeForUi !== '' ? $globalRuntimeModeForUi : $botMode;
+    // Only warn when global mode is in a meaningful execution mode (live/demo)
     if (in_array($botModeForMismatch, ['live', 'demo'], true)) {
         $mismatchParts = [];
-        // SM active and mode differs from bot
+        // SM active and local mode differs from global mode (legacy local mode not yet propagated)
         if ($smCurrentlyEnabled && $smMode !== $botModeForMismatch) {
-            $mismatchParts[] = 'Stop: ' . strtoupper($smMode);
+            $mismatchParts[] = 'Stop=' . strtoupper($smMode);
         }
-        // PM active and mode differs from bot
+        // PM active and local mode differs from global mode (legacy local mode not yet propagated)
         if ($pmEnabledBool && $pmMode !== $botModeForMismatch) {
-            $mismatchParts[] = 'Profit: ' . strtoupper($pmMode);
+            $mismatchParts[] = 'Profit=' . strtoupper($pmMode);
         }
         if ($mismatchParts !== []) {
-            $mismatchMsg = 'Mode mismatch: Bot ' . strtoupper($botModeForMismatch) . ', ' . implode(', ', $mismatchParts);
-            $modeMismatchHtml = '<div style="background:rgba(248,81,73,.10);border:1px solid #f8514955;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#f85149;">'
+            $mismatchMsg = 'Legacy local mode ignored: ' . implode(', ', $mismatchParts) . '; global=' . strtoupper($botModeForMismatch);
+            $modeMismatchHtml = '<div style="background:rgba(240,136,62,.10);border:1px solid #f0883e55;border-radius:8px;padding:10px 16px;margin-bottom:16px;font-size:13px;color:#f0883e;">'
                 . '<strong>⚠ ' . htmlspecialchars($mismatchMsg, ENT_QUOTES, 'UTF-8') . '</strong>'
-                . '<span style="font-size:11px;color:#f85149;margin-left:8px;opacity:.8;">Убедитесь что Stop/Profit Manager настроены на тот же режим что и бот.</span>'
+                . '<span style="font-size:11px;color:#f0883e;margin-left:8px;opacity:.8;">Нажмите DEMO или LIVE вверху чтобы синхронизировать режим.</span>'
                 . '</div>';
         }
     }
@@ -5100,7 +5114,9 @@ BLCK;
 <div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
   <div>
     <h4 style="margin:0 0 2px;"><i class="bi bi-layout-text-sidebar-reverse" style="margin-right:8px;"></i>Оперативный центр</h4>
-    <div style="font-size:12px;color:var(--ui-text-muted);">Управление стратегиями · Бот · Контроль</div>
+    <div style="font-size:12px;color:var(--ui-text-muted);">Управление стратегиями · Бот · Контроль
+      · <span style="color:{$cfgGlobalModeColor};font-weight:600;">Режим среды: {$cfgGlobalRuntimeModeUp}</span>
+    </div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
     <!-- Mode switch buttons -->
@@ -5588,11 +5604,11 @@ BLCK;
             </select>
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
-            <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="demo"{$pmCfgModeDemoSel}>demo</option>
-              <option value="live"{$pmCfgModeLiveSel}>live</option>
-            </select>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим среды</label>
+            <div style="height:32px;display:flex;align-items:center;font-size:13px;padding:2px 8px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;">
+              {$pmInheritedModeBadgeHtml}
+              <span style="font-size:11px;color:var(--ui-text-muted);margin-left:8px;">← DEMO/LIVE кнопки выше</span>
+            </div>
           </div>
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Профиль</label>
@@ -6044,11 +6060,11 @@ BLCK;
             </select>
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим бота</label>
-            <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="demo"{$gcfgModeDe}>demo</option>
-              <option value="live"{$gcfgModeLv}>live</option>
-            </select>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим среды</label>
+            <div style="height:32px;display:flex;align-items:center;font-size:13px;padding:2px 8px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;">
+              {$cfgGlobalModeBadgeHtml}
+              <span style="font-size:11px;color:var(--ui-text-muted);margin-left:8px;">← DEMO/LIVE кнопки выше</span>
+            </div>
           </div>
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Вход по умолчанию</label>
@@ -6183,11 +6199,11 @@ BLCK;
             </select>
           </div>
           <div>
-            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим</label>
-            <select name="mode" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
-              <option value="demo"{$smCfgModeDe}>demo</option>
-              <option value="live"{$smCfgModeLi}>live</option>
-            </select>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Режим среды</label>
+            <div style="height:32px;display:flex;align-items:center;font-size:13px;padding:2px 8px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;">
+              {$smInheritedModeBadgeHtml}
+              <span style="font-size:11px;color:var(--ui-text-muted);margin-left:8px;">← DEMO/LIVE кнопки выше</span>
+            </div>
           </div>
           <div>
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Live protective stopLoss</label>
@@ -6751,7 +6767,9 @@ function handleDashboardGlobalSave(): void
     }
 
     $enabled   = (int)($_POST['enabled']    ?? 0);
-    $mode      = trim((string)($_POST['mode'] ?? 'demo'));
+    // mode is no longer saved from the quick UI — it is controlled by the top
+    // DEMO/LIVE button (handleDashboardSwitchMode) which sets both mode and
+    // global_runtime_mode. Preserve existing mode value.
     $defEntry  = trim((string)($_POST['default_entry_mode']          ?? ''));
     $budget    = (float)($_POST['max_bot_budget']                    ?? 0.0);
     $leverage  = (int)($_POST['max_bot_leverage']                    ?? 0);
@@ -6762,15 +6780,12 @@ function handleDashboardGlobalSave(): void
     $demoApiSecret = trim((string)($_POST['demo_api_secret']   ?? ''));
     $demoBaseUrl   = trim((string)($_POST['demo_api_base_url'] ?? ''));
 
-    if (!in_array($mode, ['demo', 'live'], true)) {
-        $mode = 'demo';
-    }
     if (!in_array($defEntry, ['limit', 'market'], true)) {
         $defEntry = '';
     }
 
     $current['enabled']                       = (bool)$enabled;
-    $current['mode']                          = $mode;
+    // do not overwrite mode — managed exclusively by top DEMO/LIVE switch
     $current['max_bot_budget']                = $budget;
     $current['max_bot_leverage']              = $leverage;
     $current['default_entry_mode']            = $defEntry !== '' ? $defEntry : null;
@@ -8084,8 +8099,8 @@ function handleDashboardPmConfigSave(): void
 
     // ── Top-level fields ─────────────────────────────────────────────────
     $existing['enabled']        = (bool)(int)($_POST['enabled'] ?? 0);
-    $postMode = trim((string)($_POST['mode'] ?? 'demo'));
-    $existing['mode']           = in_array($postMode, ['demo', 'live'], true) ? $postMode : 'demo';
+    // mode is no longer saved from the quick UI — it is controlled by the top
+    // DEMO/LIVE button (handleDashboardSwitchMode). Preserve existing value.
     // Profile selection is always AUTO — no manual override
     $existing['active_profile'] = 'auto';
 
@@ -8636,6 +8651,9 @@ function handleDashboardSwitchMode(): void
 
     $oldMode = (string)($current['mode'] ?? '');
     $current['mode'] = $mode;
+    // global_runtime_mode is the single source of truth for DEMO/LIVE environment.
+    // Bot, Stop Manager, and Profit Manager all inherit this value at runtime.
+    $current['global_runtime_mode'] = $mode;
 
     $php  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Bot Module — Active Config Overrides\n * Written by the admin UI. Edit via the config page.\n */\n\nreturn ";
     $php .= var_export($current, true);
@@ -8646,6 +8664,47 @@ function handleDashboardSwitchMode(): void
         mkdir($dir, 0755, true);
     }
     file_put_contents($activeFile, $php);
+
+    // Propagate mode to Stop Manager config/active.php so SM reads correct mode
+    // even without loading bot config (backward-compatible propagation).
+    $smRoot = defined('ROOT') ? rtrim(ROOT, '/') : dirname(__DIR__, 2);
+    $smActiveFile = $smRoot . '/modules/stop_manager/config/active.php';
+    $smCurrent = [];
+    if (file_exists($smActiveFile)) {
+        $smLoaded = @include $smActiveFile;
+        if (is_array($smLoaded)) {
+            $smCurrent = $smLoaded;
+        }
+    }
+    $smCurrent['mode'] = $mode;
+    $smPhp  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Stop Manager Module — Active Config Overrides\n * Written by the admin UI.\n */\n\nreturn ";
+    $smPhp .= var_export($smCurrent, true);
+    $smPhp .= ";\n";
+    $smDir = dirname($smActiveFile);
+    if (!is_dir($smDir)) {
+        mkdir($smDir, 0755, true);
+    }
+    file_put_contents($smActiveFile, $smPhp);
+
+    // Propagate mode to Profit Manager config/active.php so PM reads correct mode
+    // even without loading bot config (backward-compatible propagation).
+    $pmActiveFile = $smRoot . '/modules/prof_manager/config/active.php';
+    $pmCurrent = [];
+    if (file_exists($pmActiveFile)) {
+        $pmLoaded = @include $pmActiveFile;
+        if (is_array($pmLoaded)) {
+            $pmCurrent = $pmLoaded;
+        }
+    }
+    $pmCurrent['mode'] = $mode;
+    $pmPhp  = "<?php\n\ndeclare(strict_types=1);\n\n/**\n * Profit Manager Module — Active Config Overrides\n * Written by the admin UI.\n */\n\nreturn ";
+    $pmPhp .= var_export($pmCurrent, true);
+    $pmPhp .= ";\n";
+    $pmDir = dirname($pmActiveFile);
+    if (!is_dir($pmDir)) {
+        mkdir($pmDir, 0755, true);
+    }
+    file_put_contents($pmActiveFile, $pmPhp);
 
     // When mode actually changes, clear runtime queue/cache so old-mode items don't leak
     $flashSuffix = '';
@@ -8667,7 +8726,7 @@ function handleDashboardSwitchMode(): void
     }
 
     $modeLabel = strtoupper($mode);
-    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Режим переключён: {$modeLabel}.{$flashSuffix}"];
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => "Режим среды переключен на {$modeLabel}.{$flashSuffix}"];
     header('Location: ' . $dashUrl);
     exit;
 }

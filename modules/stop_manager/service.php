@@ -167,7 +167,22 @@ final class StopManagerService
 
         $tickAt = date('c');
         $tStart = microtime(true);
-        $mode   = (string)($config['mode'] ?? 'demo');
+
+        // ── Effective mode: inherit global_runtime_mode from bot config if present ──
+        // The global_runtime_mode is written by the top DEMO/LIVE dashboard button.
+        // Fallback to this module's own mode config for backward compatibility.
+        $botConfig         = $this->loadBotConfig($config);
+        $globalRuntimeMode = (string)($botConfig['global_runtime_mode'] ?? '');
+        $localMode         = (string)($config['mode'] ?? 'demo');
+        if ($globalRuntimeMode !== '' && in_array($globalRuntimeMode, ['demo', 'live'], true)) {
+            $mode                  = $globalRuntimeMode;
+            $smEffectiveModeSource = 'global_runtime_mode';
+            $smDeprecatedLocalMode = $localMode !== '' && $localMode !== $globalRuntimeMode;
+        } else {
+            $mode                  = $localMode;
+            $smEffectiveModeSource = 'legacy_mode_fallback';
+            $smDeprecatedLocalMode = false;
+        }
 
         // ── 1. Load state ──────────────────────────────────────────────────────
         $positions = $this->loadBotPositions($config);
@@ -278,6 +293,9 @@ final class StopManagerService
             'elapsed_sec'                  => $elapsed,
             'module_enabled'               => true,
             'module_mode'                  => $mode,
+            'stop_effective_mode_source'   => $smEffectiveModeSource,
+            'global_runtime_mode'          => $globalRuntimeMode !== '' ? $globalRuntimeMode : null,
+            'deprecated_local_mode_ignored'=> $smDeprecatedLocalMode,
             // Legacy liq_distance_percent path status
             'legacy_liq_distance_stop_enabled' => $legacyCfgEnabled,
             'legacy_stop_counters_deprecated'  => !$legacyCfgEnabled,

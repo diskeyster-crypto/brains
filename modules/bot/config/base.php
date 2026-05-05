@@ -17,9 +17,15 @@ return [
     // Core identity
     'bot_id'  => 'bot',
     'enabled' => false,
-    'mode'    => 'demo',   // demo | live
+    'mode'    => 'demo',   // demo | live — kept for backward compat; prefer global_runtime_mode
                            // demo    = Bybit Demo account execution (api-demo.bybit.com); primary test mode
                            // live    = live account execution via KeyCenter
+
+    // Global runtime mode — single source of truth for DEMO/LIVE environment.
+    // Written by the top DEMO/LIVE button in the dashboard.
+    // Bot, Stop Manager, and Profit Manager all inherit this value.
+    // When present, takes precedence over per-module mode config keys.
+    'global_runtime_mode' => 'demo',  // demo | live
 
     // Bybit Demo account credentials (stored locally in config — not live account).
     // Used only when mode = demo.  Do NOT put live/mainnet keys here.

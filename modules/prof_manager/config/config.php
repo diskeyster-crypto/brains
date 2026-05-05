@@ -79,4 +79,42 @@ return [
     'pm_exchange_profit_floor_min_update_interval_seconds' => 30,
     'pm_exchange_profit_floor_min_improvement_roi'       => 2.0,
     'pm_exchange_profit_floor_use_mark_price'            => true,
+
+    // ── OrderBook Wall Exit ────────────────────────────────────────────────────
+    //
+    // Passed as overrides to OrderBookContextService when it is instantiated.
+    // These control the PM wall-exit behaviour: close or tighten the profit lock
+    // when a profitable position approaches a persistent, unbroken opposing wall.
+    //
+    //   Long  position + ask wall above → ask_wall_rejection_profit_exit
+    //   Short position + bid wall below → bid_wall_rejection_profit_exit
+    //
+    // wall_exit_enabled:
+    //   true  — PM wall-exit checks are active (default).
+    //   false — feature disabled; walls have no effect on PM exits.
+    //
+    // wall_exit_min_roi:
+    //   Minimum position ROI% required before a wall-exit can trigger.
+    //   Prevents premature exits on barely-profitable positions.
+    //
+    // wall_exit_distance_pct:
+    //   Wall must be within this % of current price to be considered "near".
+    //
+    // wall_exit_fail_checks:
+    //   Number of consecutive ticks price must have failed to break the wall
+    //   before the exit is triggered.
+    //
+    // wall_exit_action:
+    //   'close_or_tighten' — close if wall rejection confirmed, else tighten lock.
+    //   'close'            — always close on wall rejection.
+    //   'tighten'          — always tighten lock (never force-close).
+    //
+    // wall_exit_tighten_lock_buffer_roi:
+    //   When tightening: new lock ROI = current_roi - this buffer.
+    'wall_exit_enabled'                 => true,
+    'wall_exit_min_roi'                 => 6.0,
+    'wall_exit_distance_pct'            => 0.6,
+    'wall_exit_fail_checks'             => 2,
+    'wall_exit_action'                  => 'close_or_tighten',
+    'wall_exit_tighten_lock_buffer_roi' => 2.0,
 ];

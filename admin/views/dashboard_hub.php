@@ -218,7 +218,7 @@ function renderDashboardHub(): string
     // Read-only inherited mode badge for PM quick settings
     $pmInheritedModeColor    = $pmMode === 'live' ? '#f85149' : '#f0883e';
     $pmInheritedModeBadgeHtml = '<span style="color:' . $pmInheritedModeColor . ';font-weight:700;">'
-        . $e(strtoupper($pmMode)) . '</span>';
+        . htmlspecialchars(strtoupper($pmMode), ENT_QUOTES, 'UTF-8') . '</span>';
 
     $pmCfgInitRoi      = (string) ($pmCfgProfileCfg['init_roi']               ?? 2.0);
     $pmCfgActivRoi     = (string) ($pmCfgProfileCfg['activation_roi']         ?? 10.0);

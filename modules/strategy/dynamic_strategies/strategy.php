@@ -164,6 +164,18 @@ final class DynamicStrategiesStrategy
         $config     = $this->config;
         $now        = time();
 
+        // ── OrderBook Wall Context service (optional; fails gracefully) ────────
+        $obcService = null;
+        $obcDir     = $this->repoRoot . '/modules/system/orderbook_context';
+        if (is_file($obcDir . '/service.php')) {
+            try {
+                require_once $obcDir . '/service.php';
+                $obcService = new \OrderBookContextService($obcDir);
+            } catch (\Throwable) {
+                $obcService = null;
+            }
+        }
+
         $shadowOnly          = (bool)($config['shadow_only']          ?? false);  // deprecated; kept for compat
         $handoffEnabled      = (bool)($config['handoff_enabled']       ?? true);
         // Deprecated execution-gate keys — read for backward compat but not used for handoff gating.
@@ -497,6 +509,14 @@ final class DynamicStrategiesStrategy
         $replayGateBlockedExamples      = [];
         $replayGateMissingExamples      = [];
 
+        // Entry wall gate counters
+        $entryWallGateEnabled         = (bool)($config['entry_wall_gate_enabled']             ?? true);
+        $entryWallGateCheckedTotal    = 0;
+        $entryWallGateBlockedTotal    = 0;
+        $entryWallGateDemotedTotal    = 0;
+        $entryWallGatePassedTotal     = 0;
+        $entryWallGateExamples        = [];
+
         // Global thresholds (fallback when rule-specific config is missing)
         $globalMinDemoConf  = (int)($config['min_confirmations_demo'] ?? $config['min_confirmations_for_demo_signal'] ?? 3);
         $globalMinDemoScore = (float)($config['min_confidence_demo']  ?? $config['min_confidence_for_demo_signal']   ?? 0.65);
@@ -723,6 +743,123 @@ final class DynamicStrategiesStrategy
                 $nonExecutableTotal++;
             }
 
+            // ── Entry wall gate ────────────────────────────────────────────────
+            // For long entries: persistent ask wall nearby = resistance → block/demote.
+            // For short entries: persistent bid wall nearby = support → block/demote.
+            // Applied only when OBC service is available and entry_wall_gate_enabled=true.
+            // Does NOT block if wall is eaten or broken.
+            // Uses demote (lower confidence) instead of hard reject when
+            // entry_wall_demote_instead_of_reject = true.
+            $wallGateReason     = null;
+            $wallGateBlocked    = false;
+            $entryWallRisk      = null;
+            $nearestAskWallCtx  = null;
+            $nearestBidWallCtx  = null;
+
+            if ($obcService !== null && $entryWallGateEnabled && $isExecutable && $entryPrice > 0.0) {
+                $blockDist       = (float)($config['entry_wall_block_distance_pct']      ?? 0.8);
+                $requirePersist  = (bool)($config['entry_wall_require_persistent']       ?? true);
+                $demoteNotReject = (bool)($config['entry_wall_demote_instead_of_reject'] ?? true);
+
+                try {
+                    $wallCtx         = $obcService->getWallContext($sym, $entryPrice);
+                    $nearestAskWallCtx = $wallCtx['nearest_ask_wall'] ?? null;
+                    $nearestBidWallCtx = $wallCtx['nearest_bid_wall'] ?? null;
+
+                    $entryWallGateCheckedTotal++;
+
+                    if ($candSide === 'long' && $nearestAskWallCtx !== null) {
+                        $askDist   = (float)($nearestAskWallCtx['distance_pct'] ?? 999.0);
+                        $askStatus = (string)($wallCtx['ask_wall_status'] ?? 'none');
+                        $isBlockable = !$requirePersist || $askStatus === 'persistent';
+
+                        if ($askDist <= $blockDist && $isBlockable
+                            && $askStatus !== 'eaten' && $askStatus !== 'broken'
+                        ) {
+                            $wallGateReason = 'entry_blocked_near_ask_wall';
+                            $entryWallRisk  = 'ask_wall';
+
+                            if ($demoteNotReject) {
+                                // Demote: reduce confidence score, keep signal but mark non-executable
+                                $score         = round($score * 0.5, 4);
+                                $isExecutable  = false;
+                                $handoffReady  = false;
+                                $wallGateBlocked = false; // demote, not hard block
+                                $warnings[]    = $wallGateReason;
+                                $entryWallGateDemotedTotal++;
+                            } else {
+                                // Hard block
+                                $isExecutable  = false;
+                                $handoffReady  = false;
+                                $wallGateBlocked = true;
+                                $warnings[]    = $wallGateReason;
+                                $entryWallGateBlockedTotal++;
+                            }
+                        } else {
+                            $entryWallGatePassedTotal++;
+                        }
+                    } elseif ($candSide === 'short' && $nearestBidWallCtx !== null) {
+                        $bidDist   = (float)($nearestBidWallCtx['distance_pct'] ?? 999.0);
+                        $bidStatus = (string)($wallCtx['bid_wall_status'] ?? 'none');
+                        $isBlockable = !$requirePersist || $bidStatus === 'persistent';
+
+                        if ($bidDist <= $blockDist && $isBlockable
+                            && $bidStatus !== 'eaten' && $bidStatus !== 'broken'
+                        ) {
+                            $wallGateReason = 'entry_blocked_near_bid_wall';
+                            $entryWallRisk  = 'bid_wall';
+
+                            if ($demoteNotReject) {
+                                $score         = round($score * 0.5, 4);
+                                $isExecutable  = false;
+                                $handoffReady  = false;
+                                $wallGateBlocked = false;
+                                $warnings[]    = $wallGateReason;
+                                $entryWallGateDemotedTotal++;
+                            } else {
+                                $isExecutable  = false;
+                                $handoffReady  = false;
+                                $wallGateBlocked = true;
+                                $warnings[]    = $wallGateReason;
+                                $entryWallGateBlockedTotal++;
+                            }
+                        } else {
+                            $entryWallGatePassedTotal++;
+                        }
+                    } else {
+                        $entryWallGatePassedTotal++;
+                    }
+
+                    if (($wallGateBlocked || $wallGateReason !== null) && count($entryWallGateExamples) < 5) {
+                        $entryWallGateExamples[] = [
+                            'symbol'            => $sym,
+                            'side'              => $candSide,
+                            'current_price'     => $entryPrice,
+                            'wall_side'         => $entryWallRisk,
+                            'wall_price'        => ($entryWallRisk === 'ask_wall')
+                                ? ($nearestAskWallCtx['price']        ?? null)
+                                : ($nearestBidWallCtx['price']        ?? null),
+                            'wall_distance_pct' => ($entryWallRisk === 'ask_wall')
+                                ? ($nearestAskWallCtx['distance_pct'] ?? null)
+                                : ($nearestBidWallCtx['distance_pct'] ?? null),
+                            'wall_notional'     => ($entryWallRisk === 'ask_wall')
+                                ? ($nearestAskWallCtx['notional']     ?? null)
+                                : ($nearestBidWallCtx['notional']     ?? null),
+                            'wall_score'        => ($entryWallRisk === 'ask_wall')
+                                ? ($nearestAskWallCtx['wall_score']   ?? null)
+                                : ($nearestBidWallCtx['wall_score']   ?? null),
+                            'wall_status'       => ($entryWallRisk === 'ask_wall')
+                                ? ($wallCtx['ask_wall_status'] ?? 'none')
+                                : ($wallCtx['bid_wall_status'] ?? 'none'),
+                            'action'            => $demoteNotReject ? 'demoted' : 'blocked',
+                            'reason'            => $wallGateReason,
+                        ];
+                    }
+                } catch (\Throwable) {
+                    // OBC service failure — never block the signal
+                }
+            }
+
             // ── Build strategy_signal_context ──────────────────────────────────
             $stratSignalCtx = [
                 'strategy_id'          => self::STRATEGY_ID,
@@ -750,6 +887,12 @@ final class DynamicStrategiesStrategy
                 'trend_15m_price_change_pct' => is_array($cand['trend_15m'] ?? null) ? ($cand['trend_15m']['price_change_pct'] ?? null) : null,
                 'trend_30m_price_change_pct' => is_array($cand['trend_30m'] ?? null) ? ($cand['trend_30m']['price_change_pct'] ?? null) : null,
                 'replay_gate_applied'        => $requireReplayGate && $candSide === 'short',
+                // Wall entry gate fields
+                'entry_wall_risk'            => $entryWallRisk,
+                'nearest_ask_wall'           => $nearestAskWallCtx,
+                'nearest_bid_wall'           => $nearestBidWallCtx,
+                'wall_gate_reason'           => $wallGateReason,
+                'wall_gate_blocked'          => $wallGateBlocked,
             ];
 
             $detectedAt = date('c');
@@ -993,6 +1136,15 @@ final class DynamicStrategiesStrategy
             'dynamic_replay_gate_passed_examples'               => $replayGatePassedExamples,
             'dynamic_replay_gate_blocked_examples'              => $replayGateBlockedExamples,
             'dynamic_replay_gate_missing_examples'              => $replayGateMissingExamples,
+            // ── Entry wall gate diagnostics ────────────────────────────────────
+            'entry_wall_gate_enabled'                           => $entryWallGateEnabled,
+            'entry_wall_gate_obc_available'                     => ($obcService !== null),
+            'entry_wall_gate_checked_total'                     => $entryWallGateCheckedTotal,
+            'entry_wall_gate_blocked_total'                     => $entryWallGateBlockedTotal,
+            'entry_wall_gate_demoted_total'                     => $entryWallGateDemotedTotal,
+            'entry_wall_gate_passed_total'                      => $entryWallGatePassedTotal,
+            'entry_wall_gate_examples'                          => $entryWallGateExamples,
+            'obc_stats'                                         => ($obcService !== null) ? $obcService->getStats() : null,
             // Alias fields for generic dashboard display
             'found'                           => count($candidates),
             'generated_signals_count'         => count($signals),

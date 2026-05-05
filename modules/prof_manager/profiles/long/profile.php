@@ -61,7 +61,7 @@ class LongProfile
      *               hybrid_simulation_enabled,
      *               hybrid_detection_score, hybrid_support_level, hybrid_detection_evidence}
      */
-    public function process(array $position, int $nowTs): array
+    public function process(array $position, int $nowTs, array $wallContext = []): array
     {
         $symbol = (string) ($position['symbol'] ?? '');
         $key    = $this->positionKey($symbol, 'long');
@@ -376,6 +376,75 @@ class LongProfile
             }
         }
 
+        // ── STEP 1e: Wall exit check (long: ask wall above price = resistance) ──
+        // Triggered only when:
+        //   - wall context provided (not empty)
+        //   - wall_exit_enabled = true
+        //   - current ROI >= wall_exit_min_roi
+        //   - nearest ask wall is persistent (not eaten/broken)
+        //   - ask wall distance_pct <= wall_exit_distance_pct
+        //   - price has failed to break wall for >= wall_exit_fail_checks ticks
+        // Skip if wall is eaten/broken (allow impulse continuation).
+        // Skip if current plan is already a hold override (grace/impulse).
+        $wallExitChecked    = false;
+        $wallExitTriggered  = false;
+        $wallExitSkipped    = false;
+        $wallExitSkipReason = null;
+        $wallExitContext     = null;
+
+        if (!empty($wallContext)) {
+            $wallExitEnabled = !empty($this->config['wall_exit_enabled']);
+            $wallExitMinRoi  = (float)($this->config['wall_exit_min_roi']      ?? 6.0);
+            $wallExitDistPct = (float)($this->config['wall_exit_distance_pct'] ?? 0.6);
+            $wallExitFail    = max(1, (int)($this->config['wall_exit_fail_checks'] ?? 2));
+
+            $currentRoiForWall = (float)($plan['current_roi'] ?? $earlyRoi ?? 0.0);
+
+            $askWall   = $wallContext['nearest_ask_wall'] ?? null;
+            $askStatus = (string)($wallContext['ask_wall_status']  ?? 'none');
+
+            if ($wallExitEnabled && $currentRoiForWall >= $wallExitMinRoi
+                && $askWall !== null && is_array($askWall)
+            ) {
+                $askDist = (float)($askWall['distance_pct'] ?? 999.0);
+
+                if ($askDist <= $wallExitDistPct) {
+                    $wallExitChecked = true;
+
+                    if ($askStatus === 'eaten' || $askStatus === 'broken') {
+                        // Wall is being absorbed — allow impulse continuation
+                        $wallExitSkipped    = true;
+                        $wallExitSkipReason = 'wall_exit_skipped_wall_eaten';
+                        $wallExitContext     = $askWall;
+                        $positionState['wall_exit_fail_count'] = 0;
+                    } elseif ($askStatus === 'persistent') {
+                        // Accumulate fail-check counter
+                        $failCount = (int)($positionState['wall_exit_fail_count'] ?? 0) + 1;
+                        $positionState['wall_exit_fail_count'] = $failCount;
+
+                        if ($failCount >= $wallExitFail) {
+                            // Do not override if grace/impulse already produced a hold
+                            $alreadyHoldOverride = ($plan['action'] === 'hold_override_lock_touch');
+                            if (!$alreadyHoldOverride) {
+                                $wallExitTriggered  = true;
+                                $wallExitContext     = $askWall;
+                                $plan['action']     = 'wall_exit_close';
+                                $plan['skip_reason']= null;
+                                $plan['note']       = 'ask_wall_rejection_profit_exit';
+                                $closeReasonHint    = 'ask_wall_rejection_profit_exit';
+                            }
+                        }
+                    } else {
+                        // Wall not yet persistent — reset counter
+                        $positionState['wall_exit_fail_count'] = 0;
+                    }
+                } else {
+                    // Wall too far, reset counter
+                    $positionState['wall_exit_fail_count'] = 0;
+                }
+            }
+        }
+
         // Persist chop / staircase state
         $positionState['chop_detected']      = $chopDetected;
         $positionState['staircase_floor_roi'] = $staircaseFloorRoi;
@@ -491,6 +560,12 @@ class LongProfile
             // ── Position identity diagnostics ─────────────────────────────────
             'pm_state_identity_mismatch'       => $identityMismatch,
             'pm_state_legacy_key_ignored'      => $legacyKeyIgnored,
+            // ── Wall exit diagnostics ─────────────────────────────────────────
+            'wall_exit_checked'                => $wallExitChecked,
+            'wall_exit_triggered'              => $wallExitTriggered,
+            'wall_exit_skipped'                => $wallExitSkipped,
+            'wall_exit_skip_reason'            => $wallExitSkipReason,
+            'wall_exit_context'                => $wallExitContext,
         ];
     }
 

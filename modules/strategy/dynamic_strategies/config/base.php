@@ -160,6 +160,15 @@ return [
     // Both must pass for a short candidate to become executable.
     'dynamic_handoff_min_confirmations_with_replay' => 3,
 
+    // ── Entry wall gate (OrderBook Context) ───────────────────────────────────
+    // Block or demote entry signals when price is too close to a persistent wall.
+    // Requires OrderBookContextService at modules/system/orderbook_context/service.php.
+    // Fails gracefully when OBC service is unavailable — signal is never blocked.
+    'entry_wall_gate_enabled'             => true,
+    'entry_wall_block_distance_pct'       => 0.8,    // block if wall within 0.8% of entry price
+    'entry_wall_require_persistent'       => true,   // only block for persistent walls (seen >= N ticks)
+    'entry_wall_demote_instead_of_reject' => true,   // demote (reduce confidence) instead of hard reject
+
     // ── Source adapter paths ──────────────────────────────────────────────────
     // Read-only module paths used by source adapters.
     // Dynamic Strategies never writes to these paths.

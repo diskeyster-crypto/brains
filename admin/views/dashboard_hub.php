@@ -2157,6 +2157,44 @@ ROWS;
         }
     } catch (\Throwable) {}
 
+    // ── OrderBook Wall Context stats (from PM last_run.json) ─────────────
+    $obcEnabled           = (bool)($pmRawLastRun['obc_enabled'] ?? false);
+    $obcStats             = is_array($pmRawLastRun['obc_stats'] ?? null) ? $pmRawLastRun['obc_stats'] : [];
+    $obcSymbolsChecked    = (int)($obcStats['symbols_checked_total']        ?? 0);
+    $obcFetchOk           = (int)($obcStats['orderbook_fetch_success_total'] ?? 0);
+    $obcFetchFailed       = (int)($obcStats['orderbook_fetch_failed_total']  ?? 0);
+    $obcCacheHits         = (int)($obcStats['orderbook_cache_hits_total']    ?? 0);
+    $obcAskWalls          = (int)($obcStats['ask_walls_detected_total']      ?? 0);
+    $obcBidWalls          = (int)($obcStats['bid_walls_detected_total']      ?? 0);
+    $obcPersistent        = (int)($obcStats['persistent_walls_total']        ?? 0);
+    $obcEaten             = (int)($obcStats['eaten_walls_total']             ?? 0);
+    $obcBroken            = (int)($obcStats['broken_walls_total']            ?? 0);
+    // PM wall exit counters
+    $pmWallExitChecked    = (int)($pmRawLastRun['wall_exit_checked_total']           ?? 0);
+    $pmWallExitTriggered  = (int)($pmRawLastRun['wall_exit_triggered_total']         ?? 0);
+    $pmWallExitClosed     = (int)($pmRawLastRun['wall_exit_closed_total']            ?? 0);
+    $pmWallExitEaten      = (int)($pmRawLastRun['wall_exit_skipped_wall_eaten_total'] ?? 0);
+    $pmWallExitNoWall     = (int)($pmRawLastRun['wall_exit_skipped_no_wall_total']    ?? 0);
+    $pmWallExitExamples   = is_array($pmRawLastRun['wall_exit_examples'] ?? null) ? $pmRawLastRun['wall_exit_examples'] : [];
+    // DS entry wall gate counters (from DS last_run.json)
+    $dsLastRun    = [];
+    try {
+        $dsLrPath = System::path('root') . '/modules/strategy/dynamic_strategies/storage/last_run.json';
+        if (is_file($dsLrPath)) {
+            $dRaw = @file_get_contents($dsLrPath);
+            if ($dRaw !== false) {
+                $dec = @json_decode($dRaw, true);
+                if (is_array($dec)) { $dsLastRun = $dec; }
+            }
+        }
+    } catch (\Throwable) {}
+    $dsWallGateEnabled  = (bool)($dsLastRun['entry_wall_gate_enabled']     ?? false);
+    $dsWallGateChecked  = (int)($dsLastRun['entry_wall_gate_checked_total'] ?? 0);
+    $dsWallGateBlocked  = (int)($dsLastRun['entry_wall_gate_blocked_total'] ?? 0);
+    $dsWallGateDemoted  = (int)($dsLastRun['entry_wall_gate_demoted_total'] ?? 0);
+    $dsWallGatePassed   = (int)($dsLastRun['entry_wall_gate_passed_total']  ?? 0);
+    $dsWallGateExamples = is_array($dsLastRun['entry_wall_gate_examples'] ?? null) ? $dsLastRun['entry_wall_gate_examples'] : [];
+
     // ── Status chain badge computation ────────────────────────────────────
     // helper: [color, bg]
     $scColor = static function (string $state): array {
@@ -2546,7 +2584,7 @@ ROWS;
             if (str_contains($action, 'would_set') || str_contains($action, 'would_move')) {
                 return '#3fb950';
             }
-            if (str_contains($action, 'would_close')) {
+            if (str_contains($action, 'would_close') || $action === 'wall_exit_close') {
                 return '#f0883e';
             }
             if ($action === 'hybrid_guard_activated' || $action === 'waiting_confirmation') {
@@ -2588,6 +2626,8 @@ ROWS;
                 $action === 'would_set_profit_lock'         => 'planned demo lock',
                 $action === 'would_move_profit_lock'        => 'planned move',
                 $action === 'would_close_on_lock_touch'     => 'close',
+                $action === 'wall_exit_close'               => '⚡ wall exit',
+                $action === 'roi_chop_indecision_exit'      => 'chop exit',
                 $action === 'hybrid_guard_activated'        => 'guard ⬆',
                 $action === 'waiting_confirmation'          => 'confirming…',
                 $action === 'hybrid_close_confirmed'        => 'hybrid close',
@@ -2708,6 +2748,36 @@ ROWS;
             } else {
                 $hybridBreathDisplay = '<span style="color:#8b949e;">—</span>';
             }
+            // ── Wall context fields ───────────────────────────────────────────
+            $wallExitTriggered  = !empty($pr['wall_exit_triggered']);
+            $wallExitSkipped    = !empty($pr['wall_exit_skipped']);
+            $wallExitSkipReason = (string)($pr['wall_exit_skip_reason'] ?? '');
+            $nearestWall        = is_array($pr['nearest_wall'] ?? null) ? $pr['nearest_wall'] : null;
+            $wallStatus         = (string)($pr['wall_status'] ?? 'none');
+
+            if ($nearestWall !== null) {
+                $wallPrice   = isset($nearestWall['price'])        ? number_format((float)$nearestWall['price'], 4)        : '—';
+                $wallDist    = isset($nearestWall['distance_pct']) ? number_format((float)$nearestWall['distance_pct'], 2) . '%' : '—';
+                $wColor = match($wallStatus) {
+                    'persistent' => '#f85149',
+                    'eaten'      => '#f0883e',
+                    'broken'     => '#3fb950',
+                    'new'        => '#58a6ff',
+                    default      => '#8b949e',
+                };
+                $wallDisplay = '<span style="color:#8b949e;font-size:10px;">'
+                    . $e(($pr['side'] ?? '') === 'long' ? 'ask' : 'bid')
+                    . '</span> <span style="color:' . $wColor . ';font-weight:600;">' . $wallPrice . '</span>'
+                    . '<br><span style="font-size:9px;color:#8b949e;">' . $wallDist . ' · ' . $e($wallStatus) . '</span>';
+                if ($wallExitTriggered) {
+                    $wallDisplay .= '<br><span style="font-size:9px;color:#f85149;font-weight:700;">⚡ exit</span>';
+                } elseif ($wallExitSkipped && $wallExitSkipReason !== '') {
+                    $wallDisplay .= '<br><span style="font-size:9px;color:#3fb950;">eaten↗</span>';
+                }
+            } else {
+                $wallDisplay = '<span style="color:#8b949e;">—</span>';
+            }
+
             $tableRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
                 . '<td style="padding:4px 8px;font-weight:600;">' . $symbol . '</td>'
                 . '<td style="padding:4px 8px;color:#8b949e;">' . $side . '</td>'
@@ -2725,6 +2795,7 @@ ROWS;
                 . '<td style="padding:4px 8px;font-size:10px;">' . $hybridGuardDisplay . '</td>'
                 . '<td style="padding:4px 8px;font-size:10px;">' . $hybridBreathDisplay . '</td>'
                 . '<td style="padding:4px 8px;font-size:10px;color:#8b949e;">' . $priceSource . '</td>'
+                . '<td style="padding:4px 8px;font-size:10px;">' . $wallDisplay . '</td>'
                 . '</tr>';
         }
 
@@ -2752,6 +2823,7 @@ ROWS;
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Guard / Pattern</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Breathing / Result</th>
             <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Price Source</th>
+            <th style="padding:6px 8px;text-align:left;color:var(--ui-text-muted);font-weight:600;">Wall</th>
           </tr>
         </thead>
         <tbody>
@@ -5093,6 +5165,68 @@ BLCK;
             . "</tr></thead><tbody>{$blRows}</tbody></table></div></div>";
     }
 
+    // ── OrderBook Wall Context card (pre-computed for heredoc) ────────────
+    $obcEnabledLabel    = $obcEnabled ? '<span style="color:#3fb950;font-weight:700;">ON</span>' : '<span style="color:#8b949e;">OFF</span>';
+    $obcCacheTtl        = (int)(is_array($obcStats) ? ($obcStats['cache_ttl_seconds'] ?? 5) : 5);
+    $dsWallEnabledLabel = $dsWallGateEnabled ? '<span style="color:#3fb950;font-weight:700;">ON</span>' : '<span style="color:#8b949e;">OFF</span>';
+    $_wallExTableRows   = '';
+    foreach (array_merge($pmWallExitExamples, $dsWallGateExamples) as $_ex) {
+        $_wsSt    = (string)($_ex['wall_status'] ?? 'none');
+        $_wsColor = match ($_wsSt) {
+            'persistent' => '#f85149', 'eaten' => '#f0883e',
+            'broken'     => '#3fb950', 'new'   => '#58a6ff',
+            default      => '#8b949e'
+        };
+        $_wallExTableRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
+            . '<td style="padding:3px 8px;">'                    . $e((string)($_ex['symbol']           ?? '')) . '</td>'
+            . '<td style="padding:3px 8px;color:#8b949e;">'      . $e((string)($_ex['side']             ?? '')) . '</td>'
+            . '<td style="padding:3px 8px;color:#8b949e;">'      . $e((string)($_ex['wall_side']        ?? '')) . '</td>'
+            . '<td style="padding:3px 8px;">'                    . $e(number_format((float)($_ex['wall_price'] ?? 0), 4)) . '</td>'
+            . '<td style="padding:3px 8px;">'                    . $e(number_format((float)($_ex['wall_distance_pct'] ?? 0), 3)) . '%</td>'
+            . '<td style="padding:3px 8px;"><span style="color:' . $_wsColor . ';">' . $e($_wsSt) . '</span></td>'
+            . '<td style="padding:3px 8px;font-weight:600;">'    . $e((string)($_ex['action']           ?? '—')) . '</td>'
+            . '<td style="padding:3px 8px;font-size:10px;color:#8b949e;">' . $e((string)($_ex['reason'] ?? '—')) . '</td>'
+            . '</tr>';
+    }
+    $_wallExTableHtml = $_wallExTableRows !== '' ? '
+      <div style="margin-top:14px;overflow-x:auto;">
+        <table style="width:100%;font-size:11px;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--ui-border);">
+              <th style="padding:4px 8px;text-align:left;color:var(--ui-text-muted);">Symbol</th>
+              <th style="padding:4px 8px;text-align:left;color:var(--ui-text-muted);">Side</th>
+              <th style="padding:4px 8px;text-align:left;color:var(--ui-text-muted);">Wall</th>
+              <th style="padding:4px 8px;text-align:left;color:var(--ui-text-muted);">Price</th>
+              <th style="padding:4px 8px;text-align:left;color:var(--ui-text-muted);">Dist</th>
+              <th style="padding:4px 8px;text-align:left;color:var(--ui-text-muted);">Status</th>
+              <th style="padding:4px 8px;text-align:left;color:var(--ui-text-muted);">Action</th>
+              <th style="padding:4px 8px;text-align:left;color:var(--ui-text-muted);">Reason</th>
+            </tr>
+          </thead>
+          <tbody>' . $_wallExTableRows . '</tbody>
+        </table>
+      </div>' : '';
+    $obcWallCardHtml = '
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header"><i class="bi bi-layers" style="margin-right:6px;"></i>OrderBook Wall Context — Диагностика</div>
+  <div class="card-body" style="padding:12px 16px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 24px;font-size:13px;">
+      <div><span style="color:var(--ui-text-muted);">OBC (PM)</span><br>' . $obcEnabledLabel . '</div>
+      <div><span style="color:var(--ui-text-muted);">Cache TTL</span><br><strong>' . $obcCacheTtl . 's</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Symbols checked</span><br><strong>' . $obcSymbolsChecked . '</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Fetch OK / Failed / Cache</span><br><strong style="color:#3fb950;">' . $obcFetchOk . '</strong> / <strong style="color:#f85149;">' . $obcFetchFailed . '</strong> / <strong style="color:#8b949e;">' . $obcCacheHits . '</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Ask walls / Bid walls</span><br><strong>' . $obcAskWalls . '</strong> / <strong>' . $obcBidWalls . '</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Persistent / Eaten / Broken</span><br><strong style="color:#f85149;">' . $obcPersistent . '</strong> / <strong style="color:#f0883e;">' . $obcEaten . '</strong> / <strong style="color:#3fb950;">' . $obcBroken . '</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Wall exit checked</span><br><strong>' . $pmWallExitChecked . '</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Triggered / Closed</span><br><strong style="color:#f85149;">' . $pmWallExitTriggered . '</strong> / <strong style="color:#f85149;">' . $pmWallExitClosed . '</strong></div>
+      <div><span style="color:var(--ui-text-muted);">Skipped eaten / no wall</span><br><strong style="color:#3fb950;">' . $pmWallExitEaten . '</strong> / <strong style="color:#8b949e;">' . $pmWallExitNoWall . '</strong></div>
+      <div><span style="color:var(--ui-text-muted);">DS entry gate</span><br>' . $dsWallEnabledLabel . '</div>
+      <div><span style="color:var(--ui-text-muted);">DS gate checked / passed</span><br><strong>' . $dsWallGateChecked . '</strong> / <strong style="color:#3fb950;">' . $dsWallGatePassed . '</strong></div>
+      <div><span style="color:var(--ui-text-muted);">DS blocked / demoted</span><br><strong style="color:#f85149;">' . $dsWallGateBlocked . '</strong> / <strong style="color:#f0883e;">' . $dsWallGateDemoted . '</strong></div>
+    </div>' . $_wallExTableHtml . '
+  </div>
+</div>';
+
     return <<<HTML
 <style>
 .dh-tab-nav{display:flex;gap:0;border-bottom:1px solid var(--ui-border);margin-bottom:20px;}
@@ -5582,6 +5716,8 @@ BLCK;
     </div>
   </div>
   {$pmPositionsTable}
+
+  {$obcWallCardHtml}
 
   <!-- Profit Manager quick settings -->
   <div class="card" style="margin-top:16px;">

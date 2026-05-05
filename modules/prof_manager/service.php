@@ -53,6 +53,9 @@ final class ProfManagerService
     /** @var Profiles\Short\ShortProfile */
     private Profiles\Short\ShortProfile $shortProfile;
 
+    /** @var \OrderBookContextService|null */
+    private ?\OrderBookContextService $obcService = null;
+
     public function __construct(?string $moduleDir = null)
     {
         $this->moduleDir = rtrim(
@@ -84,6 +87,25 @@ final class ProfManagerService
             $this->moduleDir . '/profiles/short',
             $shortConfigOverrides
         );
+
+        // ── OrderBook Wall Context service (optional; fails gracefully) ────────
+        $obcDir = $this->repoRoot . '/modules/system/orderbook_context';
+        if (is_file($obcDir . '/service.php')) {
+            try {
+                require_once $obcDir . '/service.php';
+                $wallConfig = array_merge(
+                    (array)($this->config['wall_exit_enabled']              !== null ? ['wall_exit_enabled'              => $this->config['wall_exit_enabled']]              : []),
+                    (array)($this->config['wall_exit_min_roi']              !== null ? ['wall_exit_min_roi'              => $this->config['wall_exit_min_roi']]              : []),
+                    (array)($this->config['wall_exit_distance_pct']        !== null ? ['wall_exit_distance_pct'        => $this->config['wall_exit_distance_pct']]        : []),
+                    (array)($this->config['wall_exit_fail_checks']         !== null ? ['wall_exit_fail_checks'         => $this->config['wall_exit_fail_checks']]         : []),
+                    (array)($this->config['wall_exit_action']              !== null ? ['wall_exit_action'              => $this->config['wall_exit_action']]              : []),
+                    (array)($this->config['wall_exit_tighten_lock_buffer_roi'] !== null ? ['wall_exit_tighten_lock_buffer_roi' => $this->config['wall_exit_tighten_lock_buffer_roi']] : [])
+                );
+                $this->obcService = new \OrderBookContextService($obcDir, $wallConfig);
+            } catch (\Throwable) {
+                $this->obcService = null;
+            }
+        }
     }
 
     public static function instance(?string $moduleDir = null): self
@@ -278,6 +300,15 @@ final class ProfManagerService
             $lockTooCloseCloseExamples        = [];
             $lockTooCloseUnprotectedExamples  = [];
 
+            // Wall exit diagnostic counters
+            $wallExitCheckedTotal           = 0;
+            $wallExitTriggeredTotal         = 0;
+            $wallExitTightenedTotal         = 0;  // reserved for tighten action
+            $wallExitClosedTotal            = 0;
+            $wallExitSkippedWallEatenTotal   = 0;
+            $wallExitSkippedNoWallTotal      = 0;
+            $wallExitExamples               = [];
+
             foreach ($rawPositions as $pos) {
                 if (!is_array($pos)) {
                     continue;
@@ -299,12 +330,26 @@ final class ProfManagerService
                 // ── Detect side and route ─────────────────────────────────────
                 $side = $pos['side'];
 
+                // ── Fetch wall context for this position (if OBC enabled) ─────
+                $posWallContext = [];
+                if ($this->obcService !== null) {
+                    $posCurrentPrice = (float)($pos['current_price'] ?? $pos['mark_price'] ?? 0.0);
+                    $posSymbol       = (string)($pos['symbol'] ?? '');
+                    if ($posSymbol !== '' && $posCurrentPrice > 0.0) {
+                        try {
+                            $posWallContext = $this->obcService->getWallContext($posSymbol, $posCurrentPrice);
+                        } catch (\Throwable) {
+                            $posWallContext = [];
+                        }
+                    }
+                }
+
                 if ($side === 'long') {
                     $positionsLong++;
-                    $profileResult = $this->longProfile->process($pos, $nowTs);
+                    $profileResult = $this->longProfile->process($pos, $nowTs, $posWallContext);
                 } elseif ($side === 'short') {
                     $positionsShort++;
-                    $profileResult = $this->shortProfile->process($pos, $nowTs);
+                    $profileResult = $this->shortProfile->process($pos, $nowTs, $posWallContext);
                 } else {
                     $profileResult = [
                         'action'       => 'skip',
@@ -337,7 +382,7 @@ final class ProfManagerService
                 }
 
                 // ── PM Close Execution ────────────────────────────────────────
-                $pmCloseActions = ['hybrid_close_confirmed', 'would_close_on_lock_touch', 'roi_chop_indecision_exit', 'would_close_on_lock_too_close'];
+                $pmCloseActions = ['hybrid_close_confirmed', 'would_close_on_lock_touch', 'roi_chop_indecision_exit', 'would_close_on_lock_too_close', 'wall_exit_close'];
                 $pmAction       = $profileResult['action'] ?? 'skip';
                 $closeAttemptResult = null;
 
@@ -356,14 +401,17 @@ final class ProfManagerService
                     $posSymbol    = (string)($pos['symbol'] ?? '');
                     $posSide      = (string)($pos['side']   ?? '');
                     $posSize      = (float)($pos['size']    ?? 0.0);
-                    // Use close_reason_hint from long profile when available (e.g. lock_touch_impulse_broken)
-                    $closeReasonHint  = ($side === 'long') ? ($profileResult['close_reason_hint'] ?? null) : null;
+                    // Use close_reason_hint from long/short profile when available
+                    $closeReasonHint  = $profileResult['close_reason_hint'] ?? null;
                     if ($pmAction === 'hybrid_close_confirmed') {
                         $closeReasonValue = 'hybrid_confirmed';
                     } elseif ($pmAction === 'roi_chop_indecision_exit') {
                         $closeReasonValue = 'roi_chop_indecision_exit';
                     } elseif ($pmAction === 'would_close_on_lock_too_close') {
                         $closeReasonValue = 'lock_price_too_close_profit_protect';
+                    } elseif ($pmAction === 'wall_exit_close') {
+                        $closeReasonValue = $closeReasonHint
+                            ?? (($side === 'long') ? 'ask_wall_rejection_profit_exit' : 'bid_wall_rejection_profit_exit');
                     } else {
                         $closeReasonValue = $closeReasonHint ?? 'lock_touch';
                     }
@@ -752,6 +800,50 @@ final class ProfManagerService
                     }
                 }
 
+                // ── Wall exit diagnostic tracking (long + short) ─────────────
+                if (!empty($profileResult['wall_exit_checked'])) {
+                    $wallExitCheckedTotal++;
+                    $wallCtxData = $profileResult['wall_exit_context'] ?? null;
+
+                    if (!empty($profileResult['wall_exit_triggered'])) {
+                        $wallExitTriggeredTotal++;
+                        if (in_array($action, ['demo_close_submitted', 'live_close_submitted'], true)) {
+                            $wallExitClosedTotal++;
+                        }
+                    }
+                    if (!empty($profileResult['wall_exit_skipped'])) {
+                        $skipReason = (string)($profileResult['wall_exit_skip_reason'] ?? '');
+                        if ($skipReason === 'wall_exit_skipped_wall_eaten') {
+                            $wallExitSkippedWallEatenTotal++;
+                        }
+                    }
+
+                    if (count($wallExitExamples) < 5 && ($wallCtxData !== null)) {
+                        $wallExitExamples[] = [
+                            'symbol'           => $pos['symbol'] ?? '',
+                            'side'             => $pos['side']   ?? '',
+                            'current_price'    => (float)($pos['current_price'] ?? 0.0),
+                            'roi'              => $profileResult['roi'] ?? null,
+                            'wall_side'        => $side === 'long' ? 'ask' : 'bid',
+                            'wall_price'       => $wallCtxData['price']        ?? null,
+                            'wall_distance_pct'=> $wallCtxData['distance_pct'] ?? null,
+                            'wall_notional'    => $wallCtxData['notional']     ?? null,
+                            'wall_score'       => $wallCtxData['wall_score']   ?? null,
+                            'wall_status'      => ($side === 'long')
+                                ? ($posWallContext['ask_wall_status'] ?? 'none')
+                                : ($posWallContext['bid_wall_status'] ?? 'none'),
+                            'action'           => $action,
+                            'reason'           => $closeAttemptResult['close_reason']
+                                ?? $profileResult['close_reason_hint']
+                                ?? $profileResult['wall_exit_skip_reason']
+                                ?? null,
+                        ];
+                    }
+                } elseif (empty($profileResult['wall_exit_checked']) && !empty($posWallContext) && ($posWallContext['fetch_ok'] ?? false)) {
+                    // Wall context was available but no wall was close enough
+                    $wallExitSkippedNoWallTotal++;
+                }
+
                 // ── Build per-position runtime record ─────────────────────────
                 $currentRoi       = $profileResult['roi'] ?? null;
                 $activationRoi    = $profileResult['activation_roi'] ?? null;
@@ -810,6 +902,17 @@ final class ProfManagerService
                     'chop_checked'               => $profileResult['chop_checked']               ?? false,
                     'chop_detected'              => $profileResult['chop_detected']              ?? false,
                     'chop_skip_reason'           => $profileResult['chop_skip_reason']           ?? null,
+                    // Wall exit diagnostics
+                    'wall_exit_checked'          => $profileResult['wall_exit_checked']          ?? false,
+                    'wall_exit_triggered'        => $profileResult['wall_exit_triggered']        ?? false,
+                    'wall_exit_skipped'          => $profileResult['wall_exit_skipped']          ?? false,
+                    'wall_exit_skip_reason'      => $profileResult['wall_exit_skip_reason']      ?? null,
+                    'nearest_wall'               => ($side === 'long')
+                        ? ($posWallContext['nearest_ask_wall'] ?? null)
+                        : ($posWallContext['nearest_bid_wall'] ?? null),
+                    'wall_status'                => ($side === 'long')
+                        ? ($posWallContext['ask_wall_status']  ?? 'none')
+                        : ($posWallContext['bid_wall_status']  ?? 'none'),
                     // Close execution output (null when no close was attempted this tick)
                     'close_attempted'            => $closeAttemptResult['close_attempted']    ?? null,
                     'close_ok'                   => $closeAttemptResult['close_ok']           ?? null,
@@ -969,6 +1072,17 @@ final class ProfManagerService
                 'lock_too_close_adjusted_examples'       => $lockTooCloseAdjustedExamples,
                 'lock_too_close_close_examples'          => $lockTooCloseCloseExamples,
                 'lock_too_close_unprotected_examples'    => $lockTooCloseUnprotectedExamples,
+                // Wall exit diagnostics
+                'wall_exit_checked_total'                => $wallExitCheckedTotal,
+                'wall_exit_triggered_total'              => $wallExitTriggeredTotal,
+                'wall_exit_tightened_total'              => $wallExitTightenedTotal,
+                'wall_exit_closed_total'                 => $wallExitClosedTotal,
+                'wall_exit_skipped_wall_eaten_total'     => $wallExitSkippedWallEatenTotal,
+                'wall_exit_skipped_no_wall_total'        => $wallExitSkippedNoWallTotal,
+                'wall_exit_examples'                     => $wallExitExamples,
+                // OrderBook Context service stats
+                'obc_enabled'                            => ($this->obcService !== null),
+                'obc_stats'                              => ($this->obcService !== null) ? $this->obcService->getStats() : null,
                 // PM exchange profit-floor sync diagnostics
                 'pm_floor_sync_enabled'                  => $floorSyncResult['pm_floor_sync_enabled'],
                 'pm_floor_sync_skip_reason'              => $floorSyncResult['pm_floor_sync_skip_reason'] ?? null,

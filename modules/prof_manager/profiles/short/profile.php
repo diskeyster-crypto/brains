@@ -49,7 +49,7 @@ class ShortProfile
      *               profile_used, notes, init_roi, activation_roi,
      *               distance_pct, min_required_distance_pct, side_supported}
      */
-    public function process(array $position, int $nowTs): array
+    public function process(array $position, int $nowTs, array $wallContext = []): array
     {
         $symbol = (string) ($position['symbol'] ?? '');
         $key    = $this->positionKey($symbol, 'short');
@@ -215,15 +215,80 @@ class ShortProfile
         $lockRecord = $locks[$key] ?? [];
         $lockPrice  = isset($lockRecord['lock_price']) ? (float) $lockRecord['lock_price'] : null;
 
+        // ── Wall exit check (short: bid wall below price = support) ───────────
+        // Triggered only when:
+        //   - wall context provided and wall_exit_enabled = true
+        //   - current ROI >= wall_exit_min_roi
+        //   - nearest bid wall is persistent (not eaten/broken)
+        //   - bid wall distance_pct <= wall_exit_distance_pct
+        //   - price has failed to break wall for >= wall_exit_fail_checks ticks
+        // Skip if wall is eaten/broken (bearish continuation allowed).
+        $wallExitChecked    = false;
+        $wallExitTriggered  = false;
+        $wallExitSkipped    = false;
+        $wallExitSkipReason = null;
+        $wallExitContext     = null;
+        $wallExitCloseReason = null;
+        $planAction          = $plan['action'] ?? 'skip';
+
+        if (!empty($wallContext)) {
+            $wallExitEnabled = !empty($this->config['wall_exit_enabled']);
+            $wallExitMinRoi  = (float)($this->config['wall_exit_min_roi']      ?? 6.0);
+            $wallExitDistPct = (float)($this->config['wall_exit_distance_pct'] ?? 0.6);
+            $wallExitFail    = max(1, (int)($this->config['wall_exit_fail_checks'] ?? 2));
+
+            $bidWall   = $wallContext['nearest_bid_wall'] ?? null;
+            $bidStatus = (string)($wallContext['bid_wall_status']  ?? 'none');
+
+            if ($wallExitEnabled && $currentRoi !== null && $currentRoi >= $wallExitMinRoi
+                && $bidWall !== null && is_array($bidWall)
+            ) {
+                $bidDist = (float)($bidWall['distance_pct'] ?? 999.0);
+
+                if ($bidDist <= $wallExitDistPct) {
+                    $wallExitChecked = true;
+
+                    if ($bidStatus === 'eaten' || $bidStatus === 'broken') {
+                        // Wall being absorbed — bearish continuation possible, skip exit
+                        $wallExitSkipped    = true;
+                        $wallExitSkipReason = 'wall_exit_skipped_wall_eaten';
+                        $wallExitContext     = $bidWall;
+                        $positionState['wall_exit_fail_count'] = 0;
+                    } elseif ($bidStatus === 'persistent') {
+                        $failCount = (int)($positionState['wall_exit_fail_count'] ?? 0) + 1;
+                        $positionState['wall_exit_fail_count'] = $failCount;
+
+                        if ($failCount >= $wallExitFail) {
+                            $wallExitTriggered   = true;
+                            $wallExitContext      = $bidWall;
+                            $wallExitCloseReason = 'bid_wall_rejection_profit_exit';
+                            $planAction          = 'wall_exit_close';
+                        }
+                    } else {
+                        $positionState['wall_exit_fail_count'] = 0;
+                    }
+                } else {
+                    $positionState['wall_exit_fail_count'] = 0;
+                }
+            }
+        }
+
+        // Re-persist state with any wall exit counter updates
+        $positionsState[$key] = $positionState;
+        $this->writeState($positionsState);
+
         return [
-            'action'                     => $plan['action']       ?? 'skip',
-            'skip_reason'                => $plan['skip_reason']  ?? null,
+            'action'                     => $planAction,
+            'skip_reason'                => $planAction === 'wall_exit_close' ? null : ($plan['skip_reason'] ?? null),
             'roi'                        => $currentRoi,
             'peak_roi'                   => $peakRoi,
             'lock_price'                 => ($lockPrice !== null && $lockPrice > 0.0) ? $lockPrice : null,
             'lock_active'                => ($lockPrice !== null && $lockPrice > 0.0),
             'profile_used'               => 'baseline_short_lock',
-            'notes'                      => !empty($plan['note']) ? [$plan['note']] : [],
+            'notes'                      => $wallExitCloseReason !== null
+                ? [$wallExitCloseReason]
+                : (!empty($plan['note']) ? [$plan['note']] : []),
+            'close_reason_hint'          => $wallExitCloseReason,
             'init_roi'                   => $initRoi,
             'activation_roi'             => $activationRoi,
             'distance_pct'               => $plan['distance_pct']              ?? null,
@@ -232,6 +297,12 @@ class ShortProfile
             // ── Position identity diagnostics ─────────────────────────────────
             'pm_state_identity_mismatch' => $identityMismatch,
             'pm_state_legacy_key_ignored'=> $legacyKeyIgnored,
+            // ── Wall exit diagnostics ─────────────────────────────────────────
+            'wall_exit_checked'          => $wallExitChecked,
+            'wall_exit_triggered'        => $wallExitTriggered,
+            'wall_exit_skipped'          => $wallExitSkipped,
+            'wall_exit_skip_reason'      => $wallExitSkipReason,
+            'wall_exit_context'          => $wallExitContext,
         ];
     }
 

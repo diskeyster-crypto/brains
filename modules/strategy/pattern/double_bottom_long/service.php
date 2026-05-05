@@ -31,6 +31,20 @@ final class DoubleBottomLongService
 
     private const H4_INTERVAL = '240';  // Bybit kline interval
 
+    /** @var \OrderBookContextService|null */
+    private ?\OrderBookContextService $obcService = null;
+
+    // ── Per-tick OBC wall counters (reset at start of each tickBatch) ─────────
+    private int $obWallCheckedTotal       = 0;
+    private int $obWallFetchSuccessTotal  = 0;
+    private int $obWallFetchFailedTotal   = 0;
+    private int $obWallAskRiskTotal       = 0;
+    private int $obWallBidSupportTotal    = 0;
+    private int $obWallAskEatenTotal      = 0;
+    private int $obWallSoftDemoteTotal    = 0;
+    private int $obWallPendingTotal       = 0;
+    private int $obWallHardRejectTotal    = 0;
+
     // ── Per-tick entry-context fetch counters (reset at start of each tickBatch) ──
     private int $ctxFetchAttemptedThisTick       = 0;
     private int $ctxFetchSuccessThisTick         = 0;
@@ -67,6 +81,16 @@ final class DoubleBottomLongService
         }
         // Repo root is 4 levels above modules/strategy/pattern/double_bottom_long/
         $this->repoRoot = rtrim(dirname($this->moduleDir, 4), '/');
+        // ── OrderBook Wall Context service (optional; fails gracefully) ─────
+        $obcDir = $this->repoRoot . '/modules/system/orderbook_context';
+        if (is_file($obcDir . '/service.php')) {
+            try {
+                require_once $obcDir . '/service.php';
+                $this->obcService = new \OrderBookContextService($obcDir);
+            } catch (\Throwable) {
+                $this->obcService = null;
+            }
+        }
     }
 
     public static function instance(string $moduleDir): self
@@ -354,6 +378,16 @@ final class DoubleBottomLongService
         $this->ctxFetchFailedThisTick           = 0;
         $this->ctxFetchSkippedPrefilterThisTick = 0;
         $this->ctxFetchSkippedLimitThisTick     = 0;
+        // Reset per-tick OBC wall counters.
+        $this->obWallCheckedTotal      = 0;
+        $this->obWallFetchSuccessTotal = 0;
+        $this->obWallFetchFailedTotal  = 0;
+        $this->obWallAskRiskTotal      = 0;
+        $this->obWallBidSupportTotal   = 0;
+        $this->obWallAskEatenTotal     = 0;
+        $this->obWallSoftDemoteTotal   = 0;
+        $this->obWallPendingTotal      = 0;
+        $this->obWallHardRejectTotal   = 0;
         // Reset per-tick scan suppression counters.
         $this->scanSuppressionSkippedThisTick   = 0;
         $this->scanSuppressionAddedThisTick     = 0;
@@ -639,6 +673,13 @@ final class DoubleBottomLongService
                     $sig['pending_created_at']                = $result['pending_confirmation_created_at']   ?? null;
                     $sig['pending_confirmed_at']              = $sig['pending_confirmed_at']                 ?? null;
                     $sig['pending_invalidated_reason']        = null; // emitted = not invalidated
+                    // OBC wall context fields — carry from result into signal for consumers
+                    $sig['ob_wall_context']   = $result['ob_wall_context']    ?? null;
+                    $sig['ob_ask_wall_risk']  = $result['ob_ask_wall_risk']   ?? false;
+                    $sig['ob_bid_wall_support'] = $result['ob_bid_wall_support'] ?? false;
+                    $sig['ob_ask_wall_eaten'] = $result['ob_ask_wall_eaten']  ?? false;
+                    $sig['ob_soft_demoted']   = $result['ob_soft_demoted']    ?? false;
+                    $sig['ob_wall_checked']   = $result['ob_wall_checked']    ?? false;
                     // Detect and list any fields that are unavailable (null) — do not fill with fake defaults
                     // Fields always required for trace completeness
                     $traceFieldsAlways = [
@@ -1472,6 +1513,18 @@ final class DoubleBottomLongService
             'max_symbols_per_run'       => (int)($config['max_symbols_per_run']      ?? 0),
             'batch_size'                => (int)($config['batch_size']               ?? 50),
             'registry_symbols_remaining_until_wrap' => (int)($state['registry_symbols_remaining_until_wrap'] ?? 0),
+            // ── OrderBook wall entry gate counters (per tick) ────────────────────
+            'orderbook_wall_checked_total'         => $this->obWallCheckedTotal,
+            'orderbook_wall_fetch_success_total'   => $this->obWallFetchSuccessTotal,
+            'orderbook_wall_fetch_failed_total'    => $this->obWallFetchFailedTotal,
+            'orderbook_wall_ask_risk_total'        => $this->obWallAskRiskTotal,
+            'orderbook_wall_bid_support_bonus_total' => $this->obWallBidSupportTotal,
+            'orderbook_wall_ask_eaten_bonus_total' => $this->obWallAskEatenTotal,
+            'orderbook_wall_soft_demote_total'     => $this->obWallSoftDemoteTotal,
+            'orderbook_wall_pending_total'         => $this->obWallPendingTotal,
+            'orderbook_wall_hard_reject_total'     => $this->obWallHardRejectTotal,
+            'orderbook_wall_gate_enabled'          => (bool)($config['orderbook_entry_wall_gate_enabled'] ?? false),
+            'orderbook_wall_gate_mode'             => (string)($config['orderbook_entry_wall_gate_mode']  ?? 'soft_demote'),
             // Entry-context fetch counters for this tick
             'entry_context_fetch_attempted_total'       => $this->ctxFetchAttemptedThisTick,
             'entry_context_fetch_success_total'         => $this->ctxFetchSuccessThisTick,
@@ -3057,6 +3110,18 @@ final class DoubleBottomLongService
             $confirm = ['confirm_status' => 'confirm_pass', 'confirm_bar_close' => null, 'confirm_bars_waited' => 0];
         }
 
+        // ── OrderBook Wall Context gate ───────────────────────────────────────
+        // Fetched only for candidates that reach confirmation (serious long candidates).
+        // Default mode: soft_demote (tag signal with risk, do not hard-reject).
+        $obcWallCtx = $this->applyOrderBookWallGate($symbol, $candidate, $config, $diagBase);
+        if (!empty($obcWallCtx['ob_hard_reject'])) {
+            return $this->reject($diagBase, $symbol, 'double_bottom', 'ob_ask_wall_hard_reject', true, [
+                'ob_wall_context'       => $obcWallCtx,
+                'ob_wall_ask_risk'      => $obcWallCtx['ob_ask_wall_risk'] ?? false,
+                'ob_wall_fetch_ok'      => $obcWallCtx['ob_fetch_ok'] ?? null,
+            ]);
+        }
+
         $this->requireLogic('signal');
         $signal = (new \Modules\Strategy\DoubleBottomLong\Logic\PatternSignal())->build(
             $symbol, $candidate, $confirm,
@@ -3100,6 +3165,13 @@ final class DoubleBottomLongService
             'reject_reason'           => null,
             'setup_allowed_kill_stage'  => null,
             'setup_allowed_kill_reason' => null,
+            // OBC wall context (may be empty if gate disabled or OBC unavailable)
+            'ob_wall_context'         => !empty($obcWallCtx) ? $obcWallCtx : null,
+            'ob_ask_wall_risk'        => $obcWallCtx['ob_ask_wall_risk']   ?? false,
+            'ob_bid_wall_support'     => $obcWallCtx['ob_bid_wall_support'] ?? false,
+            'ob_ask_wall_eaten'       => $obcWallCtx['ob_ask_wall_eaten']  ?? false,
+            'ob_soft_demoted'         => $obcWallCtx['ob_soft_demoted']    ?? false,
+            'ob_wall_checked'         => $obcWallCtx['ob_wall_checked']    ?? false,
             'signal_id'               => $signal['signal_id'],
             'signal'                  => $signal,
         ]);
@@ -3108,6 +3180,140 @@ final class DoubleBottomLongService
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    /**
+     * Apply the OrderBook Wall Context gate for a confirmed long candidate.
+     *
+     * Only fetches for candidates that passed quality + confirmation gates.
+     * Default mode is soft_demote: signals are tagged with wall risk but not hard-rejected.
+     *
+     * Returns a normalized wall context array with ob_ prefixed diagnostic fields.
+     * Returns [] when OBC gate is disabled or the OBC service is unavailable.
+     *
+     * @param string $symbol
+     * @param array  $candidate Confirmed double-bottom candidate
+     * @param array  $config    Strategy config
+     * @param array  $diagBase  Current diag context (for quality score access)
+     * @return array<string,mixed>
+     */
+    private function applyOrderBookWallGate(
+        string $symbol,
+        array  $candidate,
+        array  $config,
+        array  $diagBase
+    ): array {
+        $gateEnabled = (bool)($config['orderbook_entry_wall_gate_enabled'] ?? false);
+        if (!$gateEnabled || $this->obcService === null) {
+            return [];
+        }
+
+        // Quality-score threshold: only fetch for candidates above this score
+        $fetchAfterScore = (float)($config['orderbook_entry_wall_fetch_after_quality_score'] ?? 0.0);
+        $qualScore = (float)($diagBase['candidate_quality_score'] ?? 0.0);
+        if ($fetchAfterScore > 0.0 && $qualScore < $fetchAfterScore) {
+            return [];
+        }
+
+        // Use neckline level as the entry price reference
+        $entryPrice = (float)($candidate['neckline'] ?? $candidate['entry_price'] ?? 0.0);
+        if ($entryPrice <= 0.0) {
+            return [];
+        }
+
+        $nearPct          = (float)($config['orderbook_entry_wall_near_pct']              ?? 1.5);
+        $persistRequired  = (bool)($config['orderbook_entry_wall_persistent_required']    ?? true);
+        $supportBonus     = (bool)($config['orderbook_entry_wall_support_bonus_enabled']  ?? true);
+        $eatenBonus       = (bool)($config['orderbook_entry_wall_ask_eaten_bonus_enabled'] ?? true);
+        $pendingEnabled   = (bool)($config['orderbook_entry_wall_pending_enabled']        ?? false);
+        $gateMode         = (string)($config['orderbook_entry_wall_gate_mode']            ?? 'soft_demote');
+
+        $this->obWallCheckedTotal++;
+
+        $wallCtx = null;
+        $fetchOk = false;
+        try {
+            $wallCtx = $this->obcService->getWallContext($symbol, $entryPrice);
+            $fetchOk = (bool)($wallCtx['fetch_ok'] ?? false);
+        } catch (\Throwable) {
+            $fetchOk = false;
+        }
+
+        if ($fetchOk) {
+            $this->obWallFetchSuccessTotal++;
+        } else {
+            $this->obWallFetchFailedTotal++;
+        }
+
+        $nearestAskWall = $wallCtx['nearest_ask_wall'] ?? null;
+        $nearestBidWall = $wallCtx['nearest_bid_wall'] ?? null;
+        $askStatus      = (string)($wallCtx['ask_wall_status'] ?? 'none');
+        $bidStatus      = (string)($wallCtx['bid_wall_status'] ?? 'none');
+
+        $obAskWallRisk    = false;
+        $obBidWallSupport = false;
+        $obAskWallEaten   = false;
+        $obSoftDemoted    = false;
+        $obHardReject     = false;
+
+        // ── Ask wall risk check (wall above entry = resistance) ───────────────
+        if ($nearestAskWall !== null) {
+            $askDist = (float)($nearestAskWall['distance_pct'] ?? 999.0);
+            $isNear = $askDist <= $nearPct;
+            $isPersistent = !$persistRequired || $askStatus === 'persistent';
+            $isEaten = ($askStatus === 'eaten' || $askStatus === 'broken');
+
+            if ($isEaten && $eatenBonus) {
+                // Eaten/broken ask wall above entry = continuation signal (good for long)
+                $obAskWallEaten = true;
+                $this->obWallAskEatenTotal++;
+            } elseif ($isNear && $isPersistent && !$isEaten) {
+                // Persistent ask wall near entry = resistance risk
+                $obAskWallRisk = true;
+                $this->obWallAskRiskTotal++;
+
+                if ($gateMode === 'hard_reject') {
+                    $obHardReject = true;
+                    $this->obWallHardRejectTotal++;
+                } elseif ($pendingEnabled) {
+                    $this->obWallPendingTotal++;
+                    // pending mode: gate does not emit hard_reject but flags the signal
+                } else {
+                    // Default: soft_demote — tag the signal, do not block
+                    $obSoftDemoted = true;
+                    $this->obWallSoftDemoteTotal++;
+                }
+            }
+        }
+
+        // ── Bid wall support check (wall below entry = support) ───────────────
+        if ($supportBonus && $nearestBidWall !== null && !$obAskWallRisk) {
+            $bidDist  = (float)($nearestBidWall['distance_pct'] ?? 999.0);
+            $bidNear  = $bidDist <= $nearPct;
+            $bidPersist = !$persistRequired || $bidStatus === 'persistent';
+            if ($bidNear && $bidPersist && $bidStatus !== 'eaten' && $bidStatus !== 'broken') {
+                $obBidWallSupport = true;
+                $this->obWallBidSupportTotal++;
+            }
+        }
+
+        return [
+            'ob_wall_checked'        => true,
+            'ob_fetch_ok'            => $fetchOk,
+            'ob_entry_price_ref'     => $entryPrice,
+            'ob_ask_wall_risk'       => $obAskWallRisk,
+            'ob_bid_wall_support'    => $obBidWallSupport,
+            'ob_ask_wall_eaten'      => $obAskWallEaten,
+            'ob_soft_demoted'        => $obSoftDemoted,
+            'ob_hard_reject'         => $obHardReject,
+            'ob_gate_mode'           => $gateMode,
+            'ob_ask_wall_status'     => $askStatus,
+            'ob_bid_wall_status'     => $bidStatus,
+            'ob_ask_wall_distance_pct' => $nearestAskWall !== null ? (float)($nearestAskWall['distance_pct'] ?? null) : null,
+            'ob_bid_wall_distance_pct' => $nearestBidWall !== null ? (float)($nearestBidWall['distance_pct'] ?? null) : null,
+            'ob_ask_wall_notional'   => $nearestAskWall['notional']  ?? null,
+            'ob_bid_wall_notional'   => $nearestBidWall['notional']  ?? null,
+        ];
+    }
 
     private function reject(array $diag, string $symbol, string $pattern, ?string $reason, bool $patternChecked = false, array $extra = []): array
     {
@@ -7851,6 +8057,13 @@ final class DoubleBottomLongService
                 'reason_codes'                     => $signal['reason_codes']                    ?? null,
                 'pending_confirmation_status'      => $signal['pending_confirmation_status']     ?? null,
                 'pending_confirmation_reason'      => $signal['pending_confirmation_reason']     ?? null,
+                // OBC wall context
+                'ob_wall_checked'                  => $signal['ob_wall_checked']                 ?? false,
+                'ob_ask_wall_risk'                 => $signal['ob_ask_wall_risk']                ?? false,
+                'ob_bid_wall_support'              => $signal['ob_bid_wall_support']             ?? false,
+                'ob_ask_wall_eaten'                => $signal['ob_ask_wall_eaten']               ?? false,
+                'ob_soft_demoted'                  => $signal['ob_soft_demoted']                 ?? false,
+                'ob_wall_context'                  => $signal['ob_wall_context']                 ?? null,
             ],
 
             // Execution parameters (strategy-owned; no exchange-order fields yet)

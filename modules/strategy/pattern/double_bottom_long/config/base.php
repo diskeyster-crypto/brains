@@ -100,6 +100,24 @@ return [
     // Minimum quality score required to allow adaptive wide-stop bypass for A/B synthetic setups.
     // 0.0 = disabled (allow any quality); set to e.g. 0.72 to require strong quality.
     'final_stop_width_adaptive_min_quality_score' => 0.0,
+
+    // ── OrderBook Wall Context entry gate ─────────────────────────────────────
+    // Fetches OBC wall context only after cheap filters pass (serious candidates only).
+    // Default mode: soft_demote — tag signal with wall risk, do not hard-reject.
+    'orderbook_entry_wall_gate_enabled'              => false,
+    'orderbook_entry_wall_gate_mode'                 => 'soft_demote',   // soft_demote | hard_reject
+    // Only fetch OBC for candidates with quality_score >= this value (0 = always fetch)
+    'orderbook_entry_wall_fetch_after_quality_score' => 0.0,
+    // Proximity threshold: ask/bid wall within this % of entry = risk/support
+    'orderbook_entry_wall_near_pct'                  => 1.5,
+    // Require wall to be 'persistent' (tracked across ticks) before treating as risk
+    'orderbook_entry_wall_persistent_required'       => true,
+    // Add support bonus when a persistent bid wall is below entry
+    'orderbook_entry_wall_support_bonus_enabled'     => true,
+    // Add continuation bonus when the nearest ask wall was eaten/broken
+    'orderbook_entry_wall_ask_eaten_bonus_enabled'   => true,
+    // Mark signal as pending (not hard-reject) when ask wall risk detected
+    'orderbook_entry_wall_pending_enabled'           => false,
     'reverse_pattern_close_enabled'=> false,
     'tp_enabled'                   => true,   // take-profit enabled
     'tp_mode'                      => 'fixed_r',   // fixed_r | fixed_price

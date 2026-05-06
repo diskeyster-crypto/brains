@@ -1374,10 +1374,24 @@ final class DoubleBottomLongService
                         $sig['stale'] = true;
                     }
                     $sig['stale_reason']             = $blockReason;
+                    $sig['block_reason']             = $blockReason;
                     $sig['handoff_ready']            = false;
                     $sig['executable']               = false;
                     $sig['last_lifecycle_update_at'] = date('c');
                     $sig['last_lifecycle_reason']    = $blockReason;
+                    // Propagate block_reason into strategy_signal_context for OBC soft_demote
+                    // so that all downstream consumers (signals.json, bot_handoff_queue) can
+                    // identify the exact gate that prevented handoff.
+                    if ($blockReason === 'ob_soft_demote_ask_wall_risk') {
+                        $existingSscBlk = is_array($sig['strategy_signal_context'] ?? null)
+                            ? $sig['strategy_signal_context'] : [];
+                        $sig['strategy_signal_context'] = array_merge($existingSscBlk, [
+                            'block_reason'    => $blockReason,
+                            'handoff_ready'   => false,
+                            'executable'      => false,
+                            'active_final'    => false,
+                        ]);
+                    }
                     $sigMarkedStale++;
                     if (count($sigMarkedStaleExamples) < 5) {
                         $detTs = isset($sig['detected_at']) ? strtotime($sig['detected_at']) : 0;

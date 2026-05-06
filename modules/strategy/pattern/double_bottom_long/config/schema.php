@@ -103,6 +103,7 @@ return [
     'orderbook_entry_wall_support_bonus_enabled'     => 'bool',
     'orderbook_entry_wall_ask_eaten_bonus_enabled'   => 'bool',
     'orderbook_entry_wall_pending_enabled'           => 'bool',
+    'orderbook_entry_wall_soft_demote_blocks_handoff' => 'bool',
 
     // Handoff signal freshness gates
     'handoff_signal_max_age_minutes'           => 'int',

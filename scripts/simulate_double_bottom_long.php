@@ -122,9 +122,15 @@ function info(string $msg): void { echo "        {$msg}\n"; }
 // Read module storage
 // ──────────────────────────────────────────────────────────────────────────────
 
-$config  = readJson($moduleDir . '/config/base.php') ?? [];
-// Re-read as PHP (not JSON)
-$config  = require $moduleDir . '/config/base.php';
+// Load effective config: base defaults, then override with active.php (same semantics as runtime service).
+$config = require $moduleDir . '/config/base.php';
+$activeConfigPath = $moduleDir . '/config/active.php';
+if (file_exists($activeConfigPath)) {
+    $activeOverrides = require $activeConfigPath;
+    if (is_array($activeOverrides)) {
+        $config = array_merge($config, $activeOverrides);
+    }
+}
 $signals = readJson($moduleDir . '/storage/signals.json', []);
 $regime  = readJson($moduleDir . '/storage/market_regime.json', []);
 $stats   = readJson($moduleDir . '/storage/stats.json', []);

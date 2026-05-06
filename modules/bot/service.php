@@ -66,6 +66,13 @@ final class BotService
     private string $moduleDir;
     private string $repoRoot;
 
+    // Per-tick closed trade journal dedup diagnostic counters (reset at construction; bot is
+    // a singleton per PHP process so each cron run starts from zero).
+    private int   $closedTradeDuplicateIdTotal       = 0;
+    private int   $closedTradeDuplicateConflictTotal  = 0;
+    private int   $closedTradeIndAggrMismatchTotal    = 0;
+    private array $closedTradeConflictExamples        = [];
+
     public function __construct(?string $moduleDir = null)
     {
         if ($moduleDir !== null) {
@@ -931,6 +938,50 @@ final class BotService
             }
         }
 
+        // ── 7g2. Non-destructive consistency check: aggregate vs individual files ──
+        // Compares closed_trades.json entries against their corresponding closed/{id}.json
+        // files. Reports mismatches only — does not delete or modify any file.
+        $closedTradeIndAggrMismatch = 0;
+        try {
+            $closedDir = $this->moduleDir . '/storage/trades/closed';
+            foreach ($closedTradesForDiag as $ct) {
+                $ctId = (string)($ct['id'] ?? '');
+                if ($ctId === '') {
+                    continue;
+                }
+                $indivFilePath = $closedDir . '/' . $ctId . '.json';
+                if (!is_file($indivFilePath)) {
+                    // Aggregate entry exists but individual file is missing — count as mismatch.
+                    $closedTradeIndAggrMismatch++;
+                    $this->closedTradeIndAggrMismatchTotal++;
+                    continue;
+                }
+                $indivRaw = @file_get_contents($indivFilePath);
+                if ($indivRaw === false || $indivRaw === '') {
+                    $closedTradeIndAggrMismatch++;
+                    $this->closedTradeIndAggrMismatchTotal++;
+                    continue;
+                }
+                $indivData = @json_decode($indivRaw, true);
+                if (!is_array($indivData)) {
+                    $closedTradeIndAggrMismatch++;
+                    $this->closedTradeIndAggrMismatchTotal++;
+                    continue;
+                }
+                // Compare key identity fields (signal-level, not price precision).
+                if (($indivData['id']           ?? '') !== $ctId
+                    || ($indivData['symbol']    ?? '') !== ($ct['symbol']    ?? '')
+                    || ($indivData['side']      ?? '') !== ($ct['side']      ?? '')
+                    || ($indivData['closed_at'] ?? null) !== ($ct['closed_at'] ?? null)
+                ) {
+                    $closedTradeIndAggrMismatch++;
+                    $this->closedTradeIndAggrMismatchTotal++;
+                }
+            }
+        } catch (\Throwable) {
+            // Never crash the tick over diagnostic reads
+        }
+
         // ── 7h. Order queue diagnostics for double_bottom_long (Task 3) ─────────
         // Build a lookup of all handoff queue entries keyed by signal_id for source checks.
         $dbHandoffMap = [];
@@ -1374,6 +1425,11 @@ final class BotService
             'closed_trades_with_signal_trace_total'       => $closedTradesWithTrace,
             'closed_trades_missing_signal_trace_total'    => $closedTradesMissingTrace,
             'closed_trades_signal_trace_missing_examples' => $closedTraceMissingExamples,
+            // ── Closed trade journal dedup/integrity diagnostics ──────────────────
+            'closed_trade_duplicate_id_total'                    => $this->closedTradeDuplicateIdTotal,
+            'closed_trade_duplicate_conflict_total'              => $this->closedTradeDuplicateConflictTotal,
+            'closed_trade_individual_aggregate_mismatch_total'   => $this->closedTradeIndAggrMismatchTotal,
+            'closed_trade_conflict_examples'                     => $this->closedTradeConflictExamples,
             // ── Handoff freshness/lifecycle diagnostics (new) ────────────────────
             'handoff_blocked_stale_signal_total'                          => $result['handoff_blocked_stale_signal_total']                        ?? 0,
             'stale_handoff_ignored_total'                                 => $result['stale_handoff_ignored_total']                               ?? 0,
@@ -4794,10 +4850,6 @@ final class BotService
                 return;
             }
 
-            // ── Trade ID: deterministic, dedup-safe ───────────────────────────
-            $idBase = $symbol . '_' . $side . '_' . ($openedAt !== '' ? $openedAt : $closedAt);
-            $tradeId = 'ct_' . substr(md5($idBase), 0, 12);
-
             // ── Exit price: last known mark/current price from position ───────
             $entryPrice     = (float)($pos['entry_price']  ?? 0.0);
             $rawMarkPrice   = (float)($pos['mark_price']   ?? 0.0);
@@ -5040,8 +5092,13 @@ final class BotService
             }
 
             // ── Build trade record ────────────────────────────────────────────
+            // NOTE: id is filled in below after the safer trade ID is computed.
+            $resolvedSignalId = (string)($pos['signal_id'] ?? '') !== ''
+                ? (string)$pos['signal_id']
+                : ($efSignalIdAugment ?: null);
+
             $trade = [
-                'id'               => $tradeId,
+                'id'               => '',   // placeholder; replaced after ID computation
                 'symbol'           => $symbol,
                 'side'             => $side,
                 'strategy_id'      => $stratId,
@@ -5075,20 +5132,31 @@ final class BotService
                 // ── Signal trace attribution (traceability, not outcome data) ──
                 // When the ef registry has a richer signal_id or strategy_signal_context
                 // (e.g. the position record was trimmed after entry), fall back to registry values.
-                'signal_id'              => (string)($pos['signal_id'] ?? '') !== ''
-                    ? (string)$pos['signal_id']
-                    : ($efSignalIdAugment ?: null),
+                'signal_id'              => $resolvedSignalId,
                 'owner_strategy'         => (string)($pos['owner_strategy'] ?? '') !== '' ? (string)$pos['owner_strategy'] : null,
                 'pattern_algorithm'      => (string)($pos['pattern_algorithm'] ?? '') !== '' ? (string)$pos['pattern_algorithm'] : null,
                 'setup_class'            => $pos['setup_class']            ?? null,
                 'strategy_signal_context'=> $pos['strategy_signal_context'] ?? $efStratCtxAugment,
             ];
 
-            // ── Write individual per-trade file ───────────────────────────────
-            $indivPath = 'storage/trades/closed/' . $tradeId . '.json';
-            $this->writeJson($indivPath, $trade);
+            // ── Trade ID: compute from fully-resolved trade record ────────────
+            // Use signal_id + closed_at + close_source when available for a
+            // collision-resistant ID; fall back to legacy symbol+side+opened_at.
+            $tSigId      = (string)($trade['signal_id']   ?? '');
+            $tClosedAt   = (string)($trade['closed_at']   ?? '');
+            $tCloseSource = (string)($trade['close_source'] ?? '');
+            if ($tSigId !== '') {
+                $idComponents = $symbol . '|' . $side . '|' . $tSigId . '|' . $openedAt . '|' . $tClosedAt . '|' . $tCloseSource;
+                $tradeId = 'ct_' . substr(md5($idComponents), 0, 16);
+            } else {
+                // Legacy fallback: symbol + side + opened_at (12-char hash)
+                $idLegacy = $symbol . '_' . $side . '_' . ($openedAt !== '' ? $openedAt : $closedAt);
+                $tradeId  = 'ct_' . substr(md5($idLegacy), 0, 12);
+            }
+            $trade['id'] = $tradeId;
 
-            // ── Append to aggregated closed_trades.json ───────────────────────
+            // ── Load aggregate FIRST, dedup/conflict check ────────────────────
+            // Individual file must NOT be written before dedup is complete.
             $aggRelPath = 'storage/trades/closed_trades.json';
             $aggAbsPath = $this->moduleDir . '/' . $aggRelPath;
 
@@ -5103,13 +5171,57 @@ final class BotService
                 }
             }
 
-            // Dedup by id
+            $isDuplicate = false;
             foreach ($existing as $entry) {
-                if (($entry['id'] ?? '') === $tradeId) {
-                    return; // already recorded
+                if (($entry['id'] ?? '') !== $tradeId) {
+                    continue;
                 }
+                // Same ID — check whether it is the identical event or a conflict.
+                $sameEvent = ($entry['symbol']       ?? '') === ($trade['symbol']       ?? '')
+                    && ($entry['side']               ?? '') === ($trade['side']         ?? '')
+                    && ($entry['signal_id']          ?? null) === ($trade['signal_id']  ?? null)
+                    && ($entry['roi']                ?? null) === ($trade['roi']        ?? null)
+                    && ($entry['close_source']       ?? '') === ($trade['close_source'] ?? '')
+                    && ($entry['closed_at']          ?? '') === ($trade['closed_at']    ?? '');
+
+                if ($sameEvent) {
+                    // Identical event re-submitted — harmless duplicate.
+                    $this->closedTradeDuplicateIdTotal++;
+                    $isDuplicate = true;
+                } else {
+                    // Same hash but different event data — conflict: build a new unique ID.
+                    $this->closedTradeDuplicateConflictTotal++;
+                    if (count($this->closedTradeConflictExamples) < 5) {
+                        $this->closedTradeConflictExamples[] = [
+                            'trade_id'              => $tradeId,
+                            'existing_symbol'       => $entry['symbol']       ?? null,
+                            'existing_closed_at'    => $entry['closed_at']    ?? null,
+                            'existing_close_source' => $entry['close_source'] ?? null,
+                            'existing_roi'          => $entry['roi']          ?? null,
+                            'new_closed_at'         => $trade['closed_at']    ?? null,
+                            'new_close_source'      => $trade['close_source'] ?? null,
+                            'new_roi'               => $trade['roi']          ?? null,
+                        ];
+                    }
+                    // Append short hash suffix to make the new ID unique.
+                    $conflictSuffix = substr(md5($tClosedAt . '|' . $tCloseSource . '|' . microtime()), 0, 6);
+                    $tradeId        = $tradeId . '_c' . $conflictSuffix;
+                    $trade['id']    = $tradeId;
+                    $trade['conflict_id_suffix_reason'] = 'id_collision_different_event';
+                }
+                break;
             }
 
+            if ($isDuplicate) {
+                // Do NOT overwrite the individual file or re-append to aggregate.
+                return;
+            }
+
+            // ── Write individual per-trade file (only after dedup is confirmed safe) ──
+            $indivPath = 'storage/trades/closed/' . $tradeId . '.json';
+            $this->writeJson($indivPath, $trade);
+
+            // ── Append to aggregated closed_trades.json ───────────────────────
             $existing[] = $trade;
 
             // Trim to last 1 000 entries (oldest first, keep newest)

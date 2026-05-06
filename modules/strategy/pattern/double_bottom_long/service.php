@@ -740,6 +740,27 @@ final class DoubleBottomLongService
                     $sig['ob_bid_wall_status'] = $result['ob_bid_wall_status']      ?? null;
                     $sig['ob_skip_reason']    = $result['ob_skip_reason']           ?? null;
                     $sig['ob_skip_quality_score'] = $result['ob_skip_quality_score'] ?? null;
+                    $sig['ob_skip_required_quality_score'] = $result['ob_skip_required_quality_score'] ?? null;
+                    // Ensure strategy_signal_context in signals.json includes all OBC fields for consumers.
+                    // PatternSignal::build() does not create this sub-object, so we build/merge it here.
+                    $existingSsc = is_array($sig['strategy_signal_context'] ?? null) ? $sig['strategy_signal_context'] : [];
+                    $sig['strategy_signal_context'] = array_merge($existingSsc, [
+                        'ob_wall_checked'                => $sig['ob_wall_checked'],
+                        'ob_wall_context'                => $sig['ob_wall_context'],
+                        'ob_ask_wall_risk'               => $sig['ob_ask_wall_risk'],
+                        'ob_bid_wall_support'            => $sig['ob_bid_wall_support'],
+                        'ob_ask_wall_eaten'              => $sig['ob_ask_wall_eaten'],
+                        'ob_soft_demoted'                => $sig['ob_soft_demoted'],
+                        'ob_gate_mode'                   => $sig['ob_gate_mode'],
+                        'ob_fetch_ok'                    => $sig['ob_fetch_ok'],
+                        'ob_ask_wall_distance_pct'       => $sig['ob_ask_wall_distance_pct'],
+                        'ob_bid_wall_distance_pct'       => $sig['ob_bid_wall_distance_pct'],
+                        'ob_ask_wall_status'             => $sig['ob_ask_wall_status'],
+                        'ob_bid_wall_status'             => $sig['ob_bid_wall_status'],
+                        'ob_skip_reason'                 => $sig['ob_skip_reason'],
+                        'ob_skip_quality_score'          => $sig['ob_skip_quality_score'],
+                        'ob_skip_required_quality_score' => $sig['ob_skip_required_quality_score'],
+                    ]);
                     // Detect and list any fields that are unavailable (null) — do not fill with fake defaults
                     // Fields always required for trace completeness
                     $traceFieldsAlways = [
@@ -1368,10 +1389,23 @@ final class DoubleBottomLongService
                 $sigNonExec++;
                 $sigStaleCurrent++;
             } else {
-                if ($prevStale || ($sig['active_final'] ?? null) === false) {
-                    $sigStaleCurrent++;
-                } else {
+                // Signal is NOT blocked — explicitly stamp active_final=true so signals.json
+                // consumers do not have to fall back to status=active heuristics.
+                if (!$prevStale && ($sig['active_final'] ?? null) !== false) {
+                    if (($sig['active_final'] ?? null) !== true) {
+                        $sig['active_final']             = true;
+                        $sig['stale']                    = false;
+                        $sig['handoff_ready']            = true;
+                        $sig['executable']               = true;
+                        if (!isset($sig['active_final_at'])) {
+                            $sig['active_final_at']      = date('c');
+                        }
+                        $sig['last_lifecycle_update_at'] = date('c');
+                        $sig['last_lifecycle_reason']    = 'active_confirmed';
+                    }
                     $sigActiveNow++;
+                } else {
+                    $sigStaleCurrent++;
                 }
             }
         }
@@ -3261,8 +3295,9 @@ final class DoubleBottomLongService
             'ob_bid_wall_distance_pct' => $obcWallCtx['ob_bid_wall_distance_pct'] ?? null,
             'ob_ask_wall_status'      => $obcWallCtx['ob_ask_wall_status']       ?? null,
             'ob_bid_wall_status'      => $obcWallCtx['ob_bid_wall_status']       ?? null,
-            'ob_skip_reason'          => $obcWallCtx['ob_skip_reason']           ?? null,
-            'ob_skip_quality_score'   => $obcWallCtx['ob_skip_quality_score']    ?? null,
+            'ob_skip_reason'          => $obcWallCtx['ob_skip_reason']                  ?? null,
+            'ob_skip_quality_score'   => $obcWallCtx['ob_skip_quality_score']             ?? null,
+            'ob_skip_required_quality_score' => $obcWallCtx['ob_skip_required_quality_score'] ?? null,
             'signal_id'               => $signal['signal_id'],
             'signal'                  => $signal,
         ]);
@@ -3309,9 +3344,10 @@ final class DoubleBottomLongService
                 ];
             }
             return [
-                'ob_wall_checked'       => false,
-                'ob_skip_reason'        => 'obc_service_unavailable',
-                'ob_skip_quality_score' => $skipQualSvc,
+                'ob_wall_checked'                => false,
+                'ob_skip_reason'                 => 'obc_service_unavailable',
+                'ob_skip_quality_score'          => $skipQualSvc,
+                'ob_skip_required_quality_score' => (float)($config['orderbook_entry_wall_fetch_after_quality_score'] ?? 0.0),
             ];
         }
 
@@ -3329,9 +3365,10 @@ final class DoubleBottomLongService
                 ];
             }
             return [
-                'ob_wall_checked'       => false,
-                'ob_skip_reason'        => 'quality_below_threshold',
-                'ob_skip_quality_score' => $qualScore,
+                'ob_wall_checked'                => false,
+                'ob_skip_reason'                 => 'quality_below_threshold',
+                'ob_skip_quality_score'          => $qualScore,
+                'ob_skip_required_quality_score' => $fetchAfterScore,
             ];
         }
 
@@ -3348,9 +3385,10 @@ final class DoubleBottomLongService
                 ];
             }
             return [
-                'ob_wall_checked'       => false,
-                'ob_skip_reason'        => 'missing_entry_price',
-                'ob_skip_quality_score' => $diagBase['candidate_quality_score'] ?? null,
+                'ob_wall_checked'                => false,
+                'ob_skip_reason'                 => 'missing_entry_price',
+                'ob_skip_quality_score'          => $diagBase['candidate_quality_score'] ?? null,
+                'ob_skip_required_quality_score' => $fetchAfterScore,
             ];
         }
 
@@ -8216,6 +8254,7 @@ final class DoubleBottomLongService
                 'ob_bid_wall_status'               => $signal['ob_bid_wall_status']              ?? null,
                 'ob_skip_reason'                   => $signal['ob_skip_reason']                  ?? null,
                 'ob_skip_quality_score'            => $signal['ob_skip_quality_score']           ?? null,
+                'ob_skip_required_quality_score'   => $signal['ob_skip_required_quality_score']  ?? null,
             ],
 
             // Execution parameters (strategy-owned; no exchange-order fields yet)

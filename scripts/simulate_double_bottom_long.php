@@ -210,10 +210,21 @@ if (empty($signals)) {
     info('No signals in storage/signals.json — run a scan cycle first');
 } else {
     $totalInStorage = count($signals);
-    // Split by lifecycle state
-    $activeSignals  = array_filter($signals, fn($s) => ($s['active_final'] ?? null) === true  && !(bool)($s['stale'] ?? false));
+    // Split by lifecycle state.
+    // Prefer explicit active_final/stale/executable flags (written by updated service).
+    // Fall back to status=active for signals from older runs that predate the explicit stamp.
+    $isActiveFinal = static function (array $s): bool {
+        $af = $s['active_final'] ?? null;
+        if ($af !== null) {
+            // Explicit flag present — use it.
+            return $af === true && !(bool)($s['stale'] ?? false);
+        }
+        // Legacy fallback: treat status=active as active_final when explicit field is absent.
+        return ($s['status'] ?? '') === 'active' && !(bool)($s['stale'] ?? false);
+    };
+    $activeSignals  = array_filter($signals, $isActiveFinal);
     $staleSignals   = array_filter($signals, fn($s) => (bool)($s['stale'] ?? false));
-    $handoffReady   = array_filter($signals, fn($s) => ($s['active_final'] ?? null) === true  && !(bool)($s['stale'] ?? false) && (bool)($s['handoff_ready'] ?? false));
+    $handoffReady   = array_filter($signals, fn($s) => $isActiveFinal($s) && (bool)($s['handoff_ready'] ?? false));
 
     $total = count($activeSignals);
     info("Total signals in storage: {$totalInStorage}");
@@ -222,7 +233,29 @@ if (empty($signals)) {
     info("Executable handoff-ready signals: " . count($handoffReady));
 
     if ($total === 0) {
-        info('No active final signals — pool may be stale or no scan has run recently');
+        // Check bot_handoff_queue for executable signals before concluding there are none.
+        $executableInQueue = array_filter($handoff, fn($r) => ($r['executable'] ?? false) === true);
+        // Cross-check: are any of those queue signals also present in signals.json (by signal_id)?
+        $sigIds = array_column($signals, 'signal_id');
+        $sigIdSet = array_flip(array_filter($sigIds, fn($id) => $id !== null && $id !== ''));
+        $queueAlsoInSignals = array_filter($executableInQueue, fn($r) => isset($sigIdSet[(string)($r['signal_id'] ?? '')]));
+        if (count($queueAlsoInSignals) > 0) {
+            warn(
+                'Active final signals = 0 in signals.json, but bot_handoff_queue has '
+                . count($executableInQueue) . ' executable signal(s), '
+                . count($queueAlsoInSignals) . ' of which are also in signals.json. '
+                . 'signals.json entries may be missing the active_final field (legacy format) — '
+                . 'run another scan cycle to stamp lifecycle flags.'
+            );
+        } elseif (count($executableInQueue) > 0) {
+            warn(
+                'Active final signals = 0 in signals.json, but bot_handoff_queue has '
+                . count($executableInQueue) . ' executable signal(s). '
+                . 'Pool may be stale or signals have not been re-stamped yet.'
+            );
+        } else {
+            info('No active final signals — pool may be stale or no scan has run recently');
+        }
     } else {
         $qualityScores   = array_column(array_values($activeSignals), 'candidate_quality_score');
         $necklineScores  = array_column(array_values($activeSignals), 'neckline_score');

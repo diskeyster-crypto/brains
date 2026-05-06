@@ -178,12 +178,15 @@ class ShortProfile
         }
 
         // ── STEP 2: Peak ROI tracking ─────────────────────────────────────────
+        // Save stored peak BEFORE raising so last_peak_at comparison is accurate.
+        $storedPeakRoiBefore = (float)($positionState['peak_roi'] ?? 0.0);
         $peakRoi = (float) ($positionState['peak_roi'] ?? $currentRoi);
         if ($currentRoi > $peakRoi) {
             $peakRoi = $currentRoi;
         }
 
-        $entryPrice = (float) ($position['entry_price'] ?? $position['avg_price'] ?? 0.0);
+        $entryPrice    = (float) ($position['entry_price'] ?? $position['avg_price'] ?? 0.0);
+        $currentPriceS = (float)($position['current_price'] ?? $position['mark_price'] ?? 0.0);
 
         $positionState = array_merge($positionState, [
             'symbol'        => $symbol,
@@ -193,6 +196,7 @@ class ShortProfile
             'opened_at'     => (string)($position['opened_at'] ?? $position['bot_submitted_at'] ?? $position['created_at'] ?? ''),
             'entry_price'   => $entryPrice,
             'leverage'      => (float) ($position['leverage'] ?? 0.0),
+            'current_price' => $currentPriceS > 0.0 ? $currentPriceS : ($positionState['current_price'] ?? null),
             'current_roi'   => $currentRoi,
             'peak_roi'      => $peakRoi,
             'updated_at'    => date('c', $nowTs),
@@ -205,6 +209,18 @@ class ShortProfile
         if (!isset($positionState['tracked_since'])) {
             $positionState['tracked_since']    = date('c', $nowTs);
             $positionState['tracked_since_ts'] = $nowTs;
+        }
+
+        // ── Peak-at timestamp tracking ────────────────────────────────────────
+        // Compare against $storedPeakRoiBefore to correctly detect a newly raised peak.
+        $statePeakAtUpdated = false;
+        if ($peakRoi > ($storedPeakRoiBefore + 0.001)) {
+            $positionState['last_peak_at']  = $nowTs;
+            $positionState['last_peak_roi'] = $peakRoi;
+            $statePeakAtUpdated = true;
+        } elseif (!isset($positionState['last_peak_at'])) {
+            $positionState['last_peak_at']  = $nowTs;
+            $positionState['last_peak_roi'] = $peakRoi;
         }
 
         // ── STEP 3: Activation gate ───────────────────────────────────────────
@@ -360,6 +376,12 @@ class ShortProfile
             'wall_exit_skipped'          => $wallExitSkipped,
             'wall_exit_skip_reason'      => $wallExitSkipReason,
             'wall_exit_context'          => $wallExitContext,
+            // ── State freshness diagnostics ───────────────────────────────────
+            'state_current_price_updated' => true,
+            'state_peak_at_updated'       => $statePeakAtUpdated,
+            'previous_peak_roi'           => $storedPeakRoiBefore,
+            'current_peak_roi'            => $peakRoi,
+            'last_peak_at'                => $positionState['last_peak_at'] ?? null,
         ];
     }
 

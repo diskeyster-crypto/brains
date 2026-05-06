@@ -152,6 +152,8 @@ class LongProfile
         // ── Pre-compute ROI and effective lock buffer for impulse hold ─────────
         $currentPrice = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
         $earlyRoi     = $this->riskMath->calculateRoiPct($position);
+        // Save stored peak BEFORE earlyPeakRoi is raised so last_peak_at comparison is accurate.
+        $storedPeakRoiBefore = (float)($positionState['peak_roi'] ?? 0.0);
         $earlyPeakRoi = (float) ($positionState['peak_roi'] ?? ($earlyRoi ?? 0.0));
         if ($earlyRoi !== null && $earlyRoi > $earlyPeakRoi) {
             $earlyPeakRoi = $earlyRoi;
@@ -208,11 +210,18 @@ class LongProfile
         $plan          = $runResult['plan'];
 
         // ── Track peak_at timestamp and append ROI sample ─────────────────────
+        // Compare against $storedPeakRoiBefore (the stored value before earlyPeakRoi was
+        // raised in process()). earlyPeakRoi is already max(stored, current) so comparing
+        // runPeakRoi against earlyPeakRoi would never detect a newly raised peak.
         $runPeakRoi = (float) ($plan['peak_roi'] ?? $earlyPeakRoi);
-        if ($runPeakRoi > ($earlyPeakRoi + 0.001)) {
-            $positionState['last_peak_at'] = $nowTs;
+        $statePeakAtUpdated = false;
+        if ($runPeakRoi > ($storedPeakRoiBefore + 0.001)) {
+            $positionState['last_peak_at']  = $nowTs;
+            $positionState['last_peak_roi'] = $runPeakRoi;
+            $statePeakAtUpdated = true;
         } elseif (!isset($positionState['last_peak_at'])) {
-            $positionState['last_peak_at'] = $nowTs;
+            $positionState['last_peak_at']  = $nowTs;
+            $positionState['last_peak_roi'] = $runPeakRoi;
         }
         $runRoi = $plan['current_roi'] ?? $earlyRoi;
         if ($runRoi !== null && $currentPrice > 0.0) {
@@ -588,6 +597,12 @@ class LongProfile
             'wall_exit_skipped'                => $wallExitSkipped,
             'wall_exit_skip_reason'            => $wallExitSkipReason,
             'wall_exit_context'                => $wallExitContext,
+            // ── State freshness diagnostics ───────────────────────────────────
+            'state_current_price_updated'      => true,
+            'state_peak_at_updated'            => $statePeakAtUpdated,
+            'previous_peak_roi'                => $storedPeakRoiBefore,
+            'current_peak_roi'                 => $runPeakRoi,
+            'last_peak_at'                     => $positionState['last_peak_at'] ?? null,
         ];
     }
 
@@ -1524,6 +1539,7 @@ class LongProfile
         }
 
         $entryPrice    = (float) ($position['entry_price'] ?? $position['avg_price'] ?? 0.0);
+        $currentPriceAbove = (float)($position['current_price'] ?? $position['mark_price'] ?? 0.0);
         $positionState = array_merge($positionState, [
             'symbol'        => $symbol,
             'side'          => $side,
@@ -1532,6 +1548,7 @@ class LongProfile
             'opened_at'     => (string)($position['opened_at'] ?? $position['bot_submitted_at'] ?? $position['created_at'] ?? ''),
             'entry_price'   => $entryPrice,
             'leverage'      => (float) ($position['leverage'] ?? 0.0),
+            'current_price' => $currentPriceAbove > 0.0 ? $currentPriceAbove : ($positionState['current_price'] ?? null),
             'current_roi'   => $currentRoi,
             'peak_roi'      => $peakRoi,
             'updated_at'    => date('c', $nowTs),

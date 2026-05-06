@@ -3851,9 +3851,15 @@ final class BotService
 
         // ── If any guard failed: skip all ready queue items ────────────────────
         if ($gw === null) {
+            // Map internal skip reason to the normalised stage name for the journal.
+            $guardSkipStage = match ($skipAllReason ?? '') {
+                'live_not_enabled', 'live_keycenter_credentials_missing' => 'live_account_not_ready',
+                default => 'live_gateway_unavailable',
+            };
             foreach ($orderQueue as &$qItem) {
                 if (($qItem['queue_status'] ?? '') === 'ready') {
                     $qItem['skip_reason'] = $skipAllReason ?? 'live_not_ready';
+                    $this->recordLiveSkippedSignal($qItem, $guardSkipStage, $config, $tickAt);
                 }
             }
             unset($qItem);
@@ -3924,11 +3930,13 @@ final class BotService
 
             if (isset($symbolMap[$symbol])) {
                 $qItem['skip_reason'] = 'symbol_already_active_on_live';
+                $this->recordLiveSkippedSignal($qItem, 'active_position_exists', $config, $tickAt, $symbolMap);
                 continue;
             }
 
             if ($maxPos > 0 && count($symbolMap) >= $maxPos) {
                 $qItem['skip_reason'] = 'max_active_positions_reached';
+                $this->recordLiveSkippedSignal($qItem, 'max_active_positions_reached', $config, $tickAt, $symbolMap);
                 continue;
             }
 
@@ -3936,6 +3944,7 @@ final class BotService
             if ($entryPrice <= 0.0) {
                 $qItem['skip_reason'] = 'invalid_entry_price_or_budget';
                 $liveOrdersRejected++;
+                $this->recordLiveSkippedSignal($qItem, 'local_qty_validation_failed', $config, $tickAt, $symbolMap);
                 continue;
             }
 
@@ -4000,6 +4009,7 @@ final class BotService
                 $liveLastErrorCode      = $levResult['ret_code'];
                 $liveLastErrorMsg       = $levResult['ret_msg'];
                 $liveLastRejectedSymbol = $symbol;
+                $this->recordLiveSkippedSignal($qItem, 'bybit_leverage_error', $config, $tickAt, $symbolMap);
                 continue;
             }
 
@@ -4019,6 +4029,7 @@ final class BotService
                 $liveQtyInvalidCount++;
                 $liveOrdersRejected++;
                 $liveLastRejectedSymbol = $symbol;
+                $this->recordLiveSkippedSignal($qItem, 'bybit_qty_invalid', $config, $tickAt, $symbolMap);
                 continue;
             }
             if ($minOrderQty !== null && $normalizedQty < $minOrderQty) {
@@ -4026,6 +4037,7 @@ final class BotService
                 $liveQtyInvalidCount++;
                 $liveOrdersRejected++;
                 $liveLastRejectedSymbol = $symbol;
+                $this->recordLiveSkippedSignal($qItem, 'bybit_qty_invalid', $config, $tickAt, $symbolMap);
                 continue;
             }
             if ($maxOrderQty !== null && $maxOrderQty > 0.0 && $normalizedQty > $maxOrderQty) {
@@ -4033,6 +4045,7 @@ final class BotService
                 $liveQtyInvalidCount++;
                 $liveOrdersRejected++;
                 $liveLastRejectedSymbol = $symbol;
+                $this->recordLiveSkippedSignal($qItem, 'bybit_qty_invalid', $config, $tickAt, $symbolMap);
                 continue;
             }
             if ($minNotional !== null && $minNotional > 0.0
@@ -4042,6 +4055,7 @@ final class BotService
                 $liveQtyInvalidCount++;
                 $liveOrdersRejected++;
                 $liveLastRejectedSymbol = $symbol;
+                $this->recordLiveSkippedSignal($qItem, 'bybit_min_notional', $config, $tickAt, $symbolMap);
                 continue;
             }
 
@@ -4062,6 +4076,7 @@ final class BotService
                 $qItem['skip_reason']   = 'live_submit_exception';
                 $liveOrdersRejected++;
                 $liveLastRejectedSymbol = $symbol;
+                $this->recordLiveSkippedSignal($qItem, 'order_create_exception', $config, $tickAt, $symbolMap);
                 continue;
             }
 
@@ -4120,6 +4135,7 @@ final class BotService
                 $liveLastErrorCode      = $retCode;
                 $liveLastErrorMsg       = $retMsg;
                 $liveLastRejectedSymbol = $symbol;
+                $this->recordLiveSkippedSignal($qItem, 'bybit_order_error', $config, $tickAt, $symbolMap, $orderResp);
             }
         }
         unset($qItem);
@@ -4227,6 +4243,142 @@ final class BotService
             'live_orders_rejected'           => $liveOrdersRejected,
             'live_skip_reason'               => null,
         ];
+    }
+
+    /**
+     * Persist a skipped-live-signal record to the live skipped-signal journal.
+     *
+     * Called ONLY from processLiveExecution(); never from demo/paper paths.
+     *
+     * Files written:
+     *   storage/runtime/live_skipped_signals.json
+     *     Keyed by stable key "live:{strategy_id}:{symbol}:{signal_id}".
+     *     On repeated attempts the record is replaced (most-recent skip wins).
+     *
+     *   storage/runtime/live_skipped_signals.ndjson
+     *     One JSON line appended per call — full append-only audit trail.
+     *
+     * API keys and secrets are never stored here.
+     *
+     * @param array       $qItem          Queue item at the point of the skip (may be partial).
+     * @param string      $skipStage      Normalised skip stage (see required stages in spec).
+     * @param array       $config         Bot effective config (for global_runtime_mode, account_id).
+     * @param string      $tickAt         ISO-8601 tick timestamp.
+     * @param array       $activeSymbolMap Symbol → position map for active_position_exists check.
+     * @param array|null  $orderResponse  Raw Bybit order response, if one was attempted.
+     */
+    private function recordLiveSkippedSignal(
+        array   $qItem,
+        string  $skipStage,
+        array   $config,
+        string  $tickAt,
+        array   $activeSymbolMap = [],
+        ?array  $orderResponse   = null
+    ): void {
+        $signalId = (string)($qItem['signal_id']   ?? '');
+        $symbol   = (string)($qItem['symbol']      ?? '');
+        $stratId  = (string)($qItem['strategy_id'] ?? $qItem['owner_strategy'] ?? '');
+
+        // Stable dedup key — same signal cannot generate two distinct trade opportunities.
+        $stableKey = 'live:' . $stratId . ':' . $symbol . ':' . $signalId;
+
+        $globalRtm = (string)($config['global_runtime_mode'] ?? '');
+        $accountId = (string)($config['account_id']          ?? '');
+
+        $activePosExists = isset($activeSymbolMap[$symbol]) && $activeSymbolMap[$symbol] !== false;
+
+        // Build sanitised order-request preview (quantities must be known to be meaningful).
+        $orderReqPreview = null;
+        $normalizedQty   = isset($qItem['normalized_qty']) ? (float)$qItem['normalized_qty'] : null;
+        if ($normalizedQty !== null && $normalizedQty > 0.0) {
+            $bybitSide = ($qItem['side'] ?? 'long') === 'short' ? 'Sell' : 'Buy';
+            $qtyStr    = rtrim(rtrim(number_format($normalizedQty, 8, '.', ''), '0'), '.');
+            $orderReqPreview = [
+                'category'    => 'linear',
+                'symbol'      => $symbol,
+                'side'        => $bybitSide,
+                'orderType'   => 'Market',
+                'qty'         => $qtyStr,
+                'timeInForce' => 'IOC',
+                'positionIdx' => 0,
+            ];
+        }
+
+        // Sanitise raw exchange response — never persist credential-bearing fields.
+        $exchangeRaw = null;
+        if ($orderResponse !== null) {
+            $bannedKeys  = ['api_key', 'apiKey', 'api_secret', 'apiSecret', 'secret', 'sign', 'signature'];
+            $exchangeRaw = array_diff_key($orderResponse, array_flip($bannedKeys));
+        }
+
+        $record = [
+            'observed_at'                     => $tickAt,
+            'mode'                            => 'live',
+            'global_runtime_mode'             => $globalRtm !== '' ? $globalRtm : null,
+            'account_id'                      => $accountId !== '' ? $accountId : null,
+            'strategy_id'                     => $stratId,
+            'signal_id'                       => $signalId,
+            'governor_signal_key'             => $qItem['governor_signal_key']   ?? null,
+            'dynamic_idea_key'                => $qItem['dynamic_idea_key']      ?? null,
+            'symbol'                          => $symbol,
+            'side'                            => (string)($qItem['side']          ?? ''),
+            'entry_price'                     => $qItem['entry_price']            ?? null,
+            'current_price'                   => null,
+            'budget'                          => $qItem['bot_budget']             ?? null,
+            'leverage_requested'              => $qItem['requested_leverage']
+                                                    ?? $qItem['bot_leverage']     ?? null,
+            'leverage_effective'              => $qItem['effective_leverage']     ?? null,
+            'raw_qty'                         => $qItem['raw_qty']                ?? null,
+            'normalized_qty'                  => $normalizedQty,
+            'min_qty'                         => $qItem['min_order_qty']          ?? null,
+            'max_qty'                         => $qItem['max_order_qty']          ?? null,
+            'qty_step'                        => $qItem['qty_step']               ?? null,
+            'min_notional'                    => $qItem['min_notional_value']     ?? null,
+            'strategy_signal_context'         => $qItem['strategy_signal_context'] ?? null,
+            'handoff_ready'                   => $qItem['handoff_ready']          ?? null,
+            'executable'                      => $qItem['executable']             ?? null,
+            'bot_queue_key'                   => $this->queueKey($qItem),
+            'skip_stage'                      => $skipStage,
+            'skip_reason'                     => $qItem['skip_reason']            ?? $skipStage,
+            'bybit_error_code'                => $qItem['live_error_code']        ?? null,
+            'bybit_error_message'             => $qItem['live_error_msg']         ?? null,
+            'exchange_response_raw'           => $exchangeRaw,
+            'account_balance_snapshot'        => null,
+            'active_position_exists'          => $activePosExists,
+            'max_active_positions_blocked'    => ($skipStage === 'max_active_positions_reached'),
+            'insufficient_balance_detected'   => in_array(
+                $skipStage,
+                ['insufficient_balance', 'bybit_min_notional', 'local_min_notional_failed'],
+                true
+            ),
+            'order_would_have_been_submitted' => in_array(
+                $skipStage,
+                ['bybit_order_error', 'order_create_exception', 'order_submit_returned_no_order_id'],
+                true
+            ),
+            'order_request_preview'           => $orderReqPreview,
+        ];
+
+        // Update keyed JSON journal (most-recent skip wins per stable key).
+        $journalRelPath = 'storage/runtime/live_skipped_signals.json';
+        $journal        = $this->readJson($journalRelPath, []);
+        if (!is_array($journal)) {
+            $journal = [];
+        }
+        $journal[$stableKey] = $record;
+        $this->writeJson($journalRelPath, $journal);
+
+        // Append one NDJSON line for full append-only audit trail.
+        $ndJsonPath = $this->moduleDir . '/storage/runtime/live_skipped_signals.ndjson';
+        $ndJsonDir  = dirname($ndJsonPath);
+        if (!is_dir($ndJsonDir)) {
+            mkdir($ndJsonDir, 0755, true);
+        }
+        $line = json_encode(
+            array_merge(['journal_key' => $stableKey], $record),
+            JSON_UNESCAPED_UNICODE
+        );
+        file_put_contents($ndJsonPath, $line . "\n", FILE_APPEND | LOCK_EX);
     }
 
     /**

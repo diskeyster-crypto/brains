@@ -396,6 +396,57 @@ if (empty($ready)) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Check 6: OBC soft_demote gate
+// ──────────────────────────────────────────────────────────────────────────────
+
+echo "\n── 6. OBC soft_demote gate ──────────────────────────────\n";
+
+$obcEnabled    = (bool)($config['orderbook_entry_wall_gate_enabled']              ?? false);
+$obcBlocksHO   = (bool)($config['orderbook_entry_wall_soft_demote_blocks_handoff'] ?? true);
+
+if (!$obcEnabled) {
+    info('OBC gate disabled (orderbook_entry_wall_gate_enabled = false) — no soft_demote data to check');
+} else {
+    info('OBC gate enabled; soft_demote_blocks_handoff = ' . ($obcBlocksHO ? 'true' : 'false'));
+
+    $allSignals    = array_merge($signals ?? [], []);
+    $obcChecked    = array_filter($allSignals, fn($s) => (bool)($s['ob_wall_checked']    ?? false));
+    $obcAskRisk    = array_filter($allSignals, fn($s) => (bool)($s['ob_ask_wall_risk']   ?? false));
+    $obcSoftDemote = array_filter($allSignals, fn($s) => (bool)($s['ob_soft_demoted']    ?? false));
+
+    info('Signals with ob_wall_checked=true:   ' . count($obcChecked));
+    info('Signals with ob_ask_wall_risk=true:  ' . count($obcAskRisk));
+    info('Signals with ob_soft_demoted=true:   ' . count($obcSoftDemote));
+
+    // Signals soft-demoted but still executable (should be 0 when config=true)
+    $softDemotedButExec = array_filter(
+        $allSignals,
+        fn($s) => (bool)($s['ob_soft_demoted'] ?? false) && (bool)($s['executable'] ?? true)
+    );
+
+    $softDemotedBlockedInQueue = array_filter(
+        $handoff ?? [],
+        fn($r) => ($r['block_reason'] ?? null) === 'ob_soft_demote_ask_wall_risk'
+    );
+    info('Queue entries blocked by ob_soft_demote_ask_wall_risk: ' . count($softDemotedBlockedInQueue));
+
+    if ($obcBlocksHO && count($softDemotedButExec) > 0) {
+        warn(
+            count($softDemotedButExec) . ' signal(s) have ob_soft_demoted=true but executable=true — '
+            . 'config says blocks_handoff=true, so these should have been blocked. '
+            . 'May be from a previous tick before config change took effect.'
+        );
+    } elseif (!$obcBlocksHO && count($softDemotedButExec) > 0) {
+        info(
+            count($softDemotedButExec) . ' soft-demoted signal(s) allowed through '
+            . '(config orderbook_entry_wall_soft_demote_blocks_handoff=false)'
+        );
+    } else {
+        ok('OBC soft_demote gate state consistent with config');
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Summary
 // ──────────────────────────────────────────────────────────────────────────────
 

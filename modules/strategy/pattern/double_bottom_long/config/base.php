@@ -118,6 +118,9 @@ return [
     'orderbook_entry_wall_ask_eaten_bonus_enabled'   => true,
     // Mark signal as pending (not hard-reject) when ask wall risk detected
     'orderbook_entry_wall_pending_enabled'           => false,
+    // When ob_soft_demoted=true: prevent executable handoff (default true for safe demo testing).
+    // Set false to revert to annotation-only mode (old behaviour: tag signal but allow handoff).
+    'orderbook_entry_wall_soft_demote_blocks_handoff' => true,
     'reverse_pattern_close_enabled'=> false,
     'tp_enabled'                   => true,   // take-profit enabled
     'tp_mode'                      => 'fixed_r',   // fixed_r | fixed_price

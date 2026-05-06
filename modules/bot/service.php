@@ -972,7 +972,11 @@ final class BotService
                 if (($indivData['id']           ?? '') !== $ctId
                     || ($indivData['symbol']    ?? '') !== ($ct['symbol']    ?? '')
                     || ($indivData['side']      ?? '') !== ($ct['side']      ?? '')
+                    || ($indivData['signal_id'] ?? '') !== ($ct['signal_id'] ?? '')
                     || ($indivData['closed_at'] ?? null) !== ($ct['closed_at'] ?? null)
+                    || ($indivData['close_reason'] ?? null) !== ($ct['close_reason'] ?? null)
+                    || ($indivData['close_source'] ?? null) !== ($ct['close_source'] ?? null)
+                    || (string)round((float)($indivData['roi'] ?? 0), 4) !== (string)round((float)($ct['roi'] ?? 0), 4)
                 ) {
                     $closedTradeIndAggrMismatch++;
                     $this->closedTradeIndAggrMismatchTotal++;

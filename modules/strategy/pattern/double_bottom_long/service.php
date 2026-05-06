@@ -50,6 +50,11 @@ final class DoubleBottomLongService
     private int $obWallSkipMissingEntryPriceTotal      = 0;
     /** @var list<array<string,mixed>> */
     private array $obWallSkipExamples = [];
+    // OBC soft_demote handoff-block counters (accumulated across normalization passes per tick)
+    private int $obWallSoftDemoteBlockedHandoffTotal = 0;
+    private int $obWallSoftDemoteAllowedHandoffTotal = 0;
+    /** @var list<array<string,mixed>> */
+    private array $obWallSoftDemoteBlockExamples = [];
 
     // ── Per-tick entry-context fetch counters (reset at start of each tickBatch) ──
     private int $ctxFetchAttemptedThisTick       = 0;
@@ -398,6 +403,9 @@ final class DoubleBottomLongService
         $this->obWallSkipServiceUnavailableTotal     = 0;
         $this->obWallSkipMissingEntryPriceTotal      = 0;
         $this->obWallSkipExamples                    = [];
+        $this->obWallSoftDemoteBlockedHandoffTotal   = 0;
+        $this->obWallSoftDemoteAllowedHandoffTotal   = 0;
+        $this->obWallSoftDemoteBlockExamples         = [];
         // Reset per-tick scan suppression counters.
         $this->scanSuppressionSkippedThisTick   = 0;
         $this->scanSuppressionAddedThisTick     = 0;
@@ -1623,6 +1631,10 @@ final class DoubleBottomLongService
             'orderbook_wall_bid_support_bonus_total' => $this->obWallBidSupportTotal,
             'orderbook_wall_ask_eaten_bonus_total' => $this->obWallAskEatenTotal,
             'orderbook_wall_soft_demote_total'     => $this->obWallSoftDemoteTotal,
+            'orderbook_wall_soft_demote_blocks_handoff' => (bool)($config['orderbook_entry_wall_soft_demote_blocks_handoff'] ?? true),
+            'orderbook_wall_soft_demote_blocked_handoff_total' => $this->obWallSoftDemoteBlockedHandoffTotal,
+            'orderbook_wall_soft_demote_allowed_handoff_total' => $this->obWallSoftDemoteAllowedHandoffTotal,
+            'orderbook_wall_soft_demote_block_examples'        => $this->obWallSoftDemoteBlockExamples,
             'orderbook_wall_pending_total'         => $this->obWallPendingTotal,
             'orderbook_wall_hard_reject_total'     => $this->obWallHardRejectTotal,
             'orderbook_wall_gate_enabled'          => (bool)($config['orderbook_entry_wall_gate_enabled'] ?? false),
@@ -8024,6 +8036,11 @@ final class DoubleBottomLongService
         $queueBlockedBlTotal            = 0;  // blocked_by_blacklist (strategy-side: always 0)
         $queueBlockedFrTotal            = 0;  // blocked_by_freeze (strategy-side: always 0)
         $queueNonExecutableExamples     = [];
+        // OBC soft_demote handoff gate config — true by default (safe demo mode)
+        $softDemoteBlocksHandoff = (bool)($config['orderbook_entry_wall_soft_demote_blocks_handoff'] ?? true);
+        $softDemoteBlockedTotal  = 0;
+        $softDemoteAllowedTotal  = 0;
+        $softDemoteBlockExamples = [];
         // Map of signal_id → block_reason for non-executable queue entries;
         // used by caller to align signals.json lifecycle flags.
         $blockedSignalIds               = [];
@@ -8037,13 +8054,42 @@ final class DoubleBottomLongService
             $changed      = false;
 
             if ($isActive && !$needsRevalid) {
-                // Fully executable
-                if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
-                if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
-                if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
-                if (($r['stale_reason'] ?? null) !== null)  { $result[$id]['stale_reason'] = null;  $changed = true; }
-                if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
-                $queueExecutableTotal++;
+                // Check whether OBC soft_demote should block this handoff entry.
+                $isSoftDemoted = (bool)($r['strategy_signal_context']['ob_soft_demoted'] ?? false);
+                if ($isSoftDemoted && $softDemoteBlocksHandoff) {
+                    // Soft_demote blocks handoff: mark non-executable but keep record for diagnostics.
+                    $blockReason = 'ob_soft_demote_ask_wall_risk';
+                    if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
+                    if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
+                    if (($r['block_reason'] ?? null) !== $blockReason) { $result[$id]['block_reason'] = $blockReason; $changed = true; }
+                    $softDemoteBlockedTotal++;
+                    if (count($softDemoteBlockExamples) < 5) {
+                        $softDemoteBlockExamples[] = [
+                            'symbol'       => $r['symbol']    ?? null,
+                            'signal_id'    => $id,
+                            'detected_at'  => $r['detected_at'] ?? null,
+                            'ob_gate_mode' => $r['strategy_signal_context']['ob_gate_mode'] ?? null,
+                        ];
+                    }
+                    // Add to blockedSignalIds so signals.json lifecycle flags are aligned.
+                    $sigIdInQueue = (string)($r['signal_id'] ?? $id);
+                    if ($sigIdInQueue !== '') {
+                        $blockedSignalIds[$sigIdInQueue] = $blockReason;
+                    }
+                    $queueMarkedNonExecutableTotal++;
+                } else {
+                    // Fully executable
+                    if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
+                    if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
+                    if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
+                    if (($r['stale_reason'] ?? null) !== null)  { $result[$id]['stale_reason'] = null;  $changed = true; }
+                    if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
+                    $queueExecutableTotal++;
+                    if ($isSoftDemoted) {
+                        // Gate disabled via config — allowed through, track for diagnostics
+                        $softDemoteAllowedTotal++;
+                    }
+                }
             } else {
                 // Non-executable: determine most-specific block reason
                 $blockReason = $r['block_reason'] ?? $r['stale_reason'] ?? null;
@@ -8123,6 +8169,15 @@ final class DoubleBottomLongService
 
         $this->writeJson('storage/bot_handoff_queue.json', array_values($result));
 
+        // Accumulate soft_demote handoff-block counters into class properties for last_run.
+        $this->obWallSoftDemoteBlockedHandoffTotal += $softDemoteBlockedTotal;
+        $this->obWallSoftDemoteAllowedHandoffTotal += $softDemoteAllowedTotal;
+        foreach ($softDemoteBlockExamples as $ex) {
+            if (count($this->obWallSoftDemoteBlockExamples) < 5) {
+                $this->obWallSoftDemoteBlockExamples[] = $ex;
+            }
+        }
+
         return [
             'ready_total'     => $readyTotal,
             'new_total'       => $newTotal,
@@ -8144,6 +8199,10 @@ final class DoubleBottomLongService
             'queue_entries_blocked_blacklist_total'       => $queueBlockedBlTotal,
             'queue_entries_blocked_freeze_total'          => $queueBlockedFrTotal,
             'queue_non_executable_examples'              => $queueNonExecutableExamples,
+            // OBC soft_demote handoff-block counters
+            'soft_demote_blocked_handoff_total' => $softDemoteBlockedTotal,
+            'soft_demote_allowed_handoff_total' => $softDemoteAllowedTotal,
+            'soft_demote_block_examples'        => $softDemoteBlockExamples,
             // Map of signal_id → block_reason for non-executable entries (for signals.json alignment)
             'blocked_signal_ids'                          => $blockedSignalIds,
             // Active records (new/refreshed/executable) for trace diagnostics

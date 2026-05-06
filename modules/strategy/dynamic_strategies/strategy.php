@@ -1107,6 +1107,21 @@ final class DynamicStrategiesStrategy
         $finishedAt  = date('c');
         $durationMs  = (int)round((microtime(true) - $startMicro) * 1000);
 
+        // Compute OBC wall_state fingerprint for demo/live comparison diagnostics.
+        $obcWallStateEntriesTotal = 0;
+        $obcWallStateHash         = null;
+        $obcWallStatePath = $obcDir . '/storage/wall_state.json';
+        if (is_file($obcWallStatePath)) {
+            $rawWall = @file_get_contents($obcWallStatePath);
+            if ($rawWall !== false) {
+                $wallDecoded = @json_decode($rawWall, true);
+                if (is_array($wallDecoded)) {
+                    $obcWallStateEntriesTotal = count($wallDecoded);
+                }
+                $obcWallStateHash = md5($rawWall);
+            }
+        }
+
         $stats = [
             'status'                          => 'done',
             'started_at'                      => $startedAt,
@@ -1206,6 +1221,12 @@ final class DynamicStrategiesStrategy
             'generated_signals_count'         => count($signals),
             'active_pool_signals_total'       => count($signals),
             'handoff_ready'                   => $handoffReadyTotal,
+            // ── Demo/live comparison timing and context fingerprints ──────────────
+            'run_started_at'                  => $startedAt,
+            'run_finished_at'                 => $finishedAt,
+            'input_contexts_hash'             => md5(json_encode(array_values($writeContexts)) ?: ''),
+            'obc_wall_state_entries_total'    => $obcWallStateEntriesTotal,
+            'obc_wall_state_hash'             => $obcWallStateHash,
         ];
 
         if ((bool)($config['write_candidates'] ?? true)) {

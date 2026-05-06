@@ -1214,6 +1214,42 @@ final class BotService
             }
         }
 
+        // ── 7k. Live skipped signal journal counters ─────────────────────────────
+        $liveSkippedTotal        = 0;
+        $liveSkippedNewThisRun   = 0;
+        $liveSkippedByReason     = [];
+        $liveSkippedExamples     = [];
+        if ($botMode === 'live') {
+            $liveSkippedJournal = $this->readJson('storage/runtime/live_skipped_signals.json', []);
+            if (is_array($liveSkippedJournal)) {
+                $liveSkippedTotal = count($liveSkippedJournal);
+                foreach ($liveSkippedJournal as $skRec) {
+                    if (!is_array($skRec)) {
+                        continue;
+                    }
+                    $skStage = (string)($skRec['skip_stage'] ?? 'unknown');
+                    $liveSkippedByReason[$skStage] = ($liveSkippedByReason[$skStage] ?? 0) + 1;
+                    // Count entries observed during this tick
+                    if (($skRec['observed_at'] ?? '') === $tickAt) {
+                        $liveSkippedNewThisRun++;
+                    }
+                    if (count($liveSkippedExamples) < 5) {
+                        $liveSkippedExamples[] = [
+                            'symbol'            => $skRec['symbol']      ?? null,
+                            'strategy_id'       => $skRec['strategy_id'] ?? null,
+                            'signal_id'         => $skRec['signal_id']   ?? null,
+                            'skip_stage'        => $skStage,
+                            'skip_reason'       => $skRec['skip_reason'] ?? null,
+                            'observed_at'       => $skRec['observed_at'] ?? null,
+                            'bybit_error_code'  => $skRec['bybit_error_code']    ?? null,
+                            'bybit_error_message' => $skRec['bybit_error_message'] ?? null,
+                            'insufficient_balance_detected' => $skRec['insufficient_balance_detected'] ?? false,
+                        ];
+                    }
+                }
+            }
+        }
+
         $lastRun = [
             'status'               => 'ok',
             'tick_at'              => $tickAt,
@@ -1469,6 +1505,11 @@ final class BotService
             'double_bottom_early_fail_missed_examples'           => $efMissedExamples,
             // ── Stop Manager ef guard attribution diagnostics ─────────────────────
             'closed_trades_stop_guard_attributed_total'          => $closedTradesStopGuardAttributedTotal,
+            // ── Live skipped signal journal diagnostics ───────────────────────────
+            'live_skipped_signals_total'      => $liveSkippedTotal,
+            'live_skipped_signals_new_this_run' => $liveSkippedNewThisRun,
+            'live_skipped_by_reason'          => $liveSkippedByReason,
+            'live_skipped_examples'           => $liveSkippedExamples,
         ];
 
         $this->writeJson('storage/last_run.json', $lastRun);
@@ -4311,6 +4352,28 @@ final class BotService
             $exchangeRaw = array_diff_key($orderResponse, array_flip($bannedKeys));
         }
 
+        // Detect Bybit insufficient balance error: retCode 110007 or known retMsg patterns.
+        $bybitErrCode = $qItem['live_error_code'] ?? null;
+        $bybitErrMsg  = (string)($qItem['live_error_msg'] ?? '');
+        if ($orderResponse !== null) {
+            $bybitErrCode = $bybitErrCode ?? ($orderResponse['ret_code'] ?? null);
+            $bybitErrMsg  = $bybitErrMsg !== '' ? $bybitErrMsg : (string)($orderResponse['ret_msg'] ?? '');
+        }
+        $insufficientBalancePatterns = ['not enough', 'insufficient balance', 'ab not enough'];
+        $bybitErrMsgLower = strtolower($bybitErrMsg);
+        $insuffBalanceByError = ($bybitErrCode === 110007)
+            || ($bybitErrCode === '110007')
+            || array_reduce(
+                $insufficientBalancePatterns,
+                static fn(bool $carry, string $pat) => $carry || str_contains($bybitErrMsgLower, $pat),
+                false
+            );
+
+        // Override skip_stage to insufficient_balance when the Bybit error indicates balance problem.
+        if ($insuffBalanceByError && $skipStage === 'bybit_order_error') {
+            $skipStage = 'insufficient_balance';
+        }
+
         $record = [
             'observed_at'                     => $tickAt,
             'mode'                            => 'live',
@@ -4339,21 +4402,23 @@ final class BotService
             'executable'                      => $qItem['executable']             ?? null,
             'bot_queue_key'                   => $this->queueKey($qItem),
             'skip_stage'                      => $skipStage,
-            'skip_reason'                     => $qItem['skip_reason']            ?? $skipStage,
-            'bybit_error_code'                => $qItem['live_error_code']        ?? null,
-            'bybit_error_message'             => $qItem['live_error_msg']         ?? null,
+            'skip_reason'                     => $insuffBalanceByError && ($qItem['skip_reason'] ?? '') === 'live_order_rejected'
+                                                    ? 'insufficient_balance'
+                                                    : ($qItem['skip_reason'] ?? $skipStage),
+            'bybit_error_code'                => $bybitErrCode,
+            'bybit_error_message'             => $bybitErrMsg !== '' ? $bybitErrMsg : null,
             'exchange_response_raw'           => $exchangeRaw,
             'account_balance_snapshot'        => null,
             'active_position_exists'          => $activePosExists,
             'max_active_positions_blocked'    => ($skipStage === 'max_active_positions_reached'),
-            'insufficient_balance_detected'   => in_array(
+            'insufficient_balance_detected'   => $insuffBalanceByError || in_array(
                 $skipStage,
                 ['insufficient_balance', 'bybit_min_notional', 'local_min_notional_failed'],
                 true
             ),
             'order_would_have_been_submitted' => in_array(
                 $skipStage,
-                ['bybit_order_error', 'order_create_exception', 'order_submit_returned_no_order_id'],
+                ['bybit_order_error', 'insufficient_balance', 'order_create_exception', 'order_submit_returned_no_order_id'],
                 true
             ),
             'order_request_preview'           => $orderReqPreview,

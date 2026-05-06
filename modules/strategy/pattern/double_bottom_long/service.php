@@ -1845,6 +1845,29 @@ final class DoubleBottomLongService
             'hourly_stats_file'                  => $hourlyStats['hourly_stats_file'],
             'hourly_stats_error'                 => $hourlyStats['hourly_stats_error']        ?? false,
             'hourly_stats_error_reason'          => $hourlyStats['hourly_stats_error_reason'] ?? null,
+            // ── Demo/live comparison timing and context fingerprints ──────────────
+            'run_started_at'               => $state['started_at']      ?? null,
+            'run_finished_at'              => $isDone ? ($finishedAt ?? date('c')) : null,
+            'obc_wall_state_entries_total' => (static function (string $repoRoot): int {
+                $path = $repoRoot . '/modules/system/orderbook_context/storage/wall_state.json';
+                if (!is_file($path)) {
+                    return 0;
+                }
+                $raw = @file_get_contents($path);
+                if ($raw === false) {
+                    return 0;
+                }
+                $d = @json_decode($raw, true);
+                return is_array($d) ? count($d) : 0;
+            })($this->repoRoot),
+            'obc_wall_state_hash'          => (static function (string $repoRoot): ?string {
+                $path = $repoRoot . '/modules/system/orderbook_context/storage/wall_state.json';
+                if (!is_file($path)) {
+                    return null;
+                }
+                $raw = @file_get_contents($path);
+                return $raw !== false ? md5($raw) : null;
+            })($this->repoRoot),
         ]);
 
         if ($isDone) {

@@ -8630,6 +8630,7 @@ function handleDashboardResetRuntime(): void
     $safeWriteNdjson($root . '/modules/stop_manager/storage/actions_log.ndjson');
 
     // ── PART 6 — Strategy runtime (recursive) ────────────────────────────
+    $dynamicInputContextsReset = false;
     $strategyRuntimeFiles = [
         'active_positions.json'              => '[]',
         'bot_active_positions.json'          => '[]',
@@ -8703,6 +8704,31 @@ function handleDashboardResetRuntime(): void
             }
         }
     }
+    // Mark dynamic input_contexts as reset when the DS storage file was written.
+    if (is_file($root . '/modules/strategy/dynamic_strategies/storage/input_contexts.json')) {
+        $dynamicInputContextsReset = true;
+    }
+
+    // ── PART 6b — OrderBook Context wall_state ────────────────────────────
+    $obcWallStateReset          = false;
+    $obcWallStateEntriesRemoved = 0;
+    $obcWallStatePath = $root . '/modules/system/orderbook_context/storage/wall_state.json';
+    if (is_file($obcWallStatePath)) {
+        $rawWallState = @file_get_contents($obcWallStatePath);
+        if ($rawWallState !== false) {
+            $decoded = @json_decode($rawWallState, true);
+            if (is_array($decoded)) {
+                $obcWallStateEntriesRemoved = count($decoded);
+            }
+        }
+        file_put_contents($obcWallStatePath, '{}');
+        $filesClearedCount++;
+        $obcWallStateReset = true;
+    } elseif (is_dir(dirname($obcWallStatePath))) {
+        file_put_contents($obcWallStatePath, '{}');
+        $filesCreatedCount++;
+        $obcWallStateReset = true;
+    }
 
     // ── PART 7 — Post-reset verification ─────────────────────────────────
     // Check a representative set of runtime files. A non-empty file after reset
@@ -8739,16 +8765,45 @@ function handleDashboardResetRuntime(): void
     $resetRemainingTotal    = count($remainingNonEmpty);
     $resetRemainingExamples = implode(', ', array_slice($remainingNonEmpty, 0, 5));
 
+    // ── Write reset diagnostics ────────────────────────────────────────────
+    $strategyRuntimeResetAt = date('c');
+    $resetDiag = [
+        'reset_at'                             => $strategyRuntimeResetAt,
+        'strategy_runtime_reset_at'            => $strategyRuntimeResetAt,
+        'orderbook_wall_state_reset'           => $obcWallStateReset,
+        'orderbook_wall_state_entries_removed' => $obcWallStateEntriesRemoved,
+        'dynamic_input_contexts_reset'         => $dynamicInputContextsReset,
+        'files_cleared_total'                  => $filesClearedCount,
+        'files_created_total'                  => $filesCreatedCount,
+        'files_deleted_total'                  => $filesDeletedCount,
+        'ndjson_cleared_total'                 => $ndjsonClearedCount,
+        'reset_verified'                       => $resetVerified,
+    ];
+    $resetDiagPath = $root . '/modules/bot/storage/runtime/last_reset_diagnostics.json';
+    $resetDiagDir  = dirname($resetDiagPath);
+    if (!is_dir($resetDiagDir)) {
+        @mkdir($resetDiagDir, 0755, true);
+    }
+    @file_put_contents(
+        $resetDiagPath,
+        json_encode($resetDiag, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
+    );
+
     // ── Flash & redirect ──────────────────────────────────────────────────
+    $obcNote = $obcWallStateReset
+        ? ' OBC wall_state очищена (' . $obcWallStateEntriesRemoved . ' записей).'
+        : '';
     if ($resetVerified) {
         $msg = 'Полный локальный reset выполнен: очищено ' . $filesClearedCount
              . ', создано ' . $filesCreatedCount
              . ', осталось непустых 0.'
+             . $obcNote
              . ' Позиции на Bybit не закрывались.';
     } else {
         $msg = 'Полный локальный reset выполнен частично: осталось непустых ' . $resetRemainingTotal . '.'
              . ' Повторите reset или проверьте права записи. Файлы: ' . $resetRemainingExamples . '.'
-             . ' Очищено: ' . $filesClearedCount . ', создано: ' . $filesCreatedCount . '.';
+             . ' Очищено: ' . $filesClearedCount . ', создано: ' . $filesCreatedCount . '.'
+             . $obcNote;
     }
     $_SESSION['dashboard_flash'] = [
         'type' => $resetVerified ? 'success' : 'warning',

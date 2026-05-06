@@ -182,6 +182,33 @@ class LongProfile
             }
         }
 
+        // ── Trend birth pre-context: compute before staircase for extra buffers ──
+        // Uses roi_samples from stored state (previous ticks) to detect early trend
+        // birth and widen effective lock/staircase buffers before planning.
+        $trendBirthHoldEnabled        = !empty($this->config['trend_birth_hold_enabled']);
+        $trendBirthPreCtx             = null;
+        $trendBirthExtraLockBuffer    = 0.0;
+        $trendBirthExtraStairBuffer   = 0.0;
+        $trendBirthExtraLockApplied   = false;
+        $trendBirthExtraStairApplied  = false;
+
+        if ($trendBirthHoldEnabled && $earlyRoi !== null) {
+            $trendBirthPreCtx = $this->computeTrendBirthContext($position, $positionState, $nowTs);
+            if (($trendBirthPreCtx['trend_phase'] ?? '') === 'early_trend_birth'
+                && !empty($trendBirthPreCtx['structure_intact'])
+            ) {
+                $trendBirthExtraLockBuffer  = (float) ($this->config['trend_birth_extra_lock_buffer_roi']      ?? 2.0);
+                $trendBirthExtraStairBuffer = (float) ($this->config['trend_birth_extra_staircase_buffer_roi'] ?? 3.0);
+            }
+        }
+
+        // Apply extra lock buffer to effectiveConfig if trend birth is active
+        if ($trendBirthExtraLockBuffer > 0.0) {
+            $curLockBuf      = (float) ($effectiveConfig['lock_buffer_roi'] ?? 2.0);
+            $effectiveConfig = array_merge($effectiveConfig, ['lock_buffer_roi' => $curLockBuf + $trendBirthExtraLockBuffer]);
+            $trendBirthExtraLockApplied = true;
+        }
+
         // ── ROI staircase: raise effective lock_floor_roi ─────────────────────
         // Computed before runLifecycle so the planner uses the raised floor.
         $staircaseChecked  = false;
@@ -192,12 +219,15 @@ class LongProfile
             $staircaseMinPeak = (float) ($this->config['roi_staircase_min_peak_roi'] ?? 10.0);
             if ($earlyPeakRoi >= $staircaseMinPeak) {
                 $staircaseChecked  = true;
-                $staircaseFloorRoi = $this->computeStaircaseFloor($earlyPeakRoi);
+                $staircaseFloorRoi = $this->computeStaircaseFloor($earlyPeakRoi, $trendBirthExtraStairBuffer);
                 $existingFloor     = (float) ($effectiveConfig['lock_floor_roi'] ?? 5.0);
                 if ($staircaseFloorRoi > $existingFloor) {
                     // Do not mutate config — local override only
                     $effectiveConfig = array_merge($effectiveConfig, ['lock_floor_roi' => $staircaseFloorRoi]);
                     $staircaseActive = true;
+                    if ($trendBirthExtraStairBuffer > 0.0) {
+                        $trendBirthExtraStairApplied = true;
+                    }
                 }
             }
         }
@@ -516,6 +546,108 @@ class LongProfile
             );
         }
 
+        // ── STEP 7: Trend birth hold — close veto layer ───────────────────────
+        // After all normal PM logic (including hybrid overlay) has decided a close
+        // action, apply the trend birth veto if the position is in early_trend_birth
+        // with structure intact.  This is an overlay/veto layer — it does NOT replace
+        // any upstream logic; it only overrides specific close actions.
+        $trendBirthCtx           = null;
+        $trendBirthHoldActive    = false;
+        $trendBirthStructIntact  = false;
+        $trendBirthStructBroken  = false;
+        $trendBirthHigherLows    = 0;
+        $trendBirthLastHLPrice   = null;
+        $trendBirthGivebackRoi   = 0.0;
+        $trendBirthAgeMinutes    = 0.0;
+        $trendBirthCloseVetoed   = false;
+        $trendBirthVetoReason    = null;
+        $trendBirthNoVetoReason  = null;
+        $trendBirthTrendPhase    = null;
+
+        if ($trendBirthHoldEnabled) {
+            // Recompute with the up-to-date positionState (roi_samples now include
+            // the current tick's sample appended earlier in process()).
+            $trendBirthCtx = $this->computeTrendBirthContext($position, $positionState, $nowTs);
+
+            $trendBirthTrendPhase   = $trendBirthCtx['trend_phase'];
+            $trendBirthStructIntact = !empty($trendBirthCtx['structure_intact']);
+            $trendBirthStructBroken = !empty($trendBirthCtx['structure_broken']);
+            $trendBirthHigherLows   = (int)   ($trendBirthCtx['higher_lows_count']     ?? 0);
+            $trendBirthLastHLPrice  = $trendBirthCtx['last_higher_low_price']          ?? null;
+            $trendBirthGivebackRoi  = (float) ($trendBirthCtx['giveback_roi']          ?? 0.0);
+            $trendBirthAgeMinutes   = (float) ($trendBirthCtx['age_minutes']           ?? 0.0);
+
+            if ($trendBirthTrendPhase === 'early_trend_birth' && $trendBirthStructIntact) {
+                $trendBirthHoldActive = true;
+
+                $tbRoi       = (float) ($plan['current_roi'] ?? $earlyRoi ?? 0.0);
+                $tbPeakRoi   = (float) ($plan['peak_roi']    ?? $earlyPeakRoi ?? 0.0);
+                $hardFloor   = (float) ($this->config['trend_birth_hard_floor_roi']   ?? 4.0);
+                $maxGiveback = (float) ($this->config['trend_birth_max_giveback_roi'] ?? 12.0);
+                $planAction  = $plan['action'] ?? 'skip';
+
+                // Safety checks that prevent any veto
+                if ($tbRoi < $hardFloor) {
+                    $trendBirthNoVetoReason = 'below_hard_floor';
+                } elseif (($tbPeakRoi - $tbRoi) > $maxGiveback) {
+                    $trendBirthNoVetoReason = 'giveback_exceeded';
+                } elseif ($planAction === 'wall_exit_close'
+                    && !empty($this->config['trend_birth_allow_wall_exit'])
+                ) {
+                    $trendBirthNoVetoReason = 'wall_exit_not_vetoed';
+                } else {
+                    // Determine whether this action should be vetoed
+                    $vetoLockTouch  = !empty($this->config['trend_birth_veto_lock_touch']);
+                    $vetoStaircase  = !empty($this->config['trend_birth_veto_staircase_floor_lost']);
+                    $vetoChop       = !empty($this->config['trend_birth_veto_chop_exit']);
+                    $vetoHybrid     = !empty($this->config['trend_birth_veto_hybrid_weak_high']);
+
+                    $shouldVeto = false;
+                    $vetoReason = null;
+
+                    if (($planAction === 'would_close_on_lock_touch') && $vetoLockTouch) {
+                        // Check if this is a staircase-floor-lost close specifically
+                        if ($closeReasonHint === 'roi_staircase_floor_lost' && $vetoStaircase) {
+                            $shouldVeto = true;
+                            $vetoReason = 'staircase_floor_lost_vetoed_trend_birth';
+                        } elseif ($closeReasonHint !== 'roi_staircase_floor_lost') {
+                            $shouldVeto = true;
+                            $vetoReason = 'lock_touch_vetoed_trend_birth';
+                        } elseif (!$vetoStaircase && $vetoLockTouch) {
+                            // staircase close but veto_staircase_floor_lost is disabled,
+                            // still check plain lock_touch veto
+                            $shouldVeto = true;
+                            $vetoReason = 'lock_touch_vetoed_trend_birth';
+                        }
+                    } elseif ($planAction === 'roi_chop_indecision_exit' && $vetoChop) {
+                        $shouldVeto = true;
+                        $vetoReason = 'chop_exit_vetoed_trend_birth';
+                    } elseif ($planAction === 'hybrid_close_confirmed' && $vetoHybrid) {
+                        // Only veto if confirmation is NOT based on support break
+                        $confirmResult = $hybridMeta['hybrid_confirmation_result'] ?? null;
+                        $supportBased  = in_array($confirmResult, ['support_break', 'two_closes_below_support'], true);
+                        if (!$supportBased) {
+                            $shouldVeto = true;
+                            $vetoReason = 'hybrid_weak_high_vetoed_trend_birth';
+                        } else {
+                            $trendBirthNoVetoReason = 'hybrid_support_break_not_vetoed';
+                        }
+                    }
+
+                    if ($shouldVeto) {
+                        $trendBirthCloseVetoed   = true;
+                        $trendBirthVetoReason    = $vetoReason;
+                        $plan['action']          = 'hold_override_trend_birth';
+                        $plan['skip_reason']     = null;
+                        $plan['note']            = 'trend_birth_structure_intact_hold';
+                        $closeReasonHint         = null;
+                    } elseif ($trendBirthNoVetoReason === null) {
+                        $trendBirthNoVetoReason = 'action_not_vetoed:' . $planAction;
+                    }
+                }
+            }
+        }
+
         // Persist updated state (includes hybrid fields)
         $positionsState[$key] = $positionState;
         if ($allowStateWrite) {
@@ -597,6 +729,22 @@ class LongProfile
             'wall_exit_skipped'                => $wallExitSkipped,
             'wall_exit_skip_reason'            => $wallExitSkipReason,
             'wall_exit_context'                => $wallExitContext,
+            // ── Trend birth hold diagnostics ──────────────────────────────────
+            'trend_phase'                           => $trendBirthTrendPhase,
+            'trend_birth_hold_enabled'              => $trendBirthHoldEnabled,
+            'trend_birth_hold_active'               => $trendBirthHoldActive,
+            'trend_birth_structure_intact'          => $trendBirthStructIntact,
+            'trend_birth_structure_broken'          => $trendBirthStructBroken,
+            'trend_birth_higher_lows_count'         => $trendBirthHigherLows,
+            'trend_birth_last_higher_low_price'     => $trendBirthLastHLPrice,
+            'trend_birth_giveback_roi'              => $trendBirthGivebackRoi,
+            'trend_birth_age_minutes'               => $trendBirthAgeMinutes,
+            'trend_birth_extra_lock_buffer_applied' => $trendBirthExtraLockApplied,
+            'trend_birth_extra_staircase_buffer_applied' => $trendBirthExtraStairApplied,
+            'trend_birth_close_vetoed'              => $trendBirthCloseVetoed,
+            'trend_birth_veto_reason'               => $trendBirthVetoReason,
+            'trend_birth_no_veto_reason'            => $trendBirthNoVetoReason,
+            'trend_birth_context'                   => $trendBirthCtx,
             // ── State freshness diagnostics ───────────────────────────────────
             'state_current_price_updated'      => true,
             'state_peak_at_updated'            => $statePeakAtUpdated,
@@ -685,12 +833,12 @@ class LongProfile
      * @param float $peakRoi Current peak ROI observed for the position
      * @return float         Staircase floor ROI (>= base_floor_roi)
      */
-    private function computeStaircaseFloor(float $peakRoi): float
+    private function computeStaircaseFloor(float $peakRoi, float $extraBuffer = 0.0): float
     {
         $cfg       = $this->config;
         $stepRoi   = (float) ($cfg['roi_staircase_step_roi']         ?? 5.0);
         $baseFloor = (float) ($cfg['roi_staircase_base_floor_roi']   ?? 5.0);
-        $buffer    = (float) ($cfg['roi_staircase_floor_buffer_roi'] ?? 3.0);
+        $buffer    = (float) ($cfg['roi_staircase_floor_buffer_roi'] ?? 3.0) + $extraBuffer;
         $maxFloor  = (float) ($cfg['roi_staircase_max_floor_roi']    ?? 50.0);
 
         if ($stepRoi <= 0.0) {
@@ -703,6 +851,232 @@ class LongProfile
         $floor = min($floor, $peakRoi - 0.1); // must remain below peak
 
         return round($floor, 4);
+    }
+
+    // =========================================================================
+    // Trend birth hold — helpers
+    // =========================================================================
+
+    /**
+     * Detect local price higher lows in a series of price values.
+     *
+     * A "higher low" is a local minimum (price lower than both neighbours) that is
+     * strictly higher than the preceding local minimum, filtered by a small noise
+     * tolerance to avoid counting micro-jitter as a real higher low.
+     *
+     * @param float[] $prices       Price series (chronological order)
+     * @param float   $tolerancePct Fraction below previous low that still counts as
+     *                              "approximately the same" (i.e. NOT a new higher low).
+     *                              Example: 0.0012 means 0.12%.
+     * @return float[]  Prices of confirmed higher lows (each strictly above the previous)
+     */
+    private function detectHigherLows(array $prices, float $tolerancePct): array
+    {
+        $n = count($prices);
+        if ($n < 3) {
+            return [];
+        }
+
+        // Find local minima: point[i] is a local min if it is <= both neighbours
+        $localMins = [];
+        for ($i = 1; $i < $n - 1; $i++) {
+            if ($prices[$i] <= $prices[$i - 1] && $prices[$i] <= $prices[$i + 1]) {
+                $localMins[] = (float) $prices[$i];
+            }
+        }
+
+        if (count($localMins) < 2) {
+            return $localMins;
+        }
+
+        // Collect higher lows: each local min must be strictly above the previous one
+        // (ignoring tiny noise below tolerance)
+        $higherLows = [];
+        $prev = $localMins[0];
+        for ($i = 1; $i < count($localMins); $i++) {
+            $cur = $localMins[$i];
+            // Require cur to be meaningfully above prev (above noise threshold)
+            if ($cur > $prev * (1.0 + $tolerancePct)) {
+                $higherLows[] = $cur;
+            }
+            // Advance prev only when cur is not a lower low (keep last valid level)
+            if ($cur >= $prev * (1.0 - $tolerancePct)) {
+                $prev = $cur;
+            }
+        }
+
+        return $higherLows;
+    }
+
+    /**
+     * Compute trend birth context for a long position.
+     *
+     * Uses PM-owned roi_samples (which track both ROI% and price per tick) to
+     * detect whether the position is in an early uptrend with rising higher lows.
+     *
+     * Classification:
+     *   early_trend_birth  — all birth conditions met, structure intact
+     *   mid_trend          — conditions not fully met but structure not broken
+     *   late_or_exhausted  — position too old or peak ROI high enough for trend to be mature
+     *   structure_broken   — price broke below last higher low / hard floor / giveback exceeded
+     *   insufficient_data  — not enough samples to classify
+     *
+     * @param array $position      Normalized position
+     * @param array $positionState Per-position state (roi_samples, peak_roi, current_roi, tracked_since_ts)
+     * @param int   $nowTs         Current unix timestamp
+     * @return array{
+     *   trend_phase: string,
+     *   structure_intact: bool,
+     *   structure_broken: bool,
+     *   higher_lows_count: int,
+     *   last_higher_low_price: float|null,
+     *   giveback_roi: float,
+     *   age_minutes: float,
+     *   reason: string
+     * }
+     */
+    private function computeTrendBirthContext(
+        array $position,
+        array $positionState,
+        int   $nowTs
+    ): array {
+        $cfg = $this->config;
+
+        $minPeakRoi     = (float) ($cfg['trend_birth_min_peak_roi']               ?? 8.0);
+        $minCurrentRoi  = (float) ($cfg['trend_birth_min_current_roi']            ?? 5.0);
+        $maxAgeMinutes  = (float) ($cfg['trend_birth_max_age_minutes']            ?? 25.0);
+        $minSamples     = (int)   ($cfg['trend_birth_min_samples']                ?? 5);
+        $minHigherLows  = (int)   ($cfg['trend_birth_min_higher_lows']            ?? 2);
+        $hlTolPct       = (float) ($cfg['trend_birth_higher_low_tolerance_pct']   ?? 0.12) / 100.0;
+        $structBreakPct = (float) ($cfg['trend_birth_structure_break_pct']        ?? 0.18) / 100.0;
+        $maxGivebackRoi = (float) ($cfg['trend_birth_max_giveback_roi']           ?? 12.0);
+        $hardFloorRoi   = (float) ($cfg['trend_birth_hard_floor_roi']             ?? 4.0);
+
+        $currentPrice = (float) ($position['current_price'] ?? $position['mark_price'] ?? 0.0);
+        $currentRoi   = (float) ($positionState['current_roi'] ?? 0.0);
+        $peakRoi      = (float) ($positionState['peak_roi']    ?? 0.0);
+        $trackedSince = isset($positionState['tracked_since_ts'])
+            ? (int) $positionState['tracked_since_ts']
+            : $nowTs;
+
+        $ageSeconds  = max(0, $nowTs - $trackedSince);
+        $ageMinutes  = $ageSeconds / 60.0;
+        $givebackRoi = max(0.0, $peakRoi - $currentRoi);
+
+        $base = [
+            'higher_lows_count'      => 0,
+            'last_higher_low_price'  => null,
+            'giveback_roi'           => round($givebackRoi, 4),
+            'age_minutes'            => round($ageMinutes, 2),
+        ];
+
+        $samples = is_array($positionState['roi_samples'] ?? null) ? $positionState['roi_samples'] : [];
+
+        if (count($samples) < $minSamples) {
+            return $base + [
+                'trend_phase'    => 'insufficient_data',
+                'structure_intact' => false,
+                'structure_broken' => false,
+                'reason'         => 'insufficient_samples:' . count($samples),
+            ];
+        }
+
+        $prices = array_values(array_column($samples, 'price'));
+
+        // ── Detect higher lows ────────────────────────────────────────────────
+        $higherLows      = $this->detectHigherLows($prices, $hlTolPct);
+        $higherLowsCount = count($higherLows);
+        $lastHLPrice     = $higherLowsCount > 0 ? (float) end($higherLows) : null;
+
+        $base['higher_lows_count']     = $higherLowsCount;
+        $base['last_higher_low_price'] = $lastHLPrice;
+
+        // ── Check structure-broken conditions ─────────────────────────────────
+        $structureBroken       = false;
+        $structureBrokenReason = null;
+
+        if ($currentRoi < $hardFloorRoi) {
+            $structureBroken       = true;
+            $structureBrokenReason = 'below_hard_floor';
+        } elseif ($givebackRoi > $maxGivebackRoi) {
+            $structureBroken       = true;
+            $structureBrokenReason = 'giveback_exceeded';
+        } elseif ($lastHLPrice !== null && $lastHLPrice > 0.0 && $currentPrice > 0.0) {
+            if ($currentPrice < $lastHLPrice * (1.0 - $structBreakPct)) {
+                $structureBroken       = true;
+                $structureBrokenReason = 'price_broke_higher_low';
+            }
+        }
+
+        // ── Check for strong negative recent move ─────────────────────────────
+        // Simple check: compare last sample price to the price from 3 samples ago
+        if (!$structureBroken && count($prices) >= 4) {
+            $recentN    = min(count($prices), 4);
+            $priceBack  = (float) $prices[count($prices) - $recentN];
+            $priceNow   = (float) end($prices);
+            if ($priceBack > 0.0 && $priceNow < $priceBack * (1.0 - $structBreakPct * 2.0)) {
+                $structureBroken       = true;
+                $structureBrokenReason = 'strong_negative_recent_move';
+            }
+        }
+
+        if ($structureBroken) {
+            return $base + [
+                'trend_phase'    => 'structure_broken',
+                'structure_intact' => false,
+                'structure_broken' => true,
+                'reason'         => $structureBrokenReason,
+            ];
+        }
+
+        // ── Classify trend phase ──────────────────────────────────────────────
+        $ageOk         = ($ageMinutes <= $maxAgeMinutes);
+        $peakOk        = ($peakRoi >= $minPeakRoi);
+        $currentOk     = ($currentRoi >= $minCurrentRoi);
+        $higherLowsOk  = ($higherLowsCount >= $minHigherLows);
+        $givebackOk    = ($givebackRoi <= $maxGivebackRoi);
+        $hardFloorOk   = ($currentRoi >= $hardFloorRoi);
+
+        // Check current price is above last higher low (with tolerance)
+        $aboveLastHL = true;
+        if ($lastHLPrice !== null && $lastHLPrice > 0.0 && $currentPrice > 0.0) {
+            $aboveLastHL = ($currentPrice >= $lastHLPrice * (1.0 - $hlTolPct));
+        }
+
+        $allBirthConditions = $ageOk && $peakOk && $currentOk && $higherLowsOk
+                           && $givebackOk && $hardFloorOk && $aboveLastHL;
+
+        if ($allBirthConditions) {
+            return $base + [
+                'trend_phase'    => 'early_trend_birth',
+                'structure_intact' => true,
+                'structure_broken' => false,
+                'reason'         => 'all_conditions_met',
+            ];
+        }
+
+        // Determine why it's not early birth
+        if (!$ageOk || $peakRoi >= 30.0) {
+            return $base + [
+                'trend_phase'    => 'late_or_exhausted',
+                'structure_intact' => false,
+                'structure_broken' => false,
+                'reason'         => !$ageOk ? 'age_exceeded' : 'peak_roi_high',
+            ];
+        }
+
+        $midReason = [];
+        if (!$peakOk)       { $midReason[] = 'peak_roi_low'; }
+        if (!$currentOk)    { $midReason[] = 'current_roi_low'; }
+        if (!$higherLowsOk) { $midReason[] = 'insufficient_higher_lows:' . $higherLowsCount; }
+        if (!$aboveLastHL)  { $midReason[] = 'below_last_higher_low'; }
+
+        return $base + [
+            'trend_phase'    => 'mid_trend',
+            'structure_intact' => false,
+            'structure_broken' => false,
+            'reason'         => implode(',', $midReason) ?: 'mid_trend',
+        ];
     }
 
     // =========================================================================

@@ -317,6 +317,20 @@ final class ProfManagerService
             $wallExitSkippedNoWallTotal      = 0;
             $wallExitExamples               = [];
 
+            // Trend birth hold diagnostic counters
+            $trendBirthCheckedTotal          = 0;
+            $trendBirthActiveTotal           = 0;
+            $trendBirthStructureBrokenTotal  = 0;
+            $trendBirthCloseVetoedTotal      = 0;
+            $trendBirthLockTouchVetoedTotal  = 0;
+            $trendBirthStaircaseVetoedTotal  = 0;
+            $trendBirthChopVetoedTotal       = 0;
+            $trendBirthHybridVetoedTotal     = 0;
+            $trendBirthWallExitNotVetoedTotal= 0;
+            $trendBirthExamples             = [];
+            $trendBirthVetoExamples         = [];
+            $trendBirthBrokenExamples       = [];
+
             foreach ($rawPositions as $pos) {
                 if (!is_array($pos)) {
                     continue;
@@ -886,7 +900,64 @@ final class ProfManagerService
                     $wallExitSkippedNoWallTotal++;
                 }
 
-                // ── Build per-position runtime record ─────────────────────────
+                // ── Trend birth hold diagnostic tracking (long only) ──────────
+                if ($side === 'long' && !empty($profileResult['trend_birth_hold_enabled'])) {
+                    $tbTrendPhase   = $profileResult['trend_phase']              ?? null;
+                    $tbHoldActive   = !empty($profileResult['trend_birth_hold_active']);
+                    $tbStructBroken = !empty($profileResult['trend_birth_structure_broken']);
+                    $tbVetoed       = !empty($profileResult['trend_birth_close_vetoed']);
+                    $tbVetoReason   = $profileResult['trend_birth_veto_reason']  ?? null;
+
+                    $trendBirthCheckedTotal++;
+
+                    if ($tbHoldActive) {
+                        $trendBirthActiveTotal++;
+                    }
+                    if ($tbStructBroken) {
+                        $trendBirthStructureBrokenTotal++;
+                    }
+                    if ($tbVetoed) {
+                        $trendBirthCloseVetoedTotal++;
+                        if ($tbVetoReason === 'lock_touch_vetoed_trend_birth') {
+                            $trendBirthLockTouchVetoedTotal++;
+                        } elseif ($tbVetoReason === 'staircase_floor_lost_vetoed_trend_birth') {
+                            $trendBirthStaircaseVetoedTotal++;
+                        } elseif ($tbVetoReason === 'chop_exit_vetoed_trend_birth') {
+                            $trendBirthChopVetoedTotal++;
+                        } elseif ($tbVetoReason === 'hybrid_weak_high_vetoed_trend_birth') {
+                            $trendBirthHybridVetoedTotal++;
+                        }
+                    }
+                    if (($profileResult['trend_birth_no_veto_reason'] ?? null) === 'wall_exit_not_vetoed') {
+                        $trendBirthWallExitNotVetoedTotal++;
+                    }
+
+                    $tbEx = [
+                        'symbol'          => $pos['symbol']                           ?? '',
+                        'side'            => 'long',
+                        'entry_price'     => (float)($pos['entry_price'] ?? $pos['avg_price'] ?? 0.0),
+                        'current_price'   => (float)($pos['current_price'] ?? 0.0),
+                        'roi'             => $profileResult['roi']                    ?? null,
+                        'peak_roi'        => $profileResult['peak_roi']               ?? null,
+                        'trend_phase'     => $tbTrendPhase,
+                        'higher_lows'     => $profileResult['trend_birth_higher_lows_count'] ?? 0,
+                        'giveback_roi'    => $profileResult['trend_birth_giveback_roi']       ?? null,
+                        'age_minutes'     => $profileResult['trend_birth_age_minutes']        ?? null,
+                        'action'          => $action,
+                        'veto_reason'     => $tbVetoReason,
+                        'no_veto_reason'  => $profileResult['trend_birth_no_veto_reason']     ?? null,
+                    ];
+
+                    if ($tbHoldActive && count($trendBirthExamples) < 10) {
+                        $trendBirthExamples[] = $tbEx;
+                    }
+                    if ($tbVetoed && count($trendBirthVetoExamples) < 5) {
+                        $trendBirthVetoExamples[] = $tbEx;
+                    }
+                    if ($tbStructBroken && count($trendBirthBrokenExamples) < 5) {
+                        $trendBirthBrokenExamples[] = $tbEx;
+                    }
+                }
                 $currentRoi       = $profileResult['roi'] ?? null;
                 $activationRoi    = $profileResult['activation_roi'] ?? null;
                 $positionsRuntime[] = [
@@ -955,6 +1026,21 @@ final class ProfManagerService
                     'wall_status'                => ($side === 'long')
                         ? ($posWallContext['ask_wall_status']  ?? 'none')
                         : ($posWallContext['bid_wall_status']  ?? 'none'),
+                    // Trend birth hold diagnostics (long only)
+                    'trend_phase'                           => $profileResult['trend_phase']                           ?? null,
+                    'trend_birth_hold_enabled'              => $profileResult['trend_birth_hold_enabled']              ?? false,
+                    'trend_birth_hold_active'               => $profileResult['trend_birth_hold_active']               ?? false,
+                    'trend_birth_structure_intact'          => $profileResult['trend_birth_structure_intact']          ?? false,
+                    'trend_birth_structure_broken'          => $profileResult['trend_birth_structure_broken']          ?? false,
+                    'trend_birth_higher_lows_count'         => $profileResult['trend_birth_higher_lows_count']         ?? 0,
+                    'trend_birth_last_higher_low_price'     => $profileResult['trend_birth_last_higher_low_price']     ?? null,
+                    'trend_birth_giveback_roi'              => $profileResult['trend_birth_giveback_roi']              ?? null,
+                    'trend_birth_age_minutes'               => $profileResult['trend_birth_age_minutes']               ?? null,
+                    'trend_birth_extra_lock_buffer_applied' => $profileResult['trend_birth_extra_lock_buffer_applied'] ?? false,
+                    'trend_birth_extra_staircase_buffer_applied' => $profileResult['trend_birth_extra_staircase_buffer_applied'] ?? false,
+                    'trend_birth_close_vetoed'              => $profileResult['trend_birth_close_vetoed']              ?? false,
+                    'trend_birth_veto_reason'               => $profileResult['trend_birth_veto_reason']               ?? null,
+                    'trend_birth_no_veto_reason'            => $profileResult['trend_birth_no_veto_reason']            ?? null,
                     // Close execution output (null when no close was attempted this tick)
                     'close_attempted'            => $closeAttemptResult['close_attempted']    ?? null,
                     'close_ok'                   => $closeAttemptResult['close_ok']           ?? null,
@@ -1146,6 +1232,19 @@ final class ProfManagerService
                 'wall_exit_skipped_wall_eaten_total'     => $wallExitSkippedWallEatenTotal,
                 'wall_exit_skipped_no_wall_total'        => $wallExitSkippedNoWallTotal,
                 'wall_exit_examples'                     => $wallExitExamples,
+                // Trend birth hold diagnostics
+                'trend_birth_checked_total'              => $trendBirthCheckedTotal,
+                'trend_birth_active_total'               => $trendBirthActiveTotal,
+                'trend_birth_structure_broken_total'     => $trendBirthStructureBrokenTotal,
+                'trend_birth_close_vetoed_total'         => $trendBirthCloseVetoedTotal,
+                'trend_birth_lock_touch_vetoed_total'    => $trendBirthLockTouchVetoedTotal,
+                'trend_birth_staircase_vetoed_total'     => $trendBirthStaircaseVetoedTotal,
+                'trend_birth_chop_vetoed_total'          => $trendBirthChopVetoedTotal,
+                'trend_birth_hybrid_vetoed_total'        => $trendBirthHybridVetoedTotal,
+                'trend_birth_wall_exit_not_vetoed_total' => $trendBirthWallExitNotVetoedTotal,
+                'trend_birth_examples'                   => $trendBirthExamples,
+                'trend_birth_veto_examples'              => $trendBirthVetoExamples,
+                'trend_birth_broken_examples'            => $trendBirthBrokenExamples,
                 // OrderBook Context service stats
                 'obc_enabled'                            => ($this->obcService !== null),
                 'obc_stats'                              => ($this->obcService !== null) ? $this->obcService->getStats() : null,

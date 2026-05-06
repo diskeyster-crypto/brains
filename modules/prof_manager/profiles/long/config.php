@@ -197,4 +197,53 @@ return [
     'chop_exit_close_reason'         => 'roi_chop_indecision_exit',
     'chop_exit_require_profit'       => true,
     'chop_exit_min_close_roi'        => 4.0,
+
+    // ── Trend birth hold ─────────────────────────────────────────────────
+    // Protective close-veto layer that prevents PM from closing too early when
+    // a long position is entered near the start of a new recovery trend.
+    // Detects early_trend_birth by checking higher lows in PM price samples,
+    // position age, peak/current ROI conditions, and giveback limits.
+    //
+    // When active, vetoes: lock_touch, staircase_floor_lost, chop_exit, and
+    // hybrid_close_confirmed (weak high without confirmed support break).
+    // Never vetoes: wall_exit_close or closes triggered by hard-floor / giveback breach.
+    //
+    // Extra buffers widen the effective lock_buffer_roi and staircase floor
+    // buffer while early trend birth is active — applied before staircase/lock
+    // planning, without mutating the base config.
+    //
+    // trend_birth_hold_enabled               — master switch
+    // trend_birth_min_peak_roi               — minimum peak ROI% before hold is considered
+    // trend_birth_min_current_roi            — minimum current ROI% required
+    // trend_birth_max_age_minutes            — position must be younger than this
+    // trend_birth_min_samples                — minimum roi_samples required
+    // trend_birth_min_higher_lows            — number of consecutive higher lows needed
+    // trend_birth_higher_low_tolerance_pct   — % tolerance for higher-low detection (0.12 = 0.12%)
+    // trend_birth_structure_break_pct        — % below last higher low = structure broken
+    // trend_birth_max_giveback_roi           — peak→current ROI giveback hard limit
+    // trend_birth_hard_floor_roi             — close if ROI falls below this regardless
+    // trend_birth_extra_lock_buffer_roi      — added to lock_buffer_roi when hold active
+    // trend_birth_extra_staircase_buffer_roi — added to staircase floor buffer when hold active
+    // trend_birth_veto_lock_touch            — veto would_close_on_lock_touch
+    // trend_birth_veto_staircase_floor_lost  — veto staircase_floor_lost close hint
+    // trend_birth_veto_chop_exit             — veto roi_chop_indecision_exit
+    // trend_birth_veto_hybrid_weak_high      — veto hybrid_close_confirmed (weak high, no support break)
+    // trend_birth_allow_wall_exit            — never veto wall_exit_close
+    'trend_birth_hold_enabled'               => true,
+    'trend_birth_min_peak_roi'               => 8.0,
+    'trend_birth_min_current_roi'            => 5.0,
+    'trend_birth_max_age_minutes'            => 25.0,
+    'trend_birth_min_samples'                => 5,
+    'trend_birth_min_higher_lows'            => 2,
+    'trend_birth_higher_low_tolerance_pct'   => 0.12,
+    'trend_birth_structure_break_pct'        => 0.18,
+    'trend_birth_max_giveback_roi'           => 12.0,
+    'trend_birth_hard_floor_roi'             => 4.0,
+    'trend_birth_extra_lock_buffer_roi'      => 2.0,
+    'trend_birth_extra_staircase_buffer_roi' => 3.0,
+    'trend_birth_veto_lock_touch'            => true,
+    'trend_birth_veto_staircase_floor_lost'  => true,
+    'trend_birth_veto_chop_exit'             => true,
+    'trend_birth_veto_hybrid_weak_high'      => true,
+    'trend_birth_allow_wall_exit'            => true,
 ];

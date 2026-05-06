@@ -286,6 +286,22 @@ function renderDashboardHub(): string
     $pmCfgChopEnYes         = ($pmCfgChopEnabled === '1') ? ' selected' : '';
     $pmCfgChopEnNo          = ($pmCfgChopEnabled !== '1') ? ' selected' : '';
 
+    // ── Long trend birth hold config vars ─────────────────────────────────
+    $pmCfgTbEnabled      = ($pmCfgProfileCfg['trend_birth_hold_enabled']               ?? true) ? '1' : '0';
+    $pmCfgTbMinPeak      = (string) ($pmCfgProfileCfg['trend_birth_min_peak_roi']               ?? 8.0);
+    $pmCfgTbMinCur       = (string) ($pmCfgProfileCfg['trend_birth_min_current_roi']            ?? 5.0);
+    $pmCfgTbMaxAge       = (string) ($pmCfgProfileCfg['trend_birth_max_age_minutes']            ?? 25.0);
+    $pmCfgTbMinSamples   = (string) ($pmCfgProfileCfg['trend_birth_min_samples']                ?? 5);
+    $pmCfgTbMinHLows     = (string) ($pmCfgProfileCfg['trend_birth_min_higher_lows']            ?? 2);
+    $pmCfgTbHLTol        = (string) ($pmCfgProfileCfg['trend_birth_higher_low_tolerance_pct']   ?? 0.12);
+    $pmCfgTbBreakPct     = (string) ($pmCfgProfileCfg['trend_birth_structure_break_pct']        ?? 0.18);
+    $pmCfgTbMaxGiveback  = (string) ($pmCfgProfileCfg['trend_birth_max_giveback_roi']           ?? 12.0);
+    $pmCfgTbHardFloor    = (string) ($pmCfgProfileCfg['trend_birth_hard_floor_roi']             ?? 4.0);
+    $pmCfgTbExtraLock    = (string) ($pmCfgProfileCfg['trend_birth_extra_lock_buffer_roi']      ?? 2.0);
+    $pmCfgTbExtraStair   = (string) ($pmCfgProfileCfg['trend_birth_extra_staircase_buffer_roi'] ?? 3.0);
+    $pmCfgTbEnYes        = ($pmCfgTbEnabled === '1') ? ' selected' : '';
+    $pmCfgTbEnNo         = ($pmCfgTbEnabled !== '1') ? ' selected' : '';
+
     // ── Fast loop config display vars ─────────────────────────────────────
     $pmCfgFastLoopEnabled      = ($pmCfg['fast_loop_enabled']                            ?? true) ? '1' : '0';
     $pmCfgFastInterval         = (string) ($pmCfg['fast_loop_interval_seconds']               ?? 15);
@@ -5770,6 +5786,94 @@ BLCK;
           </div>
         </div>
 
+        <!-- Main Long PM Controls (compact quick-access block) -->
+        <div style="margin-bottom:6px;font-size:12px;color:#58a6ff;font-weight:700;border-top:1px solid var(--ui-border);padding-top:12px;display:flex;align-items:center;gap:10px;">
+          <span>Main Long PM Controls</span>
+          <span style="font-size:11px;font-weight:400;color:var(--ui-text-muted);">— наиболее важные параметры для long-профиля</span>
+        </div>
+        <!-- Quick preset buttons -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+          <button type="button" onclick="pmApplyPreset('safe_default')" class="btn btn-sm" style="font-size:11px;padding:3px 10px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;cursor:pointer;color:var(--ui-text-muted);">Safe default</button>
+          <button type="button" onclick="pmApplyPreset('more_breathing')" class="btn btn-sm" style="font-size:11px;padding:3px 10px;background:var(--ui-bg-secondary,#161b22);border:1px solid var(--ui-border);border-radius:4px;cursor:pointer;color:var(--ui-text-muted);">More breathing room</button>
+          <button type="button" onclick="pmApplyPreset('early_trend_hold')" class="btn btn-sm" style="font-size:11px;padding:3px 10px;background:#1a3a1a;border:1px solid #3fb950;border-radius:4px;cursor:pointer;color:#3fb950;">Early trend hold</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Activation ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_activation_roi" id="pm_main_activation_roi"
+              value="{$pmCfgActivRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Long Lock buffer ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_lock_buffer_roi" id="pm_main_lock_buffer"
+              value="{$pmCfgLockBuf}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Staircase Floor buffer ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_roi_staircase_floor_buffer_roi" id="pm_main_stair_buffer"
+              value="{$pmCfgStaircaseBuffer}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Grace Max giveback ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_lock_touch_grace_max_giveback_roi" id="pm_main_grace_giveback"
+              value="{$pmCfgGraceMaxGiveback}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Impulse Max giveback ROI%</label>
+            <input type="number" step="0.1" min="0" name="long_impulse_hold_max_giveback_roi" id="pm_main_impulse_giveback"
+              value="{$pmCfgImpulseMaxGiveback}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Trend Birth Hold</label>
+            <select name="long_trend_birth_hold_enabled" id="pm_main_tb_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgTbEnYes}>Включён</option>
+              <option value="0"{$pmCfgTbEnNo}>Выключен</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">TB Max giveback ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_trend_birth_max_giveback_roi" id="pm_main_tb_max_giveback"
+              value="{$pmCfgTbMaxGiveback}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">TB Extra Staircase buffer ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_trend_birth_extra_staircase_buffer_roi" id="pm_main_tb_extra_stair"
+              value="{$pmCfgTbExtraStair}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+        <script>
+        function pmApplyPreset(preset) {
+          var presets = {
+            safe_default: {
+              lock_buffer: 4, stair_buffer: 3, tb_enabled: '0',
+              tb_max_giveback: 12, tb_extra_stair: 3
+            },
+            more_breathing: {
+              lock_buffer: 4, stair_buffer: 5, tb_enabled: '0',
+              tb_max_giveback: 12, tb_extra_stair: 3
+            },
+            early_trend_hold: {
+              lock_buffer: 4, stair_buffer: 5, tb_enabled: '1',
+              tb_max_giveback: 12, tb_extra_stair: 3
+            }
+          };
+          var p = presets[preset];
+          if (!p) return;
+          document.getElementById('pm_main_lock_buffer').value  = p.lock_buffer;
+          document.getElementById('pm_main_stair_buffer').value = p.stair_buffer;
+          document.getElementById('pm_main_tb_enabled').value   = p.tb_enabled;
+          document.getElementById('pm_main_tb_max_giveback').value = p.tb_max_giveback;
+          document.getElementById('pm_main_tb_extra_stair').value  = p.tb_extra_stair;
+          // Also sync to the detailed settings further down (same name= fields)
+          var lbFields = document.querySelectorAll('input[name="long_lock_buffer_roi"]');
+          lbFields.forEach(function(f) { f.value = p.lock_buffer; });
+          var sbFields = document.querySelectorAll('input[name="long_roi_staircase_floor_buffer_roi"]');
+          sbFields.forEach(function(f) { f.value = p.stair_buffer; });
+          var tbEnFields = document.querySelectorAll('select[name="long_trend_birth_hold_enabled"]');
+          tbEnFields.forEach(function(f) { f.value = p.tb_enabled; });
+        }
+        </script>
+
         <!-- Long profile settings -->
         <div style="margin-bottom:6px;font-size:12px;color:#3fb950;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
           Long профиль — {$e($pmLongProfile)}
@@ -6000,6 +6104,60 @@ BLCK;
             <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Chop Min close ROI%</label>
             <input type="number" step="0.5" min="0" name="long_chop_exit_min_close_roi"
               value="{$pmCfgChopMinCloseRoi}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+        </div>
+
+        <!-- Long trend birth hold settings -->
+        <div style="margin-bottom:6px;font-size:12px;color:#3fb950;font-weight:600;border-top:1px solid var(--ui-border);padding-top:12px;">
+          Long trend birth hold
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px 16px;margin-bottom:16px;">
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">Trend Birth Hold включён</label>
+            <select name="long_trend_birth_hold_enabled" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+              <option value="1"{$pmCfgTbEnYes}>Да</option>
+              <option value="0"{$pmCfgTbEnNo}>Нет</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">TB Min peak ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_trend_birth_min_peak_roi"
+              value="{$pmCfgTbMinPeak}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">TB Min current ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_trend_birth_min_current_roi"
+              value="{$pmCfgTbMinCur}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">TB Max age (мин)</label>
+            <input type="number" step="1" min="1" name="long_trend_birth_max_age_minutes"
+              value="{$pmCfgTbMaxAge}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">TB Min higher lows</label>
+            <input type="number" step="1" min="1" name="long_trend_birth_min_higher_lows"
+              value="{$pmCfgTbMinHLows}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">TB Max giveback ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_trend_birth_max_giveback_roi"
+              value="{$pmCfgTbMaxGiveback}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">TB Hard floor ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_trend_birth_hard_floor_roi"
+              value="{$pmCfgTbHardFloor}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">TB Extra lock buffer ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_trend_birth_extra_lock_buffer_roi"
+              value="{$pmCfgTbExtraLock}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--ui-text-muted);display:block;margin-bottom:4px;">TB Extra staircase buffer ROI%</label>
+            <input type="number" step="0.5" min="0" name="long_trend_birth_extra_staircase_buffer_roi"
+              value="{$pmCfgTbExtraStair}" class="form-control" style="height:32px;font-size:13px;padding:2px 8px;">
           </div>
         </div>
 
@@ -8385,6 +8543,32 @@ function handleDashboardPmConfigSave(): void
         }
     }
 
+    // ── Long trend birth hold fields ──────────────────────────────────────
+    if (isset($_POST['long_trend_birth_hold_enabled'])) {
+        $longProfileData['trend_birth_hold_enabled'] = (bool)(int)$_POST['long_trend_birth_hold_enabled'];
+    }
+    $trendBirthNumeric = [
+        'trend_birth_min_peak_roi'               => ['min' => 0.0],
+        'trend_birth_min_current_roi'            => ['min' => 0.0],
+        'trend_birth_max_age_minutes'            => ['min' => 1.0],
+        'trend_birth_min_samples'                => ['min' => 2.0, 'int' => true],
+        'trend_birth_min_higher_lows'            => ['min' => 1.0, 'int' => true],
+        'trend_birth_higher_low_tolerance_pct'   => ['min' => 0.0],
+        'trend_birth_structure_break_pct'        => ['min' => 0.0],
+        'trend_birth_max_giveback_roi'           => ['min' => 0.0],
+        'trend_birth_hard_floor_roi'             => ['min' => 0.0],
+        'trend_birth_extra_lock_buffer_roi'      => ['min' => 0.0],
+        'trend_birth_extra_staircase_buffer_roi' => ['min' => 0.0],
+    ];
+    foreach ($trendBirthNumeric as $field => $rules) {
+        $postKey = 'long_' . $field;
+        if (isset($_POST[$postKey])) {
+            $raw = (float) $_POST[$postKey];
+            if ($raw < $rules['min']) { $raw = (float) $rules['min']; }
+            $longProfileData[$field] = isset($rules['int']) ? (int) $raw : $raw;
+        }
+    }
+
     $existing['profiles']['long'] = $longProfileData;
 
     // ── Short profile numeric fields ──────────────────────────────────────
@@ -8474,6 +8658,20 @@ function handleDashboardPmConfigSave(): void
     }
 
     // ── Persist ──────────────────────────────────────────────────────────
+    // Capture old long-profile values for change feedback (trend birth + main keys)
+    $oldLong = $existing['profiles']['long'] ?? [];
+    $changeTrackKeys = [
+        'lock_buffer_roi', 'roi_staircase_floor_buffer_roi',
+        'trend_birth_hold_enabled', 'trend_birth_max_giveback_roi',
+        'trend_birth_extra_staircase_buffer_roi', 'trend_birth_extra_lock_buffer_roi',
+        'trend_birth_hard_floor_roi',
+    ];
+    $oldTracked = [];
+    foreach ($changeTrackKeys as $ck) {
+        if (array_key_exists($ck, $oldLong)) {
+            $oldTracked[$ck] = $oldLong[$ck];
+        }
+    }
     $php  = "<?php\n\ndeclare(strict_types=1);\n\n";
     $php .= "/**\n * Profit Manager Module — Active Config Overrides\n";
     $php .= " * Written by the admin UI. Do not edit manually.\n */\n\n";
@@ -8487,7 +8685,26 @@ function handleDashboardPmConfigSave(): void
     }
     file_put_contents($activeFile, $php);
 
-    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => 'Profit Manager настройки сохранены'];
+    // Build compact old→new diff for changed keys
+    $newLong   = $existing['profiles']['long'] ?? [];
+    $diffParts = [];
+    foreach ($changeTrackKeys as $ck) {
+        $newVal = $newLong[$ck] ?? null;
+        $oldVal = $oldTracked[$ck] ?? null;
+        if ($oldVal !== null && $newVal !== null) {
+            $oldStr = is_bool($oldVal) ? ($oldVal ? 'true' : 'false') : (string) $oldVal;
+            $newStr = is_bool($newVal) ? ($newVal ? 'true' : 'false') : (string) $newVal;
+            if ($oldStr !== $newStr) {
+                $diffParts[] = $ck . ': ' . $oldStr . ' → ' . $newStr;
+            }
+        }
+    }
+    $flashMsg = 'Profit Manager настройки сохранены';
+    if (!empty($diffParts)) {
+        $flashMsg .= ' · Изменено: ' . implode(', ', $diffParts);
+    }
+
+    $_SESSION['dashboard_flash'] = ['type' => 'success', 'msg' => $flashMsg];
     header('Location: ' . $dashUrl);
     exit;
 }

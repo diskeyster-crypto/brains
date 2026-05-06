@@ -732,6 +732,14 @@ final class DoubleBottomLongService
                     $sig['ob_ask_wall_eaten'] = $result['ob_ask_wall_eaten']  ?? false;
                     $sig['ob_soft_demoted']   = $result['ob_soft_demoted']    ?? false;
                     $sig['ob_wall_checked']   = $result['ob_wall_checked']    ?? false;
+                    $sig['ob_gate_mode']      = $result['ob_gate_mode']             ?? null;
+                    $sig['ob_fetch_ok']       = $result['ob_fetch_ok']              ?? null;
+                    $sig['ob_ask_wall_distance_pct'] = $result['ob_ask_wall_distance_pct'] ?? null;
+                    $sig['ob_bid_wall_distance_pct'] = $result['ob_bid_wall_distance_pct'] ?? null;
+                    $sig['ob_ask_wall_status'] = $result['ob_ask_wall_status']      ?? null;
+                    $sig['ob_bid_wall_status'] = $result['ob_bid_wall_status']      ?? null;
+                    $sig['ob_skip_reason']    = $result['ob_skip_reason']           ?? null;
+                    $sig['ob_skip_quality_score'] = $result['ob_skip_quality_score'] ?? null;
                     // Detect and list any fields that are unavailable (null) — do not fill with fake defaults
                     // Fields always required for trace completeness
                     $traceFieldsAlways = [
@@ -3183,7 +3191,12 @@ final class DoubleBottomLongService
         // ── OrderBook Wall Context gate ───────────────────────────────────────
         // Fetched only for candidates that reach confirmation (serious long candidates).
         // Default mode: soft_demote (tag signal with risk, do not hard-reject).
-        $obcWallCtx = $this->applyOrderBookWallGate($symbol, $candidate, $config, $diagBase);
+        // Merge the computed quality score into the diag passed to the gate so
+        // it reads the real score instead of defaulting to 0.0 from an unset key.
+        $obcDiag = array_merge($diagBase, [
+            'candidate_quality_score' => $quality['candidate_quality_score'] ?? null,
+        ]);
+        $obcWallCtx = $this->applyOrderBookWallGate($symbol, $candidate, $config, $obcDiag);
         if (!empty($obcWallCtx['ob_hard_reject'])) {
             return $this->reject($diagBase, $symbol, 'double_bottom', 'ob_ask_wall_hard_reject', true, [
                 'ob_wall_context'       => $obcWallCtx,
@@ -3242,6 +3255,14 @@ final class DoubleBottomLongService
             'ob_ask_wall_eaten'       => $obcWallCtx['ob_ask_wall_eaten']  ?? false,
             'ob_soft_demoted'         => $obcWallCtx['ob_soft_demoted']    ?? false,
             'ob_wall_checked'         => $obcWallCtx['ob_wall_checked']    ?? false,
+            'ob_gate_mode'            => $obcWallCtx['ob_gate_mode']             ?? null,
+            'ob_fetch_ok'             => $obcWallCtx['ob_fetch_ok']              ?? null,
+            'ob_ask_wall_distance_pct' => $obcWallCtx['ob_ask_wall_distance_pct'] ?? null,
+            'ob_bid_wall_distance_pct' => $obcWallCtx['ob_bid_wall_distance_pct'] ?? null,
+            'ob_ask_wall_status'      => $obcWallCtx['ob_ask_wall_status']       ?? null,
+            'ob_bid_wall_status'      => $obcWallCtx['ob_bid_wall_status']       ?? null,
+            'ob_skip_reason'          => $obcWallCtx['ob_skip_reason']           ?? null,
+            'ob_skip_quality_score'   => $obcWallCtx['ob_skip_quality_score']    ?? null,
             'signal_id'               => $signal['signal_id'],
             'signal'                  => $signal,
         ]);
@@ -3278,15 +3299,20 @@ final class DoubleBottomLongService
         }
         if ($this->obcService === null) {
             $this->obWallSkipServiceUnavailableTotal++;
+            $skipQualSvc = $diagBase['candidate_quality_score'] ?? null;
             if (count($this->obWallSkipExamples) < 5) {
                 $this->obWallSkipExamples[] = [
                     'symbol'                  => $symbol,
-                    'candidate_quality_score' => $diagBase['candidate_quality_score'] ?? null,
+                    'candidate_quality_score' => $skipQualSvc,
                     'required_quality_score'  => (float)($config['orderbook_entry_wall_fetch_after_quality_score'] ?? 0.0),
                     'reason'                  => 'obc_service_unavailable',
                 ];
             }
-            return [];
+            return [
+                'ob_wall_checked'       => false,
+                'ob_skip_reason'        => 'obc_service_unavailable',
+                'ob_skip_quality_score' => $skipQualSvc,
+            ];
         }
 
         // Quality-score threshold: only fetch for candidates above this score
@@ -3302,14 +3328,30 @@ final class DoubleBottomLongService
                     'reason'                  => 'quality_below_threshold',
                 ];
             }
-            return [];
+            return [
+                'ob_wall_checked'       => false,
+                'ob_skip_reason'        => 'quality_below_threshold',
+                'ob_skip_quality_score' => $qualScore,
+            ];
         }
 
         // Use neckline level as the entry price reference
         $entryPrice = (float)($candidate['neckline'] ?? $candidate['entry_price'] ?? 0.0);
         if ($entryPrice <= 0.0) {
             $this->obWallSkipMissingEntryPriceTotal++;
-            return [];
+            if (count($this->obWallSkipExamples) < 5) {
+                $this->obWallSkipExamples[] = [
+                    'symbol'                  => $symbol,
+                    'candidate_quality_score' => $diagBase['candidate_quality_score'] ?? null,
+                    'required_quality_score'  => $fetchAfterScore,
+                    'reason'                  => 'missing_entry_price',
+                ];
+            }
+            return [
+                'ob_wall_checked'       => false,
+                'ob_skip_reason'        => 'missing_entry_price',
+                'ob_skip_quality_score' => $diagBase['candidate_quality_score'] ?? null,
+            ];
         }
 
         $nearPct          = (float)($config['orderbook_entry_wall_near_pct']              ?? 1.5);
@@ -8166,6 +8208,14 @@ final class DoubleBottomLongService
                 'ob_ask_wall_eaten'                => $signal['ob_ask_wall_eaten']               ?? false,
                 'ob_soft_demoted'                  => $signal['ob_soft_demoted']                 ?? false,
                 'ob_wall_context'                  => $signal['ob_wall_context']                 ?? null,
+                'ob_gate_mode'                     => $signal['ob_gate_mode']                    ?? null,
+                'ob_fetch_ok'                      => $signal['ob_fetch_ok']                     ?? null,
+                'ob_ask_wall_distance_pct'         => $signal['ob_ask_wall_distance_pct']        ?? null,
+                'ob_bid_wall_distance_pct'         => $signal['ob_bid_wall_distance_pct']        ?? null,
+                'ob_ask_wall_status'               => $signal['ob_ask_wall_status']              ?? null,
+                'ob_bid_wall_status'               => $signal['ob_bid_wall_status']              ?? null,
+                'ob_skip_reason'                   => $signal['ob_skip_reason']                  ?? null,
+                'ob_skip_quality_score'            => $signal['ob_skip_quality_score']           ?? null,
             ],
 
             // Execution parameters (strategy-owned; no exchange-order fields yet)

@@ -102,13 +102,22 @@ switch ($action) {
             $updated['wall_decision_test_enabled'] = (bool)(int)$_POST['wall_decision_test_enabled'];
         }
 
-        // Write config/active.php as PHP array
+        // Write config/active.php as PHP array.
+        // Only include scalar-typed values (bool/int/float/string) to prevent
+        // any non-primitive data from being exported — regardless of what $existing contained.
+        $safe = [];
+        foreach ($updated as $k => $v) {
+            if (is_bool($v) || is_int($v) || is_float($v) || is_string($v)) {
+                $safe[(string)$k] = $v;
+            }
+        }
+
         $lines   = ["<?php\n\ndeclare(strict_types=1);\n\n"];
         $lines[] = "/**\n * Confirmed Continuation Strategy — Active Config Overrides\n";
         $lines[] = " * Written by the admin UI. Edit via the config page.\n";
         $lines[] = " *\n * Demo-domain safety: strategy signals are environment-neutral.\n";
         $lines[] = " * Bot owns execution mode globally.\n */\n\nreturn ";
-        $lines[] = var_export($updated, true);
+        $lines[] = var_export($safe, true);
         $lines[] = ";\n";
 
         $php = implode('', $lines);
@@ -121,8 +130,8 @@ switch ($action) {
         // Build effective values from what was saved
         $effective = [];
         foreach ($managed as $k) {
-            if (array_key_exists($k, $updated)) {
-                $effective[$k] = $updated[$k];
+            if (array_key_exists($k, $safe)) {
+                $effective[$k] = $safe[$k];
             }
         }
 

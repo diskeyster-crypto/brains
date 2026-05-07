@@ -1750,9 +1750,6 @@ final class ConfirmedContinuationService
             } else {
                 $this->handoffQueueNewTotal++;
             }
-            if (!isset($entry['handoff_status']) || !in_array($entry['handoff_status'], ['new', 'refreshed'], true)) {
-                $this->handoffQueueMissingStatusTotal++;
-            }
             if (count($this->handoffQueueExamples) < 5) {
                 $this->handoffQueueExamples[] = [
                     'signal_id'      => $entry['signal_id'],
@@ -1763,6 +1760,11 @@ final class ConfirmedContinuationService
                 ];
             }
         }
+        $this->handoffQueueMissingStatusTotal = count(array_filter(
+            $queue,
+            static fn(array $entry): bool => !isset($entry['handoff_status'])
+                || !in_array((string)$entry['handoff_status'], ['new', 'refreshed'], true)
+        ));
         return $queue;
     }
 

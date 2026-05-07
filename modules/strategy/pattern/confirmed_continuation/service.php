@@ -2688,10 +2688,11 @@ final class ConfirmedContinuationService
         }
 
         if ($rejectReason !== null) {
-            $secondaryReasons = array_values(array_unique(array_values(array_filter(
+            $secondaryReasons = array_filter(
                 $secondaryReasons,
                 static fn ($v): bool => is_string($v) && $v !== ''
-            ))));
+            );
+            $secondaryReasons = array_values(array_unique(array_values($secondaryReasons)));
             $diag['anti_comb_rejected'] = true;
             $diag['anti_comb_reject_reason_detail'] = $rejectReason;
             // Always use the specific reason as the primary reject_reason.
@@ -3736,7 +3737,13 @@ final class ConfirmedContinuationService
                 if (!is_array($row)) {
                     continue;
                 }
-                $ts = isset($row['ts_unix']) ? (int)$row['ts_unix'] : (isset($row['ts']) ? strtotime((string)$row['ts']) : 0);
+                $ts = 0;
+                if (isset($row['ts_unix'])) {
+                    $ts = (int)$row['ts_unix'];
+                } elseif (isset($row['ts'])) {
+                    $parsedTs = strtotime((string)$row['ts']);
+                    $ts = $parsedTs === false ? 0 : (int)$parsedTs;
+                }
                 $price = (float)($row['last_price'] ?? ($row['data']['lastPrice'] ?? 0.0));
                 $volume = (float)($row['volume24h'] ?? 0.0);
                 if ($ts <= 0 || $price <= 0.0) {

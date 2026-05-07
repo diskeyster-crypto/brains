@@ -114,7 +114,7 @@ return [
     // ── Anti-comb / anti-chaos gates ──────────────────────────────────────────
     'anti_comb_enabled'                            => true,
     'anti_comb_lookback_minutes'                   => 20,
-    'anti_comb_roi_equiv_leverage'                 => 15,   // 15x leverage equivalent: price_pct * leverage = ROI equivalent
+    'anti_comb_roi_equiv_leverage'                 => 15.0,   // 15x leverage equivalent: price_pct * leverage = ROI equivalent
     'anti_comb_max_1m_range_roi'                   => 10.0,
     'anti_comb_max_3m_range_roi'                   => 18.0,
     'anti_comb_max_recent_swing_roi'               => 22.0,

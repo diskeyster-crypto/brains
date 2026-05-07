@@ -111,6 +111,18 @@ final class ConfirmedContinuationService
     private int $wallTestRejectedTotal       = 0;
     private int $wallTestOppositeContextTotal= 0;
 
+    // ── Handoff queue diagnostics ──────────────────────────────────────────────
+    private int $handoffQueueWrittenTotal       = 0;
+    private int $handoffQueueNewTotal           = 0;
+    private int $handoffQueueRefreshedTotal     = 0;
+    private int $handoffQueueMissingStatusTotal = 0;
+    /** @var list<array<string,mixed>> */
+    private array $handoffQueueExamples         = [];
+
+    // ── Deprecated config diagnostics ──────────────────────────────────────────
+    private bool $deprecatedExecutionModeKeySeen    = false;
+    private bool $deprecatedExecutionModeKeyIgnored = false;
+
     public function __construct(?string $moduleDir = null)
     {
         if ($moduleDir !== null) {
@@ -172,6 +184,10 @@ final class ConfirmedContinuationService
     {
         $this->resetCounters();
 
+        $deprecatedModeDiag = $this->normalizeDeprecatedExecutionModeKeyInActiveConfig();
+        $this->deprecatedExecutionModeKeySeen    = (bool)($deprecatedModeDiag['seen'] ?? false);
+        $this->deprecatedExecutionModeKeyIgnored = (bool)($deprecatedModeDiag['ignored'] ?? false);
+
         $this->requireBootstrap();
         $boot = ConfirmedContinuationBootstrap::instance($this->moduleDir)->load();
         if (!$boot['valid'] || empty($boot['config']['enabled'])) {
@@ -211,6 +227,13 @@ final class ConfirmedContinuationService
                 'handoff_ready_total'             => 0,
                 'rejected_total'                  => 0,
                 'reject_reason_counts'            => [],
+                'handoff_queue_written_total'     => 0,
+                'handoff_queue_new_total'         => 0,
+                'handoff_queue_refreshed_total'   => 0,
+                'handoff_queue_missing_status_total' => 0,
+                'handoff_queue_examples'          => [],
+                'deprecated_execution_mode_key_seen'    => $this->deprecatedExecutionModeKeySeen,
+                'deprecated_execution_mode_key_ignored' => $this->deprecatedExecutionModeKeyIgnored,
             ];
             $this->writeJson($this->moduleDir . '/storage/last_run.json', $lastRun);
             $this->writeJson($this->moduleDir . '/storage/run_state.json', [
@@ -273,7 +296,7 @@ final class ConfirmedContinuationService
         unset($sig);
 
         $freshSignals = array_values($signalIndex);
-        $handoffQueue = $this->buildHandoffQueue($freshSignals, $config);
+        $handoffQueue = $this->buildHandoffQueue($freshSignals, $allHandoff);
 
         // Persist rejects (append-style, capped)
         $allRejects = array_merge($allRejects, $newRejects);
@@ -1668,16 +1691,39 @@ final class ConfirmedContinuationService
         return $signal;
     }
 
-    private function buildHandoffQueue(array $signals, array $config): array
+    private function buildHandoffQueue(array $signals, array $previousQueue = []): array
     {
-        $queue = [];
-        foreach ($signals as $sig) {
-            if (!($sig['executable'] ?? false) || ($sig['stale'] ?? false)) {
+        $prevBySignalId = [];
+        foreach ($previousQueue as $prev) {
+            if (!is_array($prev)) {
                 continue;
             }
+            $prevSignalId = (string)($prev['signal_id'] ?? '');
+            if ($prevSignalId !== '') {
+                $prevBySignalId[$prevSignalId] = true;
+            }
+        }
+
+        $queue = [];
+        foreach ($signals as $sig) {
+            $isExecutable  = (bool)($sig['executable'] ?? false);
+            $isStale       = (bool)($sig['stale'] ?? false);
+            $isHandoffReady= (bool)($sig['handoff_ready'] ?? false);
+            $isActiveFinal = (bool)($sig['active_final'] ?? false);
+            $blockReason   = $sig['block_reason'] ?? null;
+            $isBlocked     = is_string($blockReason) ? trim($blockReason) !== '' : ($blockReason !== null);
+            if (!$isExecutable || $isStale || !$isHandoffReady || !$isActiveFinal || $isBlocked) {
+                continue;
+            }
+            $signalId = (string)($sig['signal_id'] ?? '');
+            if ($signalId === '') {
+                continue;
+            }
+            $isRefreshed = isset($prevBySignalId[$signalId]);
+            $handoffStatus = $isRefreshed ? 'refreshed' : 'new';
             $entry = [
                 'strategy_id'             => 'confirmed_continuation',
-                'signal_id'               => $sig['signal_id'] ?? '',
+                'signal_id'               => $signalId,
                 'confirmed_continuation_idea_key' => $sig['confirmed_continuation_idea_key'] ?? '',
                 'symbol'                  => $sig['symbol'] ?? '',
                 'side'                    => $sig['side'] ?? '',
@@ -1686,12 +1732,36 @@ final class ConfirmedContinuationService
                 'candidate_quality_score' => $sig['candidate_quality_score'] ?? 0.0,
                 'setup_class'             => $sig['setup_class'] ?? '',
                 'detected_at'             => $sig['detected_at'] ?? '',
+                'refreshed_at'            => $sig['refreshed_at'] ?? date('c'),
+                'handoff_status'          => $handoffStatus,
+                'queue_status'            => $isRefreshed ? 'ready' : 'new',
                 'handoff_ready'           => true,
                 'executable'              => true,
-                'active_final'            => $sig['active_final'] ?? true,
+                'active_final'            => true,
+                'stale'                   => false,
+                'block_reason'            => null,
                 'strategy_signal_context' => $sig['strategy_signal_context'] ?? [],
             ];
             $queue[] = $entry;
+
+            $this->handoffQueueWrittenTotal++;
+            if ($handoffStatus === 'refreshed') {
+                $this->handoffQueueRefreshedTotal++;
+            } else {
+                $this->handoffQueueNewTotal++;
+            }
+            if (!isset($entry['handoff_status']) || !in_array($entry['handoff_status'], ['new', 'refreshed'], true)) {
+                $this->handoffQueueMissingStatusTotal++;
+            }
+            if (count($this->handoffQueueExamples) < 5) {
+                $this->handoffQueueExamples[] = [
+                    'signal_id'      => $entry['signal_id'],
+                    'symbol'         => $entry['symbol'],
+                    'side'           => $entry['side'],
+                    'handoff_status' => $entry['handoff_status'],
+                    'queue_status'   => $entry['queue_status'],
+                ];
+            }
         }
         return $queue;
     }
@@ -1760,6 +1830,15 @@ final class ConfirmedContinuationService
             'no_retest_reject_examples'       => $this->noRetestRejectExamples,
             'anti_comb_examples'              => $this->antiCombExamples,
             'active_signals_total'            => count(array_filter($signals, fn($s) => !($s['stale'] ?? false) && ($s['active_final'] ?? false))),
+            // Handoff queue diagnostics
+            'handoff_queue_written_total'     => $this->handoffQueueWrittenTotal,
+            'handoff_queue_new_total'         => $this->handoffQueueNewTotal,
+            'handoff_queue_refreshed_total'   => $this->handoffQueueRefreshedTotal,
+            'handoff_queue_missing_status_total' => $this->handoffQueueMissingStatusTotal,
+            'handoff_queue_examples'          => $this->handoffQueueExamples,
+            // Deprecated config diagnostics
+            'deprecated_execution_mode_key_seen'    => $this->deprecatedExecutionModeKeySeen,
+            'deprecated_execution_mode_key_ignored' => $this->deprecatedExecutionModeKeyIgnored,
             // Universe diagnostics
             'universe_source'                 => $this->universeSource,
             'universe_total'                  => $this->universeTotal,
@@ -1947,6 +2026,13 @@ final class ConfirmedContinuationService
         $this->wallTestConfirmedTotal      = 0;
         $this->wallTestRejectedTotal       = 0;
         $this->wallTestOppositeContextTotal= 0;
+        $this->handoffQueueWrittenTotal       = 0;
+        $this->handoffQueueNewTotal           = 0;
+        $this->handoffQueueRefreshedTotal     = 0;
+        $this->handoffQueueMissingStatusTotal = 0;
+        $this->handoffQueueExamples           = [];
+        $this->deprecatedExecutionModeKeySeen    = false;
+        $this->deprecatedExecutionModeKeyIgnored = false;
         // Universe diagnostics
         $this->universeSource     = 'unknown';
         $this->universeTotal      = 0;
@@ -1962,6 +2048,45 @@ final class ConfirmedContinuationService
         if (!class_exists(ConfirmedContinuationBootstrap::class, false)) {
             require_once $this->moduleDir . '/bootstrap.php';
         }
+    }
+
+    /**
+     * Strategy is environment-neutral: legacy mode=demo/live in active config
+     * is ignored and removed so bootstrap falls back to base passive mode.
+     *
+     * @return array{seen:bool,ignored:bool}
+     */
+    private function normalizeDeprecatedExecutionModeKeyInActiveConfig(): array
+    {
+        $activePath = $this->moduleDir . '/config/active.php';
+        if (!is_file($activePath)) {
+            return ['seen' => false, 'ignored' => false];
+        }
+        try {
+            $active = require $activePath;
+            if (!is_array($active)) {
+                return ['seen' => false, 'ignored' => false];
+            }
+        } catch (\Throwable) {
+            return ['seen' => false, 'ignored' => false];
+        }
+
+        $mode = (string)($active['mode'] ?? '');
+        if (!in_array($mode, ['demo', 'live'], true)) {
+            return ['seen' => false, 'ignored' => false];
+        }
+
+        unset($active['mode']);
+        $safe = [];
+        foreach ($active as $k => $v) {
+            if (is_bool($v) || is_int($v) || is_float($v) || is_string($v)) {
+                $safe[(string)$k] = $v;
+            }
+        }
+        $php = "<?php\n\ndeclare(strict_types=1);\n\nreturn " . var_export($safe, true) . ";\n";
+        @file_put_contents($activePath, $php, LOCK_EX);
+
+        return ['seen' => true, 'ignored' => true];
     }
 
     private function readJson(string $path, mixed $default = []): mixed

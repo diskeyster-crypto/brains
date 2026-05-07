@@ -64,6 +64,10 @@ switch ($action) {
         ];
 
         $updated = $existing;
+        // Strategy is environment-neutral: do not persist deprecated mode=demo/live
+        if (array_key_exists('mode', $updated)) {
+            unset($updated['mode']);
+        }
 
         if (isset($_POST['enabled'])) {
             $updated['enabled'] = (bool)(int)$_POST['enabled'];

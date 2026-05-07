@@ -122,6 +122,7 @@ final class ConfirmedContinuationService
     // ── Deprecated config diagnostics ──────────────────────────────────────────
     private bool $deprecatedExecutionModeKeySeen    = false;
     private bool $deprecatedExecutionModeKeyIgnored = false;
+    private string $effectiveStrategyMode           = 'passive';
 
     public function __construct(?string $moduleDir = null)
     {
@@ -163,18 +164,71 @@ final class ConfirmedContinuationService
      */
     public function queueRun(): array
     {
-        // Ensure storage directory exists before writing
+        $this->requireBootstrap();
+        $boot = ConfirmedContinuationBootstrap::instance($this->moduleDir)->load();
+        if (!$boot['valid']) {
+            return ['queued' => false, 'errors' => $boot['errors']];
+        }
+        $config = $boot['config'];
+
+        $allSymbols = $this->fetchUniverse($config);
+        $total      = count($allSymbols);
+        $batchSize  = max(1, (int)($config['batch_size'] ?? 50));
+        $maxTotal   = max(1, (int)($config['max_symbols_per_run'] ?? 50));
+        $windowSize = $total > 0 ? min($maxTotal, $total) : 0;
+
+        $prevState   = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
+        $rawPrevCursor  = (int)($prevState['next_registry_cursor'] ?? 0);
+        $prevCursor  = $rawPrevCursor;
+        $cursorResetReason = null;
+        if ($total > 0 && ($prevCursor < 0 || $prevCursor >= $total)) {
+            $prevCursor = 0;
+            $cursorResetReason = 'cursor_out_of_range';
+        }
+        if ($total === 0) {
+            $prevCursor = 0;
+        }
+
+        $selectedSymbols = [];
+        for ($i = 0; $i < $windowSize; $i++) {
+            $idx = ($prevCursor + $i) % $total;
+            $selectedSymbols[] = $allSymbols[$idx];
+        }
+        $selectedTotal = count($selectedSymbols);
+        $windowStart   = $selectedTotal > 0 ? $prevCursor : 0;
+        $windowEnd     = $selectedTotal > 0 ? (($windowStart + $selectedTotal - 1) % $total) : 0;
+        $wrapped       = $selectedTotal > 0 && ($windowStart + $maxTotal > $total);
+        $nextCursor    = ($total > 0 && $selectedTotal > 0) ? (($windowStart + $selectedTotal) % $total) : 0;
+
         $storageDir = $this->moduleDir . '/storage';
         if (!is_dir($storageDir)) {
             @mkdir($storageDir, 0755, true);
         }
         $state = [
-            'status'       => 'queued',
-            'queued_at'    => date('c'),
-            'batch_offset' => 0,
+            'status'                    => 'queued',
+            'queued_at'                 => date('c'),
+            'batch_offset'              => 0,
+            'symbols'                   => $selectedSymbols,
+            'selected_window_total'     => $selectedTotal,
+            'universe_total'            => $total,
+            'max_symbols_per_run'       => $maxTotal,
+            'batch_size'                => $batchSize,
+            'registry_cursor'           => $windowStart,
+            'previous_registry_cursor'  => $rawPrevCursor,
+            'next_registry_cursor'      => $nextCursor,
+            'registry_window_start'     => $windowStart,
+            'registry_window_end'       => $windowEnd,
+            'registry_window_wrapped'   => $wrapped,
+            'registry_cursor_reset_reason' => $cursorResetReason,
         ];
         $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
-        return ['queued' => true, 'queued_at' => $state['queued_at']];
+        return [
+            'queued'                => true,
+            'queued_at'             => $state['queued_at'],
+            'selected_window_total' => $selectedTotal,
+            'registry_cursor'       => $windowStart,
+            'next_registry_cursor'  => $nextCursor,
+        ];
     }
 
     /**
@@ -183,6 +237,7 @@ final class ConfirmedContinuationService
     public function tickBatch(): array
     {
         $this->resetCounters();
+        $this->effectiveStrategyMode = 'passive';
 
         $deprecatedModeDiag = $this->normalizeDeprecatedExecutionModeKeyInActiveConfig();
         $this->deprecatedExecutionModeKeySeen    = (bool)($deprecatedModeDiag['seen'] ?? false);
@@ -195,14 +250,21 @@ final class ConfirmedContinuationService
         }
         $config = $boot['config'];
 
-        $state = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
-        if (($state['status'] ?? '') === 'done') {
+        $state  = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
+        $status = (string)($state['status'] ?? '');
+        if ($status === '' || $status === 'idle') {
+            $queueResult = $this->queueRun();
+            if (!($queueResult['queued'] ?? false)) {
+                return ['status' => 'queue_failed', 'errors' => $queueResult['errors'] ?? []];
+            }
+            $state  = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
+            $status = (string)($state['status'] ?? '');
+        }
+        if ($status === 'done') {
             return ['status' => 'idle'];
         }
 
-        $offset    = (int)($state['batch_offset'] ?? 0);
         $batchSize = max(1, (int)($config['batch_size'] ?? 50));
-        $maxTotal  = max(1, (int)($config['max_symbols_per_run'] ?? 50));
 
         $allSymbols = $this->fetchUniverse($config);
 
@@ -234,17 +296,59 @@ final class ConfirmedContinuationService
                 'handoff_queue_examples'          => [],
                 'deprecated_execution_mode_key_seen'    => $this->deprecatedExecutionModeKeySeen,
                 'deprecated_execution_mode_key_ignored' => $this->deprecatedExecutionModeKeyIgnored,
+                'effective_strategy_mode'         => $this->effectiveStrategyMode,
+                'selected_window_total'           => 0,
+                'batch_size'                      => $batchSize,
+                'max_symbols_per_run'             => max(1, (int)($config['max_symbols_per_run'] ?? 50)),
+                'batch_offset_before'             => 0,
+                'batch_offset_after'              => 0,
+                'registry_cursor'                 => (int)($state['registry_cursor'] ?? 0),
+                'previous_registry_cursor'        => (int)($state['previous_registry_cursor'] ?? 0),
+                'next_registry_cursor'            => (int)($state['next_registry_cursor'] ?? 0),
+                'registry_window_start'           => (int)($state['registry_window_start'] ?? 0),
+                'registry_window_end'             => (int)($state['registry_window_end'] ?? 0),
+                'registry_window_wrapped'         => (bool)($state['registry_window_wrapped'] ?? false),
+                'registry_cursor_reset_reason'    => $state['registry_cursor_reset_reason'] ?? null,
+                'batch_symbols_examples'          => [],
             ];
             $this->writeJson($this->moduleDir . '/storage/last_run.json', $lastRun);
-            $this->writeJson($this->moduleDir . '/storage/run_state.json', [
-                'status'       => 'done',
-                'finished_at'  => $finishedAt,
-                'batch_offset' => 0,
-            ]);
+            $state['status']       = 'done';
+            $state['finished_at']  = $finishedAt;
+            $state['batch_offset'] = 0;
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
             return $lastRun;
         }
 
-        $symbols = array_slice($allSymbols, $offset, $batchSize);
+        $windowSymbols = (isset($state['symbols']) && is_array($state['symbols'])) ? $state['symbols'] : [];
+        $selectedTotal = (int)($state['selected_window_total'] ?? count($windowSymbols));
+        if ((empty($windowSymbols) || $selectedTotal <= 0) && !empty($allSymbols)) {
+            $cursor   = (int)($state['registry_cursor'] ?? 0);
+            $maxTotal = max(1, (int)($state['max_symbols_per_run'] ?? $config['max_symbols_per_run'] ?? 50));
+            $fullTotal = count($allSymbols);
+            if ($fullTotal > 0 && ($cursor < 0 || $cursor >= $fullTotal)) {
+                $cursor = 0;
+            }
+            $windowSize = min($maxTotal, $fullTotal > 0 ? $fullTotal : $maxTotal);
+            $windowSymbols = [];
+            for ($i = 0; $i < $windowSize; $i++) {
+                $idx = ($cursor + $i) % $fullTotal;
+                $windowSymbols[] = $allSymbols[$idx];
+            }
+            $selectedTotal = count($windowSymbols);
+            $state['symbols'] = $windowSymbols;
+            $state['selected_window_total'] = $selectedTotal;
+            $state['registry_window_start'] = $selectedTotal > 0 ? $cursor : 0;
+            $state['registry_window_end'] = $selectedTotal > 0 ? (($cursor + $selectedTotal - 1) % $fullTotal) : 0;
+            $state['registry_window_wrapped'] = $selectedTotal > 0 && ($cursor + $maxTotal > $fullTotal);
+            $state['next_registry_cursor'] = ($fullTotal > 0 && $selectedTotal > 0) ? (($cursor + $selectedTotal) % $fullTotal) : 0;
+            $state['universe_total'] = $fullTotal;
+            $state['batch_size'] = $batchSize;
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
+        }
+
+        $offsetBefore = max(0, min((int)($state['batch_offset'] ?? 0), max(0, $selectedTotal)));
+        $symbols = array_slice($windowSymbols, $offsetBefore, $batchSize);
+        $offsetAfter = min($selectedTotal, $offsetBefore + count($symbols));
         $this->universeBatchCount = count($symbols);
 
         $startedAt = date('c');
@@ -309,23 +413,35 @@ final class ConfirmedContinuationService
         $this->writeJson($this->moduleDir . '/storage/bot_handoff_queue.json', $handoffQueue);
         $this->writeJson($this->moduleDir . '/storage/rejects.json',           $allRejects);
 
-        $newOffset = $offset + $batchSize;
-        if ($newOffset >= $maxTotal || count($symbols) < $batchSize) {
-            $this->writeJson($this->moduleDir . '/storage/run_state.json', [
-                'status'       => 'done',
-                'finished_at'  => date('c'),
-                'batch_offset' => 0,
-            ]);
+        if ($offsetAfter >= $selectedTotal) {
+            $state['status']       = 'done';
+            $state['finished_at']  = date('c');
+            $state['batch_offset'] = $offsetAfter;
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
         } else {
             $state['status']       = 'running';
-            $state['batch_offset'] = $newOffset;
+            $state['batch_offset'] = $offsetAfter;
             $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
         }
 
         $finishedAt  = date('c');
         $durationMs  = (int)round((microtime(true) - $t0) * 1000);
 
-        $lastRun = $this->buildLastRun($config, $startedAt, $finishedAt, $durationMs, $freshSignals);
+        $lastRun = $this->buildLastRun($config, $startedAt, $finishedAt, $durationMs, $freshSignals, [
+            'selected_window_total'      => $selectedTotal,
+            'batch_size'                 => $batchSize,
+            'max_symbols_per_run'        => (int)($state['max_symbols_per_run'] ?? $config['max_symbols_per_run'] ?? 50),
+            'batch_offset_before'        => $offsetBefore,
+            'batch_offset_after'         => $offsetAfter,
+            'registry_cursor'            => (int)($state['registry_cursor'] ?? 0),
+            'previous_registry_cursor'   => (int)($state['previous_registry_cursor'] ?? 0),
+            'next_registry_cursor'       => (int)($state['next_registry_cursor'] ?? 0),
+            'registry_window_start'      => (int)($state['registry_window_start'] ?? 0),
+            'registry_window_end'        => (int)($state['registry_window_end'] ?? 0),
+            'registry_window_wrapped'    => (bool)($state['registry_window_wrapped'] ?? false),
+            'registry_cursor_reset_reason' => $state['registry_cursor_reset_reason'] ?? null,
+            'batch_symbols_examples'     => array_slice($symbols, 0, 5),
+        ]);
         $this->writeJson($this->moduleDir . '/storage/last_run.json', $lastRun);
 
         return $lastRun;
@@ -1775,12 +1891,14 @@ final class ConfirmedContinuationService
         string $startedAt,
         string $finishedAt,
         int    $durationMs,
-        array  $signals
+        array  $signals,
+        array  $runWindow = []
     ): array {
         return [
             'strategy_id'                     => 'confirmed_continuation',
             'strategy_is_environment_neutral' => true,
             'execution_mode_used_for_selection' => false,
+            'effective_strategy_mode'         => $this->effectiveStrategyMode,
             'status'                          => 'done',
             'started_at'                      => $startedAt,
             'finished_at'                     => $finishedAt,
@@ -1846,6 +1964,19 @@ final class ConfirmedContinuationService
             'universe_total'                  => $this->universeTotal,
             'universe_batch_count'            => $this->universeBatchCount,
             'universe_symbols_examples'       => $this->universeExamples,
+            'selected_window_total'           => (int)($runWindow['selected_window_total'] ?? 0),
+            'batch_size'                      => (int)($runWindow['batch_size'] ?? (int)($config['batch_size'] ?? 50)),
+            'max_symbols_per_run'             => (int)($runWindow['max_symbols_per_run'] ?? (int)($config['max_symbols_per_run'] ?? 50)),
+            'batch_offset_before'             => (int)($runWindow['batch_offset_before'] ?? 0),
+            'batch_offset_after'              => (int)($runWindow['batch_offset_after'] ?? 0),
+            'registry_cursor'                 => (int)($runWindow['registry_cursor'] ?? 0),
+            'previous_registry_cursor'        => (int)($runWindow['previous_registry_cursor'] ?? 0),
+            'next_registry_cursor'            => (int)($runWindow['next_registry_cursor'] ?? 0),
+            'registry_window_start'           => (int)($runWindow['registry_window_start'] ?? 0),
+            'registry_window_end'             => (int)($runWindow['registry_window_end'] ?? 0),
+            'registry_window_wrapped'         => (bool)($runWindow['registry_window_wrapped'] ?? false),
+            'registry_cursor_reset_reason'    => $runWindow['registry_cursor_reset_reason'] ?? null,
+            'batch_symbols_examples'          => is_array($runWindow['batch_symbols_examples'] ?? null) ? array_slice($runWindow['batch_symbols_examples'], 0, 5) : [],
         ];
     }
 
@@ -2035,6 +2166,7 @@ final class ConfirmedContinuationService
         $this->handoffQueueExamples           = [];
         $this->deprecatedExecutionModeKeySeen    = false;
         $this->deprecatedExecutionModeKeyIgnored = false;
+        $this->effectiveStrategyMode             = 'passive';
         // Universe diagnostics
         $this->universeSource     = 'unknown';
         $this->universeTotal      = 0;

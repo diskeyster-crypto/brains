@@ -353,66 +353,85 @@ function renderDashboardHub(): string
     }
 
     // ── summary counts ────────────────────────────────────────────────────
-    // Fallback: scan strategy module manifests if bot hasn't run yet.
-    // Scans two levels deep (e.g. modules/strategy/fish/ and
-    // modules/strategy/pattern/double_bottom_long/) so all concrete strategy
-    // modules are discovered regardless of nesting.
-    if (empty($registry)) {
-        $stratRoot = System::path('root') . '/modules/strategy';
-        $addFromManifest = static function (string $mfPath, string $relDir) use (&$registry): void {
-            if (!file_exists($mfPath)) {
-                return;
-            }
-            $mfRaw = file_get_contents($mfPath);
-            $mf    = ($mfRaw !== false) ? json_decode($mfRaw, true) : null;
-            if (!is_array($mf) || ($mf['category'] ?? '') !== 'strategy') {
-                return;
-            }
-            $mfId = (string)($mf['name'] ?? '');
-            if ($mfId === '') {
-                return;
-            }
-            // Avoid duplicates
-            foreach ($registry as $r) {
-                if (($r['strategy_id'] ?? '') === $mfId) {
-                    return;
-                }
-            }
-            $registry[] = [
-                'strategy_id'        => $mfId,
-                'module_path'        => $relDir,
-                'manifest_path'      => $relDir . '/manifest.json',
-                'title'              => (string)($mf['title'] ?? $mfId),
-                'category'           => 'strategy',
-                'enabled_by_default' => (bool)($mf['enabled_by_default'] ?? true),
-                'handoff_queue_path' => null,
-                'supports_long'      => true,
-                'supports_short'     => true,
-                'status'             => 'discovered',
-                'discovered_at'      => null,
-            ];
-        };
-        if (is_dir($stratRoot)) {
-            foreach (new \DirectoryIterator($stratRoot) as $entry) {
-                if (!$entry->isDir() || $entry->isDot()) {
-                    continue;
-                }
-                $relDir  = 'modules/strategy/' . $entry->getFilename();
-                $absDir  = $entry->getPathname();
-                // Try top-level manifest
-                $addFromManifest($absDir . '/manifest.json', $relDir);
-                // Try one level of subdirectories (e.g. pattern/double_bottom_long)
-                foreach (new \DirectoryIterator($absDir) as $sub) {
-                    if (!$sub->isDir() || $sub->isDot()) {
-                        continue;
-                    }
-                    $addFromManifest(
-                        $sub->getPathname() . '/manifest.json',
-                        $relDir . '/' . $sub->getFilename()
-                    );
-                }
+    // Always merge manifest-discovered strategy modules into registry view.
+    // Runtime fields from existing registry records win. Manifest metadata
+    // refreshes title/path/capabilities.
+    {
+        $registryById = [];
+        foreach ((array)$registry as $_regRec) {
+            $sid = (string)($_regRec['strategy_id'] ?? '');
+            if ($sid !== '') {
+                $registryById[$sid] = (array)$_regRec;
             }
         }
+
+        $manifestById = [];
+        $stratRoot = System::path('root') . '/modules/strategy';
+        if (is_dir($stratRoot)) {
+            $iter = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($stratRoot, \FilesystemIterator::SKIP_DOTS)
+            );
+            foreach ($iter as $fileInfo) {
+                if (!$fileInfo->isFile() || $fileInfo->getFilename() !== 'manifest.json') {
+                    continue;
+                }
+                $mfPathAbs = $fileInfo->getPathname();
+                $mfRaw = @file_get_contents($mfPathAbs);
+                $mf    = ($mfRaw !== false) ? json_decode($mfRaw, true) : null;
+                if (!is_array($mf) || (string)($mf['category'] ?? '') !== 'strategy') {
+                    continue;
+                }
+                $mfId = (string)($mf['name'] ?? '');
+                if ($mfId === '') {
+                    continue;
+                }
+
+                $relModuleDir = ltrim(str_replace(System::path('root') . '/', '', dirname($mfPathAbs)), '/');
+                $relManifest  = $relModuleDir . '/manifest.json';
+                $mfDesc       = strtolower((string)($mf['description'] ?? ''));
+                $mfSupportsLong  = !str_ends_with($mfId, '_short');
+                $mfSupportsShort = !str_ends_with($mfId, '_long');
+                if (str_contains($mfDesc, 'long') || str_contains($mfDesc, 'лонг')) {
+                    $mfSupportsLong  = true;
+                    $mfSupportsShort = str_contains($mfDesc, 'short') || str_contains($mfDesc, 'шорт');
+                }
+
+                $mfQueueAbs = System::path('root') . '/' . $relModuleDir . '/storage/bot_handoff_queue.json';
+                $manifestById[$mfId] = [
+                    'strategy_id'        => $mfId,
+                    'module_path'        => $relModuleDir,
+                    'manifest_path'      => $relManifest,
+                    'title'              => (string)($mf['title'] ?? $mfId),
+                    'category'           => (string)($mf['category'] ?? 'strategy'),
+                    'enabled_by_default' => (bool)($mf['enabled_by_default'] ?? true),
+                    'supports_long'      => $mfSupportsLong,
+                    'supports_short'     => $mfSupportsShort,
+                    // Defaults for manifest-only additions (new modules)
+                    'status'             => 'not_run_yet',
+                    'handoff_queue_path' => file_exists($mfQueueAbs) ? ($relModuleDir . '/storage/bot_handoff_queue.json') : null,
+                    'discovered_at'      => null,
+                ];
+            }
+        }
+
+        foreach ($manifestById as $sid => $mfRec) {
+            if (isset($registryById[$sid])) {
+                // Existing registry record wins runtime fields.
+                // Refresh metadata fields from manifest.
+                $registryById[$sid]['title']              = $mfRec['title'];
+                $registryById[$sid]['module_path']        = $mfRec['module_path'];
+                $registryById[$sid]['manifest_path']      = $mfRec['manifest_path'];
+                $registryById[$sid]['supports_long']      = $mfRec['supports_long'];
+                $registryById[$sid]['supports_short']     = $mfRec['supports_short'];
+                $registryById[$sid]['enabled_by_default'] = $mfRec['enabled_by_default'];
+                $registryById[$sid]['category']           = $mfRec['category'];
+            } else {
+                // New manifest-only strategy.
+                $registryById[$sid] = $mfRec;
+            }
+        }
+
+        $registry = array_values($registryById);
     }
 
     // ── Pre-load strategy module configs (source of truth for enabled/mode) ─
@@ -466,35 +485,6 @@ function renderDashboardHub(): string
         } else {
             $disabledStrat++;
         }
-    }
-
-    // ── Lazy storage init for discovered pattern strategies ───────────────
-    // Ensures storage files exist before any render or run attempt.
-    // Files are only created if absent; existing content is never overwritten.
-    {
-        $lazyStorageDefaults = [
-            'signals.json'    => '[]',
-            'candidates.json' => '[]',
-            'runtime.json'    => '{}',
-            'last_run.json'   => '{}',
-        ];
-        foreach ($registry as $_lzRec) {
-            $_lzPath = (string)($_lzRec['module_path'] ?? '');
-            if ($_lzPath === '') {
-                continue;
-            }
-            $_lzStorageDir = System::path('root') . '/' . $_lzPath . '/storage';
-            if (!is_dir($_lzStorageDir)) {
-                @mkdir($_lzStorageDir, 0755, true);
-            }
-            foreach ($lazyStorageDefaults as $_lzFile => $_lzDefault) {
-                $_lzFilePath = $_lzStorageDir . '/' . $_lzFile;
-                if (!file_exists($_lzFilePath)) {
-                    @file_put_contents($_lzFilePath, $_lzDefault);
-                }
-            }
-        }
-        unset($_lzRec, $_lzPath, $_lzStorageDir, $_lzFile, $_lzDefault, $_lzFilePath);
     }
 
     $activeStatuses       = ['queued', 'ready'];
@@ -642,6 +632,9 @@ function renderDashboardHub(): string
                 $opMode    = array_key_exists('mode', $_cardCfg)
                     ? (string)$_cardCfg['mode']
                     : $defaultMode;
+                $opSideMode = array_key_exists('side_mode', $_cardCfg)
+                    ? (string)$_cardCfg['side_mode']
+                    : 'all';
             } else {
                 $op        = (array)($overrides[$stratId] ?? []);
                 $opEnabled = array_key_exists('enabled', $op)
@@ -650,12 +643,16 @@ function renderDashboardHub(): string
                 $opMode    = array_key_exists('mode', $op)
                     ? (string)$op['mode']
                     : $defaultMode;
+                $opSideMode = array_key_exists('side_mode', $op)
+                    ? (string)$op['side_mode']
+                    : 'all';
             }
 
             $esId    = $e($stratId);
             $esTitle = $e($title);
             $esPath  = $e($modulePath);
             $esMode  = $e($opMode);
+            $esSideMode = $e($opSideMode);
 
             // Status badge colour
             $statusColor = $status === 'bot_ready' ? '#3fb950' : '#8b949e';
@@ -698,6 +695,9 @@ function renderDashboardHub(): string
             $handoffStr = $opHandoffEnabled
                 ? '<span style="color:#3fb950;">Да</span>'
                 : '<span style="color:#8b949e;">Нет</span>';
+            if ($stratId === 'confirmed_continuation' && $signalCount === null) {
+                $signalCount = 0;
+            }
             $signalStr = ($signalCount !== null) ? $e((string)$signalCount) : '—';
 
             // ── Scan limit config (max_symbols_per_run, batch_size) ───────────
@@ -770,7 +770,8 @@ function renderDashboardHub(): string
             // ── strategy last_run for handoff trace ───────────────────────
             $stratLastRunPath = System::path('root') . '/' . $modulePath . '/storage/last_run.json';
             $stratLastRun = [];
-            if ($modulePath !== '' && file_exists($stratLastRunPath)) {
+            $stratLastRunExists = ($modulePath !== '' && file_exists($stratLastRunPath));
+            if ($stratLastRunExists) {
                 $slrRaw = file_get_contents($stratLastRunPath);
                 if ($slrRaw !== false) {
                     $slrDec = json_decode($slrRaw, true);
@@ -787,6 +788,21 @@ function renderDashboardHub(): string
             // For corridor_bottom_long: prefer generated_signals_count; for others: emitted total
             $slrGeneratedSig = (int)($stratLastRun['generated_signals_count']                   ?? $slrEmitted);
             $slrHasData      = $stratLastRun !== [];
+
+            // confirmed_continuation before first run: explicit not_run_yet + zero counters
+            if ($stratId === 'confirmed_continuation' && !$stratLastRunExists) {
+                $slrStatus       = 'not_run_yet';
+                $slrCandidates   = 0;
+                $slrGeneratedSig = 0;
+                $slrPoolTotal    = 0;
+                $slrHandoffReady = 0;
+                $slrHasData      = false;
+                if (empty($runState)) {
+                    $rsStatus = 'not_run_yet';
+                    $rsCursor = 0;
+                    $rsTotal  = 0;
+                }
+            }
 
             // ── corridor_bottom_long: remap top-card fields from its own last_run keys ──
             if (in_array($stratId, ['corridor_bottom_long', 'controlled_daily_momentum_long'], true) && $slrHasData) {
@@ -972,6 +988,20 @@ function renderDashboardHub(): string
                     . $_dsThrLine
                     . $_dsSrcLine
                     . $_dsReplayLine;
+            } elseif ($stratId === 'confirmed_continuation') {
+                $_ccCandidates   = (int)($stratLastRun['candidates_total'] ?? 0);
+                $_ccSignals      = (int)($stratLastRun['signals_total'] ?? 0);
+                $_ccHandoffReady = (int)($stratLastRun['handoff_ready_total'] ?? 0);
+                $_ccObcChecked   = (int)($stratLastRun['obc_checked_total'] ?? 0);
+                $_ccAntiCombRej  = (int)($stratLastRun['anti_comb_rejected_total'] ?? 0);
+                $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
+                    . ' · mode <code>' . $esMode . '</code>'
+                    . ' · side <code>' . $esSideMode . '</code>'
+                    . ' · кандидатов <code>' . $_ccCandidates . '</code>'
+                    . ' · сигналов <code>' . $_ccSignals . '</code>'
+                    . ' · handoff-ready <code>' . $_ccHandoffReady . '</code>'
+                    . ' · OBC checked <code>' . $_ccObcChecked . '</code>'
+                    . ' · anti-comb rejected <code>' . $_ccAntiCombRej . '</code>';
             } else {
                 $cycleLineHtml = 'статус <code>' . $slrStatus . '</code>'
                     . ' · кандидатов <code>' . $slrCandidates . '</code>'
@@ -1151,6 +1181,16 @@ BTN;
 BTN;
             }
 
+            // Strategy page links
+            $cfgUrl     = System::web('admin/strategy/' . $stratId . '/config');
+            $runtimeUrl = System::web('admin/strategy/' . $stratId . '/runtime');
+            $statsUrl   = System::web('admin/strategy/' . $stratId . '/stats');
+            $strategyLinksHtml = <<<LNK
+      <a class="btn btn-sm" href="{$cfgUrl}" style="background:rgba(88,166,255,.10);color:#58a6ff;border:1px solid #58a6ff44;">Config</a>
+      <a class="btn btn-sm" href="{$runtimeUrl}" style="background:rgba(56,189,248,.10);color:#38bdf8;border:1px solid #38bdf844;">Runtime</a>
+      <a class="btn btn-sm" href="{$statsUrl}" style="background:rgba(167,139,250,.10);color:#a78bfa;border:1px solid #a78bfa44;">Stats</a>
+LNK;
+
             // Handoff quick-toggle button (shows action to flip handoff_enabled)
             $_hoTarget = $opHandoffEnabled ? '0' : '1';
             $_hoLabel  = $opHandoffEnabled ? 'Отключить handoff' : 'Включить handoff';
@@ -1246,6 +1286,7 @@ HTML;
       <button type="button" class="btn btn-sm btn-primary" onclick="dhToggleEdit('{$cardId}')">
         Изменить
       </button>
+      {$strategyLinksHtml}
       {$handoffToggleHtml}
       {$actionButtonsHtml}
     </div>

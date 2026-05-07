@@ -1,0 +1,16 @@
+{
+    "name": "confirmed_continuation",
+    "title": "Confirmed Continuation · Подтверждённое продолжение тренда",
+    "version": "0.1.0",
+    "description": "Narrow bidirectional continuation strategy. LONG: higher_low_retest_continuation_long — confirmed rising trend continuation after a controlled pullback/retest. SHORT: lower_high_retest_continuation_short — confirmed falling trend continuation after a controlled bounce/retest. Does NOT catch bottoms, tops, first bounces, or blowoff moves. Environment-neutral signal producer — Bot owns execution mode.",
+    "author": "Tredercopis",
+    "category": "strategy",
+    "changelog": {
+        "0.1.0": "Initial release: bidirectional continuation pattern, OBC gate (soft_demote), full signal lifecycle (active_final/stale/handoff_ready/executable), Dynamic source adapter."
+    },
+    "paths": {
+        "storage": "storage",
+        "config":  "config/base.php",
+        "logs":    "logs"
+    }
+}

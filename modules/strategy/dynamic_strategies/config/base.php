@@ -194,5 +194,16 @@ return [
             'max_items_per_run'         => 200,    // cap on contexts extracted per adapter per run
             'context_max_age_minutes'   => 480,    // skip artifacts older than 8 hours
         ],
+        'confirmed_continuation' => [
+            'enabled'                   => true,
+            'module_path'               => 'modules/strategy/pattern/confirmed_continuation',
+            'read_last_run'             => true,   // read storage/last_run.json reject examples
+            'read_rejects'              => true,   // read storage/rejects.json
+            'read_signals'              => true,   // read stale signals for directional context
+            'read_handoff_queue'        => false,  // do not read handoff queue
+            'read_closed_trades'        => true,   // read bot/storage/trades/closed_trades.json
+            'max_items_per_run'         => 200,
+            'context_max_age_minutes'   => 480,
+        ],
     ],
 ];

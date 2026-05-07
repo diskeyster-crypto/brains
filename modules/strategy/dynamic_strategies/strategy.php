@@ -43,9 +43,11 @@ namespace Modules\Strategy\DynamicStrategies;
 require_once __DIR__ . '/sources/dynamic_source_adapter_interface.php';
 require_once __DIR__ . '/sources/abstract_dynamic_source_adapter.php';
 require_once __DIR__ . '/sources/double_bottom_long_source_adapter.php';
+require_once __DIR__ . '/sources/confirmed_continuation_source_adapter.php';
 
 use Modules\Strategy\DynamicStrategies\Sources\DynamicSourceAdapterInterface;
 use Modules\Strategy\DynamicStrategies\Sources\DoubleBottomLongSourceAdapter;
+use Modules\Strategy\DynamicStrategies\Sources\ConfirmedContinuationSourceAdapter;
 
 final class DynamicStrategiesStrategy
 {
@@ -1150,6 +1152,11 @@ final class DynamicStrategiesStrategy
             'source_stats'                    => $sourceStats['per_source']               ?? [],
             'source_context_examples'         => array_slice($sourceStats['all_contexts'] ?? [], 0, 3),
             'source_adapter_error_examples'   => $sourceStats['errors'] ?? [],
+            // ── confirmed_continuation source adapter diagnostics ─────────────
+            'confirmed_continuation_source_enabled'         => ($sourceStats['per_source']['confirmed_continuation']['enabled'] ?? null) !== false,
+            'confirmed_continuation_contexts_loaded_total'  => (int)($sourceStats['per_source']['confirmed_continuation']['contexts_loaded_total'] ?? 0),
+            'confirmed_continuation_contexts_useful_total'  => (int)($sourceStats['per_source']['confirmed_continuation']['contexts_useful_total'] ?? 0),
+            'confirmed_continuation_adapter_errors'         => (int)($sourceStats['per_source']['confirmed_continuation']['errors_total'] ?? 0),
             // ── Input context pipeline ────────────────────────────────────────
             'input_contexts_loaded_total'     => $loadedTotal,
             'input_contexts_recent_total'     => $recentTotal,
@@ -1277,7 +1284,7 @@ final class DynamicStrategiesStrategy
         /** @var DynamicSourceAdapterInterface[] $adapters */
         $adapters = [
             new DoubleBottomLongSourceAdapter($this->repoRoot),
-            // Future adapters registered here
+            new ConfirmedContinuationSourceAdapter($this->repoRoot),
         ];
 
         $totalAdapters   = count($adapters);

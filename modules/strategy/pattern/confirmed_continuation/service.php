@@ -141,7 +141,24 @@ final class ConfirmedContinuationService
     private int $oppositeSwingTooHighTotal         = 0;
     private int $smoothTrendCheckedTotal           = 0;
     private int $smoothTrendRejectedTotal          = 0;
+    private int $smoothTrendScoreTooLowTotal       = 0;
     private int $verticalSpikeRejectedTotal        = 0;
+
+    // ── Funnel / split-reason diagnostics (new) ────────────────────────────────
+    private int $structuresDetectedTotal                   = 0;
+    private int $pattern123StructuresSeenTotal             = 0;
+    private int $pattern123ValidBeforeFiltersTotal         = 0;
+    private int $pattern123InvalidBeforeFiltersTotal       = 0;
+    private int $pattern123ValidButAntiCombRejectedTotal   = 0;
+    private int $pattern123ValidButEntryTimingRejectedTotal= 0;
+    private int $pattern123ValidButWallBlockedTotal        = 0;
+    private int $pattern123ValidSignalReadyTotal           = 0;
+    private int $postStructureCombDetectedTotal            = 0;
+    private int $antiCombPassedTotal                       = 0;
+    private int $entryTimingPassedTotal                    = 0;
+    private int $qualityGatePassedTotal                    = 0;
+    private int $wallTestPassedTotal                       = 0;
+    private int $signalReadyTotal                          = 0;
     /** @var list<array<string,mixed>> */
     private array $acceptedEarlyStructureExamples  = [];
     /** @var list<array<string,mixed>> */
@@ -562,7 +579,13 @@ final class ConfirmedContinuationService
             $allRejects = array_slice($allRejects, -500);
         }
 
-        $this->writeJson($this->moduleDir . '/storage/candidates.json',        array_values(array_merge($allCandidates, $newCandidates)));
+        // Persist candidates (append-style, capped; includes rejected for diagnostics visibility)
+        $allCandidates = array_merge($allCandidates, $newCandidates);
+        if (count($allCandidates) > 500) {
+            $allCandidates = array_slice($allCandidates, -500);
+        }
+
+        $this->writeJson($this->moduleDir . '/storage/candidates.json',        array_values($allCandidates));
         $this->writeJson($this->moduleDir . '/storage/signals.json',           $freshSignals);
         $this->writeJson($this->moduleDir . '/storage/bot_handoff_queue.json', $handoffQueue);
         $this->writeJson($this->moduleDir . '/storage/rejects.json',           $allRejects);
@@ -686,6 +709,21 @@ final class ConfirmedContinuationService
                 $this->shortCandidatesTotal++;
             }
 
+            // ── Pre-filter 1-2-3 / funnel diagnostics (counted before gates) ────
+            $this->structuresDetectedTotal++;
+            $this->pattern123StructuresSeenTotal++;
+            $p123PreValid = (bool)($structure['pattern_123_detected'] ?? false)
+                && ($structure['pattern_123_invalid_reason'] ?? null) === null;
+            if ($p123PreValid) {
+                $this->pattern123ValidBeforeFiltersTotal++;
+            } else {
+                $this->pattern123InvalidBeforeFiltersTotal++;
+            }
+            // Track anti-comb pass for funnel (before hard reject gates)
+            if (!($structure['anti_comb_rejected'] ?? false)) {
+                $this->antiCombPassedTotal++;
+            }
+
             // Hard reject filters
             $hardReject = $this->checkHardRejects($structure, $candles, $side, $config);
             if ($hardReject !== null) {
@@ -730,8 +768,58 @@ final class ConfirmedContinuationService
                 if (($hardReject['reason'] ?? '') === 'entry_near_take_profit_zone') {
                     $this->nearExitZoneRejectedTotal++;
                 }
+                // ── Funnel tracking: which stage did valid-123 fail at? ────────
+                if ($p123PreValid) {
+                    if (($hardReject['stage'] ?? '') === 'anti_comb') {
+                        $this->pattern123ValidButAntiCombRejectedTotal++;
+                    } elseif (in_array($hardReject['stage'] ?? '', [
+                        'entry_timing', 'late_entry', 'blowoff_reject',
+                        'no_retest', 'first_bounce_or_no_structure', 'first_dump_or_no_structure',
+                    ], true)) {
+                        $this->pattern123ValidButEntryTimingRejectedTotal++;
+                    }
+                }
+                // ── Write rejected candidate to candidates.json for visibility ─
+                $newCandidates[] = [
+                    'strategy_id'      => 'confirmed_continuation',
+                    'symbol'           => $symbol,
+                    'side'             => $side,
+                    'setup_class'      => $structure['setup_class'] ?? '',
+                    'candidate_state'  => 'rejected',
+                    'failed_stage'     => $hardReject['stage'],
+                    'reject_reason'    => $hardReject['reason'],
+                    'block_reason'     => null,
+                    'handoff_ready'    => false,
+                    'executable'       => false,
+                    'active_final'     => false,
+                    'stale'            => false,
+                    'detected_at'      => date('c'),
+                    'entry_price'      => $structure['entry_price'] ?? null,
+                    'pattern_123_detected'           => $structure['pattern_123_detected'] ?? false,
+                    'pattern_123_invalid_reason'     => $structure['pattern_123_invalid_reason'] ?? null,
+                    'pattern_123_entry_mode'         => $structure['pattern_123_entry_mode'] ?? 'none',
+                    'anti_comb_rejected'             => $structure['anti_comb_rejected'] ?? false,
+                    'anti_comb_reject_reason'        => $structure['anti_comb_reject_reason'] ?? null,
+                    'anti_comb_reject_reason_detail' => $structure['anti_comb_reject_reason_detail'] ?? null,
+                    'post_structure_comb_detected'   => $structure['post_structure_comb_detected'] ?? false,
+                    'controlled_trend_score'         => $structure['controlled_trend_score'] ?? null,
+                    'directional_consistency_score'  => $structure['directional_consistency_score'] ?? null,
+                    'wick_chaos_score'               => $structure['wick_chaos_score'] ?? null,
+                    'smooth_trend_score'             => $structure['smooth_trend_score'] ?? null,
+                    'entry_timing_class'             => $structure['entry_timing_class'] ?? null,
+                    'strategy_signal_context'        => [
+                        'candidate_state' => 'rejected',
+                        'reject_reason'   => $hardReject['reason'],
+                        'failed_stage'    => $hardReject['stage'],
+                        'anti_comb_reject_reason'    => $structure['anti_comb_reject_reason'] ?? null,
+                        'pattern_123_invalid_reason' => $structure['pattern_123_invalid_reason'] ?? null,
+                    ],
+                ];
                 continue;
             }
+
+            // Hard reject filters all passed: count entry-timing pass for funnel
+            $this->entryTimingPassedTotal++;
 
             // Score candidate
             $quality = $this->scoreCandidate($structure, $candles, $side, $config);
@@ -756,14 +844,51 @@ final class ConfirmedContinuationService
                     'structure_score'         => $quality['structure_score'] ?? null,
                     'controlled_trend_score'  => $quality['controlled_trend_score'] ?? ($structure['controlled_trend_score'] ?? null),
                 ];
+                // Write rejected candidate to candidates.json for visibility
+                $newCandidates[] = [
+                    'strategy_id'      => 'confirmed_continuation',
+                    'symbol'           => $symbol,
+                    'side'             => $side,
+                    'setup_class'      => $structure['setup_class'] ?? '',
+                    'candidate_state'  => 'rejected',
+                    'failed_stage'     => 'quality_gate',
+                    'reject_reason'    => $reason,
+                    'block_reason'     => null,
+                    'handoff_ready'    => false,
+                    'executable'       => false,
+                    'active_final'     => false,
+                    'stale'            => false,
+                    'detected_at'      => date('c'),
+                    'entry_price'      => $structure['entry_price'] ?? null,
+                    'candidate_quality_score' => $quality['candidate_quality_score'] ?? null,
+                    'structure_score'         => $quality['structure_score'] ?? null,
+                    'controlled_trend_score'  => $quality['controlled_trend_score'] ?? ($structure['controlled_trend_score'] ?? null),
+                    'pattern_123_detected'    => $structure['pattern_123_detected'] ?? false,
+                    'pattern_123_entry_mode'  => $structure['pattern_123_entry_mode'] ?? 'none',
+                    'entry_timing_class'      => $structure['entry_timing_class'] ?? null,
+                    'strategy_signal_context' => [
+                        'candidate_state' => 'rejected',
+                        'reject_reason'   => $reason,
+                        'failed_stage'    => 'quality_gate',
+                    ],
+                ];
                 continue;
             }
+
+            $this->qualityGatePassedTotal++;
 
             // OBC gate (only after cheap filters pass)
             $obcResult = $this->applyObcGate($symbol, $side, $structure['entry_price'] ?? 0.0, $quality, $config);
             // Wall decision test (after OBC context is available)
             $wallTest  = $this->computeWallDecisionTest($side, $structure, $obcResult, $config);
             $structure = array_merge($structure, $wallTest);
+
+            // Track wall-test pass for funnel
+            if (!($structure['wall_test_blocked'] ?? false)) {
+                $this->wallTestPassedTotal++;
+            } elseif ($p123PreValid) {
+                $this->pattern123ValidButWallBlockedTotal++;
+            }
 
             $candidate = $this->buildCandidate($symbol, $side, $structure, $quality, $obcResult, $config);
             $newCandidates[] = $candidate;
@@ -789,6 +914,13 @@ final class ConfirmedContinuationService
             // Build signal
             $signal = $this->buildSignal($candidate, $config);
             $newSignals[] = $signal;
+
+            if ($isHandoffReady && $isExecutable) {
+                $this->signalReadyTotal++;
+                if ($p123PreValid) {
+                    $this->pattern123ValidSignalReadyTotal++;
+                }
+            }
 
             $this->signalsTotal++;
             if ($side === 'long') {
@@ -2045,7 +2177,10 @@ final class ConfirmedContinuationService
 
         if ((bool)($config['smooth_trend_filter_enabled'] ?? true)) {
             if ($diag['smooth_trend_score'] < (float)($config['smooth_trend_min_score'] ?? 0.75)) {
-                $rejectReason = $rejectReason ?? 'smooth_trend_score_too_low';
+                if ($rejectReason === null) {
+                    $rejectReason = 'smooth_trend_score_too_low';
+                    $this->smoothTrendScoreTooLowTotal++;
+                }
                 $this->smoothTrendRejectedTotal++;
             } elseif ((bool)($config['smooth_trend_reject_vertical_spike'] ?? true) && $diag['vertical_spike_detected']) {
                 $rejectReason = $rejectReason ?? 'vertical_spike_reject';
@@ -2072,17 +2207,21 @@ final class ConfirmedContinuationService
         if ($rejectReason !== null) {
             $diag['anti_comb_rejected'] = true;
             $diag['anti_comb_reject_reason_detail'] = $rejectReason;
+            // Always use the specific reason as the primary reject_reason.
+            // post_structure_comb_detected is a boolean context field, NOT the reject reason.
+            $diag['anti_comb_reject_reason'] = $rejectReason;
             if ($usePostStructureOnly) {
-                $diag['anti_comb_reject_reason'] = 'post_structure_comb_detected';
                 $diag['post_structure_comb_detected'] = true;
                 $this->postStructureFilterRejectedTotal++;
+                $this->postStructureCombDetectedTotal++;
             } else {
-                $diag['anti_comb_reject_reason'] = $rejectReason;
+                $diag['post_structure_comb_detected'] = false;
             }
             $this->antiCombRejectedTotal++;
             if (count($this->antiCombExamples) < 8) {
                 $this->antiCombExamples[] = [
                     'reject_reason'                  => $rejectReason,
+                    'post_structure_comb_detected'   => $diag['post_structure_comb_detected'],
                     'recent_max_1m_range_pct'        => $diag['recent_max_1m_range_pct'],
                     'recent_max_1m_range_roi'        => $diag['recent_max_1m_range_roi'],
                     'recent_max_3m_range_pct'        => $diag['recent_max_3m_range_pct'],
@@ -2102,11 +2241,13 @@ final class ConfirmedContinuationService
             if (count($this->rejectedCombExamples) < 8) {
                 $this->rejectedCombExamples[] = [
                     'side' => $side,
-                    'reject_reason' => $diag['anti_comb_reject_reason'],
-                    'reject_detail' => $rejectReason,
+                    'reject_reason'                => $rejectReason,
+                    'post_structure_comb_detected' => $diag['post_structure_comb_detected'],
                     'post_structure_window_minutes' => $structure['post_structure_window_minutes'] ?? null,
                 ];
             }
+        } else {
+            $diag['post_structure_comb_detected'] = false;
         }
 
         return $diag;
@@ -2356,6 +2497,7 @@ final class ConfirmedContinuationService
             'handoff_ready'  => $handoffReady,
             'executable'     => $executable,
             'block_reason'   => $blockReason,
+            'candidate_state'=> ($handoffReady && $executable) ? 'signal_ready' : 'blocked',
         ]);
 
         return $candidate;
@@ -2788,14 +2930,20 @@ final class ConfirmedContinuationService
             'point_3_not_confirmed_total'     => $this->point3NotConfirmedTotal,
             'entry_too_far_from_point_3_total'=> $this->entryTooFarFromPoint3Total,
             // Anti-comb diagnostics
-            'anti_comb_checked_total'                 => $this->antiCombCheckedTotal,
-            'anti_comb_rejected_total'                => $this->antiCombRejectedTotal,
-            'anti_comb_recent_range_reject_total'     => $this->antiCombRecentRangeRejectTotal,
-            'anti_comb_opposite_swing_reject_total'   => $this->antiCombOppositeSwingRejectTotal,
-            'anti_comb_wick_chaos_reject_total'       => $this->antiCombWickChaosRejectTotal,
-            'anti_comb_low_consistency_reject_total'  => $this->antiCombLowConsistencyRejectTotal,
-            'post_structure_filter_checked_total'     => $this->postStructureFilterCheckedTotal,
-            'post_structure_filter_rejected_total'    => $this->postStructureFilterRejectedTotal,
+            'anti_comb_checked_total'                       => $this->antiCombCheckedTotal,
+            'anti_comb_rejected_total'                      => $this->antiCombRejectedTotal,
+            'anti_comb_recent_range_reject_total'           => $this->antiCombRecentRangeRejectTotal,
+            'anti_comb_recent_range_too_high_total'         => $this->antiCombRecentRangeRejectTotal,
+            'anti_comb_opposite_swing_reject_total'         => $this->antiCombOppositeSwingRejectTotal,
+            'anti_comb_opposite_swing_too_high_total'       => $this->antiCombOppositeSwingRejectTotal,
+            'anti_comb_wick_chaos_reject_total'             => $this->antiCombWickChaosRejectTotal,
+            'anti_comb_wick_chaos_total'                    => $this->antiCombWickChaosRejectTotal,
+            'anti_comb_low_consistency_reject_total'        => $this->antiCombLowConsistencyRejectTotal,
+            'anti_comb_low_directional_consistency_total'   => $this->antiCombLowConsistencyRejectTotal,
+            'post_structure_comb_detected_total'            => $this->postStructureCombDetectedTotal,
+            'smooth_trend_score_too_low_total'              => $this->smoothTrendScoreTooLowTotal,
+            'post_structure_filter_checked_total'           => $this->postStructureFilterCheckedTotal,
+            'post_structure_filter_rejected_total'          => $this->postStructureFilterRejectedTotal,
             'entry_timing_checked_total'              => $this->entryTimingCheckedTotal,
             'near_exit_zone_rejected_total'           => $this->nearExitZoneRejectedTotal,
             'controlled_trend_gate_checked_total'     => $this->controlledTrendGateCheckedTotal,
@@ -2808,6 +2956,20 @@ final class ConfirmedContinuationService
             'smooth_trend_checked_total'              => $this->smoothTrendCheckedTotal,
             'smooth_trend_rejected_total'             => $this->smoothTrendRejectedTotal,
             'vertical_spike_rejected_total'           => $this->verticalSpikeRejectedTotal,
+            // Filter funnel diagnostics
+            'structures_detected_total'                        => $this->structuresDetectedTotal,
+            'pattern_123_structures_seen_total'                => $this->pattern123StructuresSeenTotal,
+            'pattern_123_valid_before_filters_total'           => $this->pattern123ValidBeforeFiltersTotal,
+            'pattern_123_invalid_before_filters_total'         => $this->pattern123InvalidBeforeFiltersTotal,
+            'pattern_123_valid_but_anti_comb_rejected_total'   => $this->pattern123ValidButAntiCombRejectedTotal,
+            'pattern_123_valid_but_entry_timing_rejected_total'=> $this->pattern123ValidButEntryTimingRejectedTotal,
+            'pattern_123_valid_but_wall_blocked_total'         => $this->pattern123ValidButWallBlockedTotal,
+            'pattern_123_valid_signal_ready_total'             => $this->pattern123ValidSignalReadyTotal,
+            'anti_comb_passed_total'                           => $this->antiCombPassedTotal,
+            'entry_timing_passed_total'                        => $this->entryTimingPassedTotal,
+            'quality_gate_passed_total'                        => $this->qualityGatePassedTotal,
+            'wall_test_passed_total'                           => $this->wallTestPassedTotal,
+            'signal_ready_total'                               => $this->signalReadyTotal,
             // 24h regime diagnostics
             'day_regime_checked_total'        => $this->dayRegimeCheckedTotal,
             'day_regime_blocked_total'        => $this->dayRegimeBlockedTotal,
@@ -3092,6 +3254,7 @@ final class ConfirmedContinuationService
         $this->oppositeSwingTooHighTotal         = 0;
         $this->smoothTrendCheckedTotal           = 0;
         $this->smoothTrendRejectedTotal          = 0;
+        $this->smoothTrendScoreTooLowTotal       = 0;
         $this->verticalSpikeRejectedTotal        = 0;
         $this->acceptedEarlyStructureExamples    = [];
         $this->acceptedMidTrendExamples          = [];
@@ -3102,6 +3265,21 @@ final class ConfirmedContinuationService
         $this->handoffThrottledTotal                = 0;
         $this->handoffThrottleReasonCounts          = [];
         $this->handoffThrottleExamples              = [];
+        // Funnel / split-reason counters
+        $this->structuresDetectedTotal                    = 0;
+        $this->pattern123StructuresSeenTotal              = 0;
+        $this->pattern123ValidBeforeFiltersTotal          = 0;
+        $this->pattern123InvalidBeforeFiltersTotal        = 0;
+        $this->pattern123ValidButAntiCombRejectedTotal    = 0;
+        $this->pattern123ValidButEntryTimingRejectedTotal = 0;
+        $this->pattern123ValidButWallBlockedTotal         = 0;
+        $this->pattern123ValidSignalReadyTotal            = 0;
+        $this->postStructureCombDetectedTotal             = 0;
+        $this->antiCombPassedTotal                        = 0;
+        $this->entryTimingPassedTotal                     = 0;
+        $this->qualityGatePassedTotal                     = 0;
+        $this->wallTestPassedTotal                        = 0;
+        $this->signalReadyTotal                           = 0;
         $this->deprecatedExecutionModeKeySeen    = false;
         $this->deprecatedExecutionModeKeyIgnored = false;
         $this->effectiveStrategyMode             = 'passive';

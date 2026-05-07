@@ -876,7 +876,8 @@ final class ConfirmedContinuationService
         $higherLowsCount = count($higherLowSequence);
         $anchorIdx       = (int)$firstHigherLow['idx'];
         $anchorPrice     = (float)$firstHigherLow['price'];
-        $anchorTs        = (int)($candles[$anchorIdx]['ts'] ?? 0);
+        $anchorTsRaw     = (int)($candles[$anchorIdx]['ts'] ?? 0);
+        $anchorTs        = $anchorTsRaw > 20000000000 ? (int)floor($anchorTsRaw / 1000) : $anchorTsRaw;
         $postStart       = max(0, min($anchorIdx + 1, $n - 1));
         $postWindowMins  = max(1, $n - $postStart);
         $preHigh         = $anchorIdx > 0 ? max(array_slice($highs, 0, $anchorIdx + 1)) : $highs[0];
@@ -955,7 +956,7 @@ final class ConfirmedContinuationService
             'continuation_confirmed'               => $continuationConfirmed,
             'structure_anchor_type'                => 'local_low',
             'structure_anchor_idx'                 => $anchorIdx,
-            'structure_anchor_time'                => $anchorTs > 0 ? gmdate('c', (int)floor($anchorTs / 1000)) : null,
+            'structure_anchor_time'                => $anchorTs > 0 ? gmdate('c', $anchorTs) : null,
             'structure_anchor_price'               => round($anchorPrice, 8),
             'post_structure_window_start'          => $postStart,
             'post_structure_window_minutes'        => $postWindowMins,
@@ -1007,7 +1008,8 @@ final class ConfirmedContinuationService
         $lowerHighsCount = count($lowerHighSequence);
         $anchorIdx       = (int)$lastLowerHigh['idx'];
         $anchorPrice     = (float)$lastLowerHigh['price'];
-        $anchorTs        = (int)($candles[$anchorIdx]['ts'] ?? 0);
+        $anchorTsRaw     = (int)($candles[$anchorIdx]['ts'] ?? 0);
+        $anchorTs        = $anchorTsRaw > 20000000000 ? (int)floor($anchorTsRaw / 1000) : $anchorTsRaw;
         $postStart       = max(0, min($anchorIdx + 1, $n - 1));
         $postWindowMins  = max(1, $n - $postStart);
         $preLow          = $anchorIdx > 0 ? min(array_slice($lows, 0, $anchorIdx + 1)) : $lows[0];
@@ -1083,7 +1085,7 @@ final class ConfirmedContinuationService
             'continuation_confirmed'               => $continuationConfirmed,
             'structure_anchor_type'                => 'local_high',
             'structure_anchor_idx'                 => $anchorIdx,
-            'structure_anchor_time'                => $anchorTs > 0 ? gmdate('c', (int)floor($anchorTs / 1000)) : null,
+            'structure_anchor_time'                => $anchorTs > 0 ? gmdate('c', $anchorTs) : null,
             'structure_anchor_price'               => round($anchorPrice, 8),
             'post_structure_window_start'          => $postStart,
             'post_structure_window_minutes'        => $postWindowMins,
@@ -1221,10 +1223,11 @@ final class ConfirmedContinuationService
             }
             $expectedExit = max(array_slice($highs, -min(20, max(3, $n))));
             $upsideRoomPct = $entryPrice > 0 ? max(0.0, ($expectedExit - $entryPrice) / $entryPrice * 100.0) : 0.0;
-            if ($upsideRoomPct <= (float)($config['min_upside_room_to_resistance_pct_long'] ?? 0.8)) {
-                return ['reason' => 'entry_near_take_profit_zone', 'stage' => 'entry_timing'];
-            }
-            if ($upsideRoomPct < (float)($config['min_upside_room_to_resistance_pct_long'] ?? 0.8)) {
+            $minUpside = (float)($config['min_upside_room_to_resistance_pct_long'] ?? 0.8);
+            if ($upsideRoomPct <= $minUpside) {
+                if ($upsideRoomPct <= max(0.0, $minUpside * 0.5)) {
+                    return ['reason' => 'entry_near_take_profit_zone', 'stage' => 'entry_timing'];
+                }
                 return ['reason' => 'insufficient_room_to_next_wall_or_resistance', 'stage' => 'entry_timing'];
             }
             // Reject: blowoff 1m candle at entry
@@ -1269,10 +1272,11 @@ final class ConfirmedContinuationService
             }
             $expectedExit = min(array_slice($lows, -min(20, max(3, $n))));
             $downsideRoomPct = $entryPrice > 0 ? max(0.0, ($entryPrice - $expectedExit) / $entryPrice * 100.0) : 0.0;
-            if ($downsideRoomPct <= (float)($config['min_downside_room_to_support_pct_short'] ?? 0.8)) {
-                return ['reason' => 'entry_near_take_profit_zone', 'stage' => 'entry_timing'];
-            }
-            if ($downsideRoomPct < (float)($config['min_downside_room_to_support_pct_short'] ?? 0.8)) {
+            $minDownside = (float)($config['min_downside_room_to_support_pct_short'] ?? 0.8);
+            if ($downsideRoomPct <= $minDownside) {
+                if ($downsideRoomPct <= max(0.0, $minDownside * 0.5)) {
+                    return ['reason' => 'entry_near_take_profit_zone', 'stage' => 'entry_timing'];
+                }
                 return ['reason' => 'insufficient_room_to_next_wall_or_resistance', 'stage' => 'entry_timing'];
             }
             if ($n >= 2) {

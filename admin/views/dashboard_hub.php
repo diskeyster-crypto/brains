@@ -367,6 +367,8 @@ function renderDashboardHub(): string
 
         $manifestById = [];
         $stratRoot = System::path('root') . '/modules/strategy';
+        // dashboard discovery is bounded to avoid deep recursive scans while still
+        // covering current strategy nesting (e.g. modules/strategy/pattern/<module>)
         $manifestScanMaxDepth = 6;
         if (is_dir($stratRoot)) {
             try {

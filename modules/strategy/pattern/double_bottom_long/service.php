@@ -56,6 +56,19 @@ final class DoubleBottomLongService
     /** @var list<array<string,mixed>> */
     private array $obWallSoftDemoteBlockExamples = [];
 
+    // ── DBL garbage veto counters (reset at start of each tickBatch) ──────────
+    private int $dblGarbageVetoCheckedTotal           = 0;
+    private int $dblGarbageVetoBlockedTotal           = 0;
+    private int $dblGarbageLowQualityWithoutObcTotal  = 0;
+    private int $dblGarbageObcQualitySkipTotal        = 0;
+    private int $dblGarbageLateExtensionTotal         = 0;
+    private int $dblGarbageWhipsawWeakQualityTotal    = 0;
+    private int $dblGarbagePassedTotal                = 0;
+    /** @var list<array<string,mixed>> */
+    private array $dblGarbageBlockExamples = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblGarbagePassExamples  = [];
+
     // ── Per-tick entry-context fetch counters (reset at start of each tickBatch) ──
     private int $ctxFetchAttemptedThisTick       = 0;
     private int $ctxFetchSuccessThisTick         = 0;
@@ -416,6 +429,16 @@ final class DoubleBottomLongService
         $this->scanSuppressionAddedExamples     = [];
         $this->scanSuppressionExpiredExamples   = [];
         $this->ctxFetchCapExamples              = [];
+        // Reset per-tick garbage veto counters.
+        $this->dblGarbageVetoCheckedTotal          = 0;
+        $this->dblGarbageVetoBlockedTotal          = 0;
+        $this->dblGarbageLowQualityWithoutObcTotal = 0;
+        $this->dblGarbageObcQualitySkipTotal       = 0;
+        $this->dblGarbageLateExtensionTotal        = 0;
+        $this->dblGarbageWhipsawWeakQualityTotal   = 0;
+        $this->dblGarbagePassedTotal               = 0;
+        $this->dblGarbageBlockExamples             = [];
+        $this->dblGarbagePassExamples              = [];
 
         $symbols = (array)($state['symbols']  ?? []);
         $cursor  = (int)($state['cursor']      ?? 0);
@@ -768,6 +791,53 @@ final class DoubleBottomLongService
                         'ob_skip_reason'                 => $sig['ob_skip_reason'],
                         'ob_skip_quality_score'          => $sig['ob_skip_quality_score'],
                         'ob_skip_required_quality_score' => $sig['ob_skip_required_quality_score'],
+                    ]);
+                    // ── Garbage veto context — carry from diagBase result into signal ──
+                    $sig['daily_change_pct']           = $result['daily_change_pct']            ?? null;
+                    $sig['position_in_24h_range_pct']  = $result['position_in_24h_range_pct']   ?? null;
+                    $sig['room_to_24h_high_roi']        = $result['room_to_24h_high_roi']        ?? null;
+                    $sig['recent_10m_range_roi']        = $result['recent_10m_range_roi']        ?? null;
+                    $sig['recent_60m_range_roi']        = $result['recent_60m_range_roi']        ?? null;
+                    $sig['recent_10m_direction_flips']  = $result['recent_10m_direction_flips']  ?? null;
+                    $sig['recent_60m_direction_flips']  = $result['recent_60m_direction_flips']  ?? null;
+                    $sig['whipsaw_score']               = $result['whipsaw_score']               ?? null;
+                    $sig['entry_hour_utc']              = $result['entry_hour_utc']              ?? null;
+                    $sig['entry_hour_local_utc3']       = $result['entry_hour_local_utc3']       ?? null;
+                    $sig['session_bucket']              = $result['session_bucket']              ?? null;
+                    // DBL point trace fields — ensure they propagate to strategy_signal_context
+                    // so Stop Manager and downstream consumers have full trace.
+                    $existingSscTrace = is_array($sig['strategy_signal_context'] ?? null) ? $sig['strategy_signal_context'] : [];
+                    $sig['strategy_signal_context'] = array_merge($existingSscTrace, [
+                        // Garbage veto context
+                        'daily_change_pct'           => $sig['daily_change_pct'],
+                        'position_in_24h_range_pct'  => $sig['position_in_24h_range_pct'],
+                        'room_to_24h_high_roi'       => $sig['room_to_24h_high_roi'],
+                        'recent_10m_range_roi'       => $sig['recent_10m_range_roi'],
+                        'recent_60m_range_roi'       => $sig['recent_60m_range_roi'],
+                        'recent_60m_direction_flips' => $sig['recent_60m_direction_flips'],
+                        'whipsaw_score'              => $sig['whipsaw_score'],
+                        'entry_hour_utc'             => $sig['entry_hour_utc'],
+                        'session_bucket'             => $sig['session_bucket'],
+                        // DBL point trace for Stop Manager
+                        'point_1_low_price'          => $result['bottom_1_price']                ?? null,
+                        'point_1_low_time'           => null,
+                        'point_2_neckline_price'     => $result['intraday_db_neckline_level']    ?? $result['neckline_level'] ?? null,
+                        'point_2_neckline_time'      => null,
+                        'point_3_second_low_price'   => $result['bottom_2_price']               ?? null,
+                        'point_3_second_low_time'    => null,
+                        'neckline_level'             => $result['neckline_level']                ?? $result['intraday_db_neckline_level'] ?? null,
+                        'reclaim_level'              => $result['reclaim_level']                 ?? null,
+                        'second_bottom_level'        => $result['bottom_2_price']               ?? null,
+                        'entry_distance_from_point3_pct' => $result['entry_distance_from_neckline_pct'] ?? null,
+                        'entry_distance_from_reclaim_pct' => $result['entry_distance_from_reclaim_pct'] ?? null,
+                        'fresh_lower_low_after_point3' => false,
+                        'point3_confirmed'           => true,
+                        'reclaim_confirmed'          => (bool)($result['reclaim_after_flat_detected'] ?? false),
+                        // Garbage veto result (initialised here; updated in updateBotHandoff)
+                        'garbage_veto_checked'       => false,
+                        'garbage_veto_triggered'     => false,
+                        'garbage_veto_reason'        => null,
+                        'garbage_veto_secondary_reasons' => [],
                     ]);
                     // Detect and list any fields that are unavailable (null) — do not fill with fake defaults
                     // Fields always required for trace completeness
@@ -1380,17 +1450,22 @@ final class DoubleBottomLongService
                     $sig['last_lifecycle_update_at'] = date('c');
                     $sig['last_lifecycle_reason']    = $blockReason;
                     // Propagate block_reason into strategy_signal_context for OBC soft_demote
-                    // so that all downstream consumers (signals.json, bot_handoff_queue) can
-                    // identify the exact gate that prevented handoff.
-                    if ($blockReason === 'ob_soft_demote_ask_wall_risk') {
+                    // and garbage veto so all downstream consumers identify the gate that blocked handoff.
+                    $isGarbageVeto = str_starts_with($blockReason, 'garbage_');
+                    if ($blockReason === 'ob_soft_demote_ask_wall_risk' || $isGarbageVeto) {
                         $existingSscBlk = is_array($sig['strategy_signal_context'] ?? null)
                             ? $sig['strategy_signal_context'] : [];
-                        $sig['strategy_signal_context'] = array_merge($existingSscBlk, [
+                        $sscUpdate = [
                             'block_reason'    => $blockReason,
                             'handoff_ready'   => false,
                             'executable'      => false,
                             'active_final'    => false,
-                        ]);
+                        ];
+                        if ($isGarbageVeto) {
+                            $sscUpdate['garbage_veto_triggered'] = true;
+                            $sscUpdate['garbage_veto_reason']    = $blockReason;
+                        }
+                        $sig['strategy_signal_context'] = array_merge($existingSscBlk, $sscUpdate);
                     }
                     $sigMarkedStale++;
                     if (count($sigMarkedStaleExamples) < 5) {
@@ -1789,6 +1864,17 @@ final class DoubleBottomLongService
             'queue_entries_blocked_blacklist_total'       => $handoffStats['queue_entries_blocked_blacklist_total']       ?? 0,
             'queue_entries_blocked_freeze_total'          => $handoffStats['queue_entries_blocked_freeze_total']          ?? 0,
             'queue_non_executable_examples'              => $handoffStats['queue_non_executable_examples']               ?? [],
+            // ── DBL garbage veto counters (per tick) ──────────────────────────────
+            'dbl_garbage_veto_enabled'                   => (bool)($config['dbl_garbage_veto_enabled'] ?? true),
+            'dbl_garbage_veto_checked_total'             => $this->dblGarbageVetoCheckedTotal,
+            'dbl_garbage_veto_blocked_total'             => $this->dblGarbageVetoBlockedTotal,
+            'dbl_garbage_low_quality_without_obc_total'  => $this->dblGarbageLowQualityWithoutObcTotal,
+            'dbl_garbage_obc_quality_skip_total'         => $this->dblGarbageObcQualitySkipTotal,
+            'dbl_garbage_late_daily_extension_total'     => $this->dblGarbageLateExtensionTotal,
+            'dbl_garbage_whipsaw_weak_quality_total'     => $this->dblGarbageWhipsawWeakQualityTotal,
+            'dbl_garbage_passed_total'                   => $this->dblGarbagePassedTotal,
+            'dbl_garbage_block_examples'                 => $this->dblGarbageBlockExamples,
+            'dbl_garbage_pass_examples'                  => $this->dblGarbagePassExamples,
             // ── Scan suppression cache diagnostics (Task 7) ──────────────────────
             'scan_suppression_enabled'                   => $suppressionEnabled,
             'scan_suppression_entries_total'             => $suppressionEnabled ? count($this->scanSuppressionCache) : 0,
@@ -2671,6 +2757,53 @@ final class DoubleBottomLongService
         // Carry current price and 24h change for scan suppression early-expire checks.
         $diagBase['scan_suppression_last_price']       = $lastClose > 0.0 ? $lastClose : null;
         $diagBase['scan_suppression_daily_change_pct'] = $dailyChangePct;
+
+        // ── Garbage veto context — computed here for propagation into signal ──
+        // daily_change_pct: from H4 (6 H4 bars = 24h)
+        $diagBase['daily_change_pct'] = $dailyChangePct;
+        // position_in_24h_range_pct: where is current price within the 24h corridor
+        $corrLow  = (float)($corridor['corridor_low']  ?? 0.0);
+        $corrHigh = (float)($corridor['corridor_high'] ?? 0.0);
+        if ($corrHigh > $corrLow && $corrLow > 0.0) {
+            $diagBase['position_in_24h_range_pct'] = round(
+                (($lastClose - $corrLow) / ($corrHigh - $corrLow)) * 100.0, 2
+            );
+            $diagBase['room_to_24h_high_roi'] = round(
+                (($corrHigh - $lastClose) / $lastClose) * 100.0, 2
+            );
+        } else {
+            $diagBase['position_in_24h_range_pct'] = null;
+            $diagBase['room_to_24h_high_roi']       = null;
+        }
+        // Whipsaw metrics from entry-context candles (1m/5m) when available.
+        // Used by garbage veto 4 (weak quality + whipsaw).
+        if ($entryCtxAvailable && count($ctxCandles) >= 10) {
+            $whipsaw = $this->computeWhipsawMetrics($ctxCandles);
+        } else {
+            $whipsaw = [
+                'recent_10m_range_roi'      => null,
+                'recent_60m_range_roi'      => null,
+                'recent_10m_direction_flips' => null,
+                'recent_60m_direction_flips' => null,
+                'whipsaw_score'              => null,
+            ];
+        }
+        $diagBase['recent_10m_range_roi']      = $whipsaw['recent_10m_range_roi'];
+        $diagBase['recent_60m_range_roi']      = $whipsaw['recent_60m_range_roi'];
+        $diagBase['recent_10m_direction_flips'] = $whipsaw['recent_10m_direction_flips'];
+        $diagBase['recent_60m_direction_flips'] = $whipsaw['recent_60m_direction_flips'];
+        $diagBase['whipsaw_score']              = $whipsaw['whipsaw_score'];
+        // Entry hour for time-of-day diagnostics
+        $nowHourUtc   = (int)date('G');
+        $diagBase['entry_hour_utc']        = $nowHourUtc;
+        $diagBase['entry_hour_local_utc3'] = ($nowHourUtc + 3) % 24;
+        if ($nowHourUtc >= 6 && $nowHourUtc < 14) {
+            $diagBase['session_bucket'] = 'day';
+        } elseif ($nowHourUtc >= 14 && $nowHourUtc < 22) {
+            $diagBase['session_bucket'] = 'evening';
+        } else {
+            $diagBase['session_bucket'] = 'night';
+        }
 
         // ── Precompute entry_setup_allowed (A/B intraday allowance) ──────────
         // Evaluated after entry context / setup class classification but BEFORE
@@ -8078,6 +8211,8 @@ final class DoubleBottomLongService
         $softDemoteBlockedTotal  = 0;
         $softDemoteAllowedTotal  = 0;
         $softDemoteBlockExamples = [];
+        // Garbage veto config
+        $garbageVetoEnabled = (bool)($config['dbl_garbage_veto_enabled'] ?? true);
         // Map of signal_id → block_reason for non-executable queue entries;
         // used by caller to align signals.json lifecycle flags.
         $blockedSignalIds               = [];
@@ -8114,8 +8249,81 @@ final class DoubleBottomLongService
                         $blockedSignalIds[$sigIdInQueue] = $blockReason;
                     }
                     $queueMarkedNonExecutableTotal++;
+                } elseif ($garbageVetoEnabled) {
+                    // ── DBL garbage veto ─────────────────────────────────────────────
+                    $gv = $this->applyDblGarbageVeto($r, $config);
+                    $this->dblGarbageVetoCheckedTotal++;
+                    // Merge veto diagnostics back into strategy_signal_context
+                    $sscMerge = is_array($result[$id]['strategy_signal_context'] ?? null)
+                        ? $result[$id]['strategy_signal_context'] : [];
+                    $result[$id]['strategy_signal_context'] = array_merge($sscMerge, $gv['diag']);
+
+                    if ($gv['veto_triggered']) {
+                        $this->dblGarbageVetoBlockedTotal++;
+                        switch ($gv['reason']) {
+                            case 'garbage_low_quality_without_obc_confirmation':
+                                $this->dblGarbageLowQualityWithoutObcTotal++;
+                                break;
+                            case 'garbage_obc_quality_skip':
+                                $this->dblGarbageObcQualitySkipTotal++;
+                                break;
+                            case 'garbage_late_daily_extension_long':
+                                $this->dblGarbageLateExtensionTotal++;
+                                break;
+                            case 'garbage_whipsaw_weak_quality':
+                                $this->dblGarbageWhipsawWeakQualityTotal++;
+                                break;
+                        }
+                        $blockReason = (string)$gv['reason'];
+                        if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
+                        if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
+                        if (($r['block_reason'] ?? null) !== $blockReason) { $result[$id]['block_reason'] = $blockReason; $changed = true; }
+                        $sigIdInQueue = (string)($r['signal_id'] ?? $id);
+                        if ($sigIdInQueue !== '') {
+                            $blockedSignalIds[$sigIdInQueue] = $blockReason;
+                        }
+                        $queueMarkedNonExecutableTotal++;
+                        if (count($this->dblGarbageBlockExamples) < 10) {
+                            $this->dblGarbageBlockExamples[] = [
+                                'symbol'                     => $r['symbol']       ?? null,
+                                'signal_id'                  => $id,
+                                'detected_at'                => $r['detected_at']  ?? null,
+                                'block_reason'               => $blockReason,
+                                'secondary_reasons'          => $gv['secondary_reasons'],
+                                'candidate_quality_score'    => $gv['diag']['candidate_quality_score'],
+                                'warnings'                   => $gv['diag']['warnings'],
+                                'ob_skip_reason'             => $gv['diag']['ob_skip_reason'],
+                                'day_change_pct'             => $gv['diag']['day_change_pct'],
+                                'position_in_24h_range_pct'  => $gv['diag']['position_in_24h_range_pct'],
+                                'recent_10m_range_roi'       => $gv['diag']['recent_10m_range_roi'],
+                                'recent_60m_direction_flips' => $gv['diag']['recent_60m_direction_flips'],
+                            ];
+                        }
+                    } else {
+                        // Veto passed — signal is executable
+                        $this->dblGarbagePassedTotal++;
+                        if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
+                        if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
+                        if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
+                        if (($r['stale_reason'] ?? null) !== null)  { $result[$id]['stale_reason'] = null;  $changed = true; }
+                        if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
+                        $queueExecutableTotal++;
+                        if ($isSoftDemoted) {
+                            $softDemoteAllowedTotal++;
+                        }
+                        if (count($this->dblGarbagePassExamples) < 5) {
+                            $this->dblGarbagePassExamples[] = [
+                                'symbol'                  => $r['symbol']      ?? null,
+                                'signal_id'               => $id,
+                                'detected_at'             => $r['detected_at'] ?? null,
+                                'candidate_quality_score' => $gv['diag']['candidate_quality_score'],
+                                'day_change_pct'          => $gv['diag']['day_change_pct'],
+                                'position_in_24h_range_pct' => $gv['diag']['position_in_24h_range_pct'],
+                            ];
+                        }
+                    }
                 } else {
-                    // Fully executable
+                    // Garbage veto disabled — fully executable
                     if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
                     if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
                     if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
@@ -8123,7 +8331,6 @@ final class DoubleBottomLongService
                     if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
                     $queueExecutableTotal++;
                     if ($isSoftDemoted) {
-                        // Gate disabled via config — allowed through, track for diagnostics
                         $softDemoteAllowedTotal++;
                     }
                 }
@@ -8351,6 +8558,32 @@ final class DoubleBottomLongService
                 'ob_skip_reason'                   => $signal['ob_skip_reason']                  ?? null,
                 'ob_skip_quality_score'            => $signal['ob_skip_quality_score']           ?? null,
                 'ob_skip_required_quality_score'   => $signal['ob_skip_required_quality_score']  ?? null,
+                // Garbage veto context
+                'daily_change_pct'           => $signal['daily_change_pct']           ?? null,
+                'position_in_24h_range_pct'  => $signal['position_in_24h_range_pct']  ?? null,
+                'room_to_24h_high_roi'       => $signal['room_to_24h_high_roi']        ?? null,
+                'recent_10m_range_roi'       => $signal['recent_10m_range_roi']        ?? null,
+                'recent_60m_range_roi'       => $signal['recent_60m_range_roi']        ?? null,
+                'recent_60m_direction_flips' => $signal['recent_60m_direction_flips']  ?? null,
+                'whipsaw_score'              => $signal['whipsaw_score']               ?? null,
+                'entry_hour_utc'             => $signal['entry_hour_utc']              ?? null,
+                'session_bucket'             => $signal['session_bucket']              ?? null,
+                // DBL point trace for Stop Manager — carry from signal's strategy_signal_context if present
+                'point_1_low_price'          => $signal['strategy_signal_context']['point_1_low_price']      ?? null,
+                'point_2_neckline_price'     => $signal['strategy_signal_context']['point_2_neckline_price'] ?? null,
+                'point_3_second_low_price'   => $signal['strategy_signal_context']['point_3_second_low_price'] ?? null,
+                'neckline_level'             => $signal['strategy_signal_context']['neckline_level']         ?? $signal['neckline_level'] ?? null,
+                'reclaim_level'              => $signal['strategy_signal_context']['reclaim_level']          ?? $signal['reclaim_level'] ?? null,
+                'second_bottom_level'        => $signal['strategy_signal_context']['second_bottom_level']    ?? null,
+                'entry_distance_from_point3_pct' => $signal['strategy_signal_context']['entry_distance_from_point3_pct'] ?? null,
+                'fresh_lower_low_after_point3' => $signal['strategy_signal_context']['fresh_lower_low_after_point3'] ?? false,
+                'point3_confirmed'           => $signal['strategy_signal_context']['point3_confirmed']       ?? true,
+                'reclaim_confirmed'          => $signal['strategy_signal_context']['reclaim_confirmed']      ?? false,
+                // Garbage veto result (populated in updateBotHandoff normalization pass)
+                'garbage_veto_checked'       => $signal['strategy_signal_context']['garbage_veto_checked']   ?? false,
+                'garbage_veto_triggered'     => $signal['strategy_signal_context']['garbage_veto_triggered'] ?? false,
+                'garbage_veto_reason'        => $signal['strategy_signal_context']['garbage_veto_reason']    ?? null,
+                'garbage_veto_secondary_reasons' => $signal['strategy_signal_context']['garbage_veto_secondary_reasons'] ?? [],
             ],
 
             // Execution parameters (strategy-owned; no exchange-order fields yet)
@@ -8370,6 +8603,260 @@ final class DoubleBottomLongService
             'tp_value'                      => (float)($config['tp_value']                      ?? 2.5),
             'tp_price'                      => $signal['tp_price']          ?? null,
             'reverse_pattern_close_enabled' => (bool)($config['reverse_pattern_close_enabled']  ?? false),
+        ];
+    }
+
+    // =========================================================================
+    // DBL Garbage Veto
+    // =========================================================================
+
+    /**
+     * Conservative pre-handoff trash filter.
+     *
+     * Checks a signal/queue record against four hard-veto rules:
+     *  1. Low quality + generic warning + OBC not confirmed
+     *  2. OBC skipped due to quality_below_threshold
+     *  3. Late daily extension long (already strongly extended on 24h)
+     *  4. Whipsaw + weak quality
+     *
+     * Returns an array with:
+     *  - veto_triggered: bool
+     *  - reason:         string|null  (primary block reason)
+     *  - secondary_reasons: string[]
+     *  - diag:           array        (all computed values for diagnostics)
+     */
+    private function applyDblGarbageVeto(array $record, array $config): array
+    {
+        $ssc = is_array($record['strategy_signal_context'] ?? null) ? $record['strategy_signal_context'] : [];
+
+        // Extract quality and warning context
+        $qualityScore = (float)($record['candidate_quality_score'] ?? $ssc['candidate_quality_score'] ?? 0.0);
+        $warnings     = (array)($record['warnings'] ?? $ssc['warnings'] ?? []);
+        $hasGenericWarning = in_array('generic_entry_context_score_low', $warnings, true);
+
+        // OBC context
+        $obWallChecked = (bool)($record['ob_wall_checked'] ?? $ssc['ob_wall_checked'] ?? false);
+        $obSkipReason  = (string)($record['ob_skip_reason'] ?? $ssc['ob_skip_reason'] ?? '');
+        $obSkipScore   = isset($record['ob_skip_quality_score'])
+            ? (float)$record['ob_skip_quality_score']
+            : (float)($ssc['ob_skip_quality_score'] ?? 0.0);
+        $obSkipRequired = isset($record['ob_skip_required_quality_score'])
+            ? (float)$record['ob_skip_required_quality_score']
+            : (float)($ssc['ob_skip_required_quality_score'] ?? 0.0);
+        $obcMissingOrSkipped = !$obWallChecked || $obSkipReason !== '';
+
+        // Daily extension context
+        $dayChangePct      = isset($ssc['daily_change_pct'])
+            ? ($ssc['daily_change_pct'] !== null ? (float)$ssc['daily_change_pct'] : null)
+            : null;
+        $positionIn24h     = isset($ssc['position_in_24h_range_pct'])
+            ? ($ssc['position_in_24h_range_pct'] !== null ? (float)$ssc['position_in_24h_range_pct'] : null)
+            : null;
+        $roomTo24hHigh     = isset($ssc['room_to_24h_high_roi'])
+            ? ($ssc['room_to_24h_high_roi'] !== null ? (float)$ssc['room_to_24h_high_roi'] : null)
+            : null;
+
+        // Whipsaw context
+        $recent10mRange    = isset($ssc['recent_10m_range_roi'])
+            ? ($ssc['recent_10m_range_roi'] !== null ? (float)$ssc['recent_10m_range_roi'] : null)
+            : null;
+        $recent60mFlips    = isset($ssc['recent_60m_direction_flips'])
+            ? ($ssc['recent_60m_direction_flips'] !== null ? (int)$ssc['recent_60m_direction_flips'] : null)
+            : null;
+        $whipsawScore      = isset($ssc['whipsaw_score'])
+            ? ($ssc['whipsaw_score'] !== null ? (float)$ssc['whipsaw_score'] : null)
+            : null;
+
+        $secondaryReasons = [];
+        $primaryReason    = null;
+
+        // ── Veto 1: low quality + generic warning + OBC missing/skipped ────────
+        $v1Enabled = (bool)($config['dbl_garbage_veto_enabled'] ?? true);
+        if ($v1Enabled) {
+            $lowQualMax       = (float)($config['dbl_garbage_low_quality_max_score']                        ?? 0.70);
+            $reqGenericWarn   = (bool) ($config['dbl_garbage_low_quality_requires_generic_warning']         ?? true);
+            $reqObcMissing    = (bool) ($config['dbl_garbage_low_quality_requires_obc_missing_or_skipped']  ?? true);
+            $isLowQuality     = $qualityScore <= $lowQualMax && $qualityScore > 0.0;
+            $passGenericWarn  = !$reqGenericWarn || $hasGenericWarning;
+            $passObcMissing   = !$reqObcMissing  || $obcMissingOrSkipped;
+            if ($isLowQuality && $passGenericWarn && $passObcMissing) {
+                $primaryReason = 'garbage_low_quality_without_obc_confirmation';
+            }
+        }
+
+        // ── Veto 2: OBC skipped due to quality_below_threshold ─────────────────
+        if ($primaryReason === null && (bool)($config['dbl_garbage_block_obc_quality_skip'] ?? true)) {
+            $obcSkipMaxScore = (float)($config['dbl_garbage_obc_quality_skip_max_score'] ?? 0.72);
+            if ($obSkipReason === 'quality_below_threshold'
+                && ($qualityScore <= $obcSkipMaxScore || $hasGenericWarning)
+            ) {
+                $primaryReason = 'garbage_obc_quality_skip';
+                if ($qualityScore > $obcSkipMaxScore) {
+                    $secondaryReasons[] = 'has_generic_warning_despite_score';
+                }
+            }
+        }
+
+        // ── Veto 3: late daily extension long ───────────────────────────────────
+        if ($primaryReason === null && (bool)($config['dbl_garbage_daily_extension_enabled'] ?? true)) {
+            $hotPct       = (float)($config['dbl_garbage_day_change_hot_pct']           ?? 35.0);
+            $maxPosPct    = (float)($config['dbl_garbage_position_in_24h_range_max_pct'] ?? 80.0);
+            $minRoomRoi   = (float)($config['dbl_garbage_min_room_to_24h_high_roi']      ?? 10.0);
+
+            if ($dayChangePct !== null && $positionIn24h !== null) {
+                if ($dayChangePct >= $hotPct && $positionIn24h >= $maxPosPct) {
+                    $primaryReason = 'garbage_late_daily_extension_long';
+                    $secondaryReasons[] = sprintf(
+                        'day_change=%.1f%%_position=%.1f%%',
+                        $dayChangePct,
+                        $positionIn24h
+                    );
+                }
+            }
+            if ($primaryReason === null && $dayChangePct !== null && $roomTo24hHigh !== null) {
+                $veryHotPct = $hotPct + 10.0; // 45% default
+                if ($dayChangePct >= $veryHotPct && $roomTo24hHigh < $minRoomRoi) {
+                    $primaryReason = 'garbage_late_daily_extension_long';
+                    $secondaryReasons[] = sprintf(
+                        'day_change=%.1f%%_room_to_24h_high=%.1f%%',
+                        $dayChangePct,
+                        $roomTo24hHigh
+                    );
+                }
+            }
+        }
+
+        // ── Veto 4: whipsaw + weak quality ─────────────────────────────────────
+        if ($primaryReason === null && (bool)($config['dbl_garbage_whipsaw_enabled'] ?? true)) {
+            $maxRange10m    = (float)($config['dbl_garbage_whipsaw_max_10m_range_roi']          ?? 15.0);
+            $maxFlips60m    = (int)  ($config['dbl_garbage_whipsaw_max_60m_direction_flips']    ?? 10);
+            $reqWeakQual    = (bool) ($config['dbl_garbage_whipsaw_requires_weak_quality']       ?? true);
+            $weakQualMax    = (float)($config['dbl_garbage_whipsaw_weak_quality_max_score']      ?? 0.72);
+            $isWeakQuality  = $qualityScore <= $weakQualMax && $qualityScore > 0.0;
+            $isWhipsaw      = false;
+            if ($recent10mRange !== null && $recent10mRange > $maxRange10m) {
+                $isWhipsaw = true;
+                $secondaryReasons[] = sprintf('10m_range_roi=%.1f%%', $recent10mRange);
+            }
+            if ($recent60mFlips !== null && $recent60mFlips > $maxFlips60m) {
+                $isWhipsaw = true;
+                $secondaryReasons[] = sprintf('60m_direction_flips=%d', $recent60mFlips);
+            }
+            if ($isWhipsaw && (!$reqWeakQual || $isWeakQuality)) {
+                $primaryReason = 'garbage_whipsaw_weak_quality';
+            } else {
+                // Not blocking — clear secondary reasons added for whipsaw only
+                $secondaryReasons = array_filter($secondaryReasons, static function (string $r): bool {
+                    return !str_starts_with($r, '10m_range_roi=') && !str_starts_with($r, '60m_direction_flips=');
+                });
+                $secondaryReasons = array_values($secondaryReasons);
+            }
+        }
+
+        $vetoTriggered = $primaryReason !== null;
+
+        return [
+            'veto_triggered'    => $vetoTriggered,
+            'reason'            => $primaryReason,
+            'secondary_reasons' => $secondaryReasons,
+            'diag'              => [
+                'garbage_veto_checked'               => true,
+                'garbage_veto_triggered'             => $vetoTriggered,
+                'garbage_veto_reason'                => $primaryReason,
+                'garbage_veto_secondary_reasons'     => $secondaryReasons,
+                'candidate_quality_score'            => $qualityScore,
+                'warnings'                           => $warnings,
+                'ob_wall_checked'                    => $obWallChecked,
+                'ob_skip_reason'                     => $obSkipReason !== '' ? $obSkipReason : null,
+                'ob_skip_quality_score'              => $obSkipScore > 0.0 ? $obSkipScore : null,
+                'ob_skip_required_quality_score'     => $obSkipRequired > 0.0 ? $obSkipRequired : null,
+                'day_change_pct'                     => $dayChangePct,
+                'position_in_24h_range_pct'          => $positionIn24h,
+                'room_to_24h_high_roi'               => $roomTo24hHigh,
+                'recent_10m_range_roi'               => $recent10mRange,
+                'recent_60m_direction_flips'         => $recent60mFlips,
+                'whipsaw_score'                      => $whipsawScore,
+            ],
+        ];
+    }
+
+    /**
+     * Compute whipsaw metrics from 1m/5m entry-context candles.
+     *
+     * Returns:
+     *   recent_10m_range_roi      - (high - low) / low * 100 for last 10 candles
+     *   recent_60m_range_roi      - (high - low) / low * 100 for last 60 candles
+     *   recent_10m_direction_flips - number of close direction reversals in last 10 candles
+     *   recent_60m_direction_flips - number of close direction reversals in last 60 candles
+     *   whipsaw_score              - simple combined score (0..1); higher = more chaotic
+     */
+    private function computeWhipsawMetrics(array $candles): array
+    {
+        $n = count($candles);
+        if ($n < 2) {
+            return [
+                'recent_10m_range_roi'       => null,
+                'recent_60m_range_roi'       => null,
+                'recent_10m_direction_flips' => null,
+                'recent_60m_direction_flips' => null,
+                'whipsaw_score'              => null,
+            ];
+        }
+
+        $window10  = array_slice($candles, -10);
+        $window60  = array_slice($candles, -60);
+
+        $rangeRoi = static function (array $win): ?float {
+            if (count($win) < 2) {
+                return null;
+            }
+            $high = max(array_column($win, 'high'));
+            $low  = min(array_column($win, 'low'));
+            if ($low <= 0.0) {
+                return null;
+            }
+            return round(($high - $low) / $low * 100.0, 3);
+        };
+
+        $dirFlips = static function (array $win): int {
+            $flips = 0;
+            $cnt   = count($win);
+            if ($cnt < 3) {
+                return 0;
+            }
+            $prevDir = null;
+            for ($i = 1; $i < $cnt; $i++) {
+                $diff = (float)($win[$i]['close'] ?? 0.0) - (float)($win[$i - 1]['close'] ?? 0.0);
+                $dir  = $diff > 0 ? 1 : ($diff < 0 ? -1 : 0);
+                if ($dir !== 0) {
+                    if ($prevDir !== null && $dir !== $prevDir) {
+                        $flips++;
+                    }
+                    $prevDir = $dir;
+                }
+            }
+            return $flips;
+        };
+
+        $range10m  = $rangeRoi($window10);
+        $range60m  = $rangeRoi($window60);
+        $flips10m  = $dirFlips($window10);
+        $flips60m  = $dirFlips($window60);
+
+        // Simple 0–1 combined whipsaw score
+        $score = null;
+        if ($range60m !== null && $flips60m !== null) {
+            $rangeNorm  = min(1.0, $range60m / 20.0);   // 20% range = 1.0
+            $flipsNorm  = min(1.0, $flips60m / 15.0);   // 15 flips  = 1.0
+            $score      = round(($rangeNorm * 0.6 + $flipsNorm * 0.4), 3);
+        }
+
+        return [
+            'recent_10m_range_roi'       => $range10m,
+            'recent_60m_range_roi'       => $range60m,
+            'recent_10m_direction_flips' => $flips10m,
+            'recent_60m_direction_flips' => $flips60m,
+            'whipsaw_score'              => $score,
         ];
     }
 }

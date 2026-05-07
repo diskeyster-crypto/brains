@@ -360,4 +360,34 @@ return [
     'hourly_stats_bad_winrate_threshold'    => 40.0,
     'hourly_stats_good_avg_roi_threshold'   => 5.0,
     'hourly_stats_good_winrate_threshold'   => 60.0,
+
+    // ── DBL garbage veto — conservative pre-handoff trash filter ─────────────
+    // Runs after normal DBL detection. Blocks obvious trash signals before they
+    // reach bot_handoff_queue. Does NOT change detection logic; only gates handoff.
+    'dbl_garbage_veto_enabled'                            => true,
+
+    // Hard veto 1: low quality + generic warning + no OBC confirmation
+    'dbl_garbage_low_quality_max_score'                   => 0.70,   // block if candidate_quality_score <= this
+    'dbl_garbage_low_quality_requires_generic_warning'    => true,   // also require generic_entry_context_score_low warning
+    'dbl_garbage_low_quality_requires_obc_missing_or_skipped' => true,  // also require OBC not checked / skipped
+
+    // Hard veto 2: OBC skipped specifically due to quality_below_threshold
+    'dbl_garbage_block_obc_quality_skip'                  => true,
+    'dbl_garbage_obc_quality_skip_max_score'              => 0.72,   // block if ob_skip_reason=quality_below_threshold AND score <= this
+
+    // Hard veto 3: late daily extension long
+    // Block if already strongly extended on 24h and entry is near the upper daily range.
+    'dbl_garbage_daily_extension_enabled'                 => true,
+    'dbl_garbage_day_change_hot_pct'                      => 35.0,   // 24h price change >= this → extended
+    'dbl_garbage_position_in_24h_range_max_pct'           => 80.0,   // position in 24h range >= this → near top
+    'dbl_garbage_min_room_to_24h_high_roi'                => 10.0,   // room to 24h high < this (with day_change >= 45) → block
+
+    // Hard veto 4: whipsaw + weak quality
+    // Blocks only if whipsaw metrics exceed threshold AND quality is weak.
+    // Strong/high-quality signals survive even when volatility is high.
+    'dbl_garbage_whipsaw_enabled'                         => true,
+    'dbl_garbage_whipsaw_max_10m_range_roi'               => 15.0,   // recent 10m range ROI > this → whipsaw flag
+    'dbl_garbage_whipsaw_max_60m_direction_flips'         => 10,     // recent 60m direction flip count > this → whipsaw flag
+    'dbl_garbage_whipsaw_requires_weak_quality'           => true,   // hard block only if quality is also weak
+    'dbl_garbage_whipsaw_weak_quality_max_score'          => 0.72,   // "weak quality" threshold
 ];

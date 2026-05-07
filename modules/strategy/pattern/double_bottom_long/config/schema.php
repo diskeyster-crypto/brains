@@ -123,4 +123,21 @@ return [
     'lookback_candles'  => 'int',
     'bybit_base_url'    => 'string',
     'bybit_timeout_sec' => 'int',
+
+    // DBL garbage veto
+    'dbl_garbage_veto_enabled'                            => 'bool',
+    'dbl_garbage_low_quality_max_score'                   => 'float',
+    'dbl_garbage_low_quality_requires_generic_warning'    => 'bool',
+    'dbl_garbage_low_quality_requires_obc_missing_or_skipped' => 'bool',
+    'dbl_garbage_block_obc_quality_skip'                  => 'bool',
+    'dbl_garbage_obc_quality_skip_max_score'              => 'float',
+    'dbl_garbage_daily_extension_enabled'                 => 'bool',
+    'dbl_garbage_day_change_hot_pct'                      => 'float',
+    'dbl_garbage_position_in_24h_range_max_pct'           => 'float',
+    'dbl_garbage_min_room_to_24h_high_roi'                => 'float',
+    'dbl_garbage_whipsaw_enabled'                         => 'bool',
+    'dbl_garbage_whipsaw_max_10m_range_roi'               => 'float',
+    'dbl_garbage_whipsaw_max_60m_direction_flips'         => 'int',
+    'dbl_garbage_whipsaw_requires_weak_quality'           => 'bool',
+    'dbl_garbage_whipsaw_weak_quality_max_score'          => 'float',
 ];

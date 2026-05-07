@@ -157,6 +157,7 @@ final class ProfManagerService
         try {
             // ── Module enabled? ───────────────────────────────────────────────
             if (!$this->runtimeEnabled) {
+                $trendBirthCfgDiag = $this->resolveTrendBirthConfigDiagnostics();
                 $result = array_merge([
                     'ok'             => true,
                     'ts'             => $ts,
@@ -176,6 +177,12 @@ final class ProfManagerService
                     'locks_active'      => $this->longProfile->getLockCount(),
                     'locks_active_long' => $this->longProfile->getLockCount(),
                     'locks_active_short'=> $this->shortProfile->getLockCount(),
+                    'trend_birth_config_enabled'             => (bool)($trendBirthCfgDiag['trend_birth_config_enabled'] ?? true),
+                    'trend_birth_disabled_by_active_config'  => (bool)($trendBirthCfgDiag['trend_birth_disabled_by_active_config'] ?? false),
+                    'trend_birth_effective_config_source'    => (string)($trendBirthCfgDiag['trend_birth_effective_config_source'] ?? ($this->moduleDir . '/profiles/long/config.php')),
+                    'roi_samples_duplicate_ts_total'         => 0,
+                    'roi_samples_deduped_total'              => 0,
+                    'roi_samples_duplicate_examples'         => [],
                 ], $this->buildConfigSnapshot());
                 $this->store->writeLastRun($result);
                 return $result;
@@ -189,6 +196,7 @@ final class ProfManagerService
                 $skipReason = ($readResult['source'] === 'none')
                     ? 'no_positions_source_found'
                     : 'no_positions';
+                $trendBirthCfgDiag = $this->resolveTrendBirthConfigDiagnostics();
                 $result = array_merge([
                     'ok'             => true,
                     'ts'             => $ts,
@@ -217,6 +225,12 @@ final class ProfManagerService
                     'locks_active'      => $this->longProfile->getLockCount(),
                     'locks_active_long' => $this->longProfile->getLockCount(),
                     'locks_active_short'=> $this->shortProfile->getLockCount(),
+                    'trend_birth_config_enabled'             => (bool)($trendBirthCfgDiag['trend_birth_config_enabled'] ?? true),
+                    'trend_birth_disabled_by_active_config'  => (bool)($trendBirthCfgDiag['trend_birth_disabled_by_active_config'] ?? false),
+                    'trend_birth_effective_config_source'    => (string)($trendBirthCfgDiag['trend_birth_effective_config_source'] ?? ($this->moduleDir . '/profiles/long/config.php')),
+                    'roi_samples_duplicate_ts_total'         => 0,
+                    'roi_samples_deduped_total'              => 0,
+                    'roi_samples_duplicate_examples'         => [],
                 ], $this->buildConfigSnapshot());
                 $this->store->writeLastRun($result);
                 return $result;
@@ -330,6 +344,16 @@ final class ProfManagerService
             $trendBirthExamples             = [];
             $trendBirthVetoExamples         = [];
             $trendBirthBrokenExamples       = [];
+
+            // ROI sample hygiene diagnostic counters (long profile)
+            $roiSamplesDuplicateTsTotal  = 0;
+            $roiSamplesDedupedTotal      = 0;
+            $roiSamplesDuplicateExamples = [];
+
+            $trendBirthCfgDiag = $this->resolveTrendBirthConfigDiagnostics();
+            $trendBirthConfigEnabled = (bool)($trendBirthCfgDiag['trend_birth_config_enabled'] ?? true);
+            $trendBirthDisabledByActiveConfig = (bool)($trendBirthCfgDiag['trend_birth_disabled_by_active_config'] ?? false);
+            $trendBirthEffectiveConfigSource = (string)($trendBirthCfgDiag['trend_birth_effective_config_source'] ?? ($this->moduleDir . '/profiles/long/config.php'));
 
             foreach ($rawPositions as $pos) {
                 if (!is_array($pos)) {
@@ -804,6 +828,26 @@ final class ProfManagerService
                             }
                         }
                     }
+
+                    // ── ROI sample hygiene diagnostic tracking ─────────────────
+                    $dupTs = (int)($profileResult['roi_samples_duplicate_ts_total'] ?? 0);
+                    $dedupedThisTick = !empty($profileResult['roi_sample_deduped_this_tick']);
+                    $roiSamplesDuplicateTsTotal += max(0, $dupTs);
+                    if ($dedupedThisTick) {
+                        $roiSamplesDedupedTotal++;
+                    }
+                    if (($dupTs > 0 || $dedupedThisTick) && count($roiSamplesDuplicateExamples) < 10) {
+                        $roiSamplesDuplicateExamples[] = [
+                            'symbol'                         => $pos['symbol'] ?? '',
+                            'side'                           => 'long',
+                            'roi'                            => $profileResult['roi'] ?? null,
+                            'peak_roi'                       => $profileResult['peak_roi'] ?? null,
+                            'roi_samples_total'              => (int)($profileResult['roi_samples_total'] ?? 0),
+                            'roi_samples_unique_ts_total'    => (int)($profileResult['roi_samples_unique_ts_total'] ?? 0),
+                            'roi_samples_duplicate_ts_total' => $dupTs,
+                            'roi_sample_deduped_this_tick'   => $dedupedThisTick,
+                        ];
+                    }
                 }
 
                 // ── Long lock-too-close diagnostic tracking ───────────────────
@@ -1041,6 +1085,12 @@ final class ProfManagerService
                     'trend_birth_close_vetoed'              => $profileResult['trend_birth_close_vetoed']              ?? false,
                     'trend_birth_veto_reason'               => $profileResult['trend_birth_veto_reason']               ?? null,
                     'trend_birth_no_veto_reason'            => $profileResult['trend_birth_no_veto_reason']            ?? null,
+                    'trend_birth_skip_reason'               => $profileResult['trend_birth_skip_reason']               ?? null,
+                    // ROI sample hygiene diagnostics (long only)
+                    'roi_samples_total'                     => $profileResult['roi_samples_total']                     ?? null,
+                    'roi_samples_unique_ts_total'           => $profileResult['roi_samples_unique_ts_total']           ?? null,
+                    'roi_samples_duplicate_ts_total'        => $profileResult['roi_samples_duplicate_ts_total']        ?? null,
+                    'roi_sample_deduped_this_tick'          => $profileResult['roi_sample_deduped_this_tick']          ?? false,
                     // Close execution output (null when no close was attempted this tick)
                     'close_attempted'            => $closeAttemptResult['close_attempted']    ?? null,
                     'close_ok'                   => $closeAttemptResult['close_ok']           ?? null,
@@ -1245,6 +1295,13 @@ final class ProfManagerService
                 'trend_birth_examples'                   => $trendBirthExamples,
                 'trend_birth_veto_examples'              => $trendBirthVetoExamples,
                 'trend_birth_broken_examples'            => $trendBirthBrokenExamples,
+                'trend_birth_config_enabled'             => $trendBirthConfigEnabled,
+                'trend_birth_disabled_by_active_config'  => $trendBirthDisabledByActiveConfig,
+                'trend_birth_effective_config_source'    => $trendBirthEffectiveConfigSource,
+                // ROI sample hygiene diagnostics
+                'roi_samples_duplicate_ts_total'         => $roiSamplesDuplicateTsTotal,
+                'roi_samples_deduped_total'              => $roiSamplesDedupedTotal,
+                'roi_samples_duplicate_examples'         => $roiSamplesDuplicateExamples,
                 // OrderBook Context service stats
                 'obc_enabled'                            => ($this->obcService !== null),
                 'obc_stats'                              => ($this->obcService !== null) ? $this->obcService->getStats() : null,
@@ -1619,6 +1676,39 @@ final class ProfManagerService
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    /**
+     * Resolve trend_birth_hold config diagnostics for last_run visibility.
+     */
+    private function resolveTrendBirthConfigDiagnostics(): array
+    {
+        $longCfg = $this->longProfile->getConfig();
+        $enabled = (bool)($longCfg['trend_birth_hold_enabled'] ?? true);
+
+        $activePath = $this->moduleDir . '/config/active.php';
+        $profileCfgPath = $this->moduleDir . '/profiles/long/config.php';
+        $sourcePath = $profileCfgPath;
+
+        if (is_file($activePath)) {
+            try {
+                $active = require $activePath;
+                if (is_array($active)
+                    && is_array($active['profiles']['long'] ?? null)
+                    && array_key_exists('trend_birth_hold_enabled', $active['profiles']['long'])
+                ) {
+                    $sourcePath = $activePath;
+                }
+            } catch (\Throwable) {
+                // Keep defaults
+            }
+        }
+
+        return [
+            'trend_birth_config_enabled' => $enabled,
+            'trend_birth_disabled_by_active_config' => (!$enabled && $sourcePath === $activePath),
+            'trend_birth_effective_config_source' => $sourcePath,
+        ];
+    }
 
     /**
      * Build a config snapshot array for last_run diagnostics.

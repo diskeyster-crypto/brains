@@ -301,6 +301,9 @@ function renderDashboardHub(): string
     $pmCfgTbExtraStair   = (string) ($pmCfgProfileCfg['trend_birth_extra_staircase_buffer_roi'] ?? 3.0);
     $pmCfgTbEnYes        = ($pmCfgTbEnabled === '1') ? ' selected' : '';
     $pmCfgTbEnNo         = ($pmCfgTbEnabled !== '1') ? ' selected' : '';
+    $pmTbStatusLabel     = ($pmCfgTbEnabled === '1') ? 'ON' : 'OFF';
+    $pmTbStatusColor     = ($pmCfgTbEnabled === '1') ? '#3fb950' : '#f85149';
+    $pmCfgActivePathUi   = 'modules/prof_manager/config/active.php';
 
     // ── Fast loop config display vars ─────────────────────────────────────
     $pmCfgFastLoopEnabled      = ($pmCfg['fast_loop_enabled']                            ?? true) ? '1' : '0';
@@ -5790,6 +5793,17 @@ BLCK;
         <div style="margin-bottom:6px;font-size:12px;color:#58a6ff;font-weight:700;border-top:1px solid var(--ui-border);padding-top:12px;display:flex;align-items:center;gap:10px;">
           <span>Main Long PM Controls</span>
           <span style="font-size:11px;font-weight:400;color:var(--ui-text-muted);">— наиболее важные параметры для long-профиля</span>
+        </div>
+        <div style="margin:-2px 0 10px 0;font-size:11px;color:var(--ui-text-muted);line-height:1.45;">
+          Trend Birth Hold:
+          <span style="font-weight:700;color:{$pmTbStatusColor};">{$pmTbStatusLabel}</span>
+          · active config:
+          <code>{$e($pmCfgActivePathUi)}</code>
+          · effective:
+          lock_buffer_roi=<strong>{$e($pmCfgLockBuf)}</strong>,
+          roi_staircase_floor_buffer_roi=<strong>{$e($pmCfgStaircaseBuffer)}</strong>,
+          trend_birth_max_giveback_roi=<strong>{$e($pmCfgTbMaxGiveback)}</strong>,
+          trend_birth_extra_staircase_buffer_roi=<strong>{$e($pmCfgTbExtraStair)}</strong>
         </div>
         <!-- Quick preset buttons -->
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">

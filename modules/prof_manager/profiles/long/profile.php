@@ -83,6 +83,7 @@ class LongProfile
 
         $positionState = $positionsState[$key] ?? [];
         $lockState     = $locks[$key]          ?? [];
+        $positionState['roi_sample_deduped_this_tick'] = false;
 
         // ── Position identity validation ───────────────────────────────────────
         // Detect stale lock/position state that belongs to a previous position
@@ -186,6 +187,7 @@ class LongProfile
         // Uses roi_samples from stored state (previous ticks) to detect early trend
         // birth and widen effective lock/staircase buffers before planning.
         $trendBirthHoldEnabled        = !empty($this->config['trend_birth_hold_enabled']);
+        $trendBirthSkipReason         = null;
         $trendBirthPreCtx             = null;
         $trendBirthExtraLockBuffer    = 0.0;
         $trendBirthExtraStairBuffer   = 0.0;
@@ -200,6 +202,8 @@ class LongProfile
                 $trendBirthExtraLockBuffer  = (float) ($this->config['trend_birth_extra_lock_buffer_roi']      ?? 2.0);
                 $trendBirthExtraStairBuffer = (float) ($this->config['trend_birth_extra_staircase_buffer_roi'] ?? 3.0);
             }
+        } elseif (!$trendBirthHoldEnabled) {
+            $trendBirthSkipReason = 'disabled_by_active_config';
         }
 
         // Apply extra lock buffer to effectiveConfig if trend birth is active
@@ -647,6 +651,18 @@ class LongProfile
                 }
             }
         }
+        if (!$trendBirthHoldEnabled && $trendBirthSkipReason === null) {
+            $trendBirthSkipReason = 'disabled_by_active_config';
+        }
+
+        $roiSamples = is_array($positionState['roi_samples'] ?? null) ? $positionState['roi_samples'] : [];
+        $roiSamplesTotal = count($roiSamples);
+        $roiSamplesUniqueTsTotal = count(array_unique(array_map(
+            static fn(array $s): int => (int)($s['ts'] ?? 0),
+            $roiSamples
+        )));
+        $roiSamplesDuplicateTsTotal = max(0, $roiSamplesTotal - $roiSamplesUniqueTsTotal);
+        $roiSampleDedupedThisTick = !empty($positionState['roi_sample_deduped_this_tick']);
 
         // Persist updated state (includes hybrid fields)
         $positionsState[$key] = $positionState;
@@ -744,7 +760,13 @@ class LongProfile
             'trend_birth_close_vetoed'              => $trendBirthCloseVetoed,
             'trend_birth_veto_reason'               => $trendBirthVetoReason,
             'trend_birth_no_veto_reason'            => $trendBirthNoVetoReason,
+            'trend_birth_skip_reason'               => $trendBirthSkipReason,
             'trend_birth_context'                   => $trendBirthCtx,
+            // ── ROI sample hygiene diagnostics ─────────────────────────────────
+            'roi_samples_total'                     => $roiSamplesTotal,
+            'roi_samples_unique_ts_total'           => $roiSamplesUniqueTsTotal,
+            'roi_samples_duplicate_ts_total'        => $roiSamplesDuplicateTsTotal,
+            'roi_sample_deduped_this_tick'          => $roiSampleDedupedThisTick,
             // ── State freshness diagnostics ───────────────────────────────────
             'state_current_price_updated'      => true,
             'state_peak_at_updated'            => $statePeakAtUpdated,
@@ -1100,8 +1122,28 @@ class LongProfile
         $maxWindowSec = 1200; // keep at most 20 minutes
 
         $samples = is_array($positionState['roi_samples'] ?? null) ? $positionState['roi_samples'] : [];
+        $sample = ['ts' => $nowTs, 'roi' => $roi, 'price' => $price];
+        $deduped = false;
 
-        $samples[] = ['ts' => $nowTs, 'roi' => $roi, 'price' => $price];
+        // If an identical sample already exists for this timestamp, skip append.
+        foreach ($samples as $existing) {
+            if ((int)($existing['ts'] ?? 0) !== $nowTs) {
+                continue;
+            }
+            if ((float)($existing['roi'] ?? 0.0) === $roi && (float)($existing['price'] ?? 0.0) === $price) {
+                $positionState['roi_sample_deduped_this_tick'] = true;
+                return;
+            }
+        }
+
+        // Same timestamp as last sample: replace/update last sample instead of append.
+        $lastIdx = count($samples) - 1;
+        if ($lastIdx >= 0 && (int)($samples[$lastIdx]['ts'] ?? 0) === $nowTs) {
+            $samples[$lastIdx] = $sample;
+            $deduped = true;
+        } else {
+            $samples[] = $sample;
+        }
 
         // Prune old samples outside the rolling window
         $cutoff  = $nowTs - $maxWindowSec;
@@ -1113,6 +1155,9 @@ class LongProfile
         }
 
         $positionState['roi_samples'] = $samples;
+        if ($deduped) {
+            $positionState['roi_sample_deduped_this_tick'] = true;
+        }
     }
 
     // =========================================================================

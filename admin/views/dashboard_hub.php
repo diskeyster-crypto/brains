@@ -368,49 +368,53 @@ function renderDashboardHub(): string
         $manifestById = [];
         $stratRoot = System::path('root') . '/modules/strategy';
         if (is_dir($stratRoot)) {
-            $iter = new \RecursiveIteratorIterator(
-                new \RecursiveDirectoryIterator($stratRoot, \FilesystemIterator::SKIP_DOTS)
-            );
-            foreach ($iter as $fileInfo) {
-                if (!$fileInfo->isFile() || $fileInfo->getFilename() !== 'manifest.json') {
-                    continue;
-                }
-                $mfPathAbs = $fileInfo->getPathname();
-                $mfRaw = @file_get_contents($mfPathAbs);
-                $mf    = ($mfRaw !== false) ? json_decode($mfRaw, true) : null;
-                if (!is_array($mf) || (string)($mf['category'] ?? '') !== 'strategy') {
-                    continue;
-                }
-                $mfId = (string)($mf['name'] ?? '');
-                if ($mfId === '') {
-                    continue;
-                }
+            try {
+                $iter = new \RecursiveIteratorIterator(
+                    new \RecursiveDirectoryIterator($stratRoot, \FilesystemIterator::SKIP_DOTS)
+                );
+                foreach ($iter as $fileInfo) {
+                    if (!$fileInfo->isFile() || $fileInfo->getFilename() !== 'manifest.json') {
+                        continue;
+                    }
+                    $mfPathAbs = $fileInfo->getPathname();
+                    $mfRaw = @file_get_contents($mfPathAbs);
+                    $mf    = ($mfRaw !== false) ? json_decode($mfRaw, true) : null;
+                    if (!is_array($mf) || (string)($mf['category'] ?? '') !== 'strategy') {
+                        continue;
+                    }
+                    $mfId = (string)($mf['name'] ?? '');
+                    if ($mfId === '') {
+                        continue;
+                    }
 
-                $relModuleDir = ltrim(str_replace(System::path('root') . '/', '', dirname($mfPathAbs)), '/');
-                $relManifest  = $relModuleDir . '/manifest.json';
-                $mfDesc       = strtolower((string)($mf['description'] ?? ''));
-                $mfSupportsLong  = !str_ends_with($mfId, '_short');
-                $mfSupportsShort = !str_ends_with($mfId, '_long');
-                if (str_contains($mfDesc, 'long') || str_contains($mfDesc, 'лонг')) {
-                    $mfSupportsLong  = true;
-                    $mfSupportsShort = str_contains($mfDesc, 'short') || str_contains($mfDesc, 'шорт');
-                }
+                    $relModuleDir = ltrim(str_replace(System::path('root') . '/', '', dirname($mfPathAbs)), '/');
+                    $relManifest  = $relModuleDir . '/manifest.json';
+                    $mfDesc       = strtolower((string)($mf['description'] ?? ''));
+                    $mfSupportsLong  = !str_ends_with($mfId, '_short');
+                    $mfSupportsShort = !str_ends_with($mfId, '_long');
+                    if (str_contains($mfDesc, 'long') || str_contains($mfDesc, 'лонг')) {
+                        $mfSupportsLong  = true;
+                        $mfSupportsShort = str_contains($mfDesc, 'short') || str_contains($mfDesc, 'шорт');
+                    }
 
-                $mfQueueAbs = System::path('root') . '/' . $relModuleDir . '/storage/bot_handoff_queue.json';
-                $manifestById[$mfId] = [
-                    'strategy_id'        => $mfId,
-                    'module_path'        => $relModuleDir,
-                    'manifest_path'      => $relManifest,
-                    'title'              => (string)($mf['title'] ?? $mfId),
-                    'category'           => (string)($mf['category'] ?? 'strategy'),
-                    'enabled_by_default' => (bool)($mf['enabled_by_default'] ?? true),
-                    'supports_long'      => $mfSupportsLong,
-                    'supports_short'     => $mfSupportsShort,
-                    // Defaults for manifest-only additions (new modules)
-                    'status'             => 'not_run_yet',
-                    'handoff_queue_path' => file_exists($mfQueueAbs) ? ($relModuleDir . '/storage/bot_handoff_queue.json') : null,
-                    'discovered_at'      => null,
-                ];
+                    $mfQueueAbs = System::path('root') . '/' . $relModuleDir . '/storage/bot_handoff_queue.json';
+                    $manifestById[$mfId] = [
+                        'strategy_id'        => $mfId,
+                        'module_path'        => $relModuleDir,
+                        'manifest_path'      => $relManifest,
+                        'title'              => (string)($mf['title'] ?? $mfId),
+                        'category'           => (string)($mf['category'] ?? 'strategy'),
+                        'enabled_by_default' => (bool)($mf['enabled_by_default'] ?? true),
+                        'supports_long'      => $mfSupportsLong,
+                        'supports_short'     => $mfSupportsShort,
+                        // Defaults for manifest-only additions (new modules)
+                        'status'             => 'not_run_yet',
+                        'handoff_queue_path' => file_exists($mfQueueAbs) ? ($relModuleDir . '/storage/bot_handoff_queue.json') : null,
+                        'discovered_at'      => null,
+                    ];
+                }
+            } catch (\Throwable) {
+                // keep existing registry-only view if manifest scan fails
             }
         }
 

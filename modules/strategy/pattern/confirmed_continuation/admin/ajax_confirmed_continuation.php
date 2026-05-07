@@ -64,7 +64,9 @@ switch ($action) {
         ];
 
         $updated = $existing;
-        // Strategy is environment-neutral: do not persist deprecated mode=demo/live
+        // Keep cleanup here (on save) even though service also normalizes on tick:
+        // this prevents re-introducing deprecated mode in active.php between ticks.
+        // Strategy is environment-neutral: do not persist mode=demo/live.
         if (array_key_exists('mode', $updated)) {
             unset($updated['mode']);
         }

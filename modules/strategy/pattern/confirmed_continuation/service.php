@@ -3710,7 +3710,12 @@ final class ConfirmedContinuationService
      */
     private function loadCandlesFromParser2History(string $symbol, int $lookbackMinutes, int $minCandles, array &$diag): array
     {
-        $storageRoot = $this->repoRoot . '/modules/parser/parser2_history_accumulator/storage/' . strtoupper($symbol);
+        $normalizedSymbol = strtoupper(trim($symbol));
+        if (!preg_match('/^[A-Z0-9]{2,30}$/', $normalizedSymbol)) {
+            $diag['candle_source_error'] = 'parser2_history_invalid_symbol';
+            return [];
+        }
+        $storageRoot = $this->repoRoot . '/modules/parser/parser2_history_accumulator/storage/' . $normalizedSymbol;
         $files = [
             $storageRoot . '/' . gmdate('Y-m-d') . '.ndjson',
             $storageRoot . '/' . gmdate('Y-m-d', time() - 86400) . '.ndjson',

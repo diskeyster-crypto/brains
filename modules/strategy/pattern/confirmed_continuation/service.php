@@ -1639,10 +1639,10 @@ final class ConfirmedContinuationService
         if ($idx < 2 || $idx > count($lows) - 3) {
             return false;
         }
-        return $lows[$idx] <= $lows[$idx - 1]
-            && $lows[$idx] <= $lows[$idx + 1]
-            && $lows[$idx] <= $lows[$idx - 2]
-            && $lows[$idx] <= $lows[$idx + 2];
+        return $lows[$idx] < $lows[$idx - 1]
+            && $lows[$idx] < $lows[$idx + 1]
+            && $lows[$idx] < $lows[$idx - 2]
+            && $lows[$idx] < $lows[$idx + 2];
     }
 
     private function isLocalSwingHigh(array $highs, int $idx): bool
@@ -1650,10 +1650,10 @@ final class ConfirmedContinuationService
         if ($idx < 2 || $idx > count($highs) - 3) {
             return false;
         }
-        return $highs[$idx] >= $highs[$idx - 1]
-            && $highs[$idx] >= $highs[$idx + 1]
-            && $highs[$idx] >= $highs[$idx - 2]
-            && $highs[$idx] >= $highs[$idx + 2];
+        return $highs[$idx] > $highs[$idx - 1]
+            && $highs[$idx] > $highs[$idx + 1]
+            && $highs[$idx] > $highs[$idx - 2]
+            && $highs[$idx] > $highs[$idx + 2];
     }
 
     private function findMaxIndex(array $values, int $start, int $end): int
@@ -3714,7 +3714,7 @@ final class ConfirmedContinuationService
     private function loadCandlesFromParser2History(string $symbol, int $lookbackMinutes, int $minCandles, array &$diag): array
     {
         $normalizedSymbol = strtoupper(trim($symbol));
-        if (!preg_match('/^[A-Z0-9]{2,30}$/', $normalizedSymbol) || str_contains($normalizedSymbol, '..')) {
+        if (!preg_match('/^[A-Z0-9]{2,30}$/', $normalizedSymbol)) {
             $diag['candle_source_error'] = 'parser2_history_invalid_symbol';
             return [];
         }

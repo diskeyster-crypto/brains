@@ -75,6 +75,16 @@ return [
     'smooth_trend_max_single_candle_contribution' => 0.45,
     'smooth_trend_require_pullback_before_entry' => true,
     'smooth_trend_reject_vertical_spike'    => true,
+    'pattern_123_enabled'                   => true,
+    'pattern_123_required_for_signal'       => true,
+    'pattern_123_allow_aggressive_point3_entry' => true,
+    'pattern_123_allow_conservative_point2_retest_entry' => true,
+    'pattern_123_min_point3_distance_from_point1_pct' => 0.15,
+    'pattern_123_max_entry_distance_from_point3_pct' => 0.7,
+    'pattern_123_max_late_distance_from_point2_pct' => 1.2,
+    'pattern_123_require_point3_turn_confirmation' => true,
+    'pattern_123_require_point3_above_point1_long' => true,
+    'pattern_123_require_point3_below_point1_short' => true,
 
     // ── Pattern filters (boolean gates) ──────────────────────────────────────
     'require_retest'                    => true,

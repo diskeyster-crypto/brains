@@ -367,12 +367,16 @@ function renderDashboardHub(): string
 
         $manifestById = [];
         $stratRoot = System::path('root') . '/modules/strategy';
+        $manifestScanMaxDepth = 6;
         if (is_dir($stratRoot)) {
             try {
                 $iter = new \RecursiveIteratorIterator(
                     new \RecursiveDirectoryIterator($stratRoot, \FilesystemIterator::SKIP_DOTS)
                 );
                 foreach ($iter as $fileInfo) {
+                    if ($iter->getDepth() > $manifestScanMaxDepth) {
+                        continue;
+                    }
                     if (!$fileInfo->isFile() || $fileInfo->getFilename() !== 'manifest.json') {
                         continue;
                     }

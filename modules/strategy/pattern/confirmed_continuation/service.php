@@ -31,7 +31,7 @@ namespace Modules\Strategy\ConfirmedContinuation;
 
 final class ConfirmedContinuationService
 {
-    private const TIMESTAMP_MS_THRESHOLD = 20000000000;
+    private const TIMESTAMP_MS_TO_SECONDS_THRESHOLD = 20000000000;
     private const IDEA_KEY_BUCKET_SECONDS = 600;
     private static ?self $instance = null;
     private string $moduleDir;
@@ -870,7 +870,7 @@ final class ConfirmedContinuationService
 
     private function normalizeCandleTimestampToSeconds(int $ts): int
     {
-        return $ts > self::TIMESTAMP_MS_THRESHOLD ? (int)floor($ts / 1000) : $ts;
+        return $ts > self::TIMESTAMP_MS_TO_SECONDS_THRESHOLD ? (int)floor($ts / 1000) : $ts;
     }
 
     private function formatCandleTimestamp(?int $ts): ?string
@@ -879,6 +879,11 @@ final class ConfirmedContinuationService
             return null;
         }
         return gmdate('c', $this->normalizeCandleTimestampToSeconds($ts));
+    }
+
+    private function getIdeaKeyTimeBucket(): int
+    {
+        return (int)(floor(time() / self::IDEA_KEY_BUCKET_SECONDS) * self::IDEA_KEY_BUCKET_SECONDS);
     }
 
     private function detectLongStructure(
@@ -2331,7 +2336,7 @@ final class ConfirmedContinuationService
         $structureLevel = ($side === 'long')
             ? (float)($structure['last_higher_low_price'] ?? 0)
             : (float)($structure['last_lower_high_price'] ?? 0);
-        $timeBucket = (int)(floor(time() / self::IDEA_KEY_BUCKET_SECONDS) * self::IDEA_KEY_BUCKET_SECONDS);
+        $timeBucket = $this->getIdeaKeyTimeBucket();
         $ideaKey = $symbol
             . ':' . $side
             . ':' . ($structure['setup_class'] ?? '')
@@ -2365,7 +2370,7 @@ final class ConfirmedContinuationService
         $structureLevel = ($side === 'long')
             ? (float)($candidate['last_higher_low_price'] ?? $candidate['entry_price'] ?? 0)
             : (float)($candidate['last_lower_high_price'] ?? $candidate['entry_price'] ?? 0);
-        $timeBucket = (int)(floor(time() / self::IDEA_KEY_BUCKET_SECONDS) * self::IDEA_KEY_BUCKET_SECONDS);
+        $timeBucket = $this->getIdeaKeyTimeBucket();
         $ideaKey = ($candidate['symbol'] ?? '')
             . ':' . $side
             . ':' . ($candidate['setup_class'] ?? '')

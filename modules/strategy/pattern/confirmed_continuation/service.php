@@ -69,6 +69,40 @@ final class ConfirmedContinuationService
     private array $firstBounceRejectExamples   = [];
     /** @var list<array<string,mixed>> */
     private array $noRetestRejectExamples      = [];
+    /** @var list<array<string,mixed>> */
+    private array $antiCombExamples            = [];
+    /** @var list<array<string,mixed>> */
+    private array $wallTestExamples            = [];
+
+    // ── Pattern / quality diagnostics ──────────────────────────────────────────
+    private int $higherLowCandidatesTotal   = 0;
+    private int $lowerHighCandidatesTotal   = 0;
+    private int $retestHeldTotal            = 0;
+    private int $continuationConfirmedTotal = 0;
+    private int $firstBounceRejectedTotal   = 0;
+    private int $lateEntryRejectedTotal     = 0;
+
+    // ── Anti-comb diagnostics ──────────────────────────────────────────────────
+    private int $antiCombCheckedTotal                  = 0;
+    private int $antiCombRejectedTotal                 = 0;
+    private int $antiCombRecentRangeRejectTotal        = 0;
+    private int $antiCombOppositeSwingRejectTotal      = 0;
+    private int $antiCombWickChaosRejectTotal          = 0;
+    private int $antiCombLowConsistencyRejectTotal     = 0;
+    private int $antiCombStructureBreaksRejectTotal    = 0;
+    private int $antiCombAlternatingCandlesRejectTotal = 0;
+
+    // ── Day regime diagnostics ─────────────────────────────────────────────────
+    private int $dayRegimeCheckedTotal   = 0;
+    private int $dayRegimeBlockedTotal   = 0;
+    private int $dayRegimeLongBiasTotal  = 0;
+    private int $dayRegimeShortBiasTotal = 0;
+
+    // ── Wall test diagnostics ──────────────────────────────────────────────────
+    private int $wallTestPendingTotal        = 0;
+    private int $wallTestConfirmedTotal      = 0;
+    private int $wallTestRejectedTotal       = 0;
+    private int $wallTestOppositeContextTotal= 0;
 
     public function __construct(?string $moduleDir = null)
     {
@@ -270,11 +304,30 @@ final class ConfirmedContinuationService
                 continue;
             }
 
+            // 24h side-bias diagnostics / gating context
+            $dayCtx = $this->computeDayRegimeContext($symbol, $side, $candles, $config);
+
             // Detect structure
             $structure = $this->detectStructure($candles, $side, $config);
             if ($structure === null) {
                 continue;
             }
+            $structure = array_merge($structure, $dayCtx);
+            if ($side === 'long') {
+                $this->higherLowCandidatesTotal++;
+            } else {
+                $this->lowerHighCandidatesTotal++;
+            }
+            if (($structure['retest_held'] ?? false) === true) {
+                $this->retestHeldTotal++;
+            }
+            if (($structure['continuation_confirmed'] ?? false) === true) {
+                $this->continuationConfirmedTotal++;
+            }
+
+            // Anti-comb / anti-chaos diagnostics
+            $antiComb = $this->computeAntiCombDiagnostics($candles, $side, $structure, $config);
+            $structure = array_merge($structure, $antiComb);
 
             $this->candidatesTotal++;
             if ($side === 'long') {
@@ -303,10 +356,12 @@ final class ConfirmedContinuationService
                 }
                 // Track specific reject types for diagnostics
                 if (str_contains($hardReject['stage'], 'late_entry')) {
+                    $this->lateEntryRejectedTotal++;
                     if (count($this->lateEntryRejectExamples) < 5) {
                         $this->lateEntryRejectExamples[] = $rejectRec;
                     }
                 } elseif (str_contains($hardReject['stage'], 'first_bounce')) {
+                    $this->firstBounceRejectedTotal++;
                     if (count($this->firstBounceRejectExamples) < 5) {
                         $this->firstBounceRejectExamples[] = $rejectRec;
                     }
@@ -337,12 +392,18 @@ final class ConfirmedContinuationService
                     'failed_stage' => 'quality_gate',
                     'rejected_at'  => date('c'),
                     'scores'       => $quality,
+                    'candidate_quality_score' => $quality['candidate_quality_score'] ?? null,
+                    'structure_score'         => $quality['structure_score'] ?? null,
+                    'controlled_trend_score'  => $quality['controlled_trend_score'] ?? ($structure['controlled_trend_score'] ?? null),
                 ];
                 continue;
             }
 
             // OBC gate (only after cheap filters pass)
             $obcResult = $this->applyObcGate($symbol, $side, $structure['entry_price'] ?? 0.0, $quality, $config);
+            // Wall decision test (after OBC context is available)
+            $wallTest  = $this->computeWallDecisionTest($side, $structure, $obcResult, $config);
+            $structure = array_merge($structure, $wallTest);
 
             $candidate = $this->buildCandidate($symbol, $side, $structure, $quality, $obcResult, $config);
             $newCandidates[] = $candidate;
@@ -512,6 +573,7 @@ final class ConfirmedContinuationService
             'structure_holds'                      => $structureHolds,
             'pullback_detected'                    => $pullbackDetected,
             'pullback_pct'                         => round($pullbackPct, 4),
+            'continuation_confirmed'               => $continuationConfirmed,
         ];
     }
 
@@ -617,6 +679,7 @@ final class ConfirmedContinuationService
             'structure_holds'                      => $structureHolds,
             'bounce_detected'                      => $bounceDetected,
             'bounce_pct'                           => round($bouncePct, 4),
+            'continuation_confirmed'               => $continuationConfirmed,
         ];
     }
 
@@ -635,10 +698,29 @@ final class ConfirmedContinuationService
             return ['reason' => 'missing_entry_price', 'stage' => 'pre_filter'];
         }
 
+        // Day-regime side-bias hard blocks
+        if (($structure['day_regime_blocked'] ?? false) === true) {
+            return [
+                'reason' => (string)($structure['day_regime_reject_reason'] ?? 'day_regime_blocked'),
+                'stage'  => 'day_regime',
+            ];
+        }
+
+        // Anti-comb / anti-chaos hard blocks
+        if (($structure['anti_comb_rejected'] ?? false) === true) {
+            return [
+                'reason' => (string)($structure['anti_comb_reject_reason'] ?? 'anti_comb_rejected'),
+                'stage'  => 'anti_comb',
+            ];
+        }
+
         // Reject: no structure higher lows / lower highs
         if ($side === 'long') {
             if (($structure['higher_lows_count'] ?? 0) < 2) {
                 return ['reason' => 'no_higher_lows', 'stage' => 'first_bounce_or_no_structure'];
+            }
+            if (($structure['pullback_detected'] ?? false) === false) {
+                return ['reason' => 'first_bounce_after_dump', 'stage' => 'first_bounce_or_no_structure'];
             }
             // Reject: entry too far above last higher low
             $distPct      = (float)($structure['entry_distance_from_last_higher_low_pct'] ?? 0);
@@ -671,6 +753,9 @@ final class ConfirmedContinuationService
         } else {
             if (($structure['lower_highs_count'] ?? 0) < 2) {
                 return ['reason' => 'no_lower_highs', 'stage' => 'first_dump_or_no_structure'];
+            }
+            if (($structure['bounce_detected'] ?? false) === false) {
+                return ['reason' => 'first_dump_after_pump', 'stage' => 'first_dump_or_no_structure'];
             }
             $distPct = (float)($structure['entry_distance_from_last_lower_high_pct'] ?? 0);
             $maxDist = (float)($config['max_entry_distance_from_structure_pct'] ?? 0.6);
@@ -767,15 +852,19 @@ final class ConfirmedContinuationService
 
         // OBC score placeholder (updated after OBC fetch)
         $obcScore = 0.5;
+        $dayRegimeScore = (float)($structure['day_regime_score'] ?? 0.5);
+        $controlledTrendScore = (float)($structure['controlled_trend_score'] ?? 0.5);
 
         $finalScore = round(
-            $structureScore       * 0.30
-            + $retestScore        * 0.25
-            + $continuationScore  * 0.20
-            + $entryDistanceScore * 0.10
-            + $pullbackQualityScore * 0.05
-            + $volumePersistenceScore * 0.05
-            + $obcScore           * 0.05,
+            $structureScore          * 0.23
+            + $retestScore           * 0.20
+            + $continuationScore     * 0.17
+            + $entryDistanceScore    * 0.10
+            + $pullbackQualityScore  * 0.05
+            + $volumePersistenceScore* 0.05
+            + $dayRegimeScore        * 0.10
+            + $controlledTrendScore  * 0.05
+            + $obcScore              * 0.05,
             4
         );
 
@@ -786,6 +875,8 @@ final class ConfirmedContinuationService
             'entry_distance_score'    => round($entryDistanceScore,    4),
             'pullback_quality_score'  => round($pullbackQualityScore,  4),
             'volume_persistence_score'=> round($volumePersistenceScore,4),
+            'day_regime_score'        => round($dayRegimeScore,        4),
+            'controlled_trend_score'  => round($controlledTrendScore,  4),
             'obc_score'               => round($obcScore,              4),
             'final_candidate_score'   => $finalScore,
             'candidate_quality_score' => $finalScore,
@@ -912,6 +1003,356 @@ final class ConfirmedContinuationService
         }
     }
 
+    // ── Day-regime / anti-comb / wall-test helpers ────────────────────────────
+
+    private function computeDayRegimeContext(string $symbol, string $side, array $candles, array $config): array
+    {
+        $this->dayRegimeCheckedTotal++;
+        $ctx = [
+            'day_change_pct'             => null,
+            'day_high'                   => null,
+            'day_low'                    => null,
+            'distance_to_24h_high_pct'   => null,
+            'distance_to_24h_low_pct'    => null,
+            'day_regime_bias'            => 'neutral',
+            'day_regime_reject_reason'   => null,
+            'day_regime_blocked'         => false,
+            'day_regime_score'           => 0.5,
+        ];
+        if (!(bool)($config['day_regime_filter_enabled'] ?? true)) {
+            return $ctx;
+        }
+
+        $ticker = $this->fetchTicker24h($symbol, $config);
+        if ($ticker === null) {
+            return $ctx;
+        }
+
+        $dayChangePct = (float)($ticker['price24hPcnt'] ?? 0.0) * 100.0;
+        $dayHigh      = (float)($ticker['highPrice24h'] ?? 0.0);
+        $dayLow       = (float)($ticker['lowPrice24h'] ?? 0.0);
+        $lastPrice    = (float)($ticker['lastPrice'] ?? 0.0);
+        if ($lastPrice <= 0.0 && !empty($candles)) {
+            $lastPrice = (float)($candles[count($candles) - 1]['close'] ?? 0.0);
+        }
+
+        $distHigh = ($dayHigh > 0 && $lastPrice > 0) ? (($dayHigh - $lastPrice) / $lastPrice * 100.0) : null;
+        $distLow  = ($dayLow > 0 && $lastPrice > 0) ? (($lastPrice - $dayLow) / $lastPrice * 100.0) : null;
+
+        $ctx['day_change_pct'] = round($dayChangePct, 4);
+        $ctx['day_high'] = $dayHigh > 0 ? $dayHigh : null;
+        $ctx['day_low']  = $dayLow > 0 ? $dayLow : null;
+        $ctx['distance_to_24h_high_pct'] = $distHigh !== null ? round($distHigh, 4) : null;
+        $ctx['distance_to_24h_low_pct']  = $distLow !== null ? round($distLow, 4) : null;
+
+        $nearHigh = $distHigh !== null && $distHigh <= (float)($config['long_reject_near_24h_high_pct'] ?? 2.0);
+        $nearLow  = $distLow !== null && $distLow <= (float)($config['short_reject_near_24h_low_pct'] ?? 2.0);
+
+        if ($side === 'long') {
+            $ctx['day_regime_bias'] = 'long';
+            $this->dayRegimeLongBiasTotal++;
+            $ctx['day_regime_score'] = ($dayChangePct <= (float)($config['long_prefer_24h_change_max_pct'] ?? 8.0)) ? 0.75 : 0.45;
+            if (
+                $dayChangePct >= (float)($config['long_reject_24h_change_above_pct'] ?? 18.0)
+                && $nearHigh
+            ) {
+                $ctx['day_regime_blocked'] = true;
+                $ctx['day_regime_bias'] = 'blocked';
+                $ctx['day_regime_reject_reason'] = 'day_regime_long_near_24h_high_extension';
+                $ctx['day_regime_score'] = 0.20;
+            }
+        } else {
+            $ctx['day_regime_bias'] = 'short';
+            $this->dayRegimeShortBiasTotal++;
+            $ctx['day_regime_score'] = ($dayChangePct >= (float)($config['short_prefer_24h_change_min_pct'] ?? -8.0)) ? 0.75 : 0.45;
+            if (
+                $dayChangePct <= (float)($config['short_reject_24h_change_below_pct'] ?? -18.0)
+                && $nearLow
+            ) {
+                $ctx['day_regime_blocked'] = true;
+                $ctx['day_regime_bias'] = 'blocked';
+                $ctx['day_regime_reject_reason'] = 'day_regime_short_near_24h_low_extension';
+                $ctx['day_regime_score'] = 0.20;
+            }
+        }
+
+        if ($ctx['day_regime_blocked']) {
+            $this->dayRegimeBlockedTotal++;
+        }
+        return $ctx;
+    }
+
+    private function computeAntiCombDiagnostics(array $candles, string $side, array $structure, array $config): array
+    {
+        $diag = [
+            'recent_max_1m_range_roi'            => 0.0,
+            'recent_max_3m_range_roi'            => 0.0,
+            'recent_max_swing_roi'               => 0.0,
+            'recent_opposite_swing_roi'          => 0.0,
+            'directional_consistency_score'      => 1.0,
+            'wick_chaos_score'                   => 0.0,
+            'structure_breaks_count'             => 0,
+            'alternating_large_candles_detected' => false,
+            'controlled_trend_score'             => 1.0,
+            'anti_comb_rejected'                 => false,
+            'anti_comb_reject_reason'            => null,
+        ];
+        if (!(bool)($config['anti_comb_enabled'] ?? true)) {
+            return $diag;
+        }
+        $this->antiCombCheckedTotal++;
+
+        $lookback = max(5, (int)($config['anti_comb_lookback_minutes'] ?? 20));
+        $slice = array_slice($candles, -$lookback);
+        if (count($slice) < 5) {
+            return $diag;
+        }
+        $opens = array_column($slice, 'open');
+        $highs = array_column($slice, 'high');
+        $lows  = array_column($slice, 'low');
+        $closes= array_column($slice, 'close');
+
+        $max1m = 0.0;
+        $wickSamples = [];
+        $dirGood = 0;
+        $dirTotal = 0;
+        $alternating = 0;
+        $largeThr = 1.8;
+        for ($i = 0; $i < count($slice); $i++) {
+            $o = (float)$opens[$i];
+            $h = (float)$highs[$i];
+            $l = (float)$lows[$i];
+            $c = (float)$closes[$i];
+            if ($o > 0) {
+                $r = abs($h - $l) / $o * 100.0;
+                $max1m = max($max1m, $r);
+                $body = abs($c - $o);
+                $wick = max(0.0, ($h - $l) - $body);
+                $wickSamples[] = ($h - $l) > 0 ? ($wick / ($h - $l)) : 0.0;
+                $dirTotal++;
+                if (($side === 'long' && $c >= $o) || ($side === 'short' && $c <= $o)) {
+                    $dirGood++;
+                }
+                if ($i > 0) {
+                    $po = (float)$opens[$i - 1];
+                    $pc = (float)$closes[$i - 1];
+                    if ($po > 0) {
+                        $prevRange = abs((float)$highs[$i - 1] - (float)$lows[$i - 1]) / $po * 100.0;
+                        if ($prevRange >= $largeThr && $r >= $largeThr) {
+                            $prevUp = $pc >= $po;
+                            $curUp  = $c >= $o;
+                            if ($prevUp !== $curUp) {
+                                $alternating++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        $max3m = 0.0;
+        for ($i = 2; $i < count($slice); $i++) {
+            $o = (float)$opens[$i - 2];
+            if ($o <= 0) {
+                continue;
+            }
+            $h = max((float)$highs[$i - 2], (float)$highs[$i - 1], (float)$highs[$i]);
+            $l = min((float)$lows[$i - 2], (float)$lows[$i - 1], (float)$lows[$i]);
+            $max3m = max($max3m, abs($h - $l) / $o * 100.0);
+        }
+
+        $swingHigh = max($highs);
+        $swingLow  = min($lows);
+        $base = (float)$closes[0];
+        $recentSwing = ($base > 0) ? abs($swingHigh - $swingLow) / $base * 100.0 : 0.0;
+
+        $oppSwing = 0.0;
+        if ($side === 'long') {
+            $oppSwing = ($base > 0) ? max(0.0, ($base - $swingLow) / $base * 100.0) : 0.0;
+        } else {
+            $oppSwing = ($base > 0) ? max(0.0, ($swingHigh - $base) / $base * 100.0) : 0.0;
+        }
+
+        $consistency = $dirTotal > 0 ? ($dirGood / $dirTotal) : 0.0;
+        $wickChaos   = !empty($wickSamples) ? (array_sum($wickSamples) / count($wickSamples)) : 1.0;
+
+        $structureBreaks = 0;
+        if ($side === 'long' && isset($structure['last_higher_low_price'])) {
+            $lvl = (float)$structure['last_higher_low_price'];
+            foreach ($lows as $v) {
+                if ((float)$v < $lvl * 0.995) {
+                    $structureBreaks++;
+                }
+            }
+        } elseif ($side === 'short' && isset($structure['last_lower_high_price'])) {
+            $lvl = (float)$structure['last_lower_high_price'];
+            foreach ($highs as $v) {
+                if ((float)$v > $lvl * 1.005) {
+                    $structureBreaks++;
+                }
+            }
+        }
+
+        $diag['recent_max_1m_range_roi'] = round($max1m, 4);
+        $diag['recent_max_3m_range_roi'] = round($max3m, 4);
+        $diag['recent_max_swing_roi'] = round($recentSwing, 4);
+        $diag['recent_opposite_swing_roi'] = round($oppSwing, 4);
+        $diag['directional_consistency_score'] = round($consistency, 4);
+        $diag['wick_chaos_score'] = round($wickChaos, 4);
+        $diag['structure_breaks_count'] = $structureBreaks;
+        $diag['alternating_large_candles_detected'] = $alternating > 0;
+
+        $controlledTrendScore = 1.0;
+        $controlledTrendScore -= min(0.35, $max1m / max(1.0, (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0)) * 0.35);
+        $controlledTrendScore -= min(0.25, max(0.0, $wickChaos - 0.2));
+        $controlledTrendScore -= min(0.20, max(0.0, 0.8 - $consistency));
+        $controlledTrendScore -= min(0.20, $structureBreaks * 0.10);
+        $diag['controlled_trend_score'] = round(max(0.0, min(1.0, $controlledTrendScore)), 4);
+
+        $rejectReason = null;
+        if ($max1m > (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0) || $max3m > (float)($config['anti_comb_max_3m_range_roi'] ?? 30.0)) {
+            $rejectReason = 'anti_comb_recent_range_too_high';
+            $this->antiCombRecentRangeRejectTotal++;
+        } elseif ($oppSwing > (float)($config['anti_comb_max_opposite_swing_roi'] ?? 25.0) || $recentSwing > (float)($config['anti_comb_max_recent_swing_roi'] ?? 35.0)) {
+            $rejectReason = 'anti_comb_opposite_swing_too_high';
+            $this->antiCombOppositeSwingRejectTotal++;
+        } elseif ($wickChaos > (float)($config['anti_comb_max_wick_chaos_score'] ?? 0.55)) {
+            $rejectReason = 'anti_comb_wick_chaos';
+            $this->antiCombWickChaosRejectTotal++;
+        } elseif ($consistency < (float)($config['anti_comb_min_directional_consistency'] ?? 0.62)) {
+            $rejectReason = 'anti_comb_low_directional_consistency';
+            $this->antiCombLowConsistencyRejectTotal++;
+        } elseif ($structureBreaks > (int)($config['anti_comb_max_structure_breaks'] ?? 1)) {
+            $rejectReason = 'anti_comb_too_many_structure_breaks';
+            $this->antiCombStructureBreaksRejectTotal++;
+        } elseif (($config['anti_comb_reject_if_alternating_large_candles'] ?? true) && $alternating > 0) {
+            $rejectReason = 'anti_comb_alternating_large_candles';
+            $this->antiCombAlternatingCandlesRejectTotal++;
+        }
+
+        if ($rejectReason !== null) {
+            $diag['anti_comb_rejected'] = true;
+            $diag['anti_comb_reject_reason'] = $rejectReason;
+            $this->antiCombRejectedTotal++;
+            if (count($this->antiCombExamples) < 8) {
+                $this->antiCombExamples[] = [
+                    'reject_reason' => $rejectReason,
+                    'recent_max_1m_range_roi' => $diag['recent_max_1m_range_roi'],
+                    'recent_max_3m_range_roi' => $diag['recent_max_3m_range_roi'],
+                    'recent_max_swing_roi' => $diag['recent_max_swing_roi'],
+                    'directional_consistency_score' => $diag['directional_consistency_score'],
+                    'wick_chaos_score' => $diag['wick_chaos_score'],
+                ];
+            }
+        }
+
+        return $diag;
+    }
+
+    private function computeWallDecisionTest(string $side, array $structure, array $obcResult, array $config): array
+    {
+        $res = [
+            'wall_test_state' => 'none',
+            'wall_test_level' => null,
+            'wall_test_started_at' => null,
+            'wall_test_result' => null,
+            'wall_test_block_reason' => null,
+            'wall_test_opposite_context_created' => false,
+            'wall_test_blocked' => false,
+        ];
+        if (!(bool)($config['wall_decision_test_enabled'] ?? true)) {
+            return $res;
+        }
+
+        $now = date('c');
+        if ($side === 'long') {
+            $risk = (bool)($obcResult['ob_ask_wall_risk'] ?? false);
+            $status = (string)($obcResult['ob_ask_wall_status'] ?? 'none');
+            $res['wall_test_level'] = $structure['rising_support_price'] ?? $structure['entry_price'] ?? null;
+            if ($risk && !in_array($status, ['eaten', 'broken'], true)) {
+                $res['wall_test_state'] = 'pending_breakout';
+                $res['wall_test_started_at'] = $now;
+                $res['wall_test_result'] = 'pending';
+                $res['wall_test_block_reason'] = 'wall_test_pending_breakout';
+                $res['wall_test_blocked'] = true;
+                $this->wallTestPendingTotal++;
+            } elseif (in_array($status, ['eaten', 'broken'], true)) {
+                $res['wall_test_state'] = 'breakout_confirmed';
+                $res['wall_test_result'] = 'breakout_confirmed';
+                $this->wallTestConfirmedTotal++;
+            } elseif (in_array($status, ['rejected', 'holding'], true) && $risk) {
+                $res['wall_test_state'] = 'rejected';
+                $res['wall_test_result'] = 'rejected';
+                $res['wall_test_block_reason'] = 'long_wall_rejection';
+                $res['wall_test_opposite_context_created'] = (bool)($config['wall_rejection_can_create_opposite_context'] ?? true);
+                $res['wall_test_blocked'] = true;
+                $this->wallTestRejectedTotal++;
+                if ($res['wall_test_opposite_context_created']) {
+                    $this->wallTestOppositeContextTotal++;
+                }
+            }
+        } else {
+            $risk = (bool)($obcResult['ob_bid_wall_risk'] ?? false);
+            $status = (string)($obcResult['ob_bid_wall_status'] ?? 'none');
+            $res['wall_test_level'] = $structure['falling_resistance_price'] ?? $structure['entry_price'] ?? null;
+            if ($risk && !in_array($status, ['eaten', 'broken'], true)) {
+                $res['wall_test_state'] = 'pending_breakdown';
+                $res['wall_test_started_at'] = $now;
+                $res['wall_test_result'] = 'pending';
+                $res['wall_test_block_reason'] = 'wall_test_pending_breakdown';
+                $res['wall_test_blocked'] = true;
+                $this->wallTestPendingTotal++;
+            } elseif (in_array($status, ['eaten', 'broken'], true)) {
+                $res['wall_test_state'] = 'breakdown_confirmed';
+                $res['wall_test_result'] = 'breakdown_confirmed';
+                $this->wallTestConfirmedTotal++;
+            } elseif (in_array($status, ['rejected', 'holding'], true) && $risk) {
+                $res['wall_test_state'] = 'rejected';
+                $res['wall_test_result'] = 'rejected';
+                $res['wall_test_block_reason'] = 'short_wall_rejection';
+                $res['wall_test_opposite_context_created'] = (bool)($config['wall_rejection_can_create_opposite_context'] ?? true);
+                $res['wall_test_blocked'] = true;
+                $this->wallTestRejectedTotal++;
+                if ($res['wall_test_opposite_context_created']) {
+                    $this->wallTestOppositeContextTotal++;
+                }
+            }
+        }
+
+        if ($res['wall_test_state'] !== 'none' && count($this->wallTestExamples) < 8) {
+            $this->wallTestExamples[] = $res;
+        }
+        return $res;
+    }
+
+    private function fetchTicker24h(string $symbol, array $config): ?array
+    {
+        $baseUrl = rtrim((string)($config['bybit_base_url'] ?? 'https://api.bybit.com'), '/');
+        $timeout = max(3, (int)($config['bybit_timeout_sec'] ?? 6));
+        $url = $baseUrl . '/v5/market/tickers?' . http_build_query([
+            'category' => 'linear',
+            'symbol'   => $symbol,
+        ]);
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => $timeout,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_SSL_VERIFYPEER => true,
+        ]);
+        $raw = curl_exec($ch);
+        curl_close($ch);
+        if (!is_string($raw) || $raw === '') {
+            return null;
+        }
+        $decoded = json_decode($raw, true);
+        $list = $decoded['result']['list'] ?? null;
+        if (!is_array($list) || empty($list[0]) || !is_array($list[0])) {
+            return null;
+        }
+        return $list[0];
+    }
+
     // ── Candidate and signal builders ──────────────────────────────────────────
 
     private function buildCandidate(
@@ -929,6 +1370,23 @@ final class ConfirmedContinuationService
         $blockReason    = null;
         $handoffReady   = true;
         $executable     = true;
+
+        // Upstream hard blocks (day regime / anti-comb / wall test pending/rejected)
+        if (($structure['day_regime_blocked'] ?? false) === true) {
+            $blockReason  = (string)($structure['day_regime_reject_reason'] ?? 'day_regime_blocked');
+            $handoffReady = false;
+            $executable   = false;
+        }
+        if (($structure['anti_comb_rejected'] ?? false) === true) {
+            $blockReason  = (string)($structure['anti_comb_reject_reason'] ?? 'anti_comb_rejected');
+            $handoffReady = false;
+            $executable   = false;
+        }
+        if (($structure['wall_test_blocked'] ?? false) === true) {
+            $blockReason  = (string)($structure['wall_test_block_reason'] ?? 'wall_test_pending');
+            $handoffReady = false;
+            $executable   = false;
+        }
 
         if ($isSoftDemoted && $softDemoteBlocksHandoff) {
             $blockReason  = 'ob_soft_demote_wall_risk';
@@ -959,7 +1417,7 @@ final class ConfirmedContinuationService
             'side'           => $side,
             'detected_at'    => $detectedAt,
             'refreshed_at'   => $detectedAt,
-            'active_final'   => !$isSoftDemoted || !$softDemoteBlocksHandoff,
+            'active_final'   => $handoffReady && (!$isSoftDemoted || !$softDemoteBlocksHandoff),
             'stale'          => false,
             'stale_reason'   => null,
             'handoff_ready'  => $handoffReady,
@@ -998,7 +1456,7 @@ final class ConfirmedContinuationService
             'block_reason'           => $candidate['block_reason']  ?? null,
             // OBC fields
             'ob_wall_checked'        => $candidate['ob_wall_checked']        ?? false,
-            'ob_wall_context'        => null,  // omit full context from signal to reduce size
+            'ob_wall_context'        => $candidate['ob_wall_context']        ?? null,
             'ob_ask_wall_risk'       => $candidate['ob_ask_wall_risk']       ?? false,
             'ob_bid_wall_risk'       => $candidate['ob_bid_wall_risk']       ?? false,
             'ob_bid_wall_support'    => $candidate['ob_bid_wall_support']    ?? false,
@@ -1010,6 +1468,19 @@ final class ConfirmedContinuationService
             'ob_bid_wall_distance_pct' => $candidate['ob_bid_wall_distance_pct'] ?? null,
             'ob_ask_wall_status'     => $candidate['ob_ask_wall_status']     ?? null,
             'ob_bid_wall_status'     => $candidate['ob_bid_wall_status']     ?? null,
+            // 24h / anti-comb / wall-test diagnostics
+            'day_change_pct'         => $candidate['day_change_pct']         ?? null,
+            'day_regime_bias'        => $candidate['day_regime_bias']        ?? null,
+            'day_regime_reject_reason'=> $candidate['day_regime_reject_reason'] ?? null,
+            'controlled_trend_score' => $candidate['controlled_trend_score'] ?? null,
+            'directional_consistency_score' => $candidate['directional_consistency_score'] ?? null,
+            'wick_chaos_score'       => $candidate['wick_chaos_score']       ?? null,
+            'recent_max_swing_roi'   => $candidate['recent_max_swing_roi']   ?? null,
+            'wall_test_state'        => $candidate['wall_test_state']        ?? 'none',
+            'wall_test_level'        => $candidate['wall_test_level']        ?? null,
+            'wall_test_result'       => $candidate['wall_test_result']       ?? null,
+            'wall_test_block_reason' => $candidate['wall_test_block_reason'] ?? null,
+            'wall_test_opposite_context_created' => $candidate['wall_test_opposite_context_created'] ?? false,
         ];
 
         // Side-specific fields
@@ -1057,6 +1528,19 @@ final class ConfirmedContinuationService
             'ob_bid_wall_distance_pct'   => $signal['ob_bid_wall_distance_pct'],
             'ob_ask_wall_status'         => $signal['ob_ask_wall_status'],
             'ob_bid_wall_status'         => $signal['ob_bid_wall_status'],
+            // day regime / anti-comb / wall test
+            'day_change_pct'             => $signal['day_change_pct'],
+            'day_regime_bias'            => $signal['day_regime_bias'],
+            'day_regime_reject_reason'   => $signal['day_regime_reject_reason'],
+            'controlled_trend_score'     => $signal['controlled_trend_score'],
+            'directional_consistency_score' => $signal['directional_consistency_score'],
+            'wick_chaos_score'           => $signal['wick_chaos_score'],
+            'recent_max_swing_roi'       => $signal['recent_max_swing_roi'],
+            'wall_test_state'            => $signal['wall_test_state'],
+            'wall_test_level'            => $signal['wall_test_level'],
+            'wall_test_result'           => $signal['wall_test_result'],
+            'wall_test_block_reason'     => $signal['wall_test_block_reason'],
+            'wall_test_opposite_context_created' => $signal['wall_test_opposite_context_created'],
             'block_reason'               => $signal['block_reason'],
             'handoff_ready'              => $signal['handoff_ready'],
             'executable'                 => $signal['executable'],
@@ -1147,14 +1631,39 @@ final class ConfirmedContinuationService
             'handoff_ready_total'             => $this->handoffReadyTotal,
             'rejected_total'                  => $this->rejectedTotal,
             'reject_reason_counts'            => $this->rejectReasonCounts,
+            // Pattern diagnostics
+            'higher_low_candidates_total'     => $this->higherLowCandidatesTotal,
+            'lower_high_candidates_total'     => $this->lowerHighCandidatesTotal,
+            'retest_held_total'               => $this->retestHeldTotal,
+            'continuation_confirmed_total'    => $this->continuationConfirmedTotal,
+            'first_bounce_rejected_total'     => $this->firstBounceRejectedTotal,
+            'late_entry_rejected_total'       => $this->lateEntryRejectedTotal,
+            // Anti-comb diagnostics
+            'anti_comb_checked_total'                 => $this->antiCombCheckedTotal,
+            'anti_comb_rejected_total'                => $this->antiCombRejectedTotal,
+            'anti_comb_recent_range_reject_total'     => $this->antiCombRecentRangeRejectTotal,
+            'anti_comb_opposite_swing_reject_total'   => $this->antiCombOppositeSwingRejectTotal,
+            'anti_comb_wick_chaos_reject_total'       => $this->antiCombWickChaosRejectTotal,
+            'anti_comb_low_consistency_reject_total'  => $this->antiCombLowConsistencyRejectTotal,
+            // 24h regime diagnostics
+            'day_regime_checked_total'        => $this->dayRegimeCheckedTotal,
+            'day_regime_blocked_total'        => $this->dayRegimeBlockedTotal,
+            'day_regime_long_bias_total'      => $this->dayRegimeLongBiasTotal,
+            'day_regime_short_bias_total'     => $this->dayRegimeShortBiasTotal,
             'obc_checked_total'               => $this->obcCheckedTotal,
             'obc_soft_demote_blocked_total'   => $this->obcSoftDemoteBlockedHandoff,
+            'wall_test_pending_total'         => $this->wallTestPendingTotal,
+            'wall_test_confirmed_total'       => $this->wallTestConfirmedTotal,
+            'wall_test_rejected_total'        => $this->wallTestRejectedTotal,
+            'wall_test_opposite_context_total'=> $this->wallTestOppositeContextTotal,
             'accepted_examples'               => $this->acceptedExamples,
             'rejected_examples'               => $this->rejectedExamples,
             'obc_block_examples'              => $this->obcBlockExamples,
+            'wall_test_examples'              => $this->wallTestExamples,
             'late_entry_reject_examples'      => $this->lateEntryRejectExamples,
             'first_bounce_reject_examples'    => $this->firstBounceRejectExamples,
             'no_retest_reject_examples'       => $this->noRetestRejectExamples,
+            'anti_comb_examples'              => $this->antiCombExamples,
             'active_signals_total'            => count(array_filter($signals, fn($s) => !($s['stale'] ?? false) && ($s['active_final'] ?? false))),
         ];
     }
@@ -1261,6 +1770,30 @@ final class ConfirmedContinuationService
         $this->lateEntryRejectExamples     = [];
         $this->firstBounceRejectExamples   = [];
         $this->noRetestRejectExamples      = [];
+        $this->antiCombExamples            = [];
+        $this->wallTestExamples            = [];
+        $this->higherLowCandidatesTotal    = 0;
+        $this->lowerHighCandidatesTotal    = 0;
+        $this->retestHeldTotal             = 0;
+        $this->continuationConfirmedTotal  = 0;
+        $this->firstBounceRejectedTotal    = 0;
+        $this->lateEntryRejectedTotal      = 0;
+        $this->antiCombCheckedTotal                  = 0;
+        $this->antiCombRejectedTotal                 = 0;
+        $this->antiCombRecentRangeRejectTotal        = 0;
+        $this->antiCombOppositeSwingRejectTotal      = 0;
+        $this->antiCombWickChaosRejectTotal          = 0;
+        $this->antiCombLowConsistencyRejectTotal     = 0;
+        $this->antiCombStructureBreaksRejectTotal    = 0;
+        $this->antiCombAlternatingCandlesRejectTotal = 0;
+        $this->dayRegimeCheckedTotal       = 0;
+        $this->dayRegimeBlockedTotal       = 0;
+        $this->dayRegimeLongBiasTotal      = 0;
+        $this->dayRegimeShortBiasTotal     = 0;
+        $this->wallTestPendingTotal        = 0;
+        $this->wallTestConfirmedTotal      = 0;
+        $this->wallTestRejectedTotal       = 0;
+        $this->wallTestOppositeContextTotal= 0;
     }
 
     private function readJson(string $path, mixed $default = []): mixed

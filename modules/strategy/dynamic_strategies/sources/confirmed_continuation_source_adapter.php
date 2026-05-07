@@ -64,12 +64,20 @@ final class ConfirmedContinuationSourceAdapter extends AbstractDynamicSourceAdap
         'entry_too_far_above_structure'      => 'long_structure_lost',
         'too_extended_from_local_base'       => 'long_structure_lost',
         'ob_soft_demote_wall_risk_long'      => 'long_ask_wall_blocked',
+        'long_wall_rejection'                => 'long_wall_rejection',
+        'wall_test_pending_breakout'         => 'long_ask_wall_blocked',
         'blowoff_candle_at_entry'            => 'long_structure_lost',
+        'anti_comb_recent_range_too_high'    => 'long_structure_lost',
+        'anti_comb_opposite_swing_too_high'  => 'long_structure_lost',
+        'anti_comb_wick_chaos'               => 'long_structure_lost',
+        'anti_comb_low_directional_consistency' => 'long_structure_lost',
         // Short failures → long context
         'no_lower_highs'                     => 'short_lower_high_broken',
         'entry_too_far_below_structure'      => 'short_structure_lost',
         'too_extended_from_breakdown_base'   => 'short_structure_lost',
         'ob_soft_demote_wall_risk_short'     => 'short_bid_wall_blocked',
+        'short_wall_rejection'               => 'short_wall_rejection',
+        'wall_test_pending_breakdown'        => 'short_bid_wall_blocked',
         'panic_dump_candle_at_entry'         => 'short_structure_lost',
     ];
 
@@ -79,11 +87,13 @@ final class ConfirmedContinuationSourceAdapter extends AbstractDynamicSourceAdap
         'long_higher_low_broken' => 'short',
         'long_structure_lost'    => 'short',
         'long_ask_wall_blocked'  => 'short',
+        'long_wall_rejection'    => 'short',
         'long_deep_loss_closed'  => 'short',
         'short_retest_failed'    => 'long',
         'short_lower_high_broken'=> 'long',
         'short_structure_lost'   => 'long',
         'short_bid_wall_blocked' => 'long',
+        'short_wall_rejection'   => 'long',
         'short_deep_loss_closed' => 'long',
     ];
 
@@ -93,11 +103,13 @@ final class ConfirmedContinuationSourceAdapter extends AbstractDynamicSourceAdap
         'long_higher_low_broken',
         'long_structure_lost',
         'long_ask_wall_blocked',
+        'long_wall_rejection',
         'long_deep_loss_closed',
         'short_retest_failed',
         'short_lower_high_broken',
         'short_structure_lost',
         'short_bid_wall_blocked',
+        'short_wall_rejection',
         'short_deep_loss_closed',
     ];
 
@@ -277,6 +289,8 @@ final class ConfirmedContinuationSourceAdapter extends AbstractDynamicSourceAdap
             $ctx['failed_stage']          = $ex['failed_stage']           ?? null;
             $ctx['setup_class']           = $ex['setup_class']            ?? null;
             $ctx['candidate_quality_score'] = isset($ex['final_candidate_score']) ? (float)$ex['final_candidate_score'] : null;
+            $ctx['structure_score']       = isset($ex['structure_score']) ? (float)$ex['structure_score'] : null;
+            $ctx['controlled_trend_score']= isset($ex['controlled_trend_score']) ? (float)$ex['controlled_trend_score'] : null;
             $out[] = $ctx;
         }
         return $out;
@@ -317,6 +331,9 @@ final class ConfirmedContinuationSourceAdapter extends AbstractDynamicSourceAdap
             $ctx['reject_reason']           = $reason;
             $ctx['failed_stage']            = $rec['failed_stage']          ?? null;
             $ctx['setup_class']             = $rec['setup_class']           ?? null;
+            $ctx['candidate_quality_score'] = isset($rec['candidate_quality_score']) ? (float)$rec['candidate_quality_score'] : null;
+            $ctx['structure_score']         = isset($rec['structure_score']) ? (float)$rec['structure_score'] : null;
+            $ctx['controlled_trend_score']  = isset($rec['controlled_trend_score']) ? (float)$rec['controlled_trend_score'] : null;
             $out[] = $ctx;
         }
         return $out;
@@ -366,6 +383,8 @@ final class ConfirmedContinuationSourceAdapter extends AbstractDynamicSourceAdap
             $ctx['reject_reason']            = 'stale:' . $staleReason;
             $ctx['setup_class']              = $sig['setup_class']             ?? null;
             $ctx['candidate_quality_score']  = isset($sig['candidate_quality_score']) ? (float)$sig['candidate_quality_score'] : null;
+            $ctx['structure_score']          = isset($sig['structure_score']) ? (float)$sig['structure_score'] : null;
+            $ctx['controlled_trend_score']   = isset($sig['controlled_trend_score']) ? (float)$sig['controlled_trend_score'] : null;
             $ctx['entry_price']              = isset($sig['entry_price'])       ? (float)$sig['entry_price']       : null;
             $out[] = $ctx;
         }
@@ -419,6 +438,7 @@ final class ConfirmedContinuationSourceAdapter extends AbstractDynamicSourceAdap
             $ctx['current_price']= isset($trade['exit_price'])  ? (float)$trade['exit_price']  : null;
             $ctx['close_roi']    = $roi;
             $ctx['close_reason'] = $trade['close_reason'] ?? null;
+            $ctx['controlled_trend_score'] = isset($trade['controlled_trend_score']) ? (float)$trade['controlled_trend_score'] : null;
             $out[] = $ctx;
         }
         return $out;

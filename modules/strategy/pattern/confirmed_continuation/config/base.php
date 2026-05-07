@@ -52,6 +52,15 @@ return [
     'require_structure_hold'            => true,
     'require_continuation_after_retest' => true,
 
+    // ── 24h side-bias filter ───────────────────────────────────────────────────
+    'day_regime_filter_enabled'         => true,
+    'long_prefer_24h_change_max_pct'    => 8.0,
+    'long_reject_24h_change_above_pct'  => 18.0,
+    'long_reject_near_24h_high_pct'     => 2.0,
+    'short_prefer_24h_change_min_pct'   => -8.0,
+    'short_reject_24h_change_below_pct' => -18.0,
+    'short_reject_near_24h_low_pct'     => 2.0,
+
     // ── OBC (OrderBook Context) ───────────────────────────────────────────────
     'orderbook_wall_gate_enabled'              => true,
     'orderbook_wall_gate_mode'                 => 'soft_demote',
@@ -59,6 +68,25 @@ return [
     'orderbook_wall_fetch_after_score'         => 0.75,
     'orderbook_wall_near_pct'                  => 1.2,
     'orderbook_wall_persistent_required'       => true,
+
+    // ── Anti-comb / anti-chaos gates ──────────────────────────────────────────
+    'anti_comb_enabled'                            => true,
+    'anti_comb_lookback_minutes'                   => 20,
+    'anti_comb_max_1m_range_roi'                   => 18.0,
+    'anti_comb_max_3m_range_roi'                   => 30.0,
+    'anti_comb_max_recent_swing_roi'               => 35.0,
+    'anti_comb_max_opposite_swing_roi'             => 25.0,
+    'anti_comb_min_directional_consistency'        => 0.62,
+    'anti_comb_max_wick_chaos_score'               => 0.55,
+    'anti_comb_max_structure_breaks'               => 1,
+    'anti_comb_reject_if_alternating_large_candles'=> true,
+
+    // ── Wall decision test ─────────────────────────────────────────────────────
+    'wall_decision_test_enabled'              => true,
+    'wall_breakout_retest_required'           => true,
+    'wall_rejection_can_create_opposite_context' => true,
+    'wall_test_pending_enabled'               => true,
+    'wall_test_pending_ttl_minutes'           => 10,
 
     // ── Candle data ───────────────────────────────────────────────────────────
     'lookback_candles'  => 60,

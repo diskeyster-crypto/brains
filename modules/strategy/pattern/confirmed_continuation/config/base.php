@@ -85,6 +85,9 @@ return [
     'pattern_123_require_point3_turn_confirmation' => true,
     'pattern_123_require_point3_above_point1_long' => true,
     'pattern_123_require_point3_below_point1_short' => true,
+    'pattern_123_max_point3_age_minutes' => 30,
+    'recent_point3_search_minutes'       => 30,
+    'structure_break_after_point3_tolerance_pct' => 0.15,
 
     // ── Pattern filters (boolean gates) ──────────────────────────────────────
     'require_retest'                    => true,
@@ -134,6 +137,12 @@ return [
 
     // ── Candle data ───────────────────────────────────────────────────────────
     'lookback_candles'  => 60,
+    'candle_source'     => 'parser2_history',
+    'candle_source_fallback' => 'bybit',
+    'parser2_history_enabled' => true,
+    'parser2_history_lookback_minutes' => 240,
+    'parser2_history_min_candles' => 80,
+    'bybit_fallback_limit' => 120,
     'bybit_base_url'    => 'https://api.bybit.com',
     'bybit_timeout_sec' => 6,
 ];

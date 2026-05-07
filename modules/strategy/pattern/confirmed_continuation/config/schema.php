@@ -77,6 +77,9 @@ return [
     'pattern_123_require_point3_turn_confirmation' => 'bool',
     'pattern_123_require_point3_above_point1_long' => 'bool',
     'pattern_123_require_point3_below_point1_short' => 'bool',
+    'pattern_123_max_point3_age_minutes' => 'int',
+    'recent_point3_search_minutes' => 'int',
+    'structure_break_after_point3_tolerance_pct' => 'float',
 
     // Pattern filters
     'require_retest'                    => 'bool',
@@ -126,6 +129,12 @@ return [
 
     // Candle data
     'lookback_candles'  => 'int',
+    'candle_source' => 'string',
+    'candle_source_fallback' => 'string',
+    'parser2_history_enabled' => 'bool',
+    'parser2_history_lookback_minutes' => 'int',
+    'parser2_history_min_candles' => 'int',
+    'bybit_fallback_limit' => 'int',
     'bybit_base_url'    => 'string',
     'bybit_timeout_sec' => 'int',
 ];

@@ -167,6 +167,8 @@ final class ConfirmedContinuationService
     private array $rejectedLateEntryExamples       = [];
     /** @var list<array<string,mixed>> */
     private array $rejectedCombExamples            = [];
+    /** @var list<array<string,mixed>> */
+    private array $pattern123ValidButAntiCombRejectedExamples = [];
 
     // ── Handoff throttling diagnostics ──────────────────────────────────────────
     private int $handoffCandidatesBeforeThrottleTotal = 0;
@@ -697,7 +699,7 @@ final class ConfirmedContinuationService
             }
 
             // Anti-comb / anti-chaos diagnostics
-            $antiComb = $this->computeAntiCombDiagnostics($candles, $side, $structure, $config);
+            $antiComb = $this->computeAntiCombDiagnostics($candles, $side, $structure, $config, $symbol);
             $structure = array_merge($structure, $antiComb);
             $entryTiming = $this->computeEntryTimingDiagnostics($structure, $candles, $side, $config);
             $structure = array_merge($structure, $entryTiming);
@@ -772,6 +774,11 @@ final class ConfirmedContinuationService
                 if ($p123PreValid) {
                     if (($hardReject['stage'] ?? '') === 'anti_comb') {
                         $this->pattern123ValidButAntiCombRejectedTotal++;
+                        if (count($this->pattern123ValidButAntiCombRejectedExamples) < 12) {
+                            $this->pattern123ValidButAntiCombRejectedExamples[] = $this->buildFullDiagExample(
+                                $symbol, $side, $structure, $hardReject['reason'], $hardReject['stage']
+                            );
+                        }
                     } elseif (in_array($hardReject['stage'] ?? '', [
                         'entry_timing', 'late_entry', 'blowoff_reject',
                         'no_retest', 'first_bounce_or_no_structure', 'first_dump_or_no_structure',
@@ -1952,7 +1959,7 @@ final class ConfirmedContinuationService
         return $ctx;
     }
 
-    private function computeAntiCombDiagnostics(array $candles, string $side, array $structure, array $config): array
+    private function computeAntiCombDiagnostics(array $candles, string $side, array $structure, array $config, string $symbol = ''): array
     {
         $diag = [
             'recent_max_1m_range_pct'            => 0.0,
@@ -2219,32 +2226,10 @@ final class ConfirmedContinuationService
             }
             $this->antiCombRejectedTotal++;
             if (count($this->antiCombExamples) < 8) {
-                $this->antiCombExamples[] = [
-                    'reject_reason'                  => $rejectReason,
-                    'post_structure_comb_detected'   => $diag['post_structure_comb_detected'],
-                    'recent_max_1m_range_pct'        => $diag['recent_max_1m_range_pct'],
-                    'recent_max_1m_range_roi'        => $diag['recent_max_1m_range_roi'],
-                    'recent_max_3m_range_pct'        => $diag['recent_max_3m_range_pct'],
-                    'recent_max_3m_range_roi'        => $diag['recent_max_3m_range_roi'],
-                    'recent_max_swing_pct'           => $diag['recent_max_swing_pct'],
-                    'recent_max_swing_roi'           => $diag['recent_max_swing_roi'],
-                    'recent_opposite_swing_pct'      => $diag['recent_opposite_swing_pct'],
-                    'recent_opposite_swing_roi'      => $diag['recent_opposite_swing_roi'],
-                    'directional_consistency_score'  => $diag['directional_consistency_score'],
-                    'wick_chaos_score'               => $diag['wick_chaos_score'],
-                    'smooth_trend_score'             => $diag['smooth_trend_score'],
-                    'impulse_share'                  => $diag['impulse_share'],
-                    'single_candle_contribution'     => $diag['single_candle_contribution'],
-                    'vertical_spike_detected'        => $diag['vertical_spike_detected'],
-                ];
+                $this->antiCombExamples[] = $this->buildFullDiagExample($symbol, $side, array_merge($structure, $diag), $rejectReason, 'anti_comb');
             }
             if (count($this->rejectedCombExamples) < 8) {
-                $this->rejectedCombExamples[] = [
-                    'side' => $side,
-                    'reject_reason'                => $rejectReason,
-                    'post_structure_comb_detected' => $diag['post_structure_comb_detected'],
-                    'post_structure_window_minutes' => $structure['post_structure_window_minutes'] ?? null,
-                ];
+                $this->rejectedCombExamples[] = $this->buildFullDiagExample($symbol, $side, array_merge($structure, $diag), $rejectReason, 'anti_comb');
             }
         } else {
             $diag['post_structure_comb_detected'] = false;
@@ -2362,6 +2347,46 @@ final class ConfirmedContinuationService
     }
 
     // ── Candidate and signal builders ──────────────────────────────────────────
+
+    /**
+     * Build a full diagnostic example record for last_run example buckets.
+     * Used by anti-comb, 1-2-3 valid-but-rejected, and comb example buckets.
+     */
+    private function buildFullDiagExample(
+        string $symbol,
+        string $side,
+        array  $structure,
+        string $rejectReason,
+        string $failedStage
+    ): array {
+        return [
+            'symbol'                          => $symbol,
+            'side'                            => $side,
+            'failed_stage'                    => $failedStage,
+            'reject_reason'                   => $rejectReason,
+            'candidate_state'                 => 'rejected',
+            'pattern_123_detected'            => (bool)($structure['pattern_123_detected'] ?? false),
+            'pattern_123_entry_mode'          => $structure['pattern_123_entry_mode'] ?? 'none',
+            'pattern_123_invalid_reason'      => $structure['pattern_123_invalid_reason'] ?? null,
+            'point_1_price'                   => $structure['point_1_price'] ?? null,
+            'point_2_price'                   => $structure['point_2_price'] ?? null,
+            'point_3_price'                   => $structure['point_3_price'] ?? null,
+            'entry_near_point_3'              => $structure['entry_near_point_3'] ?? null,
+            'entry_after_point_3_turn'        => $structure['entry_after_point_3_turn'] ?? null,
+            'entry_timing_class'              => $structure['entry_timing_class'] ?? null,
+            'controlled_trend_score'          => $structure['controlled_trend_score'] ?? null,
+            'smooth_trend_score'              => $structure['smooth_trend_score'] ?? null,
+            'directional_consistency_score'   => $structure['directional_consistency_score'] ?? null,
+            'wick_chaos_score'                => $structure['wick_chaos_score'] ?? null,
+            'recent_max_1m_range_roi'         => $structure['recent_max_1m_range_roi'] ?? null,
+            'recent_max_3m_range_roi'         => $structure['recent_max_3m_range_roi'] ?? null,
+            'recent_max_swing_roi'            => $structure['recent_max_swing_roi'] ?? null,
+            'recent_opposite_swing_roi'       => $structure['recent_opposite_swing_roi'] ?? null,
+            'structure_breaks_count'          => $structure['structure_breaks_count'] ?? null,
+            'anti_comb_reject_reason'         => $structure['anti_comb_reject_reason'] ?? null,
+            'post_structure_comb_detected'    => (bool)($structure['post_structure_comb_detected'] ?? false),
+        ];
+    }
 
     private function buildCandidate(
         string $symbol,
@@ -2915,16 +2940,17 @@ final class ConfirmedContinuationService
             'handoff_ready_total'             => $this->handoffReadyTotal,
             'rejected_total'                  => $this->rejectedTotal,
             'reject_reason_counts'            => $this->rejectReasonCounts,
-            // Pattern diagnostics
+            // Pattern diagnostics (old names mapped to new counters for backward compat)
             'higher_low_candidates_total'     => $this->higherLowCandidatesTotal,
             'lower_high_candidates_total'     => $this->lowerHighCandidatesTotal,
             'retest_held_total'               => $this->retestHeldTotal,
             'continuation_confirmed_total'    => $this->continuationConfirmedTotal,
             'first_bounce_rejected_total'     => $this->firstBounceRejectedTotal,
             'late_entry_rejected_total'       => $this->lateEntryRejectedTotal,
-            'pattern_123_checked_total'       => $this->pattern123CheckedTotal,
-            'pattern_123_detected_total'      => $this->pattern123DetectedTotal,
-            'pattern_123_rejected_total'      => $this->pattern123RejectedTotal,
+            // Old pattern_123 counters mapped to pre-filter counts for consistency
+            'pattern_123_checked_total'       => $this->pattern123StructuresSeenTotal,
+            'pattern_123_detected_total'      => $this->pattern123ValidBeforeFiltersTotal,
+            'pattern_123_rejected_total'      => $this->pattern123InvalidBeforeFiltersTotal,
             'pattern_123_missing_total'       => $this->pattern123MissingTotal,
             'point_3_breaks_point_1_total'    => $this->point3BreaksPoint1Total,
             'point_3_not_confirmed_total'     => $this->point3NotConfirmedTotal,
@@ -2994,6 +3020,7 @@ final class ConfirmedContinuationService
             'rejected_pattern_123_examples'   => $this->rejectedPattern123Examples,
             'rejected_late_entry_examples'    => $this->rejectedLateEntryExamples,
             'rejected_comb_examples'          => $this->rejectedCombExamples,
+            'pattern_123_valid_but_anti_comb_rejected_examples' => $this->pattern123ValidButAntiCombRejectedExamples,
             'wall_pending_examples'           => $this->wallPendingExamples,
             'obc_block_examples'              => $this->obcBlockExamples,
             'wall_test_examples'              => $this->wallTestExamples,
@@ -3260,6 +3287,7 @@ final class ConfirmedContinuationService
         $this->acceptedMidTrendExamples          = [];
         $this->rejectedLateEntryExamples         = [];
         $this->rejectedCombExamples              = [];
+        $this->pattern123ValidButAntiCombRejectedExamples = [];
         $this->handoffCandidatesBeforeThrottleTotal = 0;
         $this->handoffAfterThrottleTotal            = 0;
         $this->handoffThrottledTotal                = 0;

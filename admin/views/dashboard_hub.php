@@ -998,7 +998,7 @@ function renderDashboardHub(): string
             // Manual run action buttons — only active for strategies with a wired service.
             // All other strategies show disabled/unavailable buttons so the operator can see
             // the actions exist but are not yet supported for that module.
-            if ($stratId === 'double_bottom_long') {
+            if (in_array($stratId, ['double_bottom_long', 'confirmed_continuation'], true)) {
                 $actionButtonsHtml = <<<BTN
       <form method="post" action="{$stratActUrl}" style="margin:0;">
         <input type="hidden" name="dashboard_action" value="strategy_action">
@@ -7013,6 +7013,7 @@ function handleDashboardOverridesSave(): void
             'corridor_bottom_long'            => 'modules/strategy/pattern/corridor_bottom_long',
             'controlled_daily_momentum_long'  => 'modules/strategy/pattern/controlled_daily_momentum_long',
             'double_bottom_long'              => 'modules/strategy/pattern/double_bottom_long',
+            'confirmed_continuation'          => 'modules/strategy/pattern/confirmed_continuation',
         ];
         $_ovModPath = $_knownPaths[$stratId] ?? '';
     }
@@ -7575,21 +7576,32 @@ function handleDashboardStrategyAction(): void
     }
 
     // Route by strategy_id to its service
-    // Currently only double_bottom_long is wired; extend here as more strategies are added.
-    if ($stratId === 'double_bottom_long') {
-        $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.double_bottom_long');
+    $strategyServiceMap = [
+        'double_bottom_long' => [
+            'path_key' => 'strategy.double_bottom_long',
+            'class'    => \Modules\Strategy\DoubleBottomLong\DoubleBottomLongService::class,
+        ],
+        'confirmed_continuation' => [
+            'path_key' => 'strategy.confirmed_continuation',
+            'class'    => \Modules\Strategy\ConfirmedContinuation\ConfirmedContinuationService::class,
+        ],
+    ];
+    if (isset($strategyServiceMap[$stratId])) {
+        $moduleDir = \Core\System\SystemPaths::instance()->get($strategyServiceMap[$stratId]['path_key']);
 
         require_once $moduleDir . '/bootstrap.php';
         require_once $moduleDir . '/service.php';
 
-        $service = \Modules\Strategy\DoubleBottomLong\DoubleBottomLongService::instance($moduleDir);
+        $serviceClass = $strategyServiceMap[$stratId]['class'];
+        $service = $serviceClass::instance($moduleDir);
 
         if ($action === 'queue_run') {
             $result = $service->queueRun();
-            $msg = $result['ok']
-                ? 'Запуск цикла поставлен в очередь (' . ($result['total'] ?? 0) . ' символов)'
+            $ok = (bool)($result['ok'] ?? $result['queued'] ?? false);
+            $msg = $ok
+                ? 'Запуск цикла поставлен в очередь'
                 : ('Ошибка: ' . ($result['error'] ?? 'Неизвестная'));
-            $_SESSION['dashboard_flash'] = ['type' => $result['ok'] ? 'success' : 'error', 'msg' => $msg];
+            $_SESSION['dashboard_flash'] = ['type' => $ok ? 'success' : 'error', 'msg' => $msg];
             header('Location: ' . $dashUrl);
             exit;
         }
@@ -7893,6 +7905,7 @@ function handleDashboardStrategyToggle(): void
             'corridor_bottom_long'           => 'modules/strategy/pattern/corridor_bottom_long',
             'controlled_daily_momentum_long' => 'modules/strategy/pattern/controlled_daily_momentum_long',
             'double_bottom_long'             => 'modules/strategy/pattern/double_bottom_long',
+            'confirmed_continuation'         => 'modules/strategy/pattern/confirmed_continuation',
         ];
         $_togModPath = $_togKnownPaths[$stratId] ?? '';
     }
@@ -8010,6 +8023,7 @@ function handleDashboardHandoffToggle(): void
             'corridor_bottom_long'           => 'modules/strategy/pattern/corridor_bottom_long',
             'controlled_daily_momentum_long' => 'modules/strategy/pattern/controlled_daily_momentum_long',
             'double_bottom_long'             => 'modules/strategy/pattern/double_bottom_long',
+            'confirmed_continuation'         => 'modules/strategy/pattern/confirmed_continuation',
         ];
         $_hoModPath = $_hoKnownPaths[$stratId] ?? '';
     }
@@ -8197,7 +8211,7 @@ function handleDashboardChainRun(): void
     }
 
     // Strategies wired for manual runtime
-    $manualStrategyIds = ['double_bottom_long'];
+    $manualStrategyIds = ['double_bottom_long', 'confirmed_continuation'];
 
     foreach ($registry as $rec) {
         $sid = (string)($rec['strategy_id'] ?? '');
@@ -8221,8 +8235,9 @@ function handleDashboardChainRun(): void
             require_once $moduleDir . '/bootstrap.php';
             require_once $moduleDir . '/service.php';
             $svcClass = match ($sid) {
-                'double_bottom_long' => \Modules\Strategy\DoubleBottomLong\DoubleBottomLongService::class,
-                default              => null,
+                'double_bottom_long'     => \Modules\Strategy\DoubleBottomLong\DoubleBottomLongService::class,
+                'confirmed_continuation' => \Modules\Strategy\ConfirmedContinuation\ConfirmedContinuationService::class,
+                default                 => null,
             };
             if ($svcClass === null) {
                 $steps[] = "Стратегия «{$sid}»: сервис не подключён";

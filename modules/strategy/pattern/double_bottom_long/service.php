@@ -63,11 +63,19 @@ final class DoubleBottomLongService
     private int $dblGarbageObcQualitySkipTotal        = 0;
     private int $dblGarbageLateExtensionTotal         = 0;
     private int $dblGarbageWhipsawWeakQualityTotal    = 0;
+    private int $dblGarbageLateLocalEntryCheckedTotal = 0;
+    private int $dblGarbageLateLocalEntryBlockedTotal = 0;
+    private int $dblGarbageEntryFarFromPoint3Total    = 0;
+    private int $dblGarbagePostPoint3ImpulseSpentTotal = 0;
+    private int $dblGarbageInsufficientRoomSwingHighTotal = 0;
+    private int $dblGarbageNearRecentSwingHighTotal   = 0;
     private int $dblGarbagePassedTotal                = 0;
     /** @var list<array<string,mixed>> */
     private array $dblGarbageBlockExamples = [];
     /** @var list<array<string,mixed>> */
     private array $dblGarbagePassExamples  = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblGarbageLateLocalEntryExamples = [];
 
     // ── Per-tick entry-context fetch counters (reset at start of each tickBatch) ──
     private int $ctxFetchAttemptedThisTick       = 0;
@@ -436,9 +444,16 @@ final class DoubleBottomLongService
         $this->dblGarbageObcQualitySkipTotal       = 0;
         $this->dblGarbageLateExtensionTotal        = 0;
         $this->dblGarbageWhipsawWeakQualityTotal   = 0;
+        $this->dblGarbageLateLocalEntryCheckedTotal = 0;
+        $this->dblGarbageLateLocalEntryBlockedTotal = 0;
+        $this->dblGarbageEntryFarFromPoint3Total = 0;
+        $this->dblGarbagePostPoint3ImpulseSpentTotal = 0;
+        $this->dblGarbageInsufficientRoomSwingHighTotal = 0;
+        $this->dblGarbageNearRecentSwingHighTotal = 0;
         $this->dblGarbagePassedTotal               = 0;
         $this->dblGarbageBlockExamples             = [];
         $this->dblGarbagePassExamples              = [];
+        $this->dblGarbageLateLocalEntryExamples    = [];
 
         $symbols = (array)($state['symbols']  ?? []);
         $cursor  = (int)($state['cursor']      ?? 0);
@@ -804,6 +819,15 @@ final class DoubleBottomLongService
                     $sig['entry_hour_utc']              = $result['entry_hour_utc']              ?? null;
                     $sig['entry_hour_local_utc3']       = $result['entry_hour_local_utc3']       ?? null;
                     $sig['session_bucket']              = $result['session_bucket']              ?? null;
+                    $sig['post_point3_bounce_roi']      = $result['post_point3_bounce_roi']      ?? null;
+                    $sig['position_in_local_recovery_leg_pct'] = $result['position_in_local_recovery_leg_pct'] ?? null;
+                    $sig['room_to_recent_swing_high_roi'] = $result['room_to_recent_swing_high_roi'] ?? null;
+                    $sig['near_recent_swing_high']      = $result['near_recent_swing_high']      ?? null;
+                    $sig['post_point3_impulse_spent_pct'] = $result['post_point3_impulse_spent_pct'] ?? null;
+                    $sig['local_recovery_leg_low_price'] = $result['local_recovery_leg_low_price'] ?? null;
+                    $sig['local_recovery_leg_high_price'] = $result['local_recovery_leg_high_price'] ?? null;
+                    $sig['recent_swing_high_price']     = $result['recent_swing_high_price']     ?? null;
+                    $sig['recent_swing_high_time']      = $result['recent_swing_high_time']      ?? null;
                     // DBL point trace fields — ensure they propagate to strategy_signal_context
                     // so Stop Manager and downstream consumers have full trace.
                     $existingSscTrace = is_array($sig['strategy_signal_context'] ?? null) ? $sig['strategy_signal_context'] : [];
@@ -818,6 +842,15 @@ final class DoubleBottomLongService
                         'whipsaw_score'              => $sig['whipsaw_score'],
                         'entry_hour_utc'             => $sig['entry_hour_utc'],
                         'session_bucket'             => $sig['session_bucket'],
+                        'post_point3_bounce_roi'     => $sig['post_point3_bounce_roi'],
+                        'position_in_local_recovery_leg_pct' => $sig['position_in_local_recovery_leg_pct'],
+                        'room_to_recent_swing_high_roi' => $sig['room_to_recent_swing_high_roi'],
+                        'near_recent_swing_high'     => $sig['near_recent_swing_high'],
+                        'post_point3_impulse_spent_pct' => $sig['post_point3_impulse_spent_pct'],
+                        'local_recovery_leg_low_price' => $sig['local_recovery_leg_low_price'],
+                        'local_recovery_leg_high_price' => $sig['local_recovery_leg_high_price'],
+                        'recent_swing_high_price'    => $sig['recent_swing_high_price'],
+                        'recent_swing_high_time'     => $sig['recent_swing_high_time'],
                         // DBL point trace for Stop Manager
                         'point_1_low_price'          => $result['bottom_1_price']                ?? null,
                         'point_1_low_time'           => null,
@@ -828,7 +861,7 @@ final class DoubleBottomLongService
                         'neckline_level'             => $result['neckline_level']                ?? $result['intraday_db_neckline_level'] ?? null,
                         'reclaim_level'              => $result['reclaim_level']                 ?? null,
                         'second_bottom_level'        => $result['bottom_2_price']               ?? null,
-                        'entry_distance_from_point3_pct' => $result['entry_distance_from_neckline_pct'] ?? null,
+                        'entry_distance_from_point3_pct' => $result['entry_distance_from_point3_pct'] ?? $result['entry_distance_from_neckline_pct'] ?? null,
                         'entry_distance_from_reclaim_pct' => $result['entry_distance_from_reclaim_pct'] ?? null,
                         'fresh_lower_low_after_point3' => false,
                         'point3_confirmed'           => true,
@@ -1864,6 +1897,10 @@ final class DoubleBottomLongService
             'queue_entries_blocked_blacklist_total'       => $handoffStats['queue_entries_blocked_blacklist_total']       ?? 0,
             'queue_entries_blocked_freeze_total'          => $handoffStats['queue_entries_blocked_freeze_total']          ?? 0,
             'queue_non_executable_examples'              => $handoffStats['queue_non_executable_examples']               ?? [],
+            'handoff_queue_ready_written_total'           => $handoffStats['handoff_queue_ready_written_total'] ?? 0,
+            'handoff_queue_blocked_diagnostic_total'      => $handoffStats['handoff_queue_blocked_diagnostic_total'] ?? 0,
+            'handoff_queue_blocked_with_ready_status_total' => $handoffStats['handoff_queue_blocked_with_ready_status_total'] ?? 0,
+            'handoff_queue_blocked_with_ready_status_examples' => $handoffStats['handoff_queue_blocked_with_ready_status_examples'] ?? [],
             // ── DBL garbage veto counters (per tick) ──────────────────────────────
             'dbl_garbage_veto_enabled'                   => (bool)($config['dbl_garbage_veto_enabled'] ?? true),
             'dbl_garbage_veto_checked_total'             => $this->dblGarbageVetoCheckedTotal,
@@ -1872,9 +1909,16 @@ final class DoubleBottomLongService
             'dbl_garbage_obc_quality_skip_total'         => $this->dblGarbageObcQualitySkipTotal,
             'dbl_garbage_late_daily_extension_total'     => $this->dblGarbageLateExtensionTotal,
             'dbl_garbage_whipsaw_weak_quality_total'     => $this->dblGarbageWhipsawWeakQualityTotal,
+            'dbl_garbage_late_local_entry_checked_total' => $this->dblGarbageLateLocalEntryCheckedTotal,
+            'dbl_garbage_late_local_entry_blocked_total' => $this->dblGarbageLateLocalEntryBlockedTotal,
+            'dbl_garbage_entry_far_from_point3_total'    => $this->dblGarbageEntryFarFromPoint3Total,
+            'dbl_garbage_post_point3_impulse_spent_total' => $this->dblGarbagePostPoint3ImpulseSpentTotal,
+            'dbl_garbage_insufficient_room_to_recent_swing_high_total' => $this->dblGarbageInsufficientRoomSwingHighTotal,
+            'dbl_garbage_near_recent_swing_high_total'   => $this->dblGarbageNearRecentSwingHighTotal,
             'dbl_garbage_passed_total'                   => $this->dblGarbagePassedTotal,
             'dbl_garbage_block_examples'                 => $this->dblGarbageBlockExamples,
             'dbl_garbage_pass_examples'                  => $this->dblGarbagePassExamples,
+            'dbl_garbage_late_local_entry_examples'      => $this->dblGarbageLateLocalEntryExamples,
             // ── Scan suppression cache diagnostics (Task 7) ──────────────────────
             'scan_suppression_enabled'                   => $suppressionEnabled,
             'scan_suppression_entries_total'             => $suppressionEnabled ? count($this->scanSuppressionCache) : 0,
@@ -2803,6 +2847,69 @@ final class DoubleBottomLongService
             $diagBase['session_bucket'] = 'evening';
         } else {
             $diagBase['session_bucket'] = 'night';
+        }
+
+        // Local late-entry diagnostics for DBL recovery leg (diagnostic + veto input).
+        $point3Price  = (float)($coinCtx['bottom_2_price'] ?? 0.0);
+        $reclaimLevel = (float)($coinCtx['reclaim_level'] ?? $coinCtx['intraday_db_neckline_level'] ?? $coinCtx['neckline_level'] ?? 0.0);
+        $diagBase['entry_distance_from_point3_pct'] = ($point3Price > 0.0 && $lastClose > 0.0)
+            ? round((($lastClose - $point3Price) / $point3Price) * 100.0, 4)
+            : null;
+        if (($diagBase['entry_distance_from_reclaim_pct'] ?? null) === null) {
+            $diagBase['entry_distance_from_reclaim_pct'] = ($reclaimLevel > 0.0 && $lastClose > 0.0)
+                ? round((($lastClose - $reclaimLevel) / $reclaimLevel) * 100.0, 4)
+                : null;
+        }
+        $diagBase['local_recovery_leg_low_price']       = null;
+        $diagBase['local_recovery_leg_high_price']      = null;
+        $diagBase['post_point3_bounce_roi']             = null;
+        $diagBase['position_in_local_recovery_leg_pct'] = null;
+        $diagBase['post_point3_impulse_spent_pct']      = null;
+        $diagBase['recent_swing_high_price']            = null;
+        $diagBase['recent_swing_high_time']             = null;
+        $diagBase['room_to_recent_swing_high_roi']      = null;
+        $diagBase['near_recent_swing_high']             = null;
+        if ($entryCtxAvailable && !empty($ctxCandles) && $point3Price > 0.0) {
+            $p3Idx = (int)($coinCtx['bottom_2_index'] ?? (count($ctxCandles) - 1));
+            $p3Idx = max(0, min($p3Idx, count($ctxCandles) - 1));
+            $fromP3 = array_slice($ctxCandles, $p3Idx);
+            if (!empty($fromP3)) {
+                $localLow  = (float)min(array_column($fromP3, 'low'));
+                $localHigh = (float)max(array_column($fromP3, 'high'));
+                $diagBase['local_recovery_leg_low_price']  = $localLow > 0.0 ? round($localLow, 8) : null;
+                $diagBase['local_recovery_leg_high_price'] = $localHigh > 0.0 ? round($localHigh, 8) : null;
+                if ($localHigh > $point3Price) {
+                    $diagBase['post_point3_bounce_roi'] = round((($localHigh - $point3Price) / $point3Price) * 100.0, 4);
+                    $diagBase['post_point3_impulse_spent_pct'] = round(
+                        (($lastClose - $point3Price) / ($localHigh - $point3Price)) * 100.0,
+                        3
+                    );
+                }
+                if ($localHigh > $localLow && $lastClose > 0.0) {
+                    $diagBase['position_in_local_recovery_leg_pct'] = round(
+                        (($lastClose - $localLow) / ($localHigh - $localLow)) * 100.0,
+                        3
+                    );
+                }
+            }
+            $recentWindow = array_slice($ctxCandles, -60);
+            if (!empty($recentWindow)) {
+                $swingHigh = (float)max(array_column($recentWindow, 'high'));
+                $diagBase['recent_swing_high_price'] = $swingHigh > 0.0 ? round($swingHigh, 8) : null;
+                foreach (array_reverse($recentWindow) as $bar) {
+                    if ((float)($bar['high'] ?? 0.0) === $swingHigh) {
+                        $ts = (int)($bar['ts'] ?? 0);
+                        $diagBase['recent_swing_high_time'] = $ts > 0 ? date('c', (int)floor($ts / 1000)) : null;
+                        break;
+                    }
+                }
+                if ($swingHigh > 0.0 && $lastClose > 0.0) {
+                    $roomRoi = (($swingHigh - $lastClose) / $lastClose) * 100.0;
+                    $diagBase['room_to_recent_swing_high_roi'] = round($roomRoi, 4);
+                    $nearPct = (float)($config['dbl_garbage_near_recent_swing_high_pct'] ?? 0.35);
+                    $diagBase['near_recent_swing_high'] = $roomRoi <= $nearPct;
+                }
+            }
         }
 
         // ── Precompute entry_setup_allowed (A/B intraday allowance) ──────────
@@ -8206,6 +8313,10 @@ final class DoubleBottomLongService
         $queueBlockedBlTotal            = 0;  // blocked_by_blacklist (strategy-side: always 0)
         $queueBlockedFrTotal            = 0;  // blocked_by_freeze (strategy-side: always 0)
         $queueNonExecutableExamples     = [];
+        $handoffQueueReadyWrittenTotal  = 0;
+        $handoffQueueBlockedDiagnosticTotal = 0;
+        $handoffQueueBlockedWithReadyStatusTotal = 0;
+        $handoffQueueBlockedWithReadyStatusExamples = [];
         // OBC soft_demote handoff gate config — true by default (safe demo mode)
         $softDemoteBlocksHandoff = (bool)($config['orderbook_entry_wall_soft_demote_blocks_handoff'] ?? true);
         $softDemoteBlockedTotal  = 0;
@@ -8251,12 +8362,31 @@ final class DoubleBottomLongService
                     $queueMarkedNonExecutableTotal++;
                 } elseif ($garbageVetoEnabled) {
                     // ── DBL garbage veto ─────────────────────────────────────────────
-                    $gv = $this->applyDblGarbageVeto($r, $config);
+                    $gv = $this->applyDblGarbageVeto(
+                        $r,
+                        is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [],
+                        $config
+                    );
                     $this->dblGarbageVetoCheckedTotal++;
                     // Merge veto diagnostics back into strategy_signal_context
                     $sscMerge = is_array($result[$id]['strategy_signal_context'] ?? null)
                         ? $result[$id]['strategy_signal_context'] : [];
                     $result[$id]['strategy_signal_context'] = array_merge($sscMerge, $gv['diag']);
+                    if (($gv['diag']['dbl_garbage_late_local_entry_checked'] ?? false) === true) {
+                        $this->dblGarbageLateLocalEntryCheckedTotal++;
+                        if (($gv['diag']['garbage_entry_far_from_point3'] ?? false) === true) {
+                            $this->dblGarbageEntryFarFromPoint3Total++;
+                        }
+                        if (($gv['diag']['garbage_post_point3_impulse_already_spent'] ?? false) === true) {
+                            $this->dblGarbagePostPoint3ImpulseSpentTotal++;
+                        }
+                        if (($gv['diag']['garbage_insufficient_room_to_recent_swing_high'] ?? false) === true) {
+                            $this->dblGarbageInsufficientRoomSwingHighTotal++;
+                        }
+                        if (($gv['diag']['garbage_near_recent_swing_high'] ?? false) === true) {
+                            $this->dblGarbageNearRecentSwingHighTotal++;
+                        }
+                    }
 
                     if ($gv['veto_triggered']) {
                         $this->dblGarbageVetoBlockedTotal++;
@@ -8273,11 +8403,15 @@ final class DoubleBottomLongService
                             case 'garbage_whipsaw_weak_quality':
                                 $this->dblGarbageWhipsawWeakQualityTotal++;
                                 break;
+                            case 'garbage_local_late_entry_after_recovery':
+                                $this->dblGarbageLateLocalEntryBlockedTotal++;
+                                break;
                         }
                         $blockReason = (string)$gv['reason'];
                         if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
                         if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
                         if (($r['block_reason'] ?? null) !== $blockReason) { $result[$id]['block_reason'] = $blockReason; $changed = true; }
+                        if (($result[$id]['handoff_status'] ?? '') !== 'blocked') { $result[$id]['handoff_status'] = 'blocked'; $changed = true; }
                         $sigIdInQueue = (string)($r['signal_id'] ?? $id);
                         if ($sigIdInQueue !== '') {
                             $blockedSignalIds[$sigIdInQueue] = $blockReason;
@@ -8297,6 +8431,38 @@ final class DoubleBottomLongService
                                 'position_in_24h_range_pct'  => $gv['diag']['position_in_24h_range_pct'],
                                 'recent_10m_range_roi'       => $gv['diag']['recent_10m_range_roi'],
                                 'recent_60m_direction_flips' => $gv['diag']['recent_60m_direction_flips'],
+                                'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                'entry_distance_from_reclaim_pct' => $gv['diag']['entry_distance_from_reclaim_pct'] ?? null,
+                                'post_point3_bounce_roi' => $gv['diag']['post_point3_bounce_roi'] ?? null,
+                                'post_point3_impulse_spent_pct' => $gv['diag']['post_point3_impulse_spent_pct'] ?? null,
+                                'room_to_recent_swing_high_roi' => $gv['diag']['room_to_recent_swing_high_roi'] ?? null,
+                                'near_recent_swing_high' => $gv['diag']['near_recent_swing_high'] ?? null,
+                                'recent_swing_high_price' => $gv['diag']['recent_swing_high_price'] ?? null,
+                                'recent_swing_high_time' => $gv['diag']['recent_swing_high_time'] ?? null,
+                            ];
+                        }
+                        if ($blockReason === 'garbage_local_late_entry_after_recovery'
+                            && count($this->dblGarbageLateLocalEntryExamples) < 10
+                        ) {
+                            $this->dblGarbageLateLocalEntryExamples[] = [
+                                'symbol'                         => $r['symbol'] ?? null,
+                                'signal_id'                      => $id,
+                                'candidate_quality_score'        => $gv['diag']['candidate_quality_score'] ?? null,
+                                'entry_price'                    => $gv['diag']['entry_price'] ?? null,
+                                'point_3_second_low_price'       => $gv['diag']['point_3_second_low_price'] ?? null,
+                                'reclaim_level'                  => $gv['diag']['reclaim_level'] ?? null,
+                                'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                'entry_distance_from_reclaim_pct'=> $gv['diag']['entry_distance_from_reclaim_pct'] ?? null,
+                                'post_point3_bounce_roi'         => $gv['diag']['post_point3_bounce_roi'] ?? null,
+                                'post_point3_impulse_spent_pct'  => $gv['diag']['post_point3_impulse_spent_pct'] ?? null,
+                                'room_to_recent_swing_high_roi'  => $gv['diag']['room_to_recent_swing_high_roi'] ?? null,
+                                'near_recent_swing_high'         => $gv['diag']['near_recent_swing_high'] ?? null,
+                                'local_recovery_leg_low_price'   => $gv['diag']['local_recovery_leg_low_price'] ?? null,
+                                'local_recovery_leg_high_price'  => $gv['diag']['local_recovery_leg_high_price'] ?? null,
+                                'recent_swing_high_price'        => $gv['diag']['recent_swing_high_price'] ?? null,
+                                'recent_swing_high_time'         => $gv['diag']['recent_swing_high_time'] ?? null,
+                                'garbage_veto_reason'            => $blockReason,
+                                'garbage_veto_secondary_reasons' => $gv['secondary_reasons'] ?? [],
                             ];
                         }
                     } else {
@@ -8343,6 +8509,12 @@ final class DoubleBottomLongService
                     $blockReason = 'handoff_blocked_expired_signal';
                 } elseif ($status === 'withdrawn' && $blockReason === null) {
                     $blockReason = 'handoff_blocked_withdrawn';
+                }
+                if (is_string($blockReason) && str_starts_with($blockReason, 'garbage_')) {
+                    if (($result[$id]['handoff_status'] ?? '') !== 'blocked') {
+                        $result[$id]['handoff_status'] = 'blocked';
+                        $changed = true;
+                    }
                 }
 
                 if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
@@ -8411,6 +8583,34 @@ final class DoubleBottomLongService
         // Compute readyTotal from normalized result
         $readyTotal = $queueExecutableTotal;
 
+        // Handoff queue hygiene diagnostics.
+        foreach ($result as $qRec) {
+            $qStatus = (string)($qRec['handoff_status'] ?? '');
+            $qReady  = (bool)($qRec['handoff_ready'] ?? false);
+            $qExec   = (bool)($qRec['executable'] ?? false);
+            $qReason = (string)($qRec['block_reason'] ?? '');
+            $isGarbageBlocked = $qReason !== '' && str_starts_with($qReason, 'garbage_');
+            if ($qExec && $qReady && in_array($qStatus, ['new', 'refreshed'], true)) {
+                $handoffQueueReadyWrittenTotal++;
+            }
+            if ($isGarbageBlocked) {
+                $handoffQueueBlockedDiagnosticTotal++;
+                if (in_array($qStatus, ['new', 'refreshed'], true)) {
+                    $handoffQueueBlockedWithReadyStatusTotal++;
+                    if (count($handoffQueueBlockedWithReadyStatusExamples) < 5) {
+                        $handoffQueueBlockedWithReadyStatusExamples[] = [
+                            'symbol'        => $qRec['symbol'] ?? null,
+                            'signal_id'     => $qRec['signal_id'] ?? null,
+                            'handoff_status'=> $qStatus,
+                            'handoff_ready' => $qReady,
+                            'executable'    => $qExec,
+                            'block_reason'  => $qReason,
+                        ];
+                    }
+                }
+            }
+        }
+
         $this->writeJson('storage/bot_handoff_queue.json', array_values($result));
 
         // Accumulate soft_demote handoff-block counters into class properties for last_run.
@@ -8443,6 +8643,10 @@ final class DoubleBottomLongService
             'queue_entries_blocked_blacklist_total'       => $queueBlockedBlTotal,
             'queue_entries_blocked_freeze_total'          => $queueBlockedFrTotal,
             'queue_non_executable_examples'              => $queueNonExecutableExamples,
+            'handoff_queue_ready_written_total'          => $handoffQueueReadyWrittenTotal,
+            'handoff_queue_blocked_diagnostic_total'     => $handoffQueueBlockedDiagnosticTotal,
+            'handoff_queue_blocked_with_ready_status_total' => $handoffQueueBlockedWithReadyStatusTotal,
+            'handoff_queue_blocked_with_ready_status_examples' => $handoffQueueBlockedWithReadyStatusExamples,
             // OBC soft_demote handoff-block counters
             'soft_demote_blocked_handoff_total' => $softDemoteBlockedTotal,
             'soft_demote_allowed_handoff_total' => $softDemoteAllowedTotal,
@@ -8568,6 +8772,15 @@ final class DoubleBottomLongService
                 'whipsaw_score'              => $signal['whipsaw_score']               ?? null,
                 'entry_hour_utc'             => $signal['entry_hour_utc']              ?? null,
                 'session_bucket'             => $signal['session_bucket']              ?? null,
+                'post_point3_bounce_roi'     => $signal['post_point3_bounce_roi']      ?? null,
+                'position_in_local_recovery_leg_pct' => $signal['position_in_local_recovery_leg_pct'] ?? null,
+                'room_to_recent_swing_high_roi' => $signal['room_to_recent_swing_high_roi'] ?? null,
+                'near_recent_swing_high'     => $signal['near_recent_swing_high']      ?? null,
+                'post_point3_impulse_spent_pct' => $signal['post_point3_impulse_spent_pct'] ?? null,
+                'local_recovery_leg_low_price' => $signal['local_recovery_leg_low_price'] ?? null,
+                'local_recovery_leg_high_price' => $signal['local_recovery_leg_high_price'] ?? null,
+                'recent_swing_high_price'    => $signal['recent_swing_high_price']     ?? null,
+                'recent_swing_high_time'     => $signal['recent_swing_high_time']      ?? null,
                 // DBL point trace for Stop Manager — carry from signal's strategy_signal_context if present
                 'point_1_low_price'          => $signal['strategy_signal_context']['point_1_low_price']      ?? null,
                 'point_2_neckline_price'     => $signal['strategy_signal_context']['point_2_neckline_price'] ?? null,
@@ -8613,11 +8826,12 @@ final class DoubleBottomLongService
     /**
      * Conservative pre-handoff trash filter.
      *
-     * Checks a signal/queue record against four hard-veto rules:
+     * Checks a signal/queue record against hard-veto rules:
      *  1. Low quality + generic warning + OBC not confirmed
      *  2. OBC skipped due to quality_below_threshold
      *  3. Late daily extension long (already strongly extended on 24h)
      *  4. Whipsaw + weak quality
+     *  5. Local late entry after recovery leg already spent
      *
      * Returns an array with:
      *  - veto_triggered: bool
@@ -8625,9 +8839,9 @@ final class DoubleBottomLongService
      *  - secondary_reasons: string[]
      *  - diag:           array        (all computed values for diagnostics)
      */
-    private function applyDblGarbageVeto(array $record, array $config): array
+    private function applyDblGarbageVeto(array $record, array $context, array $config): array
     {
-        $ssc = is_array($record['strategy_signal_context'] ?? null) ? $record['strategy_signal_context'] : [];
+        $ssc = is_array($context) ? $context : [];
 
         // Extract quality and warning context
         $qualityScore = (float)($record['candidate_quality_score'] ?? $ssc['candidate_quality_score'] ?? 0.0);
@@ -8666,6 +8880,42 @@ final class DoubleBottomLongService
         $whipsawScore      = isset($ssc['whipsaw_score'])
             ? ($ssc['whipsaw_score'] !== null ? (float)$ssc['whipsaw_score'] : null)
             : null;
+        // Local late-entry context
+        $entryPrice = (float)($record['entry_price'] ?? 0.0);
+        $entryDistPoint3 = isset($ssc['entry_distance_from_point3_pct'])
+            ? ($ssc['entry_distance_from_point3_pct'] !== null ? (float)$ssc['entry_distance_from_point3_pct'] : null)
+            : null;
+        $entryDistReclaim = isset($ssc['entry_distance_from_reclaim_pct'])
+            ? ($ssc['entry_distance_from_reclaim_pct'] !== null ? (float)$ssc['entry_distance_from_reclaim_pct'] : null)
+            : null;
+        $postPoint3BounceRoi = isset($ssc['post_point3_bounce_roi'])
+            ? ($ssc['post_point3_bounce_roi'] !== null ? (float)$ssc['post_point3_bounce_roi'] : null)
+            : null;
+        $postPoint3ImpulseSpentPct = isset($ssc['post_point3_impulse_spent_pct'])
+            ? ($ssc['post_point3_impulse_spent_pct'] !== null ? (float)$ssc['post_point3_impulse_spent_pct'] : null)
+            : null;
+        $roomToRecentSwingHighRoi = isset($ssc['room_to_recent_swing_high_roi'])
+            ? ($ssc['room_to_recent_swing_high_roi'] !== null ? (float)$ssc['room_to_recent_swing_high_roi'] : null)
+            : null;
+        $nearRecentSwingHigh = isset($ssc['near_recent_swing_high'])
+            ? (bool)$ssc['near_recent_swing_high']
+            : false;
+        $point3SecondLowPrice = isset($ssc['point_3_second_low_price'])
+            ? ($ssc['point_3_second_low_price'] !== null ? (float)$ssc['point_3_second_low_price'] : null)
+            : null;
+        $reclaimLevel = isset($ssc['reclaim_level'])
+            ? ($ssc['reclaim_level'] !== null ? (float)$ssc['reclaim_level'] : null)
+            : null;
+        $recentSwingHighPrice = isset($ssc['recent_swing_high_price'])
+            ? ($ssc['recent_swing_high_price'] !== null ? (float)$ssc['recent_swing_high_price'] : null)
+            : null;
+        $recentSwingHighTime = $ssc['recent_swing_high_time'] ?? null;
+        $localRecoveryLegLowPrice = isset($ssc['local_recovery_leg_low_price'])
+            ? ($ssc['local_recovery_leg_low_price'] !== null ? (float)$ssc['local_recovery_leg_low_price'] : null)
+            : null;
+        $localRecoveryLegHighPrice = isset($ssc['local_recovery_leg_high_price'])
+            ? ($ssc['local_recovery_leg_high_price'] !== null ? (float)$ssc['local_recovery_leg_high_price'] : null)
+            : null;
 
         $secondaryReasons = [];
         $primaryReason    = null;
@@ -8687,7 +8937,11 @@ final class DoubleBottomLongService
         // ── Veto 2: OBC skipped due to quality_below_threshold ─────────────────
         if ($primaryReason === null && (bool)($config['dbl_garbage_block_obc_quality_skip'] ?? true)) {
             $obcSkipMaxScore = (float)($config['dbl_garbage_obc_quality_skip_max_score'] ?? 0.72);
+            $obSkipBelowRequired = $obSkipScore > 0.0
+                && $obSkipRequired > 0.0
+                && $obSkipScore < $obSkipRequired;
             if ($obSkipReason === 'quality_below_threshold'
+                && $obSkipBelowRequired
                 && ($qualityScore <= $obcSkipMaxScore || $hasGenericWarning)
             ) {
                 $primaryReason = 'garbage_obc_quality_skip';
@@ -8753,6 +9007,45 @@ final class DoubleBottomLongService
             }
         }
 
+        // ── Veto 5: local late entry after recovery leg ────────────────────────
+        $lateLocalEnabled = (bool)($config['dbl_garbage_late_local_entry_enabled'] ?? true);
+        $lateLocalChecked = false;
+        $lateEntryFlags = [
+            'garbage_entry_far_from_point3' => false,
+            'garbage_post_point3_impulse_already_spent' => false,
+            'garbage_insufficient_room_to_recent_swing_high' => false,
+            'garbage_near_recent_swing_high' => false,
+        ];
+        if ($lateLocalEnabled) {
+            $lateLocalChecked = true;
+            $maxEntryDistPoint3 = (float)($config['dbl_garbage_max_entry_distance_from_point3_pct'] ?? 1.2);
+            $maxImpulseSpentPct = (float)($config['dbl_garbage_max_post_point3_impulse_spent_pct']  ?? 70.0);
+            $minRoomSwingHigh   = (float)($config['dbl_garbage_min_room_to_recent_swing_high_roi']  ?? 8.0);
+
+            if ($entryDistPoint3 !== null && $entryDistPoint3 > $maxEntryDistPoint3) {
+                $lateEntryFlags['garbage_entry_far_from_point3'] = true;
+            }
+            if ($postPoint3ImpulseSpentPct !== null && $postPoint3ImpulseSpentPct > $maxImpulseSpentPct) {
+                $lateEntryFlags['garbage_post_point3_impulse_already_spent'] = true;
+            }
+            if ($roomToRecentSwingHighRoi !== null && $roomToRecentSwingHighRoi < $minRoomSwingHigh) {
+                $lateEntryFlags['garbage_insufficient_room_to_recent_swing_high'] = true;
+            }
+            if ($nearRecentSwingHigh) {
+                $lateEntryFlags['garbage_near_recent_swing_high'] = true;
+            }
+
+            $lateConditionsMet = count(array_filter($lateEntryFlags)) >= 2;
+            if ($lateConditionsMet && $primaryReason === null) {
+                $primaryReason = 'garbage_local_late_entry_after_recovery';
+                foreach ($lateEntryFlags as $flag => $met) {
+                    if ($met) {
+                        $secondaryReasons[] = $flag;
+                    }
+                }
+            }
+        }
+
         $vetoTriggered = $primaryReason !== null;
 
         return [
@@ -8776,6 +9069,24 @@ final class DoubleBottomLongService
                 'recent_10m_range_roi'               => $recent10mRange,
                 'recent_60m_direction_flips'         => $recent60mFlips,
                 'whipsaw_score'                      => $whipsawScore,
+                'entry_price'                        => $entryPrice > 0.0 ? $entryPrice : null,
+                'point_3_second_low_price'           => $point3SecondLowPrice,
+                'reclaim_level'                      => $reclaimLevel,
+                'entry_distance_from_point3_pct'     => $entryDistPoint3,
+                'entry_distance_from_reclaim_pct'    => $entryDistReclaim,
+                'post_point3_bounce_roi'             => $postPoint3BounceRoi,
+                'post_point3_impulse_spent_pct'      => $postPoint3ImpulseSpentPct,
+                'room_to_recent_swing_high_roi'      => $roomToRecentSwingHighRoi,
+                'near_recent_swing_high'             => $nearRecentSwingHigh,
+                'local_recovery_leg_low_price'       => $localRecoveryLegLowPrice,
+                'local_recovery_leg_high_price'      => $localRecoveryLegHighPrice,
+                'recent_swing_high_price'            => $recentSwingHighPrice,
+                'recent_swing_high_time'             => $recentSwingHighTime,
+                'dbl_garbage_late_local_entry_checked' => $lateLocalChecked,
+                'garbage_entry_far_from_point3'      => $lateEntryFlags['garbage_entry_far_from_point3'],
+                'garbage_post_point3_impulse_already_spent' => $lateEntryFlags['garbage_post_point3_impulse_already_spent'],
+                'garbage_insufficient_room_to_recent_swing_high' => $lateEntryFlags['garbage_insufficient_room_to_recent_swing_high'],
+                'garbage_near_recent_swing_high'     => $lateEntryFlags['garbage_near_recent_swing_high'],
             ],
         ];
     }

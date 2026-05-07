@@ -140,4 +140,9 @@ return [
     'dbl_garbage_whipsaw_max_60m_direction_flips'         => 'int',
     'dbl_garbage_whipsaw_requires_weak_quality'           => 'bool',
     'dbl_garbage_whipsaw_weak_quality_max_score'          => 'float',
+    'dbl_garbage_late_local_entry_enabled'                => 'bool',
+    'dbl_garbage_max_entry_distance_from_point3_pct'      => 'float',
+    'dbl_garbage_max_post_point3_impulse_spent_pct'       => 'float',
+    'dbl_garbage_min_room_to_recent_swing_high_roi'       => 'float',
+    'dbl_garbage_near_recent_swing_high_pct'              => 'float',
 ];

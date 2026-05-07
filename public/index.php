@@ -1273,6 +1273,73 @@ Router::get('/admin/strategy/double_bottom_long/runtime', function () {
 });
 
 // ============================================================
+// strategy.confirmed_continuation routes
+// ============================================================
+
+Router::get('/admin/strategy/confirmed_continuation', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.confirmed_continuation');
+    ob_start();
+    require $moduleDir . '/admin/page_runtime.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Confirmed Continuation', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/confirmed_continuation/config', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.confirmed_continuation');
+    ob_start();
+    require $moduleDir . '/admin/page_config.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Confirmed Continuation — Config', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/confirmed_continuation/stats', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.confirmed_continuation');
+    ob_start();
+    require $moduleDir . '/admin/page_stats.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Confirmed Continuation — Stats', $content, 'strategy', []);
+});
+
+Router::post('/admin/strategy/confirmed_continuation/ajax', function () {
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.confirmed_continuation');
+    require $moduleDir . '/admin/ajax_confirmed_continuation.php';
+});
+
+Router::get('/admin/strategy/confirmed_continuation/runtime', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.confirmed_continuation');
+    ob_start();
+    require $moduleDir . '/admin/page_runtime.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Confirmed Continuation — Runtime', $content, 'strategy', []);
+});
+
+// ============================================================
 // DISPATCH
 // ============================================================
 

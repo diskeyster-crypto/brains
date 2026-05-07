@@ -98,6 +98,13 @@ final class ConfirmedContinuationService
     private int $dayRegimeLongBiasTotal  = 0;
     private int $dayRegimeShortBiasTotal = 0;
 
+    // ── Universe diagnostics (set by fetchUniverse) ────────────────────────────
+    private string $universeSource      = 'unknown';
+    private int    $universeTotal       = 0;
+    private int    $universeBatchCount  = 0;
+    /** @var list<string> */
+    private array  $universeExamples    = [];
+
     // ── Wall test diagnostics ──────────────────────────────────────────────────
     private int $wallTestPendingTotal        = 0;
     private int $wallTestConfirmedTotal      = 0;
@@ -144,6 +151,11 @@ final class ConfirmedContinuationService
      */
     public function queueRun(): array
     {
+        // Ensure storage directory exists before writing
+        $storageDir = $this->moduleDir . '/storage';
+        if (!is_dir($storageDir)) {
+            @mkdir($storageDir, 0755, true);
+        }
         $state = [
             'status'       => 'queued',
             'queued_at'    => date('c'),
@@ -160,7 +172,8 @@ final class ConfirmedContinuationService
     {
         $this->resetCounters();
 
-        $boot = (new ConfirmedContinuationBootstrap($this->moduleDir))->load();
+        $this->requireBootstrap();
+        $boot = ConfirmedContinuationBootstrap::instance($this->moduleDir)->load();
         if (!$boot['valid'] || empty($boot['config']['enabled'])) {
             return ['status' => 'disabled', 'errors' => $boot['errors']];
         }
@@ -175,8 +188,41 @@ final class ConfirmedContinuationService
         $batchSize = max(1, (int)($config['batch_size'] ?? 50));
         $maxTotal  = max(1, (int)($config['max_symbols_per_run'] ?? 50));
 
-        $symbols = $this->fetchUniverse($config);
-        $symbols = array_slice($symbols, $offset, $batchSize);
+        $allSymbols = $this->fetchUniverse($config);
+
+        // Empty universe: write diagnostic last_run and return early
+        if (empty($allSymbols)) {
+            $startedAt  = date('c');
+            $finishedAt = date('c');
+            $lastRun = [
+                'strategy_id'                     => 'confirmed_continuation',
+                'strategy_is_environment_neutral' => true,
+                'execution_mode_used_for_selection' => false,
+                'status'                          => 'no_universe',
+                'skip_reason'                     => 'universe_empty',
+                'started_at'                      => $startedAt,
+                'finished_at'                     => $finishedAt,
+                'universe_source'                 => $this->universeSource,
+                'universe_total'                  => 0,
+                'universe_batch_count'            => 0,
+                'universe_symbols_examples'       => [],
+                'candidates_total'                => 0,
+                'signals_total'                   => 0,
+                'handoff_ready_total'             => 0,
+                'rejected_total'                  => 0,
+                'reject_reason_counts'            => [],
+            ];
+            $this->writeJson($this->moduleDir . '/storage/last_run.json', $lastRun);
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', [
+                'status'       => 'done',
+                'finished_at'  => $finishedAt,
+                'batch_offset' => 0,
+            ]);
+            return $lastRun;
+        }
+
+        $symbols = array_slice($allSymbols, $offset, $batchSize);
+        $this->universeBatchCount = count($symbols);
 
         $startedAt = date('c');
         $t0        = microtime(true);
@@ -921,10 +967,10 @@ final class ConfirmedContinuationService
         $this->obcCheckedTotal++;
 
         try {
-            $wallCtx = $this->obcService->getWallContext($symbol);
+            $wallCtx = $this->obcService->getWallContext($symbol, $entryPrice);
             if ($wallCtx === null) {
                 $this->obcFetchFailedTotal++;
-                return array_merge($defaultResult, ['ob_fetch_ok' => false]);
+                return array_merge($defaultResult, ['ob_fetch_ok' => false, 'ob_error' => true, 'ob_error_message' => 'null_context']);
             }
             $this->obcFetchSuccessTotal++;
 
@@ -997,9 +1043,13 @@ final class ConfirmedContinuationService
                 'ob_ask_wall_status'     => $askStatus,
                 'ob_bid_wall_status'     => $bidStatus,
             ];
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             $this->obcFetchFailedTotal++;
-            return array_merge($defaultResult, ['ob_fetch_ok' => false, 'ob_error' => 'exception']);
+            return array_merge($defaultResult, [
+                'ob_fetch_ok'      => false,
+                'ob_error'         => true,
+                'ob_error_message' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -1085,9 +1135,13 @@ final class ConfirmedContinuationService
     private function computeAntiCombDiagnostics(array $candles, string $side, array $structure, array $config): array
     {
         $diag = [
+            'recent_max_1m_range_pct'            => 0.0,
             'recent_max_1m_range_roi'            => 0.0,
+            'recent_max_3m_range_pct'            => 0.0,
             'recent_max_3m_range_roi'            => 0.0,
+            'recent_max_swing_pct'               => 0.0,
             'recent_max_swing_roi'               => 0.0,
+            'recent_opposite_swing_pct'          => 0.0,
             'recent_opposite_swing_roi'          => 0.0,
             'directional_consistency_score'      => 1.0,
             'wick_chaos_score'                   => 0.0,
@@ -1193,27 +1247,36 @@ final class ConfirmedContinuationService
             }
         }
 
-        $diag['recent_max_1m_range_roi'] = round($max1m, 4);
-        $diag['recent_max_3m_range_roi'] = round($max3m, 4);
-        $diag['recent_max_swing_roi'] = round($recentSwing, 4);
-        $diag['recent_opposite_swing_roi'] = round($oppSwing, 4);
+        $diag['recent_max_1m_range_pct'] = round($max1m, 4);
+        $diag['recent_max_3m_range_pct'] = round($max3m, 4);
+        $diag['recent_max_swing_pct'] = round($recentSwing, 4);
+        $diag['recent_opposite_swing_pct'] = round($oppSwing, 4);
+
+        $leverage = max(1.0, (float)($config['anti_comb_roi_equiv_leverage'] ?? 15.0));
+        $diag['recent_max_1m_range_roi'] = round($max1m * $leverage, 4);
+        $diag['recent_max_3m_range_roi'] = round($max3m * $leverage, 4);
+        $diag['recent_max_swing_roi'] = round($recentSwing * $leverage, 4);
+        $diag['recent_opposite_swing_roi'] = round($oppSwing * $leverage, 4);
+
         $diag['directional_consistency_score'] = round($consistency, 4);
         $diag['wick_chaos_score'] = round($wickChaos, 4);
         $diag['structure_breaks_count'] = $structureBreaks;
         $diag['alternating_large_candles_detected'] = $alternating > 0;
 
         $controlledTrendScore = 1.0;
-        $controlledTrendScore -= min(0.35, $max1m / max(1.0, (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0)) * 0.35);
+        $controlledTrendScore -= min(0.35, $diag['recent_max_1m_range_roi'] / max(1.0, (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0)) * 0.35);
         $controlledTrendScore -= min(0.25, max(0.0, $wickChaos - 0.2));
         $controlledTrendScore -= min(0.20, max(0.0, 0.8 - $consistency));
         $controlledTrendScore -= min(0.20, $structureBreaks * 0.10);
         $diag['controlled_trend_score'] = round(max(0.0, min(1.0, $controlledTrendScore)), 4);
 
         $rejectReason = null;
-        if ($max1m > (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0) || $max3m > (float)($config['anti_comb_max_3m_range_roi'] ?? 30.0)) {
+        if ($diag['recent_max_1m_range_roi'] > (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0)
+            || $diag['recent_max_3m_range_roi'] > (float)($config['anti_comb_max_3m_range_roi'] ?? 30.0)) {
             $rejectReason = 'anti_comb_recent_range_too_high';
             $this->antiCombRecentRangeRejectTotal++;
-        } elseif ($oppSwing > (float)($config['anti_comb_max_opposite_swing_roi'] ?? 25.0) || $recentSwing > (float)($config['anti_comb_max_recent_swing_roi'] ?? 35.0)) {
+        } elseif ($diag['recent_opposite_swing_roi'] > (float)($config['anti_comb_max_opposite_swing_roi'] ?? 25.0)
+            || $diag['recent_max_swing_roi'] > (float)($config['anti_comb_max_recent_swing_roi'] ?? 35.0)) {
             $rejectReason = 'anti_comb_opposite_swing_too_high';
             $this->antiCombOppositeSwingRejectTotal++;
         } elseif ($wickChaos > (float)($config['anti_comb_max_wick_chaos_score'] ?? 0.55)) {
@@ -1236,12 +1299,17 @@ final class ConfirmedContinuationService
             $this->antiCombRejectedTotal++;
             if (count($this->antiCombExamples) < 8) {
                 $this->antiCombExamples[] = [
-                    'reject_reason' => $rejectReason,
-                    'recent_max_1m_range_roi' => $diag['recent_max_1m_range_roi'],
-                    'recent_max_3m_range_roi' => $diag['recent_max_3m_range_roi'],
-                    'recent_max_swing_roi' => $diag['recent_max_swing_roi'],
-                    'directional_consistency_score' => $diag['directional_consistency_score'],
-                    'wick_chaos_score' => $diag['wick_chaos_score'],
+                    'reject_reason'                  => $rejectReason,
+                    'recent_max_1m_range_pct'        => $diag['recent_max_1m_range_pct'],
+                    'recent_max_1m_range_roi'        => $diag['recent_max_1m_range_roi'],
+                    'recent_max_3m_range_pct'        => $diag['recent_max_3m_range_pct'],
+                    'recent_max_3m_range_roi'        => $diag['recent_max_3m_range_roi'],
+                    'recent_max_swing_pct'           => $diag['recent_max_swing_pct'],
+                    'recent_max_swing_roi'           => $diag['recent_max_swing_roi'],
+                    'recent_opposite_swing_pct'      => $diag['recent_opposite_swing_pct'],
+                    'recent_opposite_swing_roi'      => $diag['recent_opposite_swing_roi'],
+                    'directional_consistency_score'  => $diag['directional_consistency_score'],
+                    'wick_chaos_score'               => $diag['wick_chaos_score'],
                 ];
             }
         }
@@ -1411,8 +1479,21 @@ final class ConfirmedContinuationService
         }
 
         $detectedAt = date('c');
+
+        // Compute stable idea key for candidate (same formula as in buildSignal)
+        $structureLevel = ($side === 'long')
+            ? (float)($structure['last_higher_low_price'] ?? 0)
+            : (float)($structure['last_lower_high_price'] ?? 0);
+        $timeBucket = (int)(floor(time() / 600) * 600);
+        $ideaKey = $symbol
+            . ':' . $side
+            . ':' . ($structure['setup_class'] ?? '')
+            . ':' . round($structureLevel, 6)
+            . ':' . $timeBucket;
+
         $candidate  = array_merge($structure, $quality, $obcResult, [
-            'strategy_id'    => 'confirmed_continuation',
+            'strategy_id'                     => 'confirmed_continuation',
+            'confirmed_continuation_idea_key' => $ideaKey,
             'symbol'         => $symbol,
             'side'           => $side,
             'detected_at'    => $detectedAt,
@@ -1433,13 +1514,22 @@ final class ConfirmedContinuationService
         $side = (string)($candidate['side'] ?? 'long');
         $now  = date('c');
 
-        $signalId = 'cc_' . substr(md5(
-            ($candidate['symbol'] ?? '') . ':' . $side . ':' . ($candidate['entry_price'] ?? '') . ':' . $now
-        ), 0, 16);
+        // Stable idea key: symbol+side+setup_class+nearest structure level+10-minute bucket
+        $structureLevel = ($side === 'long')
+            ? (float)($candidate['last_higher_low_price'] ?? $candidate['entry_price'] ?? 0)
+            : (float)($candidate['last_lower_high_price'] ?? $candidate['entry_price'] ?? 0);
+        $timeBucket = (int)(floor(time() / 600) * 600);
+        $ideaKey = ($candidate['symbol'] ?? '')
+            . ':' . $side
+            . ':' . ($candidate['setup_class'] ?? '')
+            . ':' . round($structureLevel, 6)
+            . ':' . $timeBucket;
+        $signalId = 'cc_' . substr(md5($ideaKey), 0, 16);
 
         $signal = [
-            'strategy_id'            => 'confirmed_continuation',
-            'signal_id'              => $signalId,
+            'strategy_id'                        => 'confirmed_continuation',
+            'signal_id'                          => $signalId,
+            'confirmed_continuation_idea_key'    => $ideaKey,
             'symbol'                 => $candidate['symbol'] ?? '',
             'side'                   => $side,
             'entry_price'            => $candidate['entry_price'] ?? null,
@@ -1588,6 +1678,7 @@ final class ConfirmedContinuationService
             $entry = [
                 'strategy_id'             => 'confirmed_continuation',
                 'signal_id'               => $sig['signal_id'] ?? '',
+                'confirmed_continuation_idea_key' => $sig['confirmed_continuation_idea_key'] ?? '',
                 'symbol'                  => $sig['symbol'] ?? '',
                 'side'                    => $sig['side'] ?? '',
                 'entry_price'             => $sig['entry_price'] ?? null,
@@ -1650,8 +1741,12 @@ final class ConfirmedContinuationService
             'day_regime_blocked_total'        => $this->dayRegimeBlockedTotal,
             'day_regime_long_bias_total'      => $this->dayRegimeLongBiasTotal,
             'day_regime_short_bias_total'     => $this->dayRegimeShortBiasTotal,
+            // OBC/wall counters
             'obc_checked_total'               => $this->obcCheckedTotal,
+            'obc_fetch_success_total'         => $this->obcFetchSuccessTotal,
+            'obc_fetch_failed_total'          => $this->obcFetchFailedTotal,
             'obc_soft_demote_blocked_total'   => $this->obcSoftDemoteBlockedHandoff,
+            'obc_soft_demote_allowed_total'   => $this->obcSoftDemoteAllowedHandoff,
             'wall_test_pending_total'         => $this->wallTestPendingTotal,
             'wall_test_confirmed_total'       => $this->wallTestConfirmedTotal,
             'wall_test_rejected_total'        => $this->wallTestRejectedTotal,
@@ -1665,6 +1760,11 @@ final class ConfirmedContinuationService
             'no_retest_reject_examples'       => $this->noRetestRejectExamples,
             'anti_comb_examples'              => $this->antiCombExamples,
             'active_signals_total'            => count(array_filter($signals, fn($s) => !($s['stale'] ?? false) && ($s['active_final'] ?? false))),
+            // Universe diagnostics
+            'universe_source'                 => $this->universeSource,
+            'universe_total'                  => $this->universeTotal,
+            'universe_batch_count'            => $this->universeBatchCount,
+            'universe_symbols_examples'       => $this->universeExamples,
         ];
     }
 
@@ -1724,25 +1824,78 @@ final class ConfirmedContinuationService
 
     private function fetchUniverse(array $config): array
     {
-        // Default: read from a shared symbols file if available; else return a small demo set
-        $symbolsFile = $this->repoRoot . '/modules/parser/storage/symbols.json';
-        if (is_file($symbolsFile)) {
-            $data = $this->readJson($symbolsFile, []);
-            if (is_array($data) && !empty($data)) {
-                $symbols = [];
+        $universeSource  = 'unknown';
+        $symbols         = [];
+        $diagTotal       = 0;
+
+        // Resolve parser1_market_registry path (same as double_bottom_long)
+        try {
+            $registryDir = \Core\System\SystemPaths::instance()
+                ->get('parser.parser1_market_registry');
+        } catch (\Throwable) {
+            $registryDir = $this->repoRoot . '/modules/parser/parser1_market_registry';
+        }
+
+        // Prefer active.json (symbol list); fall back to registry.json
+        $activePath   = rtrim($registryDir, '/') . '/storage/active.json';
+        $registryPath = rtrim($registryDir, '/') . '/storage/registry.json';
+
+        foreach ([$activePath, $registryPath] as $tryPath) {
+            if (!is_file($tryPath)) {
+                continue;
+            }
+            $raw = @file_get_contents($tryPath);
+            if ($raw === false || $raw === '') {
+                continue;
+            }
+            $data = json_decode($raw, true);
+            if (!is_array($data)) {
+                continue;
+            }
+
+            if (array_is_list($data)) {
+                // List of objects [{symbol: ...}] or flat strings
                 foreach ($data as $item) {
                     if (is_array($item) && isset($item['symbol'])) {
-                        $symbols[] = (string)$item['symbol'];
-                    } elseif (is_string($item)) {
+                        $sym = (string)$item['symbol'];
+                        if ($sym !== '') {
+                            $symbols[] = $sym;
+                        }
+                    } elseif (is_string($item) && $item !== '') {
                         $symbols[] = $item;
                     }
                 }
-                if (!empty($symbols)) {
-                    return array_slice($symbols, 0, (int)($config['max_symbols_per_run'] ?? 50));
+            } else {
+                // Keyed dict: {BTCUSDT: {...}}
+                foreach ($data as $key => $val) {
+                    if (is_array($val) && isset($val['symbol'])) {
+                        $sym = (string)$val['symbol'];
+                    } else {
+                        $sym = (string)$key;
+                    }
+                    // Only include active linear USDT perpetuals
+                    $status = is_array($val) ? (string)($val['status'] ?? 'active') : 'active';
+                    $type   = is_array($val) ? (string)($val['contract_type'] ?? $val['type'] ?? 'LinearPerpetual') : 'LinearPerpetual';
+                    if (str_ends_with($sym, 'USDT') && $status !== 'inactive' && str_contains(strtolower($type), 'linear')) {
+                        $symbols[] = $sym;
+                    }
                 }
             }
+
+            if (!empty($symbols)) {
+                $universeSource = $tryPath;
+                $diagTotal      = count($symbols);
+                break;
+            }
         }
-        return [];
+
+        // Write universe diagnostics into last_run context (via instance vars)
+        $this->universeSource       = $universeSource;
+        $this->universeTotal        = $diagTotal;
+        $this->universeBatchCount   = 0; // updated after slice
+        $this->universeExamples     = array_slice($symbols, 0, 5);
+
+        return $symbols;
     }
 
     // ── Utilities ──────────────────────────────────────────────────────────────
@@ -1794,6 +1947,21 @@ final class ConfirmedContinuationService
         $this->wallTestConfirmedTotal      = 0;
         $this->wallTestRejectedTotal       = 0;
         $this->wallTestOppositeContextTotal= 0;
+        // Universe diagnostics
+        $this->universeSource     = 'unknown';
+        $this->universeTotal      = 0;
+        $this->universeBatchCount = 0;
+        $this->universeExamples   = [];
+    }
+
+    /**
+     * Ensure bootstrap class file is loaded (safe to call multiple times).
+     */
+    private function requireBootstrap(): void
+    {
+        if (!class_exists(ConfirmedContinuationBootstrap::class, false)) {
+            require_once $this->moduleDir . '/bootstrap.php';
+        }
     }
 
     private function readJson(string $path, mixed $default = []): mixed

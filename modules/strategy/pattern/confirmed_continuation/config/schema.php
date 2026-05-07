@@ -26,6 +26,8 @@ return [
     // Universe / batching
     'batch_size'          => 'int',
     'max_symbols_per_run' => 'int',
+    'continuous_scan_enabled' => 'bool',
+    'auto_requeue_when_done'  => 'bool',
 
     // Pattern quality gates
     'min_structure_score'                   => 'float',

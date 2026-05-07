@@ -34,6 +34,8 @@ return [
     // ── Universe / batching ───────────────────────────────────────────────────
     'batch_size'          => 50,
     'max_symbols_per_run' => 50,
+    'continuous_scan_enabled' => true,
+    'auto_requeue_when_done'  => true,
 
     // ── Pattern quality gates ─────────────────────────────────────────────────
     'min_structure_score'                   => 0.75,

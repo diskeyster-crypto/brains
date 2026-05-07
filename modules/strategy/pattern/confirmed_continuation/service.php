@@ -175,6 +175,8 @@ final class ConfirmedContinuationService
         $total      = count($allSymbols);
         $batchSize  = max(1, (int)($config['batch_size'] ?? 50));
         $maxTotal   = max(1, (int)($config['max_symbols_per_run'] ?? 50));
+        $continuousScanEnabled = (bool)($config['continuous_scan_enabled'] ?? true);
+        $autoRequeueWhenDone   = (bool)($config['auto_requeue_when_done'] ?? true);
         $windowSize = $total > 0 ? min($maxTotal, $total) : 0;
 
         $prevState   = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
@@ -215,6 +217,8 @@ final class ConfirmedContinuationService
             'universe_total'            => $total,
             'max_symbols_per_run'       => $maxTotal,
             'batch_size'                => $batchSize,
+            'continuous_scan_enabled'   => $continuousScanEnabled,
+            'auto_requeue_when_done'    => $autoRequeueWhenDone,
             'registry_cursor'           => $windowStart,
             'previous_registry_cursor'  => $rawPrevCursor,
             'next_registry_cursor'      => $nextCursor,
@@ -222,6 +226,13 @@ final class ConfirmedContinuationService
             'registry_window_end'       => $windowEnd,
             'registry_window_wrapped'   => $wrapped,
             'registry_cursor_reset_reason' => $cursorResetReason,
+            'auto_requeued_from_status' => null,
+            'auto_requeue_at'           => null,
+            'auto_requeue_result'       => null,
+            'previous_next_registry_cursor_before_requeue' => null,
+            'registry_cursor_after_requeue' => null,
+            'next_registry_cursor_after_requeue' => null,
+            'auto_requeue_skipped_reason' => null,
         ];
         $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
         return [
@@ -251,16 +262,75 @@ final class ConfirmedContinuationService
             return ['status' => 'disabled', 'errors' => $boot['errors']];
         }
         $config = $boot['config'];
+        $continuousScanEnabled = (bool)($config['continuous_scan_enabled'] ?? true);
+        $autoRequeueWhenDone   = (bool)($config['auto_requeue_when_done'] ?? true);
 
         $state  = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
         $status = (string)($state['status'] ?? '');
-        if ($status === '' || $status === 'idle') {
+        $statusForAuto = $status === '' ? 'idle' : $status;
+        $autoRequeueDiag = [
+            'continuous_scan_enabled'   => $continuousScanEnabled,
+            'auto_requeue_when_done'    => $autoRequeueWhenDone,
+            'auto_requeued_from_status' => null,
+            'auto_requeue_at'           => null,
+            'auto_requeue_result'       => null,
+            'previous_next_registry_cursor_before_requeue' => null,
+            'registry_cursor_after_requeue' => null,
+            'next_registry_cursor_after_requeue' => null,
+            'auto_requeue_skipped_reason' => null,
+        ];
+        $shouldAutoQueue = false;
+        if ($statusForAuto === 'idle') {
+            if ($continuousScanEnabled) {
+                $shouldAutoQueue = true;
+            } else {
+                $autoRequeueDiag['auto_requeue_result'] = 'skipped';
+                $autoRequeueDiag['auto_requeue_skipped_reason'] = 'continuous_scan_disabled';
+            }
+        } elseif ($statusForAuto === 'done') {
+            if (!$continuousScanEnabled) {
+                $autoRequeueDiag['auto_requeue_result'] = 'skipped';
+                $autoRequeueDiag['auto_requeue_skipped_reason'] = 'continuous_scan_disabled';
+            } elseif (!$autoRequeueWhenDone) {
+                $autoRequeueDiag['auto_requeue_result'] = 'skipped';
+                $autoRequeueDiag['auto_requeue_skipped_reason'] = 'disabled';
+            } else {
+                $shouldAutoQueue = true;
+            }
+        } else {
+            $autoRequeueDiag['auto_requeue_result'] = 'skipped';
+            $autoRequeueDiag['auto_requeue_skipped_reason'] = 'status_not_done_or_idle';
+        }
+
+        if ($shouldAutoQueue) {
+            $autoRequeueDiag['auto_requeued_from_status'] = $statusForAuto;
+            $autoRequeueDiag['auto_requeue_at'] = date('c');
+            $autoRequeueDiag['previous_next_registry_cursor_before_requeue'] = (int)($state['next_registry_cursor'] ?? 0);
             $queueResult = $this->queueRun();
             if (!($queueResult['queued'] ?? false)) {
+                $autoRequeueDiag['auto_requeue_result'] = 'queue_failed';
+                $autoRequeueDiag['auto_requeue_skipped_reason'] = 'queue_failed';
+                $state = array_merge($state, $autoRequeueDiag);
+                $state['continuous_scan_enabled'] = $continuousScanEnabled;
+                $state['auto_requeue_when_done'] = $autoRequeueWhenDone;
+                $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
                 return ['status' => 'queue_failed', 'errors' => $queueResult['errors'] ?? []];
             }
             $state  = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
+            $autoRequeueDiag['auto_requeue_result'] = 'queued';
+            $autoRequeueDiag['registry_cursor_after_requeue'] = (int)($state['registry_cursor'] ?? 0);
+            $autoRequeueDiag['next_registry_cursor_after_requeue'] = (int)($state['next_registry_cursor'] ?? 0);
+            $state = array_merge($state, $autoRequeueDiag);
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
             $status = (string)($state['status'] ?? '');
+        } else {
+            $state = array_merge($state, $autoRequeueDiag);
+            $state['continuous_scan_enabled'] = $continuousScanEnabled;
+            $state['auto_requeue_when_done'] = $autoRequeueWhenDone;
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
+        }
+        if (!$shouldAutoQueue && in_array($statusForAuto, ['idle', 'done'], true)) {
+            return ['status' => 'idle'];
         }
         if ($status === 'done') {
             return ['status' => 'idle'];
@@ -312,6 +382,15 @@ final class ConfirmedContinuationService
                 'registry_window_wrapped'         => (bool)($state['registry_window_wrapped'] ?? false),
                 'registry_cursor_reset_reason'    => $state['registry_cursor_reset_reason'] ?? null,
                 'batch_symbols_examples'          => [],
+                'continuous_scan_enabled'         => (bool)($state['continuous_scan_enabled'] ?? $continuousScanEnabled),
+                'auto_requeue_when_done'          => (bool)($state['auto_requeue_when_done'] ?? $autoRequeueWhenDone),
+                'auto_requeued_from_status'       => $state['auto_requeued_from_status'] ?? null,
+                'auto_requeue_at'                 => $state['auto_requeue_at'] ?? null,
+                'auto_requeue_result'             => $state['auto_requeue_result'] ?? null,
+                'previous_next_registry_cursor_before_requeue' => $state['previous_next_registry_cursor_before_requeue'] ?? null,
+                'registry_cursor_after_requeue'   => $state['registry_cursor_after_requeue'] ?? null,
+                'next_registry_cursor_after_requeue' => $state['next_registry_cursor_after_requeue'] ?? null,
+                'auto_requeue_skipped_reason'     => $state['auto_requeue_skipped_reason'] ?? null,
             ];
             $this->writeJson($this->moduleDir . '/storage/last_run.json', $lastRun);
             $state['status']       = 'done';
@@ -445,6 +524,15 @@ final class ConfirmedContinuationService
             'registry_window_wrapped'    => (bool)($state['registry_window_wrapped'] ?? false),
             'registry_cursor_reset_reason' => $state['registry_cursor_reset_reason'] ?? null,
             'batch_symbols_examples'     => array_slice($symbols, 0, 5),
+            'continuous_scan_enabled'    => (bool)($state['continuous_scan_enabled'] ?? $continuousScanEnabled),
+            'auto_requeue_when_done'     => (bool)($state['auto_requeue_when_done'] ?? $autoRequeueWhenDone),
+            'auto_requeued_from_status'  => $state['auto_requeued_from_status'] ?? null,
+            'auto_requeue_at'            => $state['auto_requeue_at'] ?? null,
+            'auto_requeue_result'        => $state['auto_requeue_result'] ?? null,
+            'previous_next_registry_cursor_before_requeue' => $state['previous_next_registry_cursor_before_requeue'] ?? null,
+            'registry_cursor_after_requeue' => $state['registry_cursor_after_requeue'] ?? null,
+            'next_registry_cursor_after_requeue' => $state['next_registry_cursor_after_requeue'] ?? null,
+            'auto_requeue_skipped_reason' => $state['auto_requeue_skipped_reason'] ?? null,
         ]);
         $this->writeJson($this->moduleDir . '/storage/last_run.json', $lastRun);
 
@@ -1981,6 +2069,15 @@ final class ConfirmedContinuationService
             'registry_window_wrapped'         => (bool)($runWindow['registry_window_wrapped'] ?? false),
             'registry_cursor_reset_reason'    => $runWindow['registry_cursor_reset_reason'] ?? null,
             'batch_symbols_examples'          => is_array($runWindow['batch_symbols_examples'] ?? null) ? array_slice($runWindow['batch_symbols_examples'], 0, 5) : [],
+            'continuous_scan_enabled'         => (bool)($runWindow['continuous_scan_enabled'] ?? (bool)($config['continuous_scan_enabled'] ?? true)),
+            'auto_requeue_when_done'          => (bool)($runWindow['auto_requeue_when_done'] ?? (bool)($config['auto_requeue_when_done'] ?? true)),
+            'auto_requeued_from_status'       => $runWindow['auto_requeued_from_status'] ?? null,
+            'auto_requeue_at'                 => $runWindow['auto_requeue_at'] ?? null,
+            'auto_requeue_result'             => $runWindow['auto_requeue_result'] ?? null,
+            'previous_next_registry_cursor_before_requeue' => $runWindow['previous_next_registry_cursor_before_requeue'] ?? null,
+            'registry_cursor_after_requeue'   => $runWindow['registry_cursor_after_requeue'] ?? null,
+            'next_registry_cursor_after_requeue' => $runWindow['next_registry_cursor_after_requeue'] ?? null,
+            'auto_requeue_skipped_reason'     => $runWindow['auto_requeue_skipped_reason'] ?? null,
         ];
     }
 

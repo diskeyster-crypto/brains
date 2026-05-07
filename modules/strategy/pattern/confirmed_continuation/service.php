@@ -2106,6 +2106,9 @@ final class ConfirmedContinuationService
         if (!$gateEnabled || $this->obcService === null) {
             return $defaultResult;
         }
+        if ($entryPrice <= 0.0) {
+            return array_merge($defaultResult, ['ob_skip_reason' => 'missing_entry_price']);
+        }
 
         $minQualityForFetch = (float)($config['orderbook_wall_fetch_after_score'] ?? 0.75);
         if ($quality['final_candidate_score'] < $minQualityForFetch) {
@@ -3711,7 +3714,7 @@ final class ConfirmedContinuationService
     private function loadCandlesFromParser2History(string $symbol, int $lookbackMinutes, int $minCandles, array &$diag): array
     {
         $normalizedSymbol = strtoupper(trim($symbol));
-        if (!preg_match('/^[A-Z0-9]{2,30}$/', $normalizedSymbol)) {
+        if (!preg_match('/^[A-Z0-9]{2,30}$/', $normalizedSymbol) || str_contains($normalizedSymbol, '..')) {
             $diag['candle_source_error'] = 'parser2_history_invalid_symbol';
             return [];
         }

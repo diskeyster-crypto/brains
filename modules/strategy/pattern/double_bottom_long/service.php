@@ -8843,11 +8843,14 @@ final class DoubleBottomLongService
         $flips10m  = $dirFlips($window10);
         $flips60m  = $dirFlips($window60);
 
-        // Simple 0–1 combined whipsaw score
+        // Simple 0–1 combined whipsaw score.
+        // Normalization bases: 20% range → 1.0 range component; 15 flips → 1.0 flip component.
+        // These are not veto thresholds (those are in config); they are internal score scaling
+        // anchors that represent "clearly extreme" values for the composite score.
         $score = null;
         if ($range60m !== null && $flips60m !== null) {
-            $rangeNorm  = min(1.0, $range60m / 20.0);   // 20% range = 1.0
-            $flipsNorm  = min(1.0, $flips60m / 15.0);   // 15 flips  = 1.0
+            $rangeNorm  = min(1.0, $range60m / 20.0);
+            $flipsNorm  = min(1.0, $flips60m / 15.0);
             $score      = round(($rangeNorm * 0.6 + $flipsNorm * 0.4), 3);
         }
 

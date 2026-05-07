@@ -99,6 +99,7 @@ final class ConfirmedContinuationService
     private int $antiCombCheckedTotal                  = 0;
     private int $antiCombRejectedTotal                 = 0;
     private int $antiCombRecentRangeRejectTotal        = 0;
+    private int $antiCombRecentSwingRejectTotal        = 0;
     private int $antiCombOppositeSwingRejectTotal      = 0;
     private int $antiCombWickChaosRejectTotal          = 0;
     private int $antiCombLowConsistencyRejectTotal     = 0;
@@ -139,6 +140,7 @@ final class ConfirmedContinuationService
     private int $wickChaosTooHighTotal             = 0;
     private int $recentSwingTooHighTotal           = 0;
     private int $oppositeSwingTooHighTotal         = 0;
+    private int $structureBreaksNotAllowedTotal    = 0;
     private int $smoothTrendCheckedTotal           = 0;
     private int $smoothTrendRejectedTotal          = 0;
     private int $smoothTrendScoreTooLowTotal       = 0;
@@ -736,6 +738,10 @@ final class ConfirmedContinuationService
                     'side'         => $side,
                     'setup_class'  => $structure['setup_class'],
                     'reject_reason'=> $hardReject['reason'],
+                    'primary_reject_reason' => $hardReject['reason'],
+                    'secondary_reject_reasons' => is_array($hardReject['secondary_reject_reasons'] ?? null)
+                        ? array_values($hardReject['secondary_reject_reasons'])
+                        : (is_array($structure['secondary_reject_reasons'] ?? null) ? array_values($structure['secondary_reject_reasons']) : []),
                     'failed_stage' => $hardReject['stage'],
                     'rejected_at'  => date('c'),
                     'structure'    => $structure,
@@ -795,6 +801,10 @@ final class ConfirmedContinuationService
                     'candidate_state'  => 'rejected',
                     'failed_stage'     => $hardReject['stage'],
                     'reject_reason'    => $hardReject['reason'],
+                    'primary_reject_reason' => $hardReject['reason'],
+                    'secondary_reject_reasons' => is_array($hardReject['secondary_reject_reasons'] ?? null)
+                        ? array_values($hardReject['secondary_reject_reasons'])
+                        : (is_array($structure['secondary_reject_reasons'] ?? null) ? array_values($structure['secondary_reject_reasons']) : []),
                     'block_reason'     => null,
                     'handoff_ready'    => false,
                     'executable'       => false,
@@ -808,6 +818,16 @@ final class ConfirmedContinuationService
                     'anti_comb_rejected'             => $structure['anti_comb_rejected'] ?? false,
                     'anti_comb_reject_reason'        => $structure['anti_comb_reject_reason'] ?? null,
                     'anti_comb_reject_reason_detail' => $structure['anti_comb_reject_reason_detail'] ?? null,
+                    'secondary_reject_reasons'       => is_array($structure['secondary_reject_reasons'] ?? null) ? array_values($structure['secondary_reject_reasons']) : [],
+                    'primary_reject_reason'          => $structure['primary_reject_reason'] ?? ($structure['anti_comb_reject_reason'] ?? null),
+                    'structure_breaks_exceeded'      => (bool)($structure['structure_breaks_exceeded'] ?? false),
+                    'anti_comb_max_structure_breaks' => $structure['anti_comb_max_structure_breaks'] ?? null,
+                    'recent_swing_exceeded'          => (bool)($structure['recent_swing_exceeded'] ?? false),
+                    'opposite_swing_exceeded'        => (bool)($structure['opposite_swing_exceeded'] ?? false),
+                    'range_1m_exceeded'              => (bool)($structure['range_1m_exceeded'] ?? false),
+                    'range_3m_exceeded'              => (bool)($structure['range_3m_exceeded'] ?? false),
+                    'wick_chaos_exceeded'            => (bool)($structure['wick_chaos_exceeded'] ?? false),
+                    'directional_consistency_failed' => (bool)($structure['directional_consistency_failed'] ?? false),
                     'post_structure_comb_detected'   => $structure['post_structure_comb_detected'] ?? false,
                     'controlled_trend_score'         => $structure['controlled_trend_score'] ?? null,
                     'directional_consistency_score'  => $structure['directional_consistency_score'] ?? null,
@@ -817,6 +837,12 @@ final class ConfirmedContinuationService
                     'strategy_signal_context'        => [
                         'candidate_state' => 'rejected',
                         'reject_reason'   => $hardReject['reason'],
+                        'primary_reject_reason' => $hardReject['reason'],
+                        'secondary_reject_reasons' => is_array($hardReject['secondary_reject_reasons'] ?? null)
+                            ? array_values($hardReject['secondary_reject_reasons'])
+                            : (is_array($structure['secondary_reject_reasons'] ?? null) ? array_values($structure['secondary_reject_reasons']) : []),
+                        'structure_breaks_exceeded' => (bool)($structure['structure_breaks_exceeded'] ?? false),
+                        'anti_comb_max_structure_breaks' => $structure['anti_comb_max_structure_breaks'] ?? null,
                         'failed_stage'    => $hardReject['stage'],
                         'anti_comb_reject_reason'    => $structure['anti_comb_reject_reason'] ?? null,
                         'pattern_123_invalid_reason' => $structure['pattern_123_invalid_reason'] ?? null,
@@ -1482,6 +1508,9 @@ final class ConfirmedContinuationService
             return [
                 'reason' => (string)($structure['anti_comb_reject_reason'] ?? 'anti_comb_rejected'),
                 'stage'  => 'anti_comb',
+                'secondary_reject_reasons' => is_array($structure['secondary_reject_reasons'] ?? null)
+                    ? array_values($structure['secondary_reject_reasons'])
+                    : [],
             ];
         }
 
@@ -1973,13 +2002,23 @@ final class ConfirmedContinuationService
             'directional_consistency_score'      => 1.0,
             'wick_chaos_score'                   => 0.0,
             'structure_breaks_count'             => 0,
+            'anti_comb_max_structure_breaks'     => 0,
             'alternating_large_candles_detected' => false,
             'controlled_trend_score'             => 1.0,
             'post_structure_controlled_trend_score' => 1.0,
             'anti_comb_rejected'                 => false,
             'anti_comb_reject_reason'            => null,
             'anti_comb_reject_reason_detail'     => null,
+            'primary_reject_reason'              => null,
+            'secondary_reject_reasons'           => [],
             'post_structure_comb_detected'       => false,
+            'structure_breaks_exceeded'          => false,
+            'recent_swing_exceeded'              => false,
+            'opposite_swing_exceeded'            => false,
+            'range_1m_exceeded'                  => false,
+            'range_3m_exceeded'                  => false,
+            'wick_chaos_exceeded'                => false,
+            'directional_consistency_failed'     => false,
             'smooth_trend_score'                 => 1.0,
             'step_count'                         => 0,
             'impulse_share'                      => 0.0,
@@ -2106,6 +2145,7 @@ final class ConfirmedContinuationService
         $diag['directional_consistency_score'] = round($consistency, 4);
         $diag['wick_chaos_score'] = round($wickChaos, 4);
         $diag['structure_breaks_count'] = $structureBreaks;
+        $diag['anti_comb_max_structure_breaks'] = (int)($config['anti_comb_max_structure_breaks'] ?? 1);
         $diag['alternating_large_candles_detected'] = $alternating > 0;
 
         $controlledTrendScore = 1.0;
@@ -2115,6 +2155,22 @@ final class ConfirmedContinuationService
         $controlledTrendScore -= min(0.20, $structureBreaks * 0.10);
         $diag['controlled_trend_score'] = round(max(0.0, min(1.0, $controlledTrendScore)), 4);
         $diag['post_structure_controlled_trend_score'] = $diag['controlled_trend_score'];
+
+        $max1mRoi = (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0);
+        $max3mRoi = (float)($config['anti_comb_max_3m_range_roi'] ?? 30.0);
+        $maxRecentSwingRoi = (float)($config['anti_comb_max_recent_swing_roi'] ?? 35.0);
+        $maxOppSwingRoi = (float)($config['anti_comb_max_opposite_swing_roi'] ?? 25.0);
+        $maxWickChaos = (float)($config['anti_comb_max_wick_chaos_score'] ?? 0.55);
+        $minDirectionalConsistency = (float)($config['anti_comb_min_directional_consistency'] ?? 0.62);
+        $maxStructureBreaks = (int)($config['anti_comb_max_structure_breaks'] ?? 1);
+
+        $diag['range_1m_exceeded'] = $diag['recent_max_1m_range_roi'] > $max1mRoi;
+        $diag['range_3m_exceeded'] = $diag['recent_max_3m_range_roi'] > $max3mRoi;
+        $diag['recent_swing_exceeded'] = $diag['recent_max_swing_roi'] > $maxRecentSwingRoi;
+        $diag['opposite_swing_exceeded'] = $diag['recent_opposite_swing_roi'] > $maxOppSwingRoi;
+        $diag['wick_chaos_exceeded'] = $wickChaos > $maxWickChaos;
+        $diag['directional_consistency_failed'] = $consistency < $minDirectionalConsistency;
+        $diag['structure_breaks_exceeded'] = $structureBreaks > $maxStructureBreaks;
 
         // Smooth stair-step trend diagnostics (post-structure segment)
         $entryPrice = (float)($structure['entry_price'] ?? 0.0);
@@ -2160,25 +2216,58 @@ final class ConfirmedContinuationService
         $diag['smooth_retest_confirmed'] = $smoothRetest;
 
         $rejectReason = null;
-        if ($diag['recent_max_1m_range_roi'] > (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0)
-            || $diag['recent_max_3m_range_roi'] > (float)($config['anti_comb_max_3m_range_roi'] ?? 30.0)) {
+        $secondaryReasons = [];
+
+        if ($diag['range_1m_exceeded'] || $diag['range_3m_exceeded']) {
             $rejectReason = 'anti_comb_recent_range_too_high';
             $this->antiCombRecentRangeRejectTotal++;
-        } elseif ($diag['recent_opposite_swing_roi'] > (float)($config['anti_comb_max_opposite_swing_roi'] ?? 25.0)
-            || $diag['recent_max_swing_roi'] > (float)($config['anti_comb_max_recent_swing_roi'] ?? 35.0)) {
-            $rejectReason = 'anti_comb_opposite_swing_too_high';
+        }
+        if ($diag['recent_swing_exceeded']) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_recent_swing_too_high';
+            } else {
+                $secondaryReasons[] = 'anti_comb_recent_swing_too_high';
+            }
+            $this->antiCombRecentSwingRejectTotal++;
+        }
+        if ($diag['opposite_swing_exceeded']) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_opposite_swing_too_high';
+            } else {
+                $secondaryReasons[] = 'anti_comb_opposite_swing_too_high';
+            }
             $this->antiCombOppositeSwingRejectTotal++;
-        } elseif ($wickChaos > (float)($config['anti_comb_max_wick_chaos_score'] ?? 0.55)) {
-            $rejectReason = 'anti_comb_wick_chaos';
+        }
+        if ($diag['wick_chaos_exceeded']) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_wick_chaos';
+            } else {
+                $secondaryReasons[] = 'anti_comb_wick_chaos';
+            }
             $this->antiCombWickChaosRejectTotal++;
-        } elseif ($consistency < (float)($config['anti_comb_min_directional_consistency'] ?? 0.62)) {
-            $rejectReason = 'anti_comb_low_directional_consistency';
+        }
+        if ($diag['directional_consistency_failed']) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_low_directional_consistency';
+            } else {
+                $secondaryReasons[] = 'anti_comb_low_directional_consistency';
+            }
             $this->antiCombLowConsistencyRejectTotal++;
-        } elseif ($structureBreaks > (int)($config['anti_comb_max_structure_breaks'] ?? 1)) {
-            $rejectReason = 'anti_comb_too_many_structure_breaks';
+        }
+        if ($diag['structure_breaks_exceeded']) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_too_many_structure_breaks';
+            } else {
+                $secondaryReasons[] = 'anti_comb_too_many_structure_breaks';
+            }
             $this->antiCombStructureBreaksRejectTotal++;
-        } elseif (($config['anti_comb_reject_if_alternating_large_candles'] ?? true) && $alternating > 0) {
-            $rejectReason = 'anti_comb_alternating_large_candles';
+        }
+        if (($config['anti_comb_reject_if_alternating_large_candles'] ?? true) && $alternating > 0) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_alternating_large_candles';
+            } else {
+                $secondaryReasons[] = 'anti_comb_alternating_large_candles';
+            }
             $this->antiCombAlternatingCandlesRejectTotal++;
         }
 
@@ -2187,36 +2276,68 @@ final class ConfirmedContinuationService
                 if ($rejectReason === null) {
                     $rejectReason = 'smooth_trend_score_too_low';
                     $this->smoothTrendScoreTooLowTotal++;
+                } else {
+                    $secondaryReasons[] = 'smooth_trend_score_too_low';
                 }
                 $this->smoothTrendRejectedTotal++;
             } elseif ((bool)($config['smooth_trend_reject_vertical_spike'] ?? true) && $diag['vertical_spike_detected']) {
-                $rejectReason = $rejectReason ?? 'vertical_spike_reject';
+                if ($rejectReason === null) {
+                    $rejectReason = 'vertical_spike_reject';
+                } else {
+                    $secondaryReasons[] = 'vertical_spike_reject';
+                }
                 $this->smoothTrendRejectedTotal++;
                 $this->verticalSpikeRejectedTotal++;
             } elseif ($diag['single_candle_contribution'] > (float)($config['smooth_trend_max_single_candle_contribution'] ?? 0.45)) {
-                $rejectReason = $rejectReason ?? 'single_candle_dominates_move';
+                if ($rejectReason === null) {
+                    $rejectReason = 'single_candle_dominates_move';
+                } else {
+                    $secondaryReasons[] = 'single_candle_dominates_move';
+                }
                 $this->smoothTrendRejectedTotal++;
             } elseif ($diag['impulse_share'] > (float)($config['smooth_trend_max_impulse_share'] ?? 0.55)) {
-                $rejectReason = $rejectReason ?? 'impulse_share_too_high';
+                if ($rejectReason === null) {
+                    $rejectReason = 'impulse_share_too_high';
+                } else {
+                    $secondaryReasons[] = 'impulse_share_too_high';
+                }
                 $this->smoothTrendRejectedTotal++;
             } elseif ((bool)($config['smooth_trend_require_pullback_before_entry'] ?? true) && !$diag['pullback_before_entry_detected']) {
-                $rejectReason = $rejectReason ?? 'no_controlled_pullback_before_entry';
+                if ($rejectReason === null) {
+                    $rejectReason = 'no_controlled_pullback_before_entry';
+                } else {
+                    $secondaryReasons[] = 'no_controlled_pullback_before_entry';
+                }
                 $this->smoothTrendRejectedTotal++;
             } elseif ($diag['step_count'] < (int)($config['smooth_trend_min_step_count'] ?? 2)) {
-                $rejectReason = $rejectReason ?? 'post_structure_single_candle_dominates';
+                if ($rejectReason === null) {
+                    $rejectReason = 'post_structure_single_candle_dominates';
+                } else {
+                    $secondaryReasons[] = 'post_structure_single_candle_dominates';
+                }
                 $this->smoothTrendRejectedTotal++;
             } elseif ($diag['directional_consistency_score'] < (float)($config['anti_comb_min_directional_consistency'] ?? 0.72)) {
-                $rejectReason = $rejectReason ?? 'post_structure_directional_consistency_too_low';
+                if ($rejectReason === null) {
+                    $rejectReason = 'post_structure_directional_consistency_too_low';
+                } else {
+                    $secondaryReasons[] = 'post_structure_directional_consistency_too_low';
+                }
                 $this->smoothTrendRejectedTotal++;
             }
         }
 
         if ($rejectReason !== null) {
+            $secondaryReasons = array_values(array_unique(array_values(array_filter(
+                $secondaryReasons,
+                static fn ($v): bool => is_string($v) && $v !== ''
+            ))));
             $diag['anti_comb_rejected'] = true;
             $diag['anti_comb_reject_reason_detail'] = $rejectReason;
             // Always use the specific reason as the primary reject_reason.
             // post_structure_comb_detected is a boolean context field, NOT the reject reason.
             $diag['anti_comb_reject_reason'] = $rejectReason;
+            $diag['primary_reject_reason'] = $rejectReason;
+            $diag['secondary_reject_reasons'] = $secondaryReasons;
             if ($usePostStructureOnly) {
                 $diag['post_structure_comb_detected'] = true;
                 $this->postStructureFilterRejectedTotal++;
@@ -2364,6 +2485,8 @@ final class ConfirmedContinuationService
             'side'                            => $side,
             'failed_stage'                    => $failedStage,
             'reject_reason'                   => $rejectReason,
+            'primary_reject_reason'           => $structure['primary_reject_reason'] ?? $rejectReason,
+            'secondary_reject_reasons'        => is_array($structure['secondary_reject_reasons'] ?? null) ? array_values($structure['secondary_reject_reasons']) : [],
             'candidate_state'                 => 'rejected',
             'pattern_123_detected'            => (bool)($structure['pattern_123_detected'] ?? false),
             'pattern_123_entry_mode'          => $structure['pattern_123_entry_mode'] ?? 'none',
@@ -2383,6 +2506,14 @@ final class ConfirmedContinuationService
             'recent_max_swing_roi'            => $structure['recent_max_swing_roi'] ?? null,
             'recent_opposite_swing_roi'       => $structure['recent_opposite_swing_roi'] ?? null,
             'structure_breaks_count'          => $structure['structure_breaks_count'] ?? null,
+            'anti_comb_max_structure_breaks'  => $structure['anti_comb_max_structure_breaks'] ?? null,
+            'structure_breaks_exceeded'       => (bool)($structure['structure_breaks_exceeded'] ?? false),
+            'recent_swing_exceeded'           => (bool)($structure['recent_swing_exceeded'] ?? false),
+            'opposite_swing_exceeded'         => (bool)($structure['opposite_swing_exceeded'] ?? false),
+            'range_1m_exceeded'               => (bool)($structure['range_1m_exceeded'] ?? false),
+            'range_3m_exceeded'               => (bool)($structure['range_3m_exceeded'] ?? false),
+            'wick_chaos_exceeded'             => (bool)($structure['wick_chaos_exceeded'] ?? false),
+            'directional_consistency_failed'  => (bool)($structure['directional_consistency_failed'] ?? false),
             'anti_comb_reject_reason'         => $structure['anti_comb_reject_reason'] ?? null,
             'post_structure_comb_detected'    => (bool)($structure['post_structure_comb_detected'] ?? false),
         ];
@@ -2477,6 +2608,7 @@ final class ConfirmedContinuationService
                 $this->wickChaosTooHighTotal++;
             } elseif ($structureBreaks > (int)($config['max_structure_breaks_for_signal'] ?? 0)) {
                 $blockReason = 'structure_breaks_not_allowed';
+                $this->structureBreaksNotAllowedTotal++;
             } elseif ($recentSwingRoi > (float)($config['max_recent_swing_roi_for_signal'] ?? 18.0)) {
                 $blockReason = 'recent_swing_too_high';
                 $this->recentSwingTooHighTotal++;
@@ -2637,6 +2769,16 @@ final class ConfirmedContinuationService
             'recent_opposite_swing_pct' => $candidate['recent_opposite_swing_pct'] ?? null,
             'recent_opposite_swing_roi' => $candidate['recent_opposite_swing_roi'] ?? null,
             'structure_breaks_count' => $candidate['structure_breaks_count'] ?? null,
+            'anti_comb_max_structure_breaks' => $candidate['anti_comb_max_structure_breaks'] ?? null,
+            'primary_reject_reason' => $candidate['primary_reject_reason'] ?? null,
+            'secondary_reject_reasons' => is_array($candidate['secondary_reject_reasons'] ?? null) ? array_values($candidate['secondary_reject_reasons']) : [],
+            'structure_breaks_exceeded' => (bool)($candidate['structure_breaks_exceeded'] ?? false),
+            'recent_swing_exceeded' => (bool)($candidate['recent_swing_exceeded'] ?? false),
+            'opposite_swing_exceeded' => (bool)($candidate['opposite_swing_exceeded'] ?? false),
+            'range_1m_exceeded' => (bool)($candidate['range_1m_exceeded'] ?? false),
+            'range_3m_exceeded' => (bool)($candidate['range_3m_exceeded'] ?? false),
+            'wick_chaos_exceeded' => (bool)($candidate['wick_chaos_exceeded'] ?? false),
+            'directional_consistency_failed' => (bool)($candidate['directional_consistency_failed'] ?? false),
             'alternating_large_candles_detected' => $candidate['alternating_large_candles_detected'] ?? false,
             'smooth_trend_score' => $candidate['smooth_trend_score'] ?? null,
             'step_count' => $candidate['step_count'] ?? null,
@@ -2746,6 +2888,16 @@ final class ConfirmedContinuationService
             'recent_opposite_swing_pct'  => $signal['recent_opposite_swing_pct'],
             'recent_opposite_swing_roi'  => $signal['recent_opposite_swing_roi'],
             'structure_breaks_count'     => $signal['structure_breaks_count'],
+            'anti_comb_max_structure_breaks' => $signal['anti_comb_max_structure_breaks'],
+            'primary_reject_reason'      => $signal['primary_reject_reason'],
+            'secondary_reject_reasons'   => $signal['secondary_reject_reasons'],
+            'structure_breaks_exceeded'  => $signal['structure_breaks_exceeded'],
+            'recent_swing_exceeded'      => $signal['recent_swing_exceeded'],
+            'opposite_swing_exceeded'    => $signal['opposite_swing_exceeded'],
+            'range_1m_exceeded'          => $signal['range_1m_exceeded'],
+            'range_3m_exceeded'          => $signal['range_3m_exceeded'],
+            'wick_chaos_exceeded'        => $signal['wick_chaos_exceeded'],
+            'directional_consistency_failed' => $signal['directional_consistency_failed'],
             'alternating_large_candles_detected' => $signal['alternating_large_candles_detected'],
             'smooth_trend_score'         => $signal['smooth_trend_score'],
             'step_count'                 => $signal['step_count'],
@@ -2960,12 +3112,14 @@ final class ConfirmedContinuationService
             'anti_comb_rejected_total'                      => $this->antiCombRejectedTotal,
             'anti_comb_recent_range_reject_total'           => $this->antiCombRecentRangeRejectTotal,
             'anti_comb_recent_range_too_high_total'         => $this->antiCombRecentRangeRejectTotal,
+            'anti_comb_recent_swing_too_high_total'         => $this->antiCombRecentSwingRejectTotal,
             'anti_comb_opposite_swing_reject_total'         => $this->antiCombOppositeSwingRejectTotal,
             'anti_comb_opposite_swing_too_high_total'       => $this->antiCombOppositeSwingRejectTotal,
             'anti_comb_wick_chaos_reject_total'             => $this->antiCombWickChaosRejectTotal,
             'anti_comb_wick_chaos_total'                    => $this->antiCombWickChaosRejectTotal,
             'anti_comb_low_consistency_reject_total'        => $this->antiCombLowConsistencyRejectTotal,
             'anti_comb_low_directional_consistency_total'   => $this->antiCombLowConsistencyRejectTotal,
+            'anti_comb_too_many_structure_breaks_total'     => $this->antiCombStructureBreaksRejectTotal,
             'post_structure_comb_detected_total'            => $this->postStructureCombDetectedTotal,
             'smooth_trend_score_too_low_total'              => $this->smoothTrendScoreTooLowTotal,
             'post_structure_filter_checked_total'           => $this->postStructureFilterCheckedTotal,
@@ -2979,6 +3133,7 @@ final class ConfirmedContinuationService
             'wick_chaos_too_high_total'               => $this->wickChaosTooHighTotal,
             'recent_swing_too_high_total'             => $this->recentSwingTooHighTotal,
             'opposite_swing_too_high_total'           => $this->oppositeSwingTooHighTotal,
+            'structure_breaks_not_allowed_total'      => $this->structureBreaksNotAllowedTotal,
             'smooth_trend_checked_total'              => $this->smoothTrendCheckedTotal,
             'smooth_trend_rejected_total'             => $this->smoothTrendRejectedTotal,
             'vertical_spike_rejected_total'           => $this->verticalSpikeRejectedTotal,
@@ -3248,6 +3403,7 @@ final class ConfirmedContinuationService
         $this->antiCombCheckedTotal                  = 0;
         $this->antiCombRejectedTotal                 = 0;
         $this->antiCombRecentRangeRejectTotal        = 0;
+        $this->antiCombRecentSwingRejectTotal        = 0;
         $this->antiCombOppositeSwingRejectTotal      = 0;
         $this->antiCombWickChaosRejectTotal          = 0;
         $this->antiCombLowConsistencyRejectTotal     = 0;
@@ -3279,6 +3435,7 @@ final class ConfirmedContinuationService
         $this->wickChaosTooHighTotal             = 0;
         $this->recentSwingTooHighTotal           = 0;
         $this->oppositeSwingTooHighTotal         = 0;
+        $this->structureBreaksNotAllowedTotal    = 0;
         $this->smoothTrendCheckedTotal           = 0;
         $this->smoothTrendRejectedTotal          = 0;
         $this->smoothTrendScoreTooLowTotal       = 0;

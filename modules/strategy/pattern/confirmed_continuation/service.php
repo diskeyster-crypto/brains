@@ -110,6 +110,42 @@ final class ConfirmedContinuationService
     private int $wallTestConfirmedTotal      = 0;
     private int $wallTestRejectedTotal       = 0;
     private int $wallTestOppositeContextTotal= 0;
+    private int $wallPendingBlockedTotal     = 0;
+    /** @var list<array<string,mixed>> */
+    private array $wallPendingExamples       = [];
+
+    // ── Post-structure / entry timing / smooth trend diagnostics ───────────────
+    private int $postStructureFilterCheckedTotal   = 0;
+    private int $postStructureFilterRejectedTotal  = 0;
+    private int $entryTimingCheckedTotal           = 0;
+    private int $nearExitZoneRejectedTotal         = 0;
+    private int $controlledTrendGateCheckedTotal   = 0;
+    private int $controlledTrendGateRejectedTotal  = 0;
+    private int $controlledTrendScoreTooLowTotal   = 0;
+    private int $directionalConsistencyTooLowTotal = 0;
+    private int $wickChaosTooHighTotal             = 0;
+    private int $recentSwingTooHighTotal           = 0;
+    private int $oppositeSwingTooHighTotal         = 0;
+    private int $smoothTrendCheckedTotal           = 0;
+    private int $smoothTrendRejectedTotal          = 0;
+    private int $verticalSpikeRejectedTotal        = 0;
+    /** @var list<array<string,mixed>> */
+    private array $acceptedEarlyStructureExamples  = [];
+    /** @var list<array<string,mixed>> */
+    private array $acceptedMidTrendExamples        = [];
+    /** @var list<array<string,mixed>> */
+    private array $rejectedLateEntryExamples       = [];
+    /** @var list<array<string,mixed>> */
+    private array $rejectedCombExamples            = [];
+
+    // ── Handoff throttling diagnostics ──────────────────────────────────────────
+    private int $handoffCandidatesBeforeThrottleTotal = 0;
+    private int $handoffAfterThrottleTotal            = 0;
+    private int $handoffThrottledTotal                = 0;
+    /** @var array<string,int> */
+    private array $handoffThrottleReasonCounts        = [];
+    /** @var list<array<string,mixed>> */
+    private array $handoffThrottleExamples            = [];
 
     // ── Handoff queue diagnostics ──────────────────────────────────────────────
     private int $handoffQueueWrittenTotal       = 0;
@@ -382,6 +418,21 @@ final class ConfirmedContinuationService
                 'registry_window_wrapped'         => (bool)($state['registry_window_wrapped'] ?? false),
                 'registry_cursor_reset_reason'    => $state['registry_cursor_reset_reason'] ?? null,
                 'batch_symbols_examples'          => [],
+                'post_structure_filter_checked_total' => 0,
+                'post_structure_filter_rejected_total' => 0,
+                'entry_timing_checked_total'      => 0,
+                'near_exit_zone_rejected_total'   => 0,
+                'controlled_trend_gate_checked_total' => 0,
+                'controlled_trend_gate_rejected_total' => 0,
+                'smooth_trend_checked_total'      => 0,
+                'smooth_trend_rejected_total'     => 0,
+                'vertical_spike_rejected_total'   => 0,
+                'wall_pending_blocked_total'      => 0,
+                'handoff_candidates_before_throttle_total' => 0,
+                'handoff_after_throttle_total'    => 0,
+                'handoff_throttled_total'         => 0,
+                'handoff_throttle_reason_counts'  => [],
+                'handoff_throttle_examples'       => [],
                 'continuous_scan_enabled'         => (bool)($state['continuous_scan_enabled'] ?? $continuousScanEnabled),
                 'auto_requeue_when_done'          => (bool)($state['auto_requeue_when_done'] ?? $autoRequeueWhenDone),
                 'auto_requeued_from_status'       => $state['auto_requeued_from_status'] ?? null,
@@ -483,7 +534,7 @@ final class ConfirmedContinuationService
         unset($sig);
 
         $freshSignals = array_values($signalIndex);
-        $handoffQueue = $this->buildHandoffQueue($freshSignals, $allHandoff);
+        $handoffQueue = $this->buildHandoffQueue($freshSignals, $allHandoff, $config);
 
         // Persist rejects (append-style, capped)
         $allRejects = array_merge($allRejects, $newRejects);
@@ -605,6 +656,8 @@ final class ConfirmedContinuationService
             // Anti-comb / anti-chaos diagnostics
             $antiComb = $this->computeAntiCombDiagnostics($candles, $side, $structure, $config);
             $structure = array_merge($structure, $antiComb);
+            $entryTiming = $this->computeEntryTimingDiagnostics($structure, $candles, $side, $config);
+            $structure = array_merge($structure, $entryTiming);
 
             $this->candidatesTotal++;
             if ($side === 'long') {
@@ -637,6 +690,9 @@ final class ConfirmedContinuationService
                     if (count($this->lateEntryRejectExamples) < 5) {
                         $this->lateEntryRejectExamples[] = $rejectRec;
                     }
+                    if (count($this->rejectedLateEntryExamples) < 8) {
+                        $this->rejectedLateEntryExamples[] = $rejectRec;
+                    }
                 } elseif (str_contains($hardReject['stage'], 'first_bounce')) {
                     $this->firstBounceRejectedTotal++;
                     if (count($this->firstBounceRejectExamples) < 5) {
@@ -646,6 +702,9 @@ final class ConfirmedContinuationService
                     if (count($this->noRetestRejectExamples) < 5) {
                         $this->noRetestRejectExamples[] = $rejectRec;
                     }
+                }
+                if (($hardReject['reason'] ?? '') === 'entry_near_take_profit_zone') {
+                    $this->nearExitZoneRejectedTotal++;
                 }
                 continue;
             }
@@ -684,6 +743,20 @@ final class ConfirmedContinuationService
 
             $candidate = $this->buildCandidate($symbol, $side, $structure, $quality, $obcResult, $config);
             $newCandidates[] = $candidate;
+            if (!(bool)($candidate['handoff_ready'] ?? true) || !(bool)($candidate['executable'] ?? true)) {
+                $blockReason = (string)($candidate['block_reason'] ?? 'blocked');
+                $this->rejectedTotal++;
+                $this->rejectReasonCounts[$blockReason] = ($this->rejectReasonCounts[$blockReason] ?? 0) + 1;
+                $newRejects[] = [
+                    'symbol' => $symbol,
+                    'side' => $side,
+                    'setup_class' => $structure['setup_class'],
+                    'reject_reason' => $blockReason,
+                    'failed_stage' => 'handoff_gate',
+                    'rejected_at' => date('c'),
+                    'structure' => $candidate,
+                ];
+            }
 
             // Determine handoff_ready and executable
             $isHandoffReady = $candidate['handoff_ready'];
@@ -711,6 +784,23 @@ final class ConfirmedContinuationService
                     'handoff_ready'         => $isHandoffReady,
                     'executable'            => $isExecutable,
                     'ob_soft_demoted'       => $obcResult['ob_soft_demoted'] ?? false,
+                ];
+            }
+            $entryClass = (string)($structure['entry_timing_class'] ?? '');
+            if (in_array($entryClass, ['early_structure_entry', 'early_breakdown_entry'], true) && count($this->acceptedEarlyStructureExamples) < 8) {
+                $this->acceptedEarlyStructureExamples[] = [
+                    'symbol' => $symbol,
+                    'side' => $side,
+                    'entry_timing_class' => $entryClass,
+                    'candidate_quality_score' => $quality['candidate_quality_score'] ?? null,
+                ];
+            }
+            if (in_array($entryClass, ['mid_trend_structure_entry', 'mid_trend_breakdown_entry'], true) && count($this->acceptedMidTrendExamples) < 8) {
+                $this->acceptedMidTrendExamples[] = [
+                    'symbol' => $symbol,
+                    'side' => $side,
+                    'entry_timing_class' => $entryClass,
+                    'candidate_quality_score' => $quality['candidate_quality_score'] ?? null,
                 ];
             }
         }
@@ -784,6 +874,14 @@ final class ConfirmedContinuationService
         $lastHigherLow   = end($higherLowSequence);
         $firstHigherLow  = $higherLowSequence[0];
         $higherLowsCount = count($higherLowSequence);
+        $anchorIdx       = (int)$firstHigherLow['idx'];
+        $anchorPrice     = (float)$firstHigherLow['price'];
+        $anchorTs        = (int)($candles[$anchorIdx]['ts'] ?? 0);
+        $postStart       = max(0, min($anchorIdx + 1, $n - 1));
+        $postWindowMins  = max(1, $n - $postStart);
+        $preHigh         = $anchorIdx > 0 ? max(array_slice($highs, 0, $anchorIdx + 1)) : $highs[0];
+        $preImpulsePct   = ($preHigh > 0) ? (($preHigh - $anchorPrice) / $preHigh * 100.0) : 0.0;
+        $lev             = max(1.0, (float)($config['anti_comb_roi_equiv_leverage'] ?? 15.0));
 
         // Rising support: linear interpolation between first and last higher low
         $risingSupport = $lastHigherLow['price'];
@@ -846,11 +944,25 @@ final class ConfirmedContinuationService
             'retest_held'                          => $retestHeld,
             'continuation_reclaim_price'           => $continuationPrice,
             'entry_distance_from_last_higher_low_pct' => round($entryDistancePct, 4),
+            'distance_from_rising_support_pct'         => round($entryDistancePct, 4),
+            'distance_from_last_higher_low_pct'        => round($entryDistancePct, 4),
+            'distance_from_falling_resistance_pct'     => null,
+            'distance_from_last_lower_high_pct'        => null,
             'trend_phase'                          => 'confirmed_mid_trend_continuation',
             'structure_holds'                      => $structureHolds,
             'pullback_detected'                    => $pullbackDetected,
             'pullback_pct'                         => round($pullbackPct, 4),
             'continuation_confirmed'               => $continuationConfirmed,
+            'structure_anchor_type'                => 'local_low',
+            'structure_anchor_idx'                 => $anchorIdx,
+            'structure_anchor_time'                => $anchorTs > 0 ? gmdate('c', (int)floor($anchorTs / 1000)) : null,
+            'structure_anchor_price'               => round($anchorPrice, 8),
+            'post_structure_window_start'          => $postStart,
+            'post_structure_window_minutes'        => $postWindowMins,
+            'pre_structure_impulse_pct'            => round(max(0.0, $preImpulsePct), 4),
+            'pre_structure_impulse_roi'            => round(max(0.0, $preImpulsePct) * $lev, 4),
+            'pre_structure_impulse_allowed'        => true,
+            'post_structure_controlled_trend_score'=> 0.0,
         ];
     }
 
@@ -893,6 +1005,14 @@ final class ConfirmedContinuationService
 
         $lastLowerHigh   = end($lowerHighSequence);
         $lowerHighsCount = count($lowerHighSequence);
+        $anchorIdx       = (int)$lastLowerHigh['idx'];
+        $anchorPrice     = (float)$lastLowerHigh['price'];
+        $anchorTs        = (int)($candles[$anchorIdx]['ts'] ?? 0);
+        $postStart       = max(0, min($anchorIdx + 1, $n - 1));
+        $postWindowMins  = max(1, $n - $postStart);
+        $preLow          = $anchorIdx > 0 ? min(array_slice($lows, 0, $anchorIdx + 1)) : $lows[0];
+        $preImpulsePct   = ($preLow > 0) ? (($anchorPrice - $preLow) / $preLow * 100.0) : 0.0;
+        $lev             = max(1.0, (float)($config['anti_comb_roi_equiv_leverage'] ?? 15.0));
 
         // Falling resistance
         $fallingResistance = $lastLowerHigh['price'];
@@ -952,15 +1072,85 @@ final class ConfirmedContinuationService
             'retest_held'                          => $retestHeld,
             'continuation_breakdown_price'         => $continuationPrice,
             'entry_distance_from_last_lower_high_pct' => round($entryDistancePct, 4),
+            'distance_from_falling_resistance_pct'    => round($entryDistancePct, 4),
+            'distance_from_last_lower_high_pct'       => round($entryDistancePct, 4),
+            'distance_from_rising_support_pct'        => null,
+            'distance_from_last_higher_low_pct'       => null,
             'trend_phase'                          => 'confirmed_downtrend_continuation',
             'structure_holds'                      => $structureHolds,
             'bounce_detected'                      => $bounceDetected,
             'bounce_pct'                           => round($bouncePct, 4),
             'continuation_confirmed'               => $continuationConfirmed,
+            'structure_anchor_type'                => 'local_high',
+            'structure_anchor_idx'                 => $anchorIdx,
+            'structure_anchor_time'                => $anchorTs > 0 ? gmdate('c', (int)floor($anchorTs / 1000)) : null,
+            'structure_anchor_price'               => round($anchorPrice, 8),
+            'post_structure_window_start'          => $postStart,
+            'post_structure_window_minutes'        => $postWindowMins,
+            'pre_structure_impulse_pct'            => round(max(0.0, $preImpulsePct), 4),
+            'pre_structure_impulse_roi'            => round(max(0.0, $preImpulsePct) * $lev, 4),
+            'pre_structure_impulse_allowed'        => true,
+            'post_structure_controlled_trend_score'=> 0.0,
         ];
     }
 
     // ── Hard reject filters ────────────────────────────────────────────────────
+
+    private function computeEntryTimingDiagnostics(array $structure, array $candles, string $side, array $config): array
+    {
+        $highs = array_column($candles, 'high');
+        $lows  = array_column($candles, 'low');
+        $n     = count($candles);
+        $entry = (float)($structure['entry_price'] ?? 0.0);
+        $maxDist = (float)($config['max_entry_distance_from_structure_pct'] ?? 0.6);
+        $dist = $side === 'long'
+            ? (float)($structure['entry_distance_from_last_higher_low_pct'] ?? 0.0)
+            : (float)($structure['entry_distance_from_last_lower_high_pct'] ?? 0.0);
+
+        $entryClass = 'late_extended_entry';
+        if ($side === 'long') {
+            if ($dist <= $maxDist * 0.5) {
+                $entryClass = 'early_structure_entry';
+            } elseif ($dist <= $maxDist) {
+                $entryClass = 'mid_trend_structure_entry';
+            }
+        } else {
+            if ($dist <= $maxDist * 0.5) {
+                $entryClass = 'early_breakdown_entry';
+            } elseif ($dist <= $maxDist) {
+                $entryClass = 'mid_trend_breakdown_entry';
+            }
+        }
+
+        $expectedExit = null;
+        $upsideRoom = null;
+        $downsideRoom = null;
+        $nearTp = false;
+        if ($entry > 0.0) {
+            if ($side === 'long') {
+                $expectedExit = !empty($highs) ? max(array_slice($highs, -min(20, max(3, $n)))) : null;
+                if ($expectedExit !== null) {
+                    $upsideRoom = max(0.0, ($expectedExit - $entry) / $entry * 100.0);
+                    $nearTp = $upsideRoom <= (float)($config['min_upside_room_to_resistance_pct_long'] ?? 0.8);
+                }
+            } else {
+                $expectedExit = !empty($lows) ? min(array_slice($lows, -min(20, max(3, $n)))) : null;
+                if ($expectedExit !== null) {
+                    $downsideRoom = max(0.0, ($entry - $expectedExit) / $entry * 100.0);
+                    $nearTp = $downsideRoom <= (float)($config['min_downside_room_to_support_pct_short'] ?? 0.8);
+                }
+            }
+        }
+
+        return [
+            'entry_timing_class' => $entryClass,
+            'upside_room_to_resistance_pct' => $upsideRoom !== null ? round($upsideRoom, 4) : null,
+            'downside_room_to_support_pct' => $downsideRoom !== null ? round($downsideRoom, 4) : null,
+            'near_take_profit_zone' => $nearTp,
+            'expected_exit_zone_price' => $expectedExit !== null ? round((float)$expectedExit, 8) : null,
+            'late_entry_reject_reason' => $entryClass === 'late_extended_entry' ? 'late_extended_entry' : ($nearTp ? 'entry_near_take_profit_zone' : null),
+        ];
+    }
 
     /**
      * Returns ['reason' => string, 'stage' => string] or null if no hard reject.
@@ -968,6 +1158,8 @@ final class ConfirmedContinuationService
     private function checkHardRejects(array $structure, array $candles, string $side, array $config): ?array
     {
         $closes = array_column($candles, 'close');
+        $highs  = array_column($candles, 'high');
+        $lows   = array_column($candles, 'low');
         $n      = count($closes);
 
         $entryPrice = (float)($structure['entry_price'] ?? 0.0);
@@ -991,6 +1183,13 @@ final class ConfirmedContinuationService
             ];
         }
 
+        $this->entryTimingCheckedTotal++;
+        $maxDist = (float)($config['max_entry_distance_from_structure_pct'] ?? 0.6);
+        $maxLate = (float)($config['max_late_entry_extension_from_structure_pct'] ?? 1.2);
+        $allowMid= (bool)($config['allow_mid_trend_entry'] ?? true);
+        $requireRetestNear = (bool)($config['require_retest_near_structure'] ?? true);
+        $rejectLate = (bool)($config['reject_late_extended_entry'] ?? true);
+
         // Reject: no structure higher lows / lower highs
         if ($side === 'long') {
             if (($structure['higher_lows_count'] ?? 0) < 2) {
@@ -999,9 +1198,15 @@ final class ConfirmedContinuationService
             if (($structure['pullback_detected'] ?? false) === false) {
                 return ['reason' => 'first_bounce_after_dump', 'stage' => 'first_bounce_or_no_structure'];
             }
-            // Reject: entry too far above last higher low
             $distPct      = (float)($structure['entry_distance_from_last_higher_low_pct'] ?? 0);
-            $maxDist      = (float)($config['max_entry_distance_from_structure_pct'] ?? 0.6);
+            $entryClass = $distPct <= ($maxDist * 0.5) ? 'early_structure_entry'
+                : ($distPct <= $maxDist ? 'mid_trend_structure_entry' : 'late_extended_entry');
+            if (!$allowMid && $entryClass === 'mid_trend_structure_entry') {
+                return ['reason' => 'entry_far_from_structure', 'stage' => 'entry_timing'];
+            }
+            if ($rejectLate && ($entryClass === 'late_extended_entry' || $distPct > $maxLate)) {
+                return ['reason' => 'late_extended_entry', 'stage' => 'late_entry'];
+            }
             if ($distPct > $maxDist) {
                 return ['reason' => 'entry_too_far_above_structure', 'stage' => 'late_entry'];
             }
@@ -1014,6 +1219,14 @@ final class ConfirmedContinuationService
                     return ['reason' => 'too_extended_from_local_base', 'stage' => 'late_entry'];
                 }
             }
+            $expectedExit = max(array_slice($highs, -min(20, max(3, $n))));
+            $upsideRoomPct = $entryPrice > 0 ? max(0.0, ($expectedExit - $entryPrice) / $entryPrice * 100.0) : 0.0;
+            if ($upsideRoomPct <= (float)($config['min_upside_room_to_resistance_pct_long'] ?? 0.8)) {
+                return ['reason' => 'entry_near_take_profit_zone', 'stage' => 'entry_timing'];
+            }
+            if ($upsideRoomPct < (float)($config['min_upside_room_to_resistance_pct_long'] ?? 0.8)) {
+                return ['reason' => 'insufficient_room_to_next_wall_or_resistance', 'stage' => 'entry_timing'];
+            }
             // Reject: blowoff 1m candle at entry
             if ($n >= 2) {
                 $lastClose = $closes[$n - 1];
@@ -1024,8 +1237,8 @@ final class ConfirmedContinuationService
                 }
             }
             // Reject: retest not held (structure broken)
-            if (!($structure['retest_held'] ?? false) && ($config['require_retest'] ?? true)) {
-                return ['reason' => 'retest_not_held', 'stage' => 'no_retest'];
+            if (!($structure['retest_held'] ?? false) && ($config['require_retest'] ?? true || $requireRetestNear)) {
+                return ['reason' => 'no_retest_near_structure', 'stage' => 'no_retest'];
             }
         } else {
             if (($structure['lower_highs_count'] ?? 0) < 2) {
@@ -1035,7 +1248,14 @@ final class ConfirmedContinuationService
                 return ['reason' => 'first_dump_after_pump', 'stage' => 'first_dump_or_no_structure'];
             }
             $distPct = (float)($structure['entry_distance_from_last_lower_high_pct'] ?? 0);
-            $maxDist = (float)($config['max_entry_distance_from_structure_pct'] ?? 0.6);
+            $entryClass = $distPct <= ($maxDist * 0.5) ? 'early_breakdown_entry'
+                : ($distPct <= $maxDist ? 'mid_trend_breakdown_entry' : 'late_extended_entry');
+            if (!$allowMid && $entryClass === 'mid_trend_breakdown_entry') {
+                return ['reason' => 'entry_far_from_structure', 'stage' => 'entry_timing'];
+            }
+            if ($rejectLate && ($entryClass === 'late_extended_entry' || $distPct > $maxLate)) {
+                return ['reason' => 'late_extended_entry', 'stage' => 'late_entry'];
+            }
             if ($distPct > $maxDist) {
                 return ['reason' => 'entry_too_far_below_structure', 'stage' => 'late_entry'];
             }
@@ -1047,6 +1267,14 @@ final class ConfirmedContinuationService
                     return ['reason' => 'too_extended_from_breakdown_base', 'stage' => 'late_entry'];
                 }
             }
+            $expectedExit = min(array_slice($lows, -min(20, max(3, $n))));
+            $downsideRoomPct = $entryPrice > 0 ? max(0.0, ($entryPrice - $expectedExit) / $entryPrice * 100.0) : 0.0;
+            if ($downsideRoomPct <= (float)($config['min_downside_room_to_support_pct_short'] ?? 0.8)) {
+                return ['reason' => 'entry_near_take_profit_zone', 'stage' => 'entry_timing'];
+            }
+            if ($downsideRoomPct < (float)($config['min_downside_room_to_support_pct_short'] ?? 0.8)) {
+                return ['reason' => 'insufficient_room_to_next_wall_or_resistance', 'stage' => 'entry_timing'];
+            }
             if ($n >= 2) {
                 $lastClose = $closes[$n - 1];
                 $prevClose = $closes[$n - 2];
@@ -1055,8 +1283,8 @@ final class ConfirmedContinuationService
                     return ['reason' => 'panic_dump_candle_at_entry', 'stage' => 'blowoff_reject'];
                 }
             }
-            if (!($structure['retest_held'] ?? false) && ($config['require_retest'] ?? true)) {
-                return ['reason' => 'retest_not_held', 'stage' => 'no_retest'];
+            if (!($structure['retest_held'] ?? false) && ($config['require_retest'] ?? true || $requireRetestNear)) {
+                return ['reason' => 'no_retest_near_structure', 'stage' => 'no_retest'];
             }
         }
 
@@ -1379,16 +1607,34 @@ final class ConfirmedContinuationService
             'structure_breaks_count'             => 0,
             'alternating_large_candles_detected' => false,
             'controlled_trend_score'             => 1.0,
+            'post_structure_controlled_trend_score' => 1.0,
             'anti_comb_rejected'                 => false,
             'anti_comb_reject_reason'            => null,
+            'anti_comb_reject_reason_detail'     => null,
+            'post_structure_comb_detected'       => false,
+            'smooth_trend_score'                 => 1.0,
+            'step_count'                         => 0,
+            'impulse_share'                      => 0.0,
+            'single_candle_contribution'         => 0.0,
+            'vertical_spike_detected'            => false,
+            'pullback_before_entry_detected'     => false,
+            'smooth_retest_confirmed'            => false,
         ];
         if (!(bool)($config['anti_comb_enabled'] ?? true)) {
             return $diag;
         }
         $this->antiCombCheckedTotal++;
+        $this->postStructureFilterCheckedTotal++;
+        $this->smoothTrendCheckedTotal++;
 
         $lookback = max(5, (int)($config['anti_comb_lookback_minutes'] ?? 20));
         $slice = array_slice($candles, -$lookback);
+        $usePostStructureOnly = (bool)($config['post_structure_filter_enabled'] ?? true)
+            && (bool)($config['ignore_pre_structure_impulse_for_anti_comb'] ?? true);
+        $postStart = (int)($structure['post_structure_window_start'] ?? 0);
+        if ($usePostStructureOnly && $postStart > 0 && $postStart < count($candles)) {
+            $slice = array_slice($candles, $postStart);
+        }
         if (count($slice) < 5) {
             return $diag;
         }
@@ -1500,6 +1746,50 @@ final class ConfirmedContinuationService
         $controlledTrendScore -= min(0.20, max(0.0, 0.8 - $consistency));
         $controlledTrendScore -= min(0.20, $structureBreaks * 0.10);
         $diag['controlled_trend_score'] = round(max(0.0, min(1.0, $controlledTrendScore)), 4);
+        $diag['post_structure_controlled_trend_score'] = $diag['controlled_trend_score'];
+
+        // Smooth stair-step trend diagnostics (post-structure segment)
+        $entryPrice = (float)($structure['entry_price'] ?? 0.0);
+        $segmentStart = (float)($closes[0] ?? 0.0);
+        $segmentEnd   = (float)($closes[count($closes) - 1] ?? 0.0);
+        $totalMoveAbs = abs($segmentEnd - $segmentStart);
+        $maxBodyAbs = 0.0;
+        $maxRangeAbs = 0.0;
+        $stepCount = 0;
+        for ($i = 1; $i < count($closes); $i++) {
+            $move = (float)$closes[$i] - (float)$closes[$i - 1];
+            if (($side === 'long' && $move > 0) || ($side === 'short' && $move < 0)) {
+                $stepCount++;
+            }
+            $bodyAbs = abs((float)$closes[$i] - (float)$opens[$i]);
+            $rangeAbs = abs((float)$highs[$i] - (float)$lows[$i]);
+            $maxBodyAbs = max($maxBodyAbs, $bodyAbs);
+            $maxRangeAbs = max($maxRangeAbs, $rangeAbs);
+        }
+        $impulseShare = $totalMoveAbs > 0 ? min(1.0, $maxBodyAbs / $totalMoveAbs) : 1.0;
+        $singleContribution = $totalMoveAbs > 0 ? min(1.0, $maxRangeAbs / max($totalMoveAbs, 1e-9)) : 1.0;
+        $verticalSpike = $diag['recent_max_1m_range_roi'] > (float)($config['max_1m_range_roi_for_signal'] ?? 10.0);
+        $pullbackDetected = $side === 'long'
+            ? (bool)($structure['pullback_detected'] ?? false)
+            : (bool)($structure['bounce_detected'] ?? false);
+        $smoothRetest = (bool)($structure['retest_held'] ?? false);
+        $smoothScore = max(
+            0.0,
+            min(
+                1.0,
+                0.35 * $diag['directional_consistency_score']
+                + 0.25 * (1.0 - min(1.0, $impulseShare))
+                + 0.20 * (1.0 - min(1.0, $singleContribution))
+                + 0.20 * min(1.0, $stepCount / max(1.0, (float)($config['smooth_trend_min_step_count'] ?? 2)))
+            )
+        );
+        $diag['smooth_trend_score'] = round($smoothScore, 4);
+        $diag['step_count'] = (int)$stepCount;
+        $diag['impulse_share'] = round($impulseShare, 4);
+        $diag['single_candle_contribution'] = round($singleContribution, 4);
+        $diag['vertical_spike_detected'] = $verticalSpike;
+        $diag['pullback_before_entry_detected'] = $pullbackDetected;
+        $diag['smooth_retest_confirmed'] = $smoothRetest;
 
         $rejectReason = null;
         if ($diag['recent_max_1m_range_roi'] > (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0)
@@ -1524,9 +1814,42 @@ final class ConfirmedContinuationService
             $this->antiCombAlternatingCandlesRejectTotal++;
         }
 
+        if ((bool)($config['smooth_trend_filter_enabled'] ?? true)) {
+            if ($diag['smooth_trend_score'] < (float)($config['smooth_trend_min_score'] ?? 0.75)) {
+                $rejectReason = $rejectReason ?? 'smooth_trend_score_too_low';
+                $this->smoothTrendRejectedTotal++;
+            } elseif ((bool)($config['smooth_trend_reject_vertical_spike'] ?? true) && $diag['vertical_spike_detected']) {
+                $rejectReason = $rejectReason ?? 'vertical_spike_reject';
+                $this->smoothTrendRejectedTotal++;
+                $this->verticalSpikeRejectedTotal++;
+            } elseif ($diag['single_candle_contribution'] > (float)($config['smooth_trend_max_single_candle_contribution'] ?? 0.45)) {
+                $rejectReason = $rejectReason ?? 'single_candle_dominates_move';
+                $this->smoothTrendRejectedTotal++;
+            } elseif ($diag['impulse_share'] > (float)($config['smooth_trend_max_impulse_share'] ?? 0.55)) {
+                $rejectReason = $rejectReason ?? 'impulse_share_too_high';
+                $this->smoothTrendRejectedTotal++;
+            } elseif ((bool)($config['smooth_trend_require_pullback_before_entry'] ?? true) && !$diag['pullback_before_entry_detected']) {
+                $rejectReason = $rejectReason ?? 'no_controlled_pullback_before_entry';
+                $this->smoothTrendRejectedTotal++;
+            } elseif ($diag['step_count'] < (int)($config['smooth_trend_min_step_count'] ?? 2)) {
+                $rejectReason = $rejectReason ?? 'post_structure_single_candle_dominates';
+                $this->smoothTrendRejectedTotal++;
+            } elseif ($diag['directional_consistency_score'] < (float)($config['anti_comb_min_directional_consistency'] ?? 0.72)) {
+                $rejectReason = $rejectReason ?? 'post_structure_directional_consistency_too_low';
+                $this->smoothTrendRejectedTotal++;
+            }
+        }
+
         if ($rejectReason !== null) {
             $diag['anti_comb_rejected'] = true;
-            $diag['anti_comb_reject_reason'] = $rejectReason;
+            $diag['anti_comb_reject_reason_detail'] = $rejectReason;
+            if ($usePostStructureOnly) {
+                $diag['anti_comb_reject_reason'] = 'post_structure_comb_detected';
+                $diag['post_structure_comb_detected'] = true;
+                $this->postStructureFilterRejectedTotal++;
+            } else {
+                $diag['anti_comb_reject_reason'] = $rejectReason;
+            }
             $this->antiCombRejectedTotal++;
             if (count($this->antiCombExamples) < 8) {
                 $this->antiCombExamples[] = [
@@ -1541,6 +1864,18 @@ final class ConfirmedContinuationService
                     'recent_opposite_swing_roi'      => $diag['recent_opposite_swing_roi'],
                     'directional_consistency_score'  => $diag['directional_consistency_score'],
                     'wick_chaos_score'               => $diag['wick_chaos_score'],
+                    'smooth_trend_score'             => $diag['smooth_trend_score'],
+                    'impulse_share'                  => $diag['impulse_share'],
+                    'single_candle_contribution'     => $diag['single_candle_contribution'],
+                    'vertical_spike_detected'        => $diag['vertical_spike_detected'],
+                ];
+            }
+            if (count($this->rejectedCombExamples) < 8) {
+                $this->rejectedCombExamples[] = [
+                    'side' => $side,
+                    'reject_reason' => $diag['anti_comb_reject_reason'],
+                    'reject_detail' => $rejectReason,
+                    'post_structure_window_minutes' => $structure['post_structure_window_minutes'] ?? null,
                 ];
             }
         }
@@ -1564,15 +1899,18 @@ final class ConfirmedContinuationService
         }
 
         $now = date('c');
+        $nearWallPct = (float)($config['wall_test_near_wall_pct'] ?? 0.35);
+        $blockNewWalls = (bool)($config['wall_test_block_new_walls'] ?? true);
         if ($side === 'long') {
             $risk = (bool)($obcResult['ob_ask_wall_risk'] ?? false);
             $status = (string)($obcResult['ob_ask_wall_status'] ?? 'none');
+            $askDist = (float)($obcResult['ob_ask_wall_distance_pct'] ?? 999.0);
             $res['wall_test_level'] = $structure['rising_support_price'] ?? $structure['entry_price'] ?? null;
-            if ($risk && !in_array($status, ['eaten', 'broken'], true)) {
+            if (($risk || $askDist <= $nearWallPct) && !in_array($status, ['eaten', 'broken'], true) && $blockNewWalls) {
                 $res['wall_test_state'] = 'pending_breakout';
                 $res['wall_test_started_at'] = $now;
                 $res['wall_test_result'] = 'pending';
-                $res['wall_test_block_reason'] = 'wall_test_pending_breakout';
+                $res['wall_test_block_reason'] = 'pending_ask_wall_breakout_test';
                 $res['wall_test_blocked'] = true;
                 $this->wallTestPendingTotal++;
             } elseif (in_array($status, ['eaten', 'broken'], true)) {
@@ -1593,12 +1931,13 @@ final class ConfirmedContinuationService
         } else {
             $risk = (bool)($obcResult['ob_bid_wall_risk'] ?? false);
             $status = (string)($obcResult['ob_bid_wall_status'] ?? 'none');
+            $bidDist = (float)($obcResult['ob_bid_wall_distance_pct'] ?? 999.0);
             $res['wall_test_level'] = $structure['falling_resistance_price'] ?? $structure['entry_price'] ?? null;
-            if ($risk && !in_array($status, ['eaten', 'broken'], true)) {
+            if (($risk || $bidDist <= $nearWallPct) && !in_array($status, ['eaten', 'broken'], true) && $blockNewWalls) {
                 $res['wall_test_state'] = 'pending_breakdown';
                 $res['wall_test_started_at'] = $now;
                 $res['wall_test_result'] = 'pending';
-                $res['wall_test_block_reason'] = 'wall_test_pending_breakdown';
+                $res['wall_test_block_reason'] = 'pending_bid_wall_breakdown_test';
                 $res['wall_test_blocked'] = true;
                 $this->wallTestPendingTotal++;
             } elseif (in_array($status, ['eaten', 'broken'], true)) {
@@ -1685,6 +2024,17 @@ final class ConfirmedContinuationService
             $blockReason  = (string)($structure['wall_test_block_reason'] ?? 'wall_test_pending');
             $handoffReady = false;
             $executable   = false;
+            if (str_starts_with((string)$blockReason, 'pending_')) {
+                $this->wallPendingBlockedTotal++;
+                if (count($this->wallPendingExamples) < 8) {
+                    $this->wallPendingExamples[] = [
+                        'symbol' => $symbol,
+                        'side' => $side,
+                        'wall_test_state' => $structure['wall_test_state'] ?? 'none',
+                        'block_reason' => $blockReason,
+                    ];
+                }
+            }
         }
 
         if ($isSoftDemoted && $softDemoteBlocksHandoff) {
@@ -1707,6 +2057,48 @@ final class ConfirmedContinuationService
         if (!$handoffEnabled) {
             $executable   = false;
             $handoffReady = false;
+        }
+
+        // Hard controlled-trend gate before handoff/executable
+        $this->controlledTrendGateCheckedTotal++;
+        if ($handoffReady && $executable) {
+            $controlledTrend = (float)($structure['controlled_trend_score'] ?? 0.0);
+            $dirConsistency  = (float)($structure['directional_consistency_score'] ?? 0.0);
+            $wickChaos       = (float)($structure['wick_chaos_score'] ?? 1.0);
+            $structureBreaks = (int)($structure['structure_breaks_count'] ?? 0);
+            $recentSwingRoi  = (float)($structure['recent_max_swing_roi'] ?? 0.0);
+            $oppSwingRoi     = (float)($structure['recent_opposite_swing_roi'] ?? 0.0);
+            $r1m             = (float)($structure['recent_max_1m_range_roi'] ?? 0.0);
+            $r3m             = (float)($structure['recent_max_3m_range_roi'] ?? 0.0);
+
+            if ($controlledTrend < (float)($config['min_controlled_trend_score_for_signal'] ?? 0.78)) {
+                $blockReason = 'controlled_trend_score_too_low';
+                $this->controlledTrendScoreTooLowTotal++;
+            } elseif ($dirConsistency < (float)($config['min_directional_consistency_for_signal'] ?? 0.72)) {
+                $blockReason = 'directional_consistency_too_low';
+                $this->directionalConsistencyTooLowTotal++;
+            } elseif ($wickChaos > (float)($config['max_wick_chaos_for_signal'] ?? 0.35)) {
+                $blockReason = 'wick_chaos_too_high';
+                $this->wickChaosTooHighTotal++;
+            } elseif ($structureBreaks > (int)($config['max_structure_breaks_for_signal'] ?? 0)) {
+                $blockReason = 'structure_breaks_not_allowed';
+            } elseif ($recentSwingRoi > (float)($config['max_recent_swing_roi_for_signal'] ?? 18.0)) {
+                $blockReason = 'recent_swing_too_high';
+                $this->recentSwingTooHighTotal++;
+            } elseif ($oppSwingRoi > (float)($config['max_opposite_swing_roi_for_signal'] ?? 8.0)) {
+                $blockReason = 'opposite_swing_too_high';
+                $this->oppositeSwingTooHighTotal++;
+            } elseif (
+                $r1m > (float)($config['max_1m_range_roi_for_signal'] ?? 10.0)
+                || $r3m > (float)($config['max_3m_range_roi_for_signal'] ?? 18.0)
+            ) {
+                $blockReason = 'short_range_too_volatile';
+            }
+            if ($blockReason !== null) {
+                $handoffReady = false;
+                $executable = false;
+                $this->controlledTrendGateRejectedTotal++;
+            }
         }
 
         $detectedAt = date('c');
@@ -1802,6 +2194,43 @@ final class ConfirmedContinuationService
             'wall_test_result'       => $candidate['wall_test_result']       ?? null,
             'wall_test_block_reason' => $candidate['wall_test_block_reason'] ?? null,
             'wall_test_opposite_context_created' => $candidate['wall_test_opposite_context_created'] ?? false,
+            // Structure/post-structure diagnostics
+            'structure_anchor_type'  => $candidate['structure_anchor_type'] ?? null,
+            'structure_anchor_time'  => $candidate['structure_anchor_time'] ?? null,
+            'structure_anchor_price' => $candidate['structure_anchor_price'] ?? null,
+            'post_structure_window_start' => $candidate['post_structure_window_start'] ?? null,
+            'post_structure_window_minutes' => $candidate['post_structure_window_minutes'] ?? null,
+            'pre_structure_impulse_pct' => $candidate['pre_structure_impulse_pct'] ?? null,
+            'pre_structure_impulse_roi' => $candidate['pre_structure_impulse_roi'] ?? null,
+            'pre_structure_impulse_allowed' => $candidate['pre_structure_impulse_allowed'] ?? true,
+            'post_structure_controlled_trend_score' => $candidate['post_structure_controlled_trend_score'] ?? null,
+            // Entry timing / room diagnostics
+            'entry_timing_class' => $candidate['entry_timing_class'] ?? null,
+            'distance_from_rising_support_pct' => $candidate['distance_from_rising_support_pct'] ?? null,
+            'distance_from_falling_resistance_pct' => $candidate['distance_from_falling_resistance_pct'] ?? null,
+            'distance_from_last_higher_low_pct' => $candidate['distance_from_last_higher_low_pct'] ?? null,
+            'distance_from_last_lower_high_pct' => $candidate['distance_from_last_lower_high_pct'] ?? null,
+            'upside_room_to_resistance_pct' => $candidate['upside_room_to_resistance_pct'] ?? null,
+            'downside_room_to_support_pct' => $candidate['downside_room_to_support_pct'] ?? null,
+            'near_take_profit_zone' => $candidate['near_take_profit_zone'] ?? false,
+            'expected_exit_zone_price' => $candidate['expected_exit_zone_price'] ?? null,
+            'late_entry_reject_reason' => $candidate['late_entry_reject_reason'] ?? null,
+            // Anti-comb / smooth diagnostics full
+            'recent_max_1m_range_pct' => $candidate['recent_max_1m_range_pct'] ?? null,
+            'recent_max_1m_range_roi' => $candidate['recent_max_1m_range_roi'] ?? null,
+            'recent_max_3m_range_pct' => $candidate['recent_max_3m_range_pct'] ?? null,
+            'recent_max_3m_range_roi' => $candidate['recent_max_3m_range_roi'] ?? null,
+            'recent_max_swing_pct' => $candidate['recent_max_swing_pct'] ?? null,
+            'recent_opposite_swing_pct' => $candidate['recent_opposite_swing_pct'] ?? null,
+            'recent_opposite_swing_roi' => $candidate['recent_opposite_swing_roi'] ?? null,
+            'structure_breaks_count' => $candidate['structure_breaks_count'] ?? null,
+            'alternating_large_candles_detected' => $candidate['alternating_large_candles_detected'] ?? false,
+            'smooth_trend_score' => $candidate['smooth_trend_score'] ?? null,
+            'step_count' => $candidate['step_count'] ?? null,
+            'impulse_share' => $candidate['impulse_share'] ?? null,
+            'single_candle_contribution' => $candidate['single_candle_contribution'] ?? null,
+            'vertical_spike_detected' => $candidate['vertical_spike_detected'] ?? false,
+            'pullback_before_entry_detected' => $candidate['pullback_before_entry_detected'] ?? false,
         ];
 
         // Side-specific fields
@@ -1862,6 +2291,39 @@ final class ConfirmedContinuationService
             'wall_test_result'           => $signal['wall_test_result'],
             'wall_test_block_reason'     => $signal['wall_test_block_reason'],
             'wall_test_opposite_context_created' => $signal['wall_test_opposite_context_created'],
+            'structure_anchor_type'      => $signal['structure_anchor_type'],
+            'structure_anchor_time'      => $signal['structure_anchor_time'],
+            'structure_anchor_price'     => $signal['structure_anchor_price'],
+            'post_structure_window_start' => $signal['post_structure_window_start'],
+            'post_structure_window_minutes' => $signal['post_structure_window_minutes'],
+            'pre_structure_impulse_pct'  => $signal['pre_structure_impulse_pct'],
+            'pre_structure_impulse_roi'  => $signal['pre_structure_impulse_roi'],
+            'pre_structure_impulse_allowed' => $signal['pre_structure_impulse_allowed'],
+            'post_structure_controlled_trend_score' => $signal['post_structure_controlled_trend_score'],
+            'entry_timing_class'         => $signal['entry_timing_class'],
+            'distance_from_rising_support_pct' => $signal['distance_from_rising_support_pct'],
+            'distance_from_falling_resistance_pct' => $signal['distance_from_falling_resistance_pct'],
+            'distance_from_last_higher_low_pct' => $signal['distance_from_last_higher_low_pct'],
+            'distance_from_last_lower_high_pct' => $signal['distance_from_last_lower_high_pct'],
+            'upside_room_to_resistance_pct' => $signal['upside_room_to_resistance_pct'],
+            'downside_room_to_support_pct' => $signal['downside_room_to_support_pct'],
+            'near_take_profit_zone'      => $signal['near_take_profit_zone'],
+            'expected_exit_zone_price'   => $signal['expected_exit_zone_price'],
+            'recent_max_1m_range_pct'    => $signal['recent_max_1m_range_pct'],
+            'recent_max_1m_range_roi'    => $signal['recent_max_1m_range_roi'],
+            'recent_max_3m_range_pct'    => $signal['recent_max_3m_range_pct'],
+            'recent_max_3m_range_roi'    => $signal['recent_max_3m_range_roi'],
+            'recent_max_swing_pct'       => $signal['recent_max_swing_pct'],
+            'recent_opposite_swing_pct'  => $signal['recent_opposite_swing_pct'],
+            'recent_opposite_swing_roi'  => $signal['recent_opposite_swing_roi'],
+            'structure_breaks_count'     => $signal['structure_breaks_count'],
+            'alternating_large_candles_detected' => $signal['alternating_large_candles_detected'],
+            'smooth_trend_score'         => $signal['smooth_trend_score'],
+            'step_count'                 => $signal['step_count'],
+            'impulse_share'              => $signal['impulse_share'],
+            'single_candle_contribution' => $signal['single_candle_contribution'],
+            'vertical_spike_detected'    => $signal['vertical_spike_detected'],
+            'pullback_before_entry_detected' => $signal['pullback_before_entry_detected'],
             'block_reason'               => $signal['block_reason'],
             'handoff_ready'              => $signal['handoff_ready'],
             'executable'                 => $signal['executable'],
@@ -1899,7 +2361,7 @@ final class ConfirmedContinuationService
         return $signal;
     }
 
-    private function buildHandoffQueue(array $signals, array $previousQueue = []): array
+    private function buildHandoffQueue(array $signals, array $previousQueue = [], array $config = []): array
     {
         $prevBySignalId = [];
         foreach ($previousQueue as $prev) {
@@ -1912,7 +2374,7 @@ final class ConfirmedContinuationService
             }
         }
 
-        $queue = [];
+        $candidates = [];
         foreach ($signals as $sig) {
             $isExecutable  = (bool)($sig['executable'] ?? false);
             $isStale       = (bool)($sig['stale'] ?? false);
@@ -1950,9 +2412,52 @@ final class ConfirmedContinuationService
                 'block_reason'            => null,
                 'strategy_signal_context' => $sig['strategy_signal_context'] ?? [],
             ];
+            $candidates[] = $entry;
+        }
+
+        $this->handoffCandidatesBeforeThrottleTotal = count($candidates);
+        $preferHighest = (bool)($config['prefer_highest_quality_handoff'] ?? true);
+        if ($preferHighest) {
+            usort($candidates, static function (array $a, array $b): int {
+                $qa = (float)($a['candidate_quality_score'] ?? $a['confidence_score'] ?? 0.0);
+                $qb = (float)($b['candidate_quality_score'] ?? $b['confidence_score'] ?? 0.0);
+                return $qb <=> $qa;
+            });
+        }
+
+        $maxPerTick = max(1, (int)($config['max_handoff_signals_per_tick'] ?? 2));
+        $maxPerSide = max(1, (int)($config['max_handoff_signals_per_side_per_tick'] ?? 1));
+        $maxActiveTotal = max(1, (int)($config['max_active_confirmed_continuation_signals_total'] ?? 5));
+        $queue = [];
+        $sideCounts = ['long' => 0, 'short' => 0];
+        foreach ($candidates as $entry) {
+            $side = (string)($entry['side'] ?? '');
+            if (count($queue) >= $maxPerTick) {
+                $this->handoffThrottleReasonCounts['max_handoff_signals_per_tick'] = ($this->handoffThrottleReasonCounts['max_handoff_signals_per_tick'] ?? 0) + 1;
+                if (count($this->handoffThrottleExamples) < 8) {
+                    $this->handoffThrottleExamples[] = ['signal_id' => $entry['signal_id'] ?? '', 'reason' => 'max_handoff_signals_per_tick'];
+                }
+                continue;
+            }
+            if (($sideCounts[$side] ?? 0) >= $maxPerSide) {
+                $this->handoffThrottleReasonCounts['max_handoff_signals_per_side_per_tick'] = ($this->handoffThrottleReasonCounts['max_handoff_signals_per_side_per_tick'] ?? 0) + 1;
+                if (count($this->handoffThrottleExamples) < 8) {
+                    $this->handoffThrottleExamples[] = ['signal_id' => $entry['signal_id'] ?? '', 'reason' => 'max_handoff_signals_per_side_per_tick'];
+                }
+                continue;
+            }
+            if (count($queue) >= $maxActiveTotal) {
+                $this->handoffThrottleReasonCounts['max_active_confirmed_continuation_signals_total'] = ($this->handoffThrottleReasonCounts['max_active_confirmed_continuation_signals_total'] ?? 0) + 1;
+                if (count($this->handoffThrottleExamples) < 8) {
+                    $this->handoffThrottleExamples[] = ['signal_id' => $entry['signal_id'] ?? '', 'reason' => 'max_active_confirmed_continuation_signals_total'];
+                }
+                continue;
+            }
             $queue[] = $entry;
+            $sideCounts[$side] = ($sideCounts[$side] ?? 0) + 1;
 
             $this->handoffQueueWrittenTotal++;
+            $handoffStatus = (string)($entry['handoff_status'] ?? 'new');
             if ($handoffStatus === 'refreshed') {
                 $this->handoffQueueRefreshedTotal++;
             } else {
@@ -1968,6 +2473,8 @@ final class ConfirmedContinuationService
                 ];
             }
         }
+        $this->handoffAfterThrottleTotal = count($queue);
+        $this->handoffThrottledTotal = max(0, $this->handoffCandidatesBeforeThrottleTotal - $this->handoffAfterThrottleTotal);
         $this->handoffQueueMissingStatusTotal = count(array_filter(
             $queue,
             static fn(array $entry): bool => !isset($entry['handoff_status'])
@@ -2018,6 +2525,20 @@ final class ConfirmedContinuationService
             'anti_comb_opposite_swing_reject_total'   => $this->antiCombOppositeSwingRejectTotal,
             'anti_comb_wick_chaos_reject_total'       => $this->antiCombWickChaosRejectTotal,
             'anti_comb_low_consistency_reject_total'  => $this->antiCombLowConsistencyRejectTotal,
+            'post_structure_filter_checked_total'     => $this->postStructureFilterCheckedTotal,
+            'post_structure_filter_rejected_total'    => $this->postStructureFilterRejectedTotal,
+            'entry_timing_checked_total'              => $this->entryTimingCheckedTotal,
+            'near_exit_zone_rejected_total'           => $this->nearExitZoneRejectedTotal,
+            'controlled_trend_gate_checked_total'     => $this->controlledTrendGateCheckedTotal,
+            'controlled_trend_gate_rejected_total'    => $this->controlledTrendGateRejectedTotal,
+            'controlled_trend_score_too_low_total'    => $this->controlledTrendScoreTooLowTotal,
+            'directional_consistency_too_low_total'   => $this->directionalConsistencyTooLowTotal,
+            'wick_chaos_too_high_total'               => $this->wickChaosTooHighTotal,
+            'recent_swing_too_high_total'             => $this->recentSwingTooHighTotal,
+            'opposite_swing_too_high_total'           => $this->oppositeSwingTooHighTotal,
+            'smooth_trend_checked_total'              => $this->smoothTrendCheckedTotal,
+            'smooth_trend_rejected_total'             => $this->smoothTrendRejectedTotal,
+            'vertical_spike_rejected_total'           => $this->verticalSpikeRejectedTotal,
             // 24h regime diagnostics
             'day_regime_checked_total'        => $this->dayRegimeCheckedTotal,
             'day_regime_blocked_total'        => $this->dayRegimeBlockedTotal,
@@ -2033,8 +2554,14 @@ final class ConfirmedContinuationService
             'wall_test_confirmed_total'       => $this->wallTestConfirmedTotal,
             'wall_test_rejected_total'        => $this->wallTestRejectedTotal,
             'wall_test_opposite_context_total'=> $this->wallTestOppositeContextTotal,
+            'wall_pending_blocked_total'      => $this->wallPendingBlockedTotal,
             'accepted_examples'               => $this->acceptedExamples,
             'rejected_examples'               => $this->rejectedExamples,
+            'accepted_early_structure_examples' => $this->acceptedEarlyStructureExamples,
+            'accepted_mid_trend_examples'     => $this->acceptedMidTrendExamples,
+            'rejected_late_entry_examples'    => $this->rejectedLateEntryExamples,
+            'rejected_comb_examples'          => $this->rejectedCombExamples,
+            'wall_pending_examples'           => $this->wallPendingExamples,
             'obc_block_examples'              => $this->obcBlockExamples,
             'wall_test_examples'              => $this->wallTestExamples,
             'late_entry_reject_examples'      => $this->lateEntryRejectExamples,
@@ -2048,6 +2575,11 @@ final class ConfirmedContinuationService
             'handoff_queue_refreshed_total'   => $this->handoffQueueRefreshedTotal,
             'handoff_queue_missing_status_total' => $this->handoffQueueMissingStatusTotal,
             'handoff_queue_examples'          => $this->handoffQueueExamples,
+            'handoff_candidates_before_throttle_total' => $this->handoffCandidatesBeforeThrottleTotal,
+            'handoff_after_throttle_total'    => $this->handoffAfterThrottleTotal,
+            'handoff_throttled_total'         => $this->handoffThrottledTotal,
+            'handoff_throttle_reason_counts'  => $this->handoffThrottleReasonCounts,
+            'handoff_throttle_examples'       => $this->handoffThrottleExamples,
             // Deprecated config diagnostics
             'deprecated_execution_mode_key_seen'    => $this->deprecatedExecutionModeKeySeen,
             'deprecated_execution_mode_key_ignored' => $this->deprecatedExecutionModeKeyIgnored,
@@ -2260,11 +2792,36 @@ final class ConfirmedContinuationService
         $this->wallTestConfirmedTotal      = 0;
         $this->wallTestRejectedTotal       = 0;
         $this->wallTestOppositeContextTotal= 0;
+        $this->wallPendingBlockedTotal     = 0;
+        $this->wallPendingExamples         = [];
         $this->handoffQueueWrittenTotal       = 0;
         $this->handoffQueueNewTotal           = 0;
         $this->handoffQueueRefreshedTotal     = 0;
         $this->handoffQueueMissingStatusTotal = 0;
         $this->handoffQueueExamples           = [];
+        $this->postStructureFilterCheckedTotal   = 0;
+        $this->postStructureFilterRejectedTotal  = 0;
+        $this->entryTimingCheckedTotal           = 0;
+        $this->nearExitZoneRejectedTotal         = 0;
+        $this->controlledTrendGateCheckedTotal   = 0;
+        $this->controlledTrendGateRejectedTotal  = 0;
+        $this->controlledTrendScoreTooLowTotal   = 0;
+        $this->directionalConsistencyTooLowTotal = 0;
+        $this->wickChaosTooHighTotal             = 0;
+        $this->recentSwingTooHighTotal           = 0;
+        $this->oppositeSwingTooHighTotal         = 0;
+        $this->smoothTrendCheckedTotal           = 0;
+        $this->smoothTrendRejectedTotal          = 0;
+        $this->verticalSpikeRejectedTotal        = 0;
+        $this->acceptedEarlyStructureExamples    = [];
+        $this->acceptedMidTrendExamples          = [];
+        $this->rejectedLateEntryExamples         = [];
+        $this->rejectedCombExamples              = [];
+        $this->handoffCandidatesBeforeThrottleTotal = 0;
+        $this->handoffAfterThrottleTotal            = 0;
+        $this->handoffThrottledTotal                = 0;
+        $this->handoffThrottleReasonCounts          = [];
+        $this->handoffThrottleExamples              = [];
         $this->deprecatedExecutionModeKeySeen    = false;
         $this->deprecatedExecutionModeKeyIgnored = false;
         $this->effectiveStrategyMode             = 'passive';

@@ -190,9 +190,11 @@ final class ConfirmedContinuationService
         }
 
         $selectedSymbols = [];
-        for ($i = 0; $i < $windowSize; $i++) {
-            $idx = ($prevCursor + $i) % $total;
-            $selectedSymbols[] = $allSymbols[$idx];
+        if ($total > 0) {
+            for ($i = 0; $i < $windowSize; $i++) {
+                $idx = ($prevCursor + $i) % $total;
+                $selectedSymbols[] = $allSymbols[$idx];
+            }
         }
         $selectedTotal = count($selectedSymbols);
         $windowStart   = $selectedTotal > 0 ? $prevCursor : 0;
@@ -328,11 +330,13 @@ final class ConfirmedContinuationService
             if ($fullTotal > 0 && ($cursor < 0 || $cursor >= $fullTotal)) {
                 $cursor = 0;
             }
-            $windowSize = min($maxTotal, $fullTotal > 0 ? $fullTotal : $maxTotal);
+            $windowSize = $fullTotal > 0 ? min($maxTotal, $fullTotal) : 0;
             $windowSymbols = [];
-            for ($i = 0; $i < $windowSize; $i++) {
-                $idx = ($cursor + $i) % $fullTotal;
-                $windowSymbols[] = $allSymbols[$idx];
+            if ($fullTotal > 0) {
+                for ($i = 0; $i < $windowSize; $i++) {
+                    $idx = ($cursor + $i) % $fullTotal;
+                    $windowSymbols[] = $allSymbols[$idx];
+                }
             }
             $selectedTotal = count($windowSymbols);
             $state['symbols'] = $windowSymbols;

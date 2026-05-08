@@ -139,6 +139,14 @@ final class DoubleBottomLongService
     private array $dblPatternPendingConfirmedExamples       = [];
     /** @var list<array<string,mixed>> */
     private array $dblPatternPendingInvalidatedExamples     = [];
+    private int $dblPatternPendingSweepTotal              = 0;
+    private int $dblPatternPendingSweepConfirmedTotal     = 0;
+    private int $dblPatternPendingSweepInvalidTotal       = 0;
+    private int $dblPatternPendingSweepExpiredTotal       = 0;
+    private int $dblPatternPendingSweepStillActiveTotal   = 0;
+    private int $dblPatternPendingStorageBeforeTotal      = 0;
+    private int $dblPatternPendingStorageAfterTotal       = 0;
+    private int $dblPatternPendingStorageStaleRemovedTotal = 0;
     // ── DBL trace completeness counters (reset at start of each tickBatch) ────
     private int $dblTraceCheckedTotal                        = 0;
     private int $dblTraceCompleteTotal                       = 0;
@@ -599,6 +607,14 @@ final class DoubleBottomLongService
         $this->dblPatternPendingExamples           = [];
         $this->dblPatternPendingConfirmedExamples  = [];
         $this->dblPatternPendingInvalidatedExamples = [];
+        $this->dblPatternPendingSweepTotal               = 0;
+        $this->dblPatternPendingSweepConfirmedTotal      = 0;
+        $this->dblPatternPendingSweepInvalidTotal        = 0;
+        $this->dblPatternPendingSweepExpiredTotal        = 0;
+        $this->dblPatternPendingSweepStillActiveTotal    = 0;
+        $this->dblPatternPendingStorageBeforeTotal       = 0;
+        $this->dblPatternPendingStorageAfterTotal        = 0;
+        $this->dblPatternPendingStorageStaleRemovedTotal = 0;
 
         $symbols = (array)($state['symbols']  ?? []);
         $cursor  = (int)($state['cursor']      ?? 0);
@@ -2135,6 +2151,14 @@ final class DoubleBottomLongService
             'dbl_pattern_pending_examples'                            => $this->dblPatternPendingExamples,
             'dbl_pattern_pending_confirmed_examples'                  => $this->dblPatternPendingConfirmedExamples,
             'dbl_pattern_pending_invalidated_examples'                => $this->dblPatternPendingInvalidatedExamples,
+            'dbl_pattern_pending_sweep_total'                => $this->dblPatternPendingSweepTotal,
+            'dbl_pattern_pending_sweep_confirmed_total'      => $this->dblPatternPendingSweepConfirmedTotal,
+            'dbl_pattern_pending_sweep_invalid_total'        => $this->dblPatternPendingSweepInvalidTotal,
+            'dbl_pattern_pending_sweep_expired_total'        => $this->dblPatternPendingSweepExpiredTotal,
+            'dbl_pattern_pending_sweep_still_active_total'   => $this->dblPatternPendingSweepStillActiveTotal,
+            'dbl_pattern_pending_storage_before_total'       => $this->dblPatternPendingStorageBeforeTotal,
+            'dbl_pattern_pending_storage_after_total'        => $this->dblPatternPendingStorageAfterTotal,
+            'dbl_pattern_pending_storage_stale_removed_total'=> $this->dblPatternPendingStorageStaleRemovedTotal,
             // ── Scan suppression cache diagnostics (Task 7) ──────────────────────
             'scan_suppression_enabled'                   => $suppressionEnabled,
             'scan_suppression_entries_total'             => $suppressionEnabled ? count($this->scanSuppressionCache) : 0,
@@ -8362,6 +8386,9 @@ final class DoubleBottomLongService
 
         $existing = (array)$this->readJson('storage/bot_handoff_queue.json', []);
 
+        // Sweep pending_patterns.json: recheck/expire/confirm active entries
+        $this->sweepDblPendingPatternsStorage($config);
+
         $existingMap = [];
         foreach ($existing as $r) {
             $id = (string)($r['signal_id'] ?? '');
@@ -8579,11 +8606,14 @@ final class DoubleBottomLongService
                     $queueMarkedNonExecutableTotal++;
                 } elseif ($garbageVetoEnabled) {
                     // ── DBL pattern-status state machine (primary gate) ────────────────
-                    $ps = $this->applyDblPatternStatusStateMachine(
-                        $r,
-                        is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [],
+                    $sscForPs1 = is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [];
+                    $sscForPs1 = $this->enrichDblContextWithParser2(
+                        (string)($r['symbol']      ?? ''),
+                        (string)($r['detected_at'] ?? ''),
+                        $sscForPs1,
                         $config
                     );
+                    $ps = $this->applyDblPatternStatusStateMachine($r, $sscForPs1, $config);
                     $this->dblPatternStatusCheckedTotal++;
                     $sscPatternMerge = is_array($result[$id]['strategy_signal_context'] ?? null)
                         ? $result[$id]['strategy_signal_context'] : [];
@@ -8619,6 +8649,8 @@ final class DoubleBottomLongService
                     if ($psStatus === 'invalid') {
                         $this->dblPatternInvalidTotal++;
                         $this->dblPatternInvalidBlockedFromHandoffTotal++;
+                        // Sync pending_patterns.json: remove this signal if it's there as active
+                        $this->removeDblPendingPatternEntry((string)($r['signal_id'] ?? $id));
                         if ($prevQueueStatus === 'pending') {
                             $this->dblPatternPendingRecheckedTotal++;
                             $this->dblPatternPendingInvalidatedTotal++;
@@ -8953,11 +8985,14 @@ final class DoubleBottomLongService
                     }
                 } else {
                     // Garbage veto disabled — still require confirmed DBL pattern status.
-                    $ps = $this->applyDblPatternStatusStateMachine(
-                        $r,
-                        is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [],
+                    $sscForPs2 = is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [];
+                    $sscForPs2 = $this->enrichDblContextWithParser2(
+                        (string)($r['symbol']      ?? ''),
+                        (string)($r['detected_at'] ?? ''),
+                        $sscForPs2,
                         $config
                     );
+                    $ps = $this->applyDblPatternStatusStateMachine($r, $sscForPs2, $config);
                     $this->dblPatternStatusCheckedTotal++;
                     $sscPatternMerge = is_array($result[$id]['strategy_signal_context'] ?? null)
                         ? $result[$id]['strategy_signal_context'] : [];
@@ -10031,6 +10066,10 @@ final class DoubleBottomLongService
             'recent_60m_direction_flips'      => $ssc['recent_60m_direction_flips'] ?? null,
             'room_to_recent_swing_high_roi'   => $ssc['room_to_recent_swing_high_roi'] ?? null,
             'post_point3_impulse_spent_pct'   => $ssc['post_point3_impulse_spent_pct'] ?? null,
+            'dbl_pattern_confirmation_source'               => $ssc['dbl_pattern_confirmation_source'] ?? 'candidate_context',
+            'dbl_pattern_confirmation_candles_loaded'       => $ssc['dbl_pattern_confirmation_candles_loaded'] ?? null,
+            'dbl_pattern_confirmation_window_minutes'       => $ssc['dbl_pattern_confirmation_window_minutes'] ?? null,
+            'dbl_pattern_confirmation_error'                => $ssc['dbl_pattern_confirmation_error'] ?? null,
         ];
 
         return [
@@ -10617,5 +10656,531 @@ final class DoubleBottomLongService
             'ticks_loaded'                   => count($prices),
             'lookback_minutes'               => $lookbackMinutes,
         ];
+    }
+
+    /**
+     * Compute DBL confirmation/invalidation fields from parser2 last_price ticks.
+     * Reads ticks from detected_at onwards and evaluates all 4 confirmation paths
+     * plus invalidation conditions.
+     */
+    private function computeDblConfirmationFromParser2(
+        string $symbol,
+        float  $necklineLevel,
+        float  $reclaimLevel,
+        float  $point3Price,
+        int    $detectedAtTs,
+        array  $config
+    ): array {
+        $empty = [
+            'ok'                            => false,
+            'source'                        => 'missing',
+            'candles_loaded'                => 0,
+            'window_minutes'                => 0,
+            'error'                         => null,
+            'neckline_closes_above_count'   => 0,
+            'reclaim_closes_above_count'    => 0,
+            'reclaim_confirmed'             => false,
+            'neckline_reclaim_confirmed'    => false,
+            'reclaim_hold_bars'             => 0,
+            'reclaim_hold_minutes'          => 0.0,
+            'reclaim_retest_held'           => false,
+            'higher_low_after_point3'       => false,
+            'higher_low_after_point3_price' => null,
+            'fresh_lower_low_after_point3'  => false,
+            'point3_broken'                 => false,
+            'reclaim_level_lost'            => false,
+            'weak_bounce_after_point3'      => false,
+        ];
+
+        $normalizedSymbol = strtoupper(trim($symbol));
+        if (!preg_match('/^[A-Z0-9]{2,30}$/', $normalizedSymbol)) {
+            $empty['error'] = 'invalid_symbol';
+            return $empty;
+        }
+
+        // Use neckline as reference level; fall back to reclaim
+        $refNeckline = $necklineLevel > 0.0 ? $necklineLevel : $reclaimLevel;
+        $refReclaim  = $reclaimLevel  > 0.0 ? $reclaimLevel  : $necklineLevel;
+        if ($refNeckline <= 0.0 && $refReclaim <= 0.0) {
+            $empty['error'] = 'no_levels';
+            return $empty;
+        }
+
+        // Load parser2 ticks
+        $storageRoot = $this->repoRoot
+            . '/modules/parser/parser2_history_accumulator/storage/'
+            . $normalizedSymbol;
+        $files = [
+            $storageRoot . '/' . gmdate('Y-m-d') . '.ndjson',
+            $storageRoot . '/' . gmdate('Y-m-d', time() - 86400) . '.ndjson',
+        ];
+
+        $ticks = [];
+        foreach ($files as $file) {
+            if (!is_file($file)) {
+                continue;
+            }
+            $fh = @fopen($file, 'r');
+            if (!is_resource($fh)) {
+                continue;
+            }
+            while (($line = fgets($fh)) !== false) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $row = json_decode($line, true);
+                if (!is_array($row)) {
+                    continue;
+                }
+                $ts = 0;
+                if (isset($row['ts_unix'])) {
+                    $ts = (int)$row['ts_unix'];
+                } elseif (isset($row['ts'])) {
+                    $parsed = strtotime((string)$row['ts']);
+                    $ts = $parsed !== false ? (int)$parsed : 0;
+                }
+                $price = (float)($row['last_price'] ?? ($row['data']['lastPrice'] ?? 0.0));
+                if ($ts <= 0 || $price <= 0.0) {
+                    continue;
+                }
+                // Only include ticks from detectedAt onwards (60s tolerance)
+                if ($detectedAtTs > 0 && $ts < ($detectedAtTs - 60)) {
+                    continue;
+                }
+                $ticks[] = ['ts' => $ts, 'price' => $price];
+            }
+            fclose($fh);
+        }
+
+        if (count($ticks) < 2) {
+            $empty['error'] = 'insufficient_ticks';
+            return $empty;
+        }
+
+        // Sort by timestamp ascending
+        usort($ticks, static fn($a, $b) => $a['ts'] <=> $b['ts']);
+
+        $firstTs = $ticks[0]['ts'];
+        $lastTs  = $ticks[count($ticks) - 1]['ts'];
+        $windowMinutes = (int)(($lastTs - $firstTs) / 60);
+
+        // Tolerance config
+        $point3TolerancePct  = (float)($config['dbl_pattern_point3_break_tolerance_pct'] ?? 0.20);
+        $point3BreakThreshold = $point3Price > 0.0
+            ? $point3Price * (1.0 - max(0.0, $point3TolerancePct) / 100.0)
+            : 0.0;
+        $higherLowTolPct     = (float)($config['dbl_pattern_higher_low_tolerance_pct'] ?? 0.15);
+        $higherLowMin        = $point3Price > 0.0
+            ? $point3Price * (1.0 + max(0.0, $higherLowTolPct) / 100.0)
+            : 0.0;
+        $minClosesAbove      = max(1, (int)($config['dbl_pattern_min_closes_above_neckline'] ?? 2));
+
+        // State tracking
+        $maxConsecAboveNeckline = 0;
+        $maxConsecAboveReclaim  = 0;
+        $consecAboveNeckline    = 0;
+        $consecAboveReclaim     = 0;
+        $reclaimHoldBars        = 0;
+        $reclaimHoldSecondsTotal = 0;
+        $reclaimWentAbove       = false;
+        $reclaimLostAfter       = false;
+        $point3Broken           = false;
+        $freshLowerLow          = false;
+        $prevAboveReclaim       = false;
+        $prevTs                 = null;
+        $pricesSinceDetected    = [];
+
+        foreach ($ticks as $tick) {
+            $price = $tick['price'];
+            $ts    = $tick['ts'];
+
+            $pricesSinceDetected[] = $price;
+
+            // Point3 break / fresh lower low
+            if ($point3Price > 0.0 && $point3BreakThreshold > 0.0 && $price < $point3BreakThreshold) {
+                $point3Broken  = true;
+                $freshLowerLow = true;
+            }
+
+            // Above neckline
+            $aboveNeckline = $refNeckline > 0.0 && $price > $refNeckline;
+            if ($aboveNeckline) {
+                $consecAboveNeckline++;
+                if ($consecAboveNeckline > $maxConsecAboveNeckline) {
+                    $maxConsecAboveNeckline = $consecAboveNeckline;
+                }
+            } else {
+                $consecAboveNeckline = 0;
+            }
+
+            // Above reclaim
+            $aboveReclaim = $refReclaim > 0.0 && $price > $refReclaim;
+            if ($aboveReclaim) {
+                $consecAboveReclaim++;
+                if ($consecAboveReclaim > $maxConsecAboveReclaim) {
+                    $maxConsecAboveReclaim = $consecAboveReclaim;
+                }
+                if (!$reclaimWentAbove) {
+                    $reclaimWentAbove = true;
+                }
+                if ($prevAboveReclaim && $prevTs !== null) {
+                    $reclaimHoldSecondsTotal += ($ts - $prevTs);
+                    $reclaimHoldBars++;
+                }
+            } else {
+                if ($reclaimWentAbove && !$aboveReclaim) {
+                    // Dropped below reclaim after having been above it
+                    $reclaimLostAfter = true;
+                }
+                $consecAboveReclaim = 0;
+            }
+
+            $prevAboveReclaim = $aboveReclaim;
+            $prevTs = $ts;
+        }
+
+        $reclaimHoldMinutes = round($reclaimHoldSecondsTotal / 60.0, 2);
+        $reclaimConfirmed   = $maxConsecAboveReclaim  >= $minClosesAbove;
+        $necklineConfirmed  = $maxConsecAboveNeckline >= $minClosesAbove;
+
+        // Higher low after point3: find minimum price that is above point3+tolerance
+        $higherLowFound = false;
+        $higherLowPrice = null;
+        if (count($pricesSinceDetected) >= 3 && $point3Price > 0.0 && !$freshLowerLow) {
+            $minSince = min($pricesSinceDetected);
+            $lastPrice = end($pricesSinceDetected);
+            // A higher low: min price is above point3 by tolerance, and last price is above that min
+            if ($minSince >= $higherLowMin && $lastPrice >= $minSince) {
+                $higherLowFound = true;
+                $higherLowPrice = $minSince;
+            }
+        }
+
+        // Reclaim retest held: reclaim confirmed + current price near/above reclaim + no lower low
+        $reclaimRetestHeld = false;
+        if ($reclaimWentAbove && !$freshLowerLow && count($pricesSinceDetected) > 0) {
+            $lastPrice = end($pricesSinceDetected);
+            $reclaimRetestZone = $refReclaim * 0.997; // within 0.3% of reclaim = retest zone
+            if ($lastPrice >= $reclaimRetestZone) {
+                $reclaimRetestHeld = true;
+            }
+        }
+
+        // Weak bounce: bounced < 50% of distance from point3 to neckline, never reached neckline
+        $weakBounce = false;
+        if ($refNeckline > 0.0 && $point3Price > 0.0 && !$reclaimWentAbove && count($pricesSinceDetected) > 0) {
+            $maxSince = max($pricesSinceDetected);
+            $distToNeckline = $refNeckline - $point3Price;
+            if ($distToNeckline > 0.0) {
+                $bounceSize = $maxSince - $point3Price;
+                if ($bounceSize >= 0.0 && $bounceSize < ($distToNeckline * 0.5)) {
+                    $weakBounce = true;
+                }
+            }
+        }
+
+        return [
+            'ok'                            => true,
+            'source'                        => 'parser2',
+            'candles_loaded'                => count($ticks),
+            'window_minutes'                => $windowMinutes,
+            'error'                         => null,
+            'neckline_closes_above_count'   => $maxConsecAboveNeckline,
+            'reclaim_closes_above_count'    => $maxConsecAboveReclaim,
+            'reclaim_confirmed'             => $reclaimConfirmed,
+            'neckline_reclaim_confirmed'    => $necklineConfirmed,
+            'reclaim_hold_bars'             => $reclaimHoldBars,
+            'reclaim_hold_minutes'          => $reclaimHoldMinutes,
+            'reclaim_retest_held'           => $reclaimRetestHeld,
+            'higher_low_after_point3'       => $higherLowFound,
+            'higher_low_after_point3_price' => $higherLowPrice,
+            'fresh_lower_low_after_point3'  => $freshLowerLow,
+            'point3_broken'                 => $point3Broken,
+            'reclaim_level_lost'            => $reclaimLostAfter,
+            'weak_bounce_after_point3'      => $weakBounce,
+        ];
+    }
+
+    /**
+     * Enrich a strategy_signal_context array with parser2-computed confirmation fields
+     * when the key confirmation fields are absent or unset.
+     *
+     * Only enriches if the existing context lacks positive confirmation data
+     * (i.e., all paths are false/0/null).  Existing true/positive values are
+     * preserved and not overwritten.
+     */
+    private function enrichDblContextWithParser2(
+        string $symbol,
+        string $detectedAt,
+        array  $ctx,
+        array  $config
+    ): array {
+        // Check whether any confirmation path is already positively set
+        $alreadyConfirming = (
+            ($ctx['reclaim_confirmed']          ?? false) === true ||
+            ($ctx['neckline_reclaim_confirmed'] ?? false) === true ||
+            ($ctx['higher_low_after_point3']    ?? false) === true ||
+            ($ctx['reclaim_retest_held']        ?? false) === true ||
+            (int)($ctx['neckline_closes_above_count'] ?? 0) >= max(1, (int)($config['dbl_pattern_min_closes_above_neckline'] ?? 2))
+        );
+        if ($alreadyConfirming) {
+            return $ctx;
+        }
+
+        $necklineLevel = (float)($ctx['neckline_level'] ?? ($ctx['point_2_neckline_price'] ?? 0.0));
+        $reclaimLevel  = (float)($ctx['reclaim_level']  ?? 0.0);
+        $point3Price   = (float)($ctx['point_3_second_low_price'] ?? 0.0);
+        if ($necklineLevel <= 0.0 && $reclaimLevel <= 0.0) {
+            return $ctx;
+        }
+        $detectedTs = $detectedAt !== '' ? (int)strtotime($detectedAt) : 0;
+        if ($detectedTs <= 0) {
+            $detectedTs = time() - 600; // default: 10 minutes ago
+        }
+
+        $computed = $this->computeDblConfirmationFromParser2(
+            $symbol,
+            $necklineLevel,
+            $reclaimLevel,
+            $point3Price,
+            $detectedTs,
+            $config
+        );
+
+        if (!($computed['ok'] ?? false)) {
+            $ctx['dbl_pattern_confirmation_source']          = 'fallback';
+            $ctx['dbl_pattern_confirmation_candles_loaded']  = 0;
+            $ctx['dbl_pattern_confirmation_window_minutes']  = 0;
+            $ctx['dbl_pattern_confirmation_error']           = $computed['error'] ?? 'unknown';
+            return $ctx;
+        }
+
+        // Merge: only override fields that are currently absent/falsy/zero
+        $mergeFields = [
+            'neckline_closes_above_count',
+            'reclaim_closes_above_count',
+            'reclaim_confirmed',
+            'neckline_reclaim_confirmed',
+            'reclaim_hold_bars',
+            'reclaim_hold_minutes',
+            'reclaim_retest_held',
+            'higher_low_after_point3',
+            'higher_low_after_point3_price',
+            'fresh_lower_low_after_point3',
+            'point3_broken',
+            'reclaim_level_lost',
+            'weak_bounce_after_point3',
+        ];
+        foreach ($mergeFields as $field) {
+            if (!isset($ctx[$field]) || $ctx[$field] === false || $ctx[$field] === null || $ctx[$field] === 0 || $ctx[$field] === 0.0) {
+                if (isset($computed[$field]) && $computed[$field] !== false && $computed[$field] !== null && $computed[$field] !== 0 && $computed[$field] !== 0.0) {
+                    $ctx[$field] = $computed[$field];
+                }
+            }
+        }
+
+        $ctx['dbl_pattern_confirmation_source']         = 'parser2';
+        $ctx['dbl_pattern_confirmation_candles_loaded'] = $computed['candles_loaded'];
+        $ctx['dbl_pattern_confirmation_window_minutes'] = $computed['window_minutes'];
+        $ctx['dbl_pattern_confirmation_error']          = null;
+
+        return $ctx;
+    }
+
+    /**
+     * Sweep storage/pending_patterns.json on every tick:
+     * – remove expired entries (TTL exceeded)
+     * – re-evaluate active entries using parser2 + state machine
+     * – mark confirmed entries (they will advance on next tick via normal flow)
+     * – remove invalid entries (they are cleaned up from storage)
+     * – update $this sweep counters
+     */
+    private function sweepDblPendingPatternsStorage(array $config): void
+    {
+        if (!(bool)($config['dbl_pattern_pending_enabled'] ?? true) ||
+            !(bool)($config['dbl_pattern_pending_recheck_enabled'] ?? true)
+        ) {
+            return;
+        }
+
+        $existing   = (array)$this->readJson('storage/pending_patterns.json', []);
+        $nowTs      = time();
+        $ttlMin     = (int)($config['dbl_pattern_pending_ttl_minutes'] ?? 10);
+        $maxItems   = max(1, (int)($config['dbl_pattern_pending_max_items'] ?? 100));
+
+        $storageBefore     = count($existing);
+        $staleRemoved      = 0;
+        $sweepTotal        = 0;
+        $sweepConfirmed    = 0;
+        $sweepInvalid      = 0;
+        $sweepExpired      = 0;
+        $sweepStillActive  = 0;
+        $kept              = [];
+
+        foreach ($existing as $entry) {
+            if (!is_array($entry)) {
+                $staleRemoved++;
+                continue;
+            }
+            $entryStatus = (string)($entry['dbl_pattern_status'] ?? 'active');
+
+            // Remove already-finalized (non-active) entries from previous runs
+            if ($entryStatus !== 'active') {
+                $staleRemoved++;
+                continue;
+            }
+
+            $sweepTotal++;
+
+            $symbol     = (string)($entry['symbol']      ?? '');
+            $detectedAt = (string)($entry['detected_at'] ?? '');
+            $expiresAt  = (string)($entry['expires_at']  ?? '');
+            $expireTs   = $expiresAt !== '' ? (int)strtotime($expiresAt) : 0;
+            $detectedTs = $detectedAt !== '' ? (int)strtotime($detectedAt) : 0;
+
+            // TTL check
+            if (($ttlMin > 0 && $detectedTs > 0 && ($nowTs - $detectedTs) > ($ttlMin * 60)) ||
+                ($expireTs > 0 && $nowTs > $expireTs)
+            ) {
+                $sweepExpired++;
+                $sweepInvalid++;
+                continue; // drop expired
+            }
+
+            // Build context from stored fields
+            $necklineLevel = (float)($entry['neckline_level'] ?? 0.0);
+            $reclaimLevel  = (float)($entry['reclaim_level']  ?? 0.0);
+            $point3Price   = (float)($entry['point_3_second_low_price'] ?? 0.0);
+
+            $ctx = [
+                'point_1_low_price'           => $entry['point_1_low_price']   ?? null,
+                'point_1_low_time'            => $entry['point_1_low_time']    ?? null,
+                'point_2_neckline_price'      => $entry['point_2_neckline_price'] ?? null,
+                'point_2_neckline_time'       => $entry['point_2_neckline_time']  ?? null,
+                'point_3_second_low_price'    => $point3Price > 0.0 ? $point3Price : null,
+                'point_3_second_low_time'     => $entry['point_3_second_low_time'] ?? null,
+                'neckline_level'              => $necklineLevel > 0.0 ? $necklineLevel : null,
+                'reclaim_level'               => $reclaimLevel > 0.0 ? $reclaimLevel : null,
+            ];
+
+            // Enrich context with parser2 confirmation data
+            if ($symbol !== '' && ($necklineLevel > 0.0 || $reclaimLevel > 0.0)) {
+                $computed = $this->computeDblConfirmationFromParser2(
+                    $symbol,
+                    $necklineLevel,
+                    $reclaimLevel,
+                    $point3Price,
+                    $detectedTs > 0 ? $detectedTs : ($nowTs - 600),
+                    $config
+                );
+                if ($computed['ok'] ?? false) {
+                    $ctx['neckline_closes_above_count']   = $computed['neckline_closes_above_count'];
+                    $ctx['reclaim_closes_above_count']    = $computed['reclaim_closes_above_count'];
+                    $ctx['reclaim_confirmed']             = $computed['reclaim_confirmed'];
+                    $ctx['neckline_reclaim_confirmed']    = $computed['neckline_reclaim_confirmed'];
+                    $ctx['reclaim_hold_bars']             = $computed['reclaim_hold_bars'];
+                    $ctx['reclaim_hold_minutes']          = $computed['reclaim_hold_minutes'];
+                    $ctx['reclaim_retest_held']           = $computed['reclaim_retest_held'];
+                    $ctx['higher_low_after_point3']       = $computed['higher_low_after_point3'];
+                    $ctx['higher_low_after_point3_price'] = $computed['higher_low_after_point3_price'];
+                    $ctx['fresh_lower_low_after_point3']  = $computed['fresh_lower_low_after_point3'];
+                    $ctx['point3_broken']                 = $computed['point3_broken'];
+                    $ctx['reclaim_level_lost']            = $computed['reclaim_level_lost'];
+                    $ctx['weak_bounce_after_point3']      = $computed['weak_bounce_after_point3'];
+                    $ctx['dbl_pattern_confirmation_source']         = 'parser2';
+                    $ctx['dbl_pattern_confirmation_candles_loaded'] = $computed['candles_loaded'];
+                    $ctx['dbl_pattern_confirmation_window_minutes'] = $computed['window_minutes'];
+                }
+            }
+
+            // Fake record for state machine (signal-like shape)
+            $fakeRecord = [
+                'detected_at'             => $detectedAt,
+                'candidate_quality_score' => $entry['candidate_quality_score'] ?? 0.0,
+                'entry_price'             => $entry['last_price'] ?? null,
+            ];
+
+            $ps        = $this->applyDblPatternStatusStateMachine($fakeRecord, $ctx, $config);
+            $newStatus = (string)($ps['status'] ?? 'raw_candidate');
+
+            $entry['last_checked_at']                      = date('c');
+            $entry['dbl_pattern_confirmation_source']      = $ctx['dbl_pattern_confirmation_source'] ?? 'fallback';
+            $entry['dbl_pattern_confirmation_candles_loaded'] = $ctx['dbl_pattern_confirmation_candles_loaded'] ?? 0;
+
+            if ($newStatus === 'confirmed') {
+                $sweepConfirmed++;
+                $entry['dbl_pattern_status']       = 'confirmed';
+                $entry['dbl_pattern_confirmed_at'] = date('c');
+                $kept[] = $entry; // kept so next-tick handoff can see it
+            } elseif ($newStatus === 'invalid') {
+                $sweepInvalid++;
+                $entry['dbl_pattern_status']         = 'invalid';
+                $entry['dbl_pattern_invalidated_at'] = date('c');
+                $entry['dbl_pattern_invalid_reason'] = $ps['invalid_reason'] ?? 'unknown';
+                // Drop invalid entries from active pending storage
+            } else {
+                $sweepStillActive++;
+                $kept[] = $entry;
+            }
+        }
+
+        // Cap storage
+        if (count($kept) > $maxItems) {
+            $kept = array_slice($kept, -$maxItems);
+        }
+
+        $storageAfter = count($kept);
+
+        // Persist updated storage
+        $path = $this->moduleDir . '/storage/pending_patterns.json';
+        @file_put_contents(
+            $path,
+            json_encode(array_values($kept), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+            LOCK_EX
+        );
+
+        // Update instance counters
+        $this->dblPatternPendingSweepTotal               += $sweepTotal;
+        $this->dblPatternPendingSweepConfirmedTotal      += $sweepConfirmed;
+        $this->dblPatternPendingSweepInvalidTotal        += $sweepInvalid;
+        $this->dblPatternPendingSweepExpiredTotal        += $sweepExpired;
+        $this->dblPatternPendingSweepStillActiveTotal    += $sweepStillActive;
+        $this->dblPatternPendingStorageBeforeTotal       += $storageBefore;
+        $this->dblPatternPendingStorageAfterTotal        += $storageAfter;
+        $this->dblPatternPendingStorageStaleRemovedTotal += $staleRemoved;
+    }
+
+    /**
+     * Remove or mark an entry in pending_patterns.json as invalid so that
+     * an entry blocked in the handoff queue doesn't stay active in pending storage.
+     */
+    private function removeDblPendingPatternEntry(string $signalId): void
+    {
+        if ($signalId === '') {
+            return;
+        }
+        $existing = (array)$this->readJson('storage/pending_patterns.json', []);
+        $kept     = [];
+        $changed  = false;
+        foreach ($existing as $e) {
+            if (!is_array($e)) {
+                continue;
+            }
+            if ((string)($e['signal_id'] ?? '') === $signalId) {
+                $changed = true;
+                // Drop from active pending storage
+                continue;
+            }
+            $kept[] = $e;
+        }
+        if ($changed) {
+            $path = $this->moduleDir . '/storage/pending_patterns.json';
+            @file_put_contents(
+                $path,
+                json_encode(array_values($kept), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
+                LOCK_EX
+            );
+        }
     }
 }

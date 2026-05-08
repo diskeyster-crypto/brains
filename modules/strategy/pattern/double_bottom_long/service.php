@@ -9511,6 +9511,7 @@ final class DoubleBottomLongService
             $localLateFlagsTotal = count(array_filter($lateEntryFlags));
             $lateConditionsMet = false;
             if ($qualityAwareEnabled) {
+                // Quality tiers: low (q < 0.78), mid (0.78 <= q < 0.82), high (q >= 0.82).
                 $lowQualMax = (float)($config['dbl_garbage_late_local_low_quality_max'] ?? 0.78);
                 $highQualMin = (float)($config['dbl_garbage_late_local_high_quality_min'] ?? 0.82);
                 $flagsReqLow = max(1, (int)($config['dbl_garbage_late_local_flags_required_low_quality'] ?? 2));
@@ -9803,6 +9804,7 @@ final class DoubleBottomLongService
         $pendingMinQuality    = 0.78; // minimum quality to allow pending (same as garbage veto tier boundary)
 
         // ── Pending TTL check ────────────────────────────────────────────────────
+        // TTL is disabled when pending_ttl_minutes <= 0.
         $nowTs      = time();
         $detectedAt = (string)($record['detected_at'] ?? '');
         $detectedTs = $detectedAt !== '' ? strtotime($detectedAt) : 0;
@@ -9873,7 +9875,8 @@ final class DoubleBottomLongService
                 $hardFailed     = true;
                 $hardFailReason = 'reclaim_level_lost';
             } elseif ($freshLowerLow && $requireNoFreshLower && $qualityScore < $highQualThreshold) {
-                // Fresh lower low on low/mid-quality = failed outright
+                // Fresh lower low on low/mid-quality (q < high_quality_threshold) = failed outright.
+                // High-quality signals may still recover; they fall through to pending.
                 $hardFailed     = true;
                 $hardFailReason = 'fresh_lower_low_after_point3';
             } elseif ($ttlExpired) {

@@ -392,12 +392,24 @@ return [
     'dbl_garbage_whipsaw_weak_quality_max_score'          => 0.72,   // "weak quality" threshold
 
     // Hard veto 5: late local entry after DBL recovery leg already spent.
-    // Blocks only when at least two late-entry conditions are true.
+    // Quality-aware mode:
+    //   low quality  (q < low_quality_max)         -> block on >=2 flags
+    //   mid quality  (low_quality_max <= q < high) -> block on >=3 flags
+    //   high quality (q >= high_quality_min)       -> block on >=3 flags
+    //                                                AND near_high=true OR tiny_room=true
     'dbl_garbage_late_local_entry_enabled'                => true,
     'dbl_garbage_max_entry_distance_from_point3_pct'      => 1.2,
     'dbl_garbage_max_post_point3_impulse_spent_pct'       => 70.0,
-    'dbl_garbage_min_room_to_recent_swing_high_roi'       => 8.0,
+    'dbl_garbage_min_room_to_recent_swing_high_roi'       => 5.0,
     'dbl_garbage_near_recent_swing_high_pct'              => 0.35,
+    'dbl_garbage_late_local_quality_aware_enabled'        => true,
+    'dbl_garbage_late_local_low_quality_max'              => 0.78,
+    'dbl_garbage_late_local_high_quality_min'             => 0.82,
+    'dbl_garbage_late_local_flags_required_low_quality'   => 2,
+    'dbl_garbage_late_local_flags_required_mid_quality'   => 3,
+    'dbl_garbage_late_local_flags_required_high_quality'  => 3,
+    'dbl_garbage_late_local_high_quality_requires_near_high_or_tiny_room' => true,
+    'dbl_garbage_tiny_room_to_recent_swing_high_roi'      => 2.0,
 
     // Hard veto 6: missing critical DBL trace (point3 / entry-distance null).
     // Blocks handoff when the signal lacks point3/neckline/entry-distance metrics

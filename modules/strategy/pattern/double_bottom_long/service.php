@@ -65,6 +65,10 @@ final class DoubleBottomLongService
     private int $dblGarbageWhipsawWeakQualityTotal    = 0;
     private int $dblGarbageLateLocalEntryCheckedTotal = 0;
     private int $dblGarbageLateLocalEntryBlockedTotal = 0;
+    private int $dblGarbageLateLocalLowQualityBlockedTotal = 0;
+    private int $dblGarbageLateLocalMidQualityBlockedTotal = 0;
+    private int $dblGarbageLateLocalHighQualityBlockedTotal = 0;
+    private int $dblGarbageLateLocalPassedDueQualityTotal = 0;
     private int $dblGarbageEntryFarFromPoint3Total    = 0;
     private int $dblGarbagePostPoint3ImpulseSpentTotal = 0;
     private int $dblGarbageInsufficientRoomSwingHighTotal = 0;
@@ -76,6 +80,8 @@ final class DoubleBottomLongService
     private array $dblGarbagePassExamples  = [];
     /** @var list<array<string,mixed>> */
     private array $dblGarbageLateLocalEntryExamples = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblGarbageLateLocalPassedExamples = [];
     // ── DBL trace completeness counters (reset at start of each tickBatch) ────
     private int $dblTraceCheckedTotal                        = 0;
     private int $dblTraceCompleteTotal                       = 0;
@@ -463,6 +469,10 @@ final class DoubleBottomLongService
         $this->dblGarbageWhipsawWeakQualityTotal   = 0;
         $this->dblGarbageLateLocalEntryCheckedTotal = 0;
         $this->dblGarbageLateLocalEntryBlockedTotal = 0;
+        $this->dblGarbageLateLocalLowQualityBlockedTotal = 0;
+        $this->dblGarbageLateLocalMidQualityBlockedTotal = 0;
+        $this->dblGarbageLateLocalHighQualityBlockedTotal = 0;
+        $this->dblGarbageLateLocalPassedDueQualityTotal = 0;
         $this->dblGarbageEntryFarFromPoint3Total = 0;
         $this->dblGarbagePostPoint3ImpulseSpentTotal = 0;
         $this->dblGarbageInsufficientRoomSwingHighTotal = 0;
@@ -471,6 +481,7 @@ final class DoubleBottomLongService
         $this->dblGarbageBlockExamples             = [];
         $this->dblGarbagePassExamples              = [];
         $this->dblGarbageLateLocalEntryExamples    = [];
+        $this->dblGarbageLateLocalPassedExamples   = [];
         // Reset per-tick trace completeness counters.
         $this->dblTraceCheckedTotal                        = 0;
         $this->dblTraceCompleteTotal                       = 0;
@@ -1941,6 +1952,12 @@ final class DoubleBottomLongService
             'dbl_garbage_whipsaw_weak_quality_total'     => $this->dblGarbageWhipsawWeakQualityTotal,
             'dbl_garbage_late_local_entry_checked_total' => $this->dblGarbageLateLocalEntryCheckedTotal,
             'dbl_garbage_late_local_entry_blocked_total' => $this->dblGarbageLateLocalEntryBlockedTotal,
+            'dbl_garbage_late_local_checked_total'       => $this->dblGarbageLateLocalEntryCheckedTotal,
+            'dbl_garbage_late_local_blocked_total'       => $this->dblGarbageLateLocalEntryBlockedTotal,
+            'dbl_garbage_late_local_low_quality_blocked_total' => $this->dblGarbageLateLocalLowQualityBlockedTotal,
+            'dbl_garbage_late_local_mid_quality_blocked_total' => $this->dblGarbageLateLocalMidQualityBlockedTotal,
+            'dbl_garbage_late_local_high_quality_blocked_total' => $this->dblGarbageLateLocalHighQualityBlockedTotal,
+            'dbl_garbage_late_local_passed_due_quality_total' => $this->dblGarbageLateLocalPassedDueQualityTotal,
             'dbl_garbage_entry_far_from_point3_total'    => $this->dblGarbageEntryFarFromPoint3Total,
             'dbl_garbage_post_point3_impulse_spent_total' => $this->dblGarbagePostPoint3ImpulseSpentTotal,
             'dbl_garbage_insufficient_room_to_recent_swing_high_total' => $this->dblGarbageInsufficientRoomSwingHighTotal,
@@ -1949,6 +1966,7 @@ final class DoubleBottomLongService
             'dbl_garbage_block_examples'                 => $this->dblGarbageBlockExamples,
             'dbl_garbage_pass_examples'                  => $this->dblGarbagePassExamples,
             'dbl_garbage_late_local_entry_examples'      => $this->dblGarbageLateLocalEntryExamples,
+            'dbl_garbage_late_local_passed_examples'     => $this->dblGarbageLateLocalPassedExamples,
             // ── DBL trace completeness counters (per tick) ────────────────────────
             'dbl_trace_checked_total'                        => $this->dblTraceCheckedTotal,
             'dbl_trace_complete_total'                       => $this->dblTraceCompleteTotal,
@@ -8429,6 +8447,24 @@ final class DoubleBottomLongService
                         if (($gv['diag']['garbage_near_recent_swing_high'] ?? false) === true) {
                             $this->dblGarbageNearRecentSwingHighTotal++;
                         }
+                        if (($gv['diag']['local_late_passed_due_quality'] ?? false) === true) {
+                            $this->dblGarbageLateLocalPassedDueQualityTotal++;
+                            if (count($this->dblGarbageLateLocalPassedExamples) < 10) {
+                                $this->dblGarbageLateLocalPassedExamples[] = [
+                                    'symbol'                           => $r['symbol'] ?? null,
+                                    'q'                                => $gv['diag']['candidate_quality_score'] ?? null,
+                                    'local_late_quality_tier'          => $gv['diag']['local_late_quality_tier'] ?? null,
+                                    'local_late_flags_total'           => $gv['diag']['local_late_flags_total'] ?? null,
+                                    'local_late_flags_required'        => $gv['diag']['local_late_flags_required'] ?? null,
+                                    'entry_distance_from_point3_pct'   => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                    'post_point3_impulse_spent_pct'    => $gv['diag']['post_point3_impulse_spent_pct'] ?? null,
+                                    'room_to_recent_swing_high_roi'    => $gv['diag']['room_to_recent_swing_high_roi'] ?? null,
+                                    'near_recent_swing_high'           => $gv['diag']['near_recent_swing_high'] ?? null,
+                                    'local_late_tiny_room'             => $gv['diag']['local_late_tiny_room'] ?? null,
+                                    'final_local_late_decision'        => $gv['diag']['local_late_decision'] ?? null,
+                                ];
+                            }
+                        }
                     }
                     // Trace completeness counters
                     if (($gv['diag']['dbl_trace_checked'] ?? false) === true) {
@@ -8496,6 +8532,14 @@ final class DoubleBottomLongService
                                 break;
                             case 'garbage_local_late_entry_after_recovery':
                                 $this->dblGarbageLateLocalEntryBlockedTotal++;
+                                $lateTier = (string)($gv['diag']['local_late_quality_tier'] ?? '');
+                                if ($lateTier === 'high') {
+                                    $this->dblGarbageLateLocalHighQualityBlockedTotal++;
+                                } elseif ($lateTier === 'mid') {
+                                    $this->dblGarbageLateLocalMidQualityBlockedTotal++;
+                                } else {
+                                    $this->dblGarbageLateLocalLowQualityBlockedTotal++;
+                                }
                                 break;
                             case 'garbage_missing_critical_dbl_trace':
                                 $this->dblGarbageMissingTraceBlockedTotal++;
@@ -8560,6 +8604,11 @@ final class DoubleBottomLongService
                                 'local_recovery_leg_high_price'  => $gv['diag']['local_recovery_leg_high_price'] ?? null,
                                 'recent_swing_high_price'        => $gv['diag']['recent_swing_high_price'] ?? null,
                                 'recent_swing_high_time'         => $gv['diag']['recent_swing_high_time'] ?? null,
+                                'local_late_quality_tier'        => $gv['diag']['local_late_quality_tier'] ?? null,
+                                'local_late_flags_total'         => $gv['diag']['local_late_flags_total'] ?? null,
+                                'local_late_flags_required'      => $gv['diag']['local_late_flags_required'] ?? null,
+                                'local_late_tiny_room'           => $gv['diag']['local_late_tiny_room'] ?? null,
+                                'local_late_decision'            => $gv['diag']['local_late_decision'] ?? null,
                                 'garbage_veto_reason'            => $blockReason,
                                 'garbage_veto_secondary_reasons' => $gv['secondary_reasons'] ?? [],
                                 'dbl_trace_source'               => $gv['diag']['dbl_trace_source'] ?? null,
@@ -9248,6 +9297,14 @@ final class DoubleBottomLongService
         // ── Veto 5: local late entry after recovery leg ────────────────────────
         $lateLocalEnabled = (bool)($config['dbl_garbage_late_local_entry_enabled'] ?? true);
         $lateLocalChecked = false;
+        $localLateFlagsTotal = 0;
+        $localLateFlagsRequired = 2;
+        $localLateQualityTier = 'low';
+        $localLateTinyRoom = false;
+        $localLateNearHighRequiredForHighQuality = false;
+        $localLateBlockedByQualityRule = false;
+        $localLatePassedDueQuality = false;
+        $localLateDecision = 'not_evaluated';
         $lateEntryFlags = [
             'garbage_entry_far_from_point3' => false,
             'garbage_post_point3_impulse_already_spent' => false,
@@ -9258,7 +9315,9 @@ final class DoubleBottomLongService
             $lateLocalChecked = true;
             $maxEntryDistPoint3 = (float)($config['dbl_garbage_max_entry_distance_from_point3_pct'] ?? 1.2);
             $maxImpulseSpentPct = (float)($config['dbl_garbage_max_post_point3_impulse_spent_pct']  ?? 70.0);
-            $minRoomSwingHigh   = (float)($config['dbl_garbage_min_room_to_recent_swing_high_roi']  ?? 8.0);
+            $minRoomSwingHigh   = (float)($config['dbl_garbage_min_room_to_recent_swing_high_roi']  ?? 5.0);
+            $tinyRoomSwingHigh  = (float)($config['dbl_garbage_tiny_room_to_recent_swing_high_roi'] ?? 2.0);
+            $qualityAwareEnabled = (bool)($config['dbl_garbage_late_local_quality_aware_enabled'] ?? true);
 
             if ($entryDistPoint3 !== null && $entryDistPoint3 > $maxEntryDistPoint3) {
                 $lateEntryFlags['garbage_entry_far_from_point3'] = true;
@@ -9269,18 +9328,69 @@ final class DoubleBottomLongService
             if ($roomToRecentSwingHighRoi !== null && $roomToRecentSwingHighRoi < $minRoomSwingHigh) {
                 $lateEntryFlags['garbage_insufficient_room_to_recent_swing_high'] = true;
             }
+            if ($roomToRecentSwingHighRoi !== null && $roomToRecentSwingHighRoi < $tinyRoomSwingHigh) {
+                $localLateTinyRoom = true;
+            }
             if ($nearRecentSwingHigh) {
                 $lateEntryFlags['garbage_near_recent_swing_high'] = true;
             }
 
-            $lateConditionsMet = count(array_filter($lateEntryFlags)) >= 2;
+            $localLateFlagsTotal = count(array_filter($lateEntryFlags));
+            $lateConditionsMet = false;
+            if ($qualityAwareEnabled) {
+                $lowQualMax = (float)($config['dbl_garbage_late_local_low_quality_max'] ?? 0.78);
+                $highQualMin = (float)($config['dbl_garbage_late_local_high_quality_min'] ?? 0.82);
+                $flagsReqLow = max(1, (int)($config['dbl_garbage_late_local_flags_required_low_quality'] ?? 2));
+                $flagsReqMid = max(1, (int)($config['dbl_garbage_late_local_flags_required_mid_quality'] ?? 3));
+                $flagsReqHigh = max(1, (int)($config['dbl_garbage_late_local_flags_required_high_quality'] ?? 3));
+                $requireNearHighOrTinyRoomForHigh = (bool)($config['dbl_garbage_late_local_high_quality_requires_near_high_or_tiny_room'] ?? true);
+
+                if ($qualityScore >= $highQualMin) {
+                    $localLateQualityTier = 'high';
+                    $localLateFlagsRequired = $flagsReqHigh;
+                } elseif ($qualityScore >= $lowQualMax) {
+                    $localLateQualityTier = 'mid';
+                    $localLateFlagsRequired = $flagsReqMid;
+                } else {
+                    $localLateQualityTier = 'low';
+                    $localLateFlagsRequired = $flagsReqLow;
+                }
+
+                $localLateNearHighRequiredForHighQuality = $localLateQualityTier === 'high'
+                    && $requireNearHighOrTinyRoomForHigh;
+                $highQualityNearHighGateOk = true;
+                if ($localLateNearHighRequiredForHighQuality) {
+                    $highQualityNearHighGateOk = $nearRecentSwingHigh || $localLateTinyRoom;
+                }
+
+                $lateConditionsMet = $localLateFlagsTotal >= $localLateFlagsRequired
+                    && $highQualityNearHighGateOk;
+                $localLatePassedDueQuality = $localLateFlagsTotal > 0
+                    && !$lateConditionsMet
+                    && $primaryReason === null;
+            } else {
+                $localLateFlagsRequired = 2;
+                $lateConditionsMet = $localLateFlagsTotal >= $localLateFlagsRequired;
+                $localLatePassedDueQuality = $localLateFlagsTotal > 0
+                    && !$lateConditionsMet
+                    && $primaryReason === null;
+            }
             if ($lateConditionsMet && $primaryReason === null) {
                 $primaryReason = 'garbage_local_late_entry_after_recovery';
+                $localLateBlockedByQualityRule = true;
+                $localLateDecision = 'blocked';
                 foreach ($lateEntryFlags as $flag => $met) {
                     if ($met) {
                         $secondaryReasons[] = $flag;
                     }
                 }
+                $secondaryReasons[] = 'local_late_quality_tier=' . $localLateQualityTier;
+                $secondaryReasons[] = 'local_late_flags=' . $localLateFlagsTotal . '/' . $localLateFlagsRequired;
+                if ($localLateNearHighRequiredForHighQuality) {
+                    $secondaryReasons[] = 'local_late_high_quality_near_high_gate=true';
+                }
+            } else {
+                $localLateDecision = $lateLocalChecked ? 'passed' : 'not_evaluated';
             }
         }
 
@@ -9379,6 +9489,14 @@ final class DoubleBottomLongService
                 'garbage_post_point3_impulse_already_spent' => $lateEntryFlags['garbage_post_point3_impulse_already_spent'],
                 'garbage_insufficient_room_to_recent_swing_high' => $lateEntryFlags['garbage_insufficient_room_to_recent_swing_high'],
                 'garbage_near_recent_swing_high'     => $lateEntryFlags['garbage_near_recent_swing_high'],
+                'local_late_flags_total'             => $localLateFlagsTotal,
+                'local_late_flags_required'          => $localLateFlagsRequired,
+                'local_late_quality_tier'            => $localLateQualityTier,
+                'local_late_tiny_room'               => $localLateTinyRoom,
+                'local_late_near_high_required_for_high_quality' => $localLateNearHighRequiredForHighQuality,
+                'local_late_blocked_by_quality_rule' => $localLateBlockedByQualityRule,
+                'local_late_passed_due_quality'      => $localLatePassedDueQuality,
+                'local_late_decision'                => $localLateDecision,
                 // Trace completeness diagnostics
                 'dbl_trace_checked'                      => $traceChecked,
                 'dbl_trace_complete'                     => $traceComplete,

@@ -426,4 +426,22 @@ return [
     // or reclaim_after_flat_detected).
     'dbl_garbage_require_reclaim_confirmation_for_medium_quality' => true,
     'dbl_garbage_reclaim_confirmation_medium_quality_max'         => 0.78,
+
+    // ── Trend-shift confirmation gate (final gate before Bot handoff) ─────────
+    // Runs after garbage veto. Blocks handoff for signals where the DBL reversal
+    // is not yet confirmed by at least one strong confirmation path.
+    // Confirmed paths: reclaim_hold | retest_hold | higher_low_after_point3 | short_structure_break
+    // Unconfirmed high/mid-quality signals become pending/watch (not hard rejected)
+    // and are rechecked on each subsequent tick until confirmed or TTL expires.
+    'dbl_trend_shift_gate_enabled'                             => true,
+    'dbl_trend_shift_required_for_handoff'                     => true,
+    'dbl_trend_shift_min_closes_above_reclaim'                 => 2,
+    'dbl_trend_shift_reclaim_hold_minutes'                     => 2,
+    'dbl_trend_shift_max_reclaim_loss_pct'                     => 0.20,
+    'dbl_trend_shift_require_no_fresh_lower_low'               => true,
+    'dbl_trend_shift_point3_break_tolerance_pct'               => 0.20,
+    'dbl_trend_shift_allow_high_quality_pending'               => true,
+    'dbl_trend_shift_high_quality_threshold'                   => 0.82,
+    'dbl_trend_shift_pending_ttl_minutes'                      => 10,
+    'dbl_trend_shift_pending_recheck_enabled'                  => true,
 ];

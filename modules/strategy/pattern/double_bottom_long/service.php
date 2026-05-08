@@ -82,6 +82,28 @@ final class DoubleBottomLongService
     private array $dblGarbageLateLocalEntryExamples = [];
     /** @var list<array<string,mixed>> */
     private array $dblGarbageLateLocalPassedExamples = [];
+    // ── DBL trend-shift confirmation gate counters (reset at start of each tickBatch) ──
+    private int $dblTrendShiftCheckedTotal                       = 0;
+    private int $dblTrendShiftConfirmedTotal                     = 0;
+    private int $dblTrendShiftPendingTotal                       = 0;
+    private int $dblTrendShiftFailedTotal                        = 0;
+    private int $dblTrendShiftReclaimHoldConfirmedTotal          = 0;
+    private int $dblTrendShiftRetestHoldConfirmedTotal           = 0;
+    private int $dblTrendShiftHigherLowConfirmedTotal            = 0;
+    private int $dblTrendShiftShortStructureBreakConfirmedTotal  = 0;
+    private int $dblTrendShiftReclaimLostTotal                   = 0;
+    private int $dblTrendShiftPoint3BrokenTotal                  = 0;
+    private int $dblTrendShiftFreshLowerLowTotal                 = 0;
+    private int $dblTrendShiftPendingExpiredTotal                = 0;
+    private int $dblTrendShiftHandoffBlockedUnconfirmedTotal     = 0;
+    /** @var list<array<string,mixed>> */
+    private array $dblTrendShiftConfirmedExamples           = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblTrendShiftPendingExamples             = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblTrendShiftFailedExamples              = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblTrendShiftBlockedUnconfirmedExamples  = [];
     // ── DBL trace completeness counters (reset at start of each tickBatch) ────
     private int $dblTraceCheckedTotal                        = 0;
     private int $dblTraceCompleteTotal                       = 0;
@@ -495,6 +517,24 @@ final class DoubleBottomLongService
         $this->dblTraceReconstructedExamples         = [];
         $this->dblGarbageMissingTraceBlockExamples   = [];
         $this->dblGarbageReclaimNotConfirmedExamples = [];
+        // Reset per-tick trend-shift gate counters.
+        $this->dblTrendShiftCheckedTotal                      = 0;
+        $this->dblTrendShiftConfirmedTotal                    = 0;
+        $this->dblTrendShiftPendingTotal                      = 0;
+        $this->dblTrendShiftFailedTotal                       = 0;
+        $this->dblTrendShiftReclaimHoldConfirmedTotal         = 0;
+        $this->dblTrendShiftRetestHoldConfirmedTotal          = 0;
+        $this->dblTrendShiftHigherLowConfirmedTotal           = 0;
+        $this->dblTrendShiftShortStructureBreakConfirmedTotal = 0;
+        $this->dblTrendShiftReclaimLostTotal                  = 0;
+        $this->dblTrendShiftPoint3BrokenTotal                 = 0;
+        $this->dblTrendShiftFreshLowerLowTotal                = 0;
+        $this->dblTrendShiftPendingExpiredTotal               = 0;
+        $this->dblTrendShiftHandoffBlockedUnconfirmedTotal    = 0;
+        $this->dblTrendShiftConfirmedExamples          = [];
+        $this->dblTrendShiftPendingExamples            = [];
+        $this->dblTrendShiftFailedExamples             = [];
+        $this->dblTrendShiftBlockedUnconfirmedExamples = [];
 
         $symbols = (array)($state['symbols']  ?? []);
         $cursor  = (int)($state['cursor']      ?? 0);
@@ -1980,6 +2020,26 @@ final class DoubleBottomLongService
             'dbl_trace_reconstructed_examples'               => $this->dblTraceReconstructedExamples,
             'dbl_garbage_missing_trace_block_examples'       => $this->dblGarbageMissingTraceBlockExamples,
             'dbl_garbage_reclaim_not_confirmed_examples'     => $this->dblGarbageReclaimNotConfirmedExamples,
+            // ── DBL trend-shift confirmation gate counters (per tick) ─────────────
+            'dbl_trend_shift_gate_enabled'                           => (bool)($config['dbl_trend_shift_gate_enabled'] ?? true),
+            'dbl_trend_shift_required_for_handoff'                   => (bool)($config['dbl_trend_shift_required_for_handoff'] ?? true),
+            'dbl_trend_shift_checked_total'                          => $this->dblTrendShiftCheckedTotal,
+            'dbl_trend_shift_confirmed_total'                        => $this->dblTrendShiftConfirmedTotal,
+            'dbl_trend_shift_pending_total'                          => $this->dblTrendShiftPendingTotal,
+            'dbl_trend_shift_failed_total'                           => $this->dblTrendShiftFailedTotal,
+            'dbl_trend_shift_reclaim_hold_confirmed_total'           => $this->dblTrendShiftReclaimHoldConfirmedTotal,
+            'dbl_trend_shift_retest_hold_confirmed_total'            => $this->dblTrendShiftRetestHoldConfirmedTotal,
+            'dbl_trend_shift_higher_low_confirmed_total'             => $this->dblTrendShiftHigherLowConfirmedTotal,
+            'dbl_trend_shift_short_structure_break_confirmed_total'  => $this->dblTrendShiftShortStructureBreakConfirmedTotal,
+            'dbl_trend_shift_reclaim_lost_total'                     => $this->dblTrendShiftReclaimLostTotal,
+            'dbl_trend_shift_point3_broken_total'                    => $this->dblTrendShiftPoint3BrokenTotal,
+            'dbl_trend_shift_fresh_lower_low_total'                  => $this->dblTrendShiftFreshLowerLowTotal,
+            'dbl_trend_shift_pending_expired_total'                  => $this->dblTrendShiftPendingExpiredTotal,
+            'dbl_trend_shift_handoff_blocked_unconfirmed_total'      => $this->dblTrendShiftHandoffBlockedUnconfirmedTotal,
+            'dbl_trend_shift_confirmed_examples'                     => $this->dblTrendShiftConfirmedExamples,
+            'dbl_trend_shift_pending_examples'                       => $this->dblTrendShiftPendingExamples,
+            'dbl_trend_shift_failed_examples'                        => $this->dblTrendShiftFailedExamples,
+            'dbl_trend_shift_blocked_unconfirmed_examples'           => $this->dblTrendShiftBlockedUnconfirmedExamples,
             // ── Scan suppression cache diagnostics (Task 7) ──────────────────────
             'scan_suppression_enabled'                   => $suppressionEnabled,
             'scan_suppression_entries_total'             => $suppressionEnabled ? count($this->scanSuppressionCache) : 0,
@@ -8663,26 +8723,139 @@ final class DoubleBottomLongService
                             ];
                         }
                     } else {
-                        // Veto passed — signal is executable
+                        // Veto passed — run trend-shift confirmation gate
                         $this->dblGarbagePassedTotal++;
-                        if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
-                        if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
-                        if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
-                        if (($r['stale_reason'] ?? null) !== null)  { $result[$id]['stale_reason'] = null;  $changed = true; }
-                        if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
-                        $queueExecutableTotal++;
-                        if ($isSoftDemoted) {
-                            $softDemoteAllowedTotal++;
+
+                        // ── Trend-shift confirmation gate ────────────────────────────────
+                        $tsGate = $this->applyDblTrendShiftConfirmationGate(
+                            $r,
+                            is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [],
+                            $config
+                        );
+                        // Merge trend-shift diagnostics into strategy_signal_context
+                        $sscMerge2 = is_array($result[$id]['strategy_signal_context'] ?? null)
+                            ? $result[$id]['strategy_signal_context'] : [];
+                        $result[$id]['strategy_signal_context'] = array_merge($sscMerge2, $tsGate['diag']);
+
+                        $tsState = (string)($tsGate['state'] ?? 'not_checked');
+                        if ($tsGate['gate_enabled']) {
+                            $this->dblTrendShiftCheckedTotal++;
                         }
-                        if (count($this->dblGarbagePassExamples) < 5) {
-                            $this->dblGarbagePassExamples[] = [
-                                'symbol'                  => $r['symbol']      ?? null,
-                                'signal_id'               => $id,
-                                'detected_at'             => $r['detected_at'] ?? null,
-                                'candidate_quality_score' => $gv['diag']['candidate_quality_score'],
-                                'day_change_pct'          => $gv['diag']['day_change_pct'],
-                                'position_in_24h_range_pct' => $gv['diag']['position_in_24h_range_pct'],
-                            ];
+
+                        if ($tsState === 'confirmed' || $tsState === 'not_checked') {
+                            // Gate confirmed or disabled — allow handoff
+                            if ($tsGate['gate_enabled'] && $tsState === 'confirmed') {
+                                $this->dblTrendShiftConfirmedTotal++;
+                                $tsPath = (string)($tsGate['confirmation_path'] ?? '');
+                                switch ($tsPath) {
+                                    case 'reclaim_hold':
+                                        $this->dblTrendShiftReclaimHoldConfirmedTotal++;
+                                        break;
+                                    case 'retest_hold':
+                                        $this->dblTrendShiftRetestHoldConfirmedTotal++;
+                                        break;
+                                    case 'higher_low_after_point3':
+                                        $this->dblTrendShiftHigherLowConfirmedTotal++;
+                                        break;
+                                    case 'short_structure_break':
+                                        $this->dblTrendShiftShortStructureBreakConfirmedTotal++;
+                                        break;
+                                }
+                                if (count($this->dblTrendShiftConfirmedExamples) < 5) {
+                                    $this->dblTrendShiftConfirmedExamples[] =
+                                        $this->buildTrendShiftExample($r, $id, $tsGate);
+                                }
+                            }
+                            if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
+                            if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
+                            if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
+                            if (($r['stale_reason'] ?? null) !== null)  { $result[$id]['stale_reason'] = null;  $changed = true; }
+                            if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
+                            $queueExecutableTotal++;
+                            if ($isSoftDemoted) {
+                                $softDemoteAllowedTotal++;
+                            }
+                            if (count($this->dblGarbagePassExamples) < 5) {
+                                $this->dblGarbagePassExamples[] = [
+                                    'symbol'                  => $r['symbol']      ?? null,
+                                    'signal_id'               => $id,
+                                    'detected_at'             => $r['detected_at'] ?? null,
+                                    'candidate_quality_score' => $gv['diag']['candidate_quality_score'],
+                                    'day_change_pct'          => $gv['diag']['day_change_pct'],
+                                    'position_in_24h_range_pct' => $gv['diag']['position_in_24h_range_pct'],
+                                ];
+                            }
+                        } elseif ($tsState === 'pending') {
+                            // Pending: block handoff, keep in queue for recheck on next tick
+                            $this->dblTrendShiftPendingTotal++;
+                            $this->dblTrendShiftHandoffBlockedUnconfirmedTotal++;
+                            $tsBlockReason = 'waiting_trend_shift_confirmation';
+                            if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
+                            if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
+                            if (($r['block_reason'] ?? null) !== $tsBlockReason) {
+                                $result[$id]['block_reason'] = $tsBlockReason;
+                                $changed = true;
+                            }
+                            if (($result[$id]['handoff_status'] ?? '') !== 'blocked') {
+                                $result[$id]['handoff_status'] = 'blocked';
+                                $changed = true;
+                            }
+                            $sigIdInQueue = (string)($r['signal_id'] ?? $id);
+                            if ($sigIdInQueue !== '') {
+                                $blockedSignalIds[$sigIdInQueue] = $tsBlockReason;
+                            }
+                            $queueMarkedNonExecutableTotal++;
+                            if (count($this->dblTrendShiftPendingExamples) < 5) {
+                                $this->dblTrendShiftPendingExamples[] =
+                                    $this->buildTrendShiftExample($r, $id, $tsGate);
+                            }
+                            if (count($this->dblTrendShiftBlockedUnconfirmedExamples) < 5) {
+                                $this->dblTrendShiftBlockedUnconfirmedExamples[] =
+                                    $this->buildTrendShiftExample($r, $id, $tsGate);
+                            }
+                        } else {
+                            // Failed: hard block
+                            $this->dblTrendShiftFailedTotal++;
+                            $this->dblTrendShiftHandoffBlockedUnconfirmedTotal++;
+                            $tsFailedReason = (string)($tsGate['failed_reason'] ?? 'trend_shift_confirmation_failed');
+                            switch ($tsFailedReason) {
+                                case 'reclaim_level_lost':
+                                    $this->dblTrendShiftReclaimLostTotal++;
+                                    break;
+                                case 'point3_broken':
+                                    $this->dblTrendShiftPoint3BrokenTotal++;
+                                    break;
+                                case 'fresh_lower_low_after_point3':
+                                    $this->dblTrendShiftFreshLowerLowTotal++;
+                                    break;
+                                case 'pending_ttl_expired':
+                                    $this->dblTrendShiftPendingExpiredTotal++;
+                                    break;
+                            }
+                            $tsBlockReason = 'trend_shift_confirmation_failed';
+                            if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
+                            if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
+                            if (($r['block_reason'] ?? null) !== $tsBlockReason) {
+                                $result[$id]['block_reason'] = $tsBlockReason;
+                                $changed = true;
+                            }
+                            if (($result[$id]['handoff_status'] ?? '') !== 'blocked') {
+                                $result[$id]['handoff_status'] = 'blocked';
+                                $changed = true;
+                            }
+                            $sigIdInQueue = (string)($r['signal_id'] ?? $id);
+                            if ($sigIdInQueue !== '') {
+                                $blockedSignalIds[$sigIdInQueue] = $tsBlockReason;
+                            }
+                            $queueMarkedNonExecutableTotal++;
+                            if (count($this->dblTrendShiftFailedExamples) < 5) {
+                                $this->dblTrendShiftFailedExamples[] =
+                                    $this->buildTrendShiftExample($r, $id, $tsGate);
+                            }
+                            if (count($this->dblTrendShiftBlockedUnconfirmedExamples) < 5) {
+                                $this->dblTrendShiftBlockedUnconfirmedExamples[] =
+                                    $this->buildTrendShiftExample($r, $id, $tsGate);
+                            }
                         }
                     }
                 } else {
@@ -9516,6 +9689,284 @@ final class DoubleBottomLongService
                 'setup_class'                            => $setupClass !== '' ? $setupClass : null,
                 'pending_confirmation_status'            => $pendingConfirmStatus !== '' ? $pendingConfirmStatus : null,
             ],
+        ];
+    }
+
+    /**
+     * Final trend-shift confirmation gate before Bot handoff.
+     *
+     * Runs after the garbage veto passes. Evaluates whether the DBL reversal
+     * is confirmed by at least one of four strong confirmation paths:
+     *
+     *   A) reclaim_hold       — reclaim_confirmed / neckline_reclaim_confirmed with sufficient
+     *                           closes above reclaim and no subsequent reclaim loss.
+     *   B) retest_hold        — reclaim_retest_held = true (price retested and held reclaim).
+     *   C) higher_low         — higher_low_after_point3 = true with no fresh lower low.
+     *   D) short_structure_break — short_structure_break_confirmed or local_falling_resistance_broken.
+     *
+     * If not confirmed:
+     *   - quality >= 0.78 → pending (block handoff, recheck on next tick, TTL applies)
+     *   - quality <  0.78 OR hard failure → failed (hard block)
+     *
+     * @param  array $record  The bot_handoff_queue record (or active signal).
+     * @param  array $context The strategy_signal_context sub-array.
+     * @param  array $config  Module config.
+     * @return array{gate_enabled:bool,gate_checked:bool,state:string,confirmation_path:string|null,
+     *               block_reason:string|null,failed_reason:string|null,diag:array<string,mixed>}
+     */
+    private function applyDblTrendShiftConfirmationGate(array $record, array $context, array $config): array
+    {
+        $gateEnabled        = (bool)($config['dbl_trend_shift_gate_enabled']        ?? true);
+        $requiredForHandoff = (bool)($config['dbl_trend_shift_required_for_handoff'] ?? true);
+
+        $emptyDiag = [
+            'trend_shift_gate_enabled'          => $gateEnabled,
+            'trend_shift_checked'               => false,
+            'trend_shift_confirmed'             => false,
+            'trend_shift_confirmation_path'     => null,
+            'trend_shift_state'                 => 'not_checked',
+            'trend_shift_pending_reason'        => null,
+            'trend_shift_failed_reason'         => null,
+            'reclaim_confirmed'                 => false,
+            'neckline_reclaim_confirmed'        => false,
+            'reclaim_closes_above_count'        => null,
+            'reclaim_hold_minutes'              => null,
+            'reclaim_lost_after_confirm'        => false,
+            'reclaim_retest_held'               => false,
+            'higher_low_after_point3'           => false,
+            'higher_low_after_point3_price'     => null,
+            'fresh_lower_low_after_point3'      => false,
+            'point3_broken'                     => false,
+            'short_structure_break_confirmed'   => false,
+            'local_falling_resistance_broken'   => false,
+            'trend_direction_before_entry'      => null,
+            'recent_60m_direction_flips'        => null,
+            'room_to_recent_swing_high_roi'     => null,
+            'post_point3_impulse_spent_pct'     => null,
+        ];
+
+        if (!$gateEnabled) {
+            return [
+                'gate_enabled'      => false,
+                'gate_checked'      => false,
+                'state'             => 'not_checked',
+                'confirmation_path' => null,
+                'block_reason'      => null,
+                'failed_reason'     => null,
+                'diag'              => $emptyDiag,
+            ];
+        }
+
+        $ssc = is_array($context) ? $context : [];
+
+        // ── Extract confirmation context from signal record and SSC ─────────────
+        $qualityScore             = (float)($record['candidate_quality_score'] ?? $ssc['candidate_quality_score'] ?? 0.0);
+        $reclaimConfirmed         = (bool)($ssc['reclaim_confirmed']                   ?? false);
+        $necklineReclaimConfirmed = (bool)($ssc['neckline_reclaim_confirmed']          ?? false);
+        $reclaimAfterFlat         = (bool)($record['reclaim_after_flat_detected']
+            ?? $ssc['reclaim_after_flat_detected'] ?? false);
+        $reclaimClosesAbove       = isset($ssc['reclaim_closes_above_count'])
+            ? ($ssc['reclaim_closes_above_count'] !== null ? (int)$ssc['reclaim_closes_above_count'] : null)
+            : null;
+        $reclaimHoldMinutes       = isset($ssc['reclaim_hold_minutes'])
+            ? ($ssc['reclaim_hold_minutes'] !== null ? (float)$ssc['reclaim_hold_minutes'] : null)
+            : null;
+        $reclaimLostAfterConfirm  = (bool)($ssc['reclaim_lost_after_confirm']          ?? false);
+        $reclaimRetestHeld        = (bool)($ssc['reclaim_retest_held']                 ?? false);
+        $higherLowAfterPoint3     = (bool)($ssc['higher_low_after_point3']             ?? false);
+        $higherLowAfterPoint3Price = isset($ssc['higher_low_after_point3_price'])
+            ? ($ssc['higher_low_after_point3_price'] !== null ? (float)$ssc['higher_low_after_point3_price'] : null)
+            : null;
+        $freshLowerLow            = (bool)($ssc['fresh_lower_low_after_point3']        ?? false);
+        $point3Broken             = (bool)($ssc['point3_broken']                       ?? false);
+        $shortStructureBreak      = (bool)($ssc['short_structure_break_confirmed']     ?? false);
+        $localFallingResBroken    = (bool)($ssc['local_falling_resistance_broken']     ?? false);
+        $trendDirection           = isset($ssc['trend_direction'])
+            ? (string)$ssc['trend_direction']
+            : null;
+        $recent60mFlips           = isset($ssc['recent_60m_direction_flips'])
+            ? ($ssc['recent_60m_direction_flips'] !== null ? (int)$ssc['recent_60m_direction_flips'] : null)
+            : null;
+        $roomToSwingHigh          = isset($ssc['room_to_recent_swing_high_roi'])
+            ? ($ssc['room_to_recent_swing_high_roi'] !== null ? (float)$ssc['room_to_recent_swing_high_roi'] : null)
+            : null;
+        $postPoint3Impulse        = isset($ssc['post_point3_impulse_spent_pct'])
+            ? ($ssc['post_point3_impulse_spent_pct'] !== null ? (float)$ssc['post_point3_impulse_spent_pct'] : null)
+            : null;
+
+        // ── Config thresholds ────────────────────────────────────────────────────
+        $minClosesAbove       = max(1, (int)($config['dbl_trend_shift_min_closes_above_reclaim']   ?? 2));
+        $pendingTtlMin        = (int)  ($config['dbl_trend_shift_pending_ttl_minutes']             ?? 10);
+        $allowPending         = (bool) ($config['dbl_trend_shift_allow_high_quality_pending']      ?? true);
+        $requireNoFreshLower  = (bool) ($config['dbl_trend_shift_require_no_fresh_lower_low']      ?? true);
+        $highQualThreshold    = (float)($config['dbl_trend_shift_high_quality_threshold']          ?? 0.82);
+        $pendingMinQuality    = 0.78; // minimum quality to allow pending (same as garbage veto tier boundary)
+
+        // ── Pending TTL check ────────────────────────────────────────────────────
+        $nowTs      = time();
+        $detectedAt = (string)($record['detected_at'] ?? '');
+        $detectedTs = $detectedAt !== '' ? strtotime($detectedAt) : 0;
+        $ageSeconds = $detectedTs > 0 ? ($nowTs - $detectedTs) : 0;
+        $ttlExpired = $pendingTtlMin > 0 && $ageSeconds > ($pendingTtlMin * 60);
+
+        // ── Path A: Reclaim hold ─────────────────────────────────────────────────
+        // reclaim_confirmed OR neckline_reclaim_confirmed OR reclaim_after_flat,
+        // not lost after confirm, and enough closes above reclaim (if tracked).
+        $pathAMet = ($reclaimConfirmed || $necklineReclaimConfirmed || $reclaimAfterFlat)
+            && !$reclaimLostAfterConfirm;
+        // If reclaim_closes_above_count is explicitly tracked and below threshold, invalidate.
+        if ($pathAMet && $reclaimClosesAbove !== null && $reclaimClosesAbove < $minClosesAbove) {
+            $pathAMet = false;
+        }
+
+        // ── Path B: Retest hold ──────────────────────────────────────────────────
+        $pathBMet = $reclaimRetestHeld;
+
+        // ── Path C: Higher-low after point3 ─────────────────────────────────────
+        $pathCMet = $higherLowAfterPoint3 && !$freshLowerLow;
+
+        // ── Path D: Short structure break ────────────────────────────────────────
+        $pathDMet = $shortStructureBreak || $localFallingResBroken;
+
+        $confirmationPath    = null;
+        $trendShiftConfirmed = false;
+
+        if ($pathAMet) {
+            $trendShiftConfirmed = true;
+            $confirmationPath    = 'reclaim_hold';
+        } elseif ($pathBMet) {
+            $trendShiftConfirmed = true;
+            $confirmationPath    = 'retest_hold';
+        } elseif ($pathCMet) {
+            $trendShiftConfirmed = true;
+            $confirmationPath    = 'higher_low_after_point3';
+        } elseif ($pathDMet) {
+            $trendShiftConfirmed = true;
+            $confirmationPath    = 'short_structure_break';
+        }
+
+        // If gate is not required for handoff, treat every signal as confirmed.
+        if (!$requiredForHandoff) {
+            $trendShiftConfirmed = true;
+            if ($confirmationPath === null) {
+                $confirmationPath = 'gate_not_required';
+            }
+        }
+
+        // ── Determine final state ────────────────────────────────────────────────
+        $state        = 'not_checked';
+        $blockReason  = null;
+        $failedReason = null;
+        $pendingReason = null;
+
+        if ($trendShiftConfirmed) {
+            $state = 'confirmed';
+        } else {
+            // Check for hard failure indicators
+            $hardFailed     = false;
+            $hardFailReason = null;
+
+            if ($point3Broken) {
+                $hardFailed     = true;
+                $hardFailReason = 'point3_broken';
+            } elseif ($reclaimLostAfterConfirm) {
+                $hardFailed     = true;
+                $hardFailReason = 'reclaim_level_lost';
+            } elseif ($freshLowerLow && $requireNoFreshLower && $qualityScore < $highQualThreshold) {
+                // Fresh lower low on low/mid-quality = failed outright
+                $hardFailed     = true;
+                $hardFailReason = 'fresh_lower_low_after_point3';
+            } elseif ($ttlExpired) {
+                $hardFailed     = true;
+                $hardFailReason = 'pending_ttl_expired';
+            }
+
+            if ($hardFailed) {
+                $state        = 'failed';
+                $failedReason = $hardFailReason;
+                $blockReason  = 'trend_shift_confirmation_failed';
+            } elseif ($allowPending && $qualityScore >= $pendingMinQuality) {
+                // Promising but unconfirmed — keep in pending/watch, recheck next tick
+                $state         = 'pending';
+                $pendingReason = 'waiting_trend_shift_confirmation';
+                $blockReason   = 'waiting_trend_shift_confirmation';
+            } else {
+                // Low quality or pending not allowed — hard fail
+                $state        = 'failed';
+                $failedReason = 'trend_shift_not_confirmed_low_quality';
+                $blockReason  = 'trend_shift_confirmation_failed';
+            }
+        }
+
+        $diag = [
+            'trend_shift_gate_enabled'          => $gateEnabled,
+            'trend_shift_checked'               => true,
+            'trend_shift_confirmed'             => $trendShiftConfirmed,
+            'trend_shift_confirmation_path'     => $confirmationPath,
+            'trend_shift_state'                 => $state,
+            'trend_shift_pending_reason'        => $pendingReason,
+            'trend_shift_failed_reason'         => $failedReason,
+            'reclaim_confirmed'                 => $reclaimConfirmed,
+            'neckline_reclaim_confirmed'        => $necklineReclaimConfirmed,
+            'reclaim_closes_above_count'        => $reclaimClosesAbove,
+            'reclaim_hold_minutes'              => $reclaimHoldMinutes,
+            'reclaim_lost_after_confirm'        => $reclaimLostAfterConfirm,
+            'reclaim_retest_held'               => $reclaimRetestHeld,
+            'higher_low_after_point3'           => $higherLowAfterPoint3,
+            'higher_low_after_point3_price'     => $higherLowAfterPoint3Price,
+            'fresh_lower_low_after_point3'      => $freshLowerLow,
+            'point3_broken'                     => $point3Broken,
+            'short_structure_break_confirmed'   => $shortStructureBreak,
+            'local_falling_resistance_broken'   => $localFallingResBroken,
+            'trend_direction_before_entry'      => $trendDirection,
+            'recent_60m_direction_flips'        => $recent60mFlips,
+            'room_to_recent_swing_high_roi'     => $roomToSwingHigh,
+            'post_point3_impulse_spent_pct'     => $postPoint3Impulse,
+        ];
+
+        return [
+            'gate_enabled'      => $gateEnabled,
+            'gate_checked'      => true,
+            'state'             => $state,
+            'confirmation_path' => $confirmationPath,
+            'block_reason'      => $blockReason,
+            'failed_reason'     => $failedReason,
+            'diag'              => $diag,
+        ];
+    }
+
+    /**
+     * Build a compact trend-shift gate example record for last_run diagnostics.
+     *
+     * @param  array  $r      The bot_handoff_queue record.
+     * @param  string $id     The signal_id.
+     * @param  array  $tsGate Return value of applyDblTrendShiftConfirmationGate().
+     * @return array<string,mixed>
+     */
+    private function buildTrendShiftExample(array $r, string $id, array $tsGate): array
+    {
+        $ssc = is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [];
+        $d   = $tsGate['diag'];
+        return [
+            'symbol'                        => $r['symbol']                          ?? null,
+            'signal_id'                     => $id,
+            'candidate_quality_score'       => $r['candidate_quality_score']
+                ?? $ssc['candidate_quality_score']                                   ?? null,
+            'setup_class'                   => $ssc['setup_class']                   ?? null,
+            'trend_shift_state'             => $tsGate['state']                      ?? null,
+            'trend_shift_confirmation_path' => $tsGate['confirmation_path']          ?? null,
+            'trend_shift_failed_reason'     => $tsGate['failed_reason']              ?? null,
+            'reclaim_level'                 => $ssc['reclaim_level']                 ?? null,
+            'neckline_level'                => $ssc['neckline_level']                ?? null,
+            'point3_second_low_price'       => $ssc['point_3_second_low_price']      ?? null,
+            'reclaim_confirmed'             => $d['reclaim_confirmed']               ?? false,
+            'neckline_reclaim_confirmed'    => $d['neckline_reclaim_confirmed']      ?? false,
+            'reclaim_closes_above_count'    => $d['reclaim_closes_above_count']      ?? null,
+            'higher_low_after_point3'       => $d['higher_low_after_point3']         ?? false,
+            'fresh_lower_low_after_point3'  => $d['fresh_lower_low_after_point3']    ?? false,
+            'recent_60m_direction_flips'    => $d['recent_60m_direction_flips']      ?? null,
+            'room_to_recent_swing_high_roi' => $d['room_to_recent_swing_high_roi']   ?? null,
+            'post_point3_impulse_spent_pct' => $d['post_point3_impulse_spent_pct']   ?? null,
         ];
     }
 

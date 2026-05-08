@@ -160,4 +160,16 @@ return [
     // Veto 7: reclaim not confirmed
     'dbl_garbage_require_reclaim_confirmation_for_medium_quality' => 'bool',
     'dbl_garbage_reclaim_confirmation_medium_quality_max'         => 'float',
+    // Trend-shift confirmation gate
+    'dbl_trend_shift_gate_enabled'                             => 'bool',
+    'dbl_trend_shift_required_for_handoff'                     => 'bool',
+    'dbl_trend_shift_min_closes_above_reclaim'                 => 'int',
+    'dbl_trend_shift_reclaim_hold_minutes'                     => 'int',
+    'dbl_trend_shift_max_reclaim_loss_pct'                     => 'float',
+    'dbl_trend_shift_require_no_fresh_lower_low'               => 'bool',
+    'dbl_trend_shift_point3_break_tolerance_pct'               => 'float',
+    'dbl_trend_shift_allow_high_quality_pending'               => 'bool',
+    'dbl_trend_shift_high_quality_threshold'                   => 'float',
+    'dbl_trend_shift_pending_ttl_minutes'                      => 'int',
+    'dbl_trend_shift_pending_recheck_enabled'                  => 'bool',
 ];

@@ -145,4 +145,11 @@ return [
     'dbl_garbage_max_post_point3_impulse_spent_pct'       => 'float',
     'dbl_garbage_min_room_to_recent_swing_high_roi'       => 'float',
     'dbl_garbage_near_recent_swing_high_pct'              => 'float',
+    // Veto 6: missing critical trace
+    'dbl_garbage_block_missing_critical_trace'              => 'bool',
+    'dbl_garbage_missing_trace_min_quality_to_bypass'       => 'float',
+    'dbl_garbage_missing_trace_requires_obc_confirmed_to_bypass' => 'bool',
+    // Veto 7: reclaim not confirmed
+    'dbl_garbage_require_reclaim_confirmation_for_medium_quality' => 'bool',
+    'dbl_garbage_reclaim_confirmation_medium_quality_max'         => 'float',
 ];

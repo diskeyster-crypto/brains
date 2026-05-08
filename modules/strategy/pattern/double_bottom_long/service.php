@@ -76,6 +76,23 @@ final class DoubleBottomLongService
     private array $dblGarbagePassExamples  = [];
     /** @var list<array<string,mixed>> */
     private array $dblGarbageLateLocalEntryExamples = [];
+    // ── DBL trace completeness counters (reset at start of each tickBatch) ────
+    private int $dblTraceCheckedTotal                        = 0;
+    private int $dblTraceCompleteTotal                       = 0;
+    private int $dblTraceMissingTotal                        = 0;
+    private int $dblTraceReconstructedTotal                  = 0;
+    private int $dblTraceReconstructionFailedTotal           = 0;
+    private int $dblGarbageMissingTraceBlockedTotal          = 0;
+    private int $dblGarbageReclaimNotConfirmedTotal          = 0;
+    private int $dblGarbageMissingTracePassedHighQualityTotal = 0;
+    /** @var list<array<string,mixed>> */
+    private array $dblTraceMissingExamples               = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblTraceReconstructedExamples         = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblGarbageMissingTraceBlockExamples   = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblGarbageReclaimNotConfirmedExamples = [];
 
     // ── Per-tick entry-context fetch counters (reset at start of each tickBatch) ──
     private int $ctxFetchAttemptedThisTick       = 0;
@@ -454,6 +471,19 @@ final class DoubleBottomLongService
         $this->dblGarbageBlockExamples             = [];
         $this->dblGarbagePassExamples              = [];
         $this->dblGarbageLateLocalEntryExamples    = [];
+        // Reset per-tick trace completeness counters.
+        $this->dblTraceCheckedTotal                        = 0;
+        $this->dblTraceCompleteTotal                       = 0;
+        $this->dblTraceMissingTotal                        = 0;
+        $this->dblTraceReconstructedTotal                  = 0;
+        $this->dblTraceReconstructionFailedTotal           = 0;
+        $this->dblGarbageMissingTraceBlockedTotal          = 0;
+        $this->dblGarbageReclaimNotConfirmedTotal          = 0;
+        $this->dblGarbageMissingTracePassedHighQualityTotal = 0;
+        $this->dblTraceMissingExamples               = [];
+        $this->dblTraceReconstructedExamples         = [];
+        $this->dblGarbageMissingTraceBlockExamples   = [];
+        $this->dblGarbageReclaimNotConfirmedExamples = [];
 
         $symbols = (array)($state['symbols']  ?? []);
         $cursor  = (int)($state['cursor']      ?? 0);
@@ -1919,6 +1949,19 @@ final class DoubleBottomLongService
             'dbl_garbage_block_examples'                 => $this->dblGarbageBlockExamples,
             'dbl_garbage_pass_examples'                  => $this->dblGarbagePassExamples,
             'dbl_garbage_late_local_entry_examples'      => $this->dblGarbageLateLocalEntryExamples,
+            // ── DBL trace completeness counters (per tick) ────────────────────────
+            'dbl_trace_checked_total'                        => $this->dblTraceCheckedTotal,
+            'dbl_trace_complete_total'                       => $this->dblTraceCompleteTotal,
+            'dbl_trace_missing_total'                        => $this->dblTraceMissingTotal,
+            'dbl_trace_reconstructed_total'                  => $this->dblTraceReconstructedTotal,
+            'dbl_trace_reconstruction_failed_total'          => $this->dblTraceReconstructionFailedTotal,
+            'dbl_garbage_missing_trace_blocked_total'        => $this->dblGarbageMissingTraceBlockedTotal,
+            'dbl_garbage_reclaim_not_confirmed_total'        => $this->dblGarbageReclaimNotConfirmedTotal,
+            'dbl_garbage_missing_trace_passed_high_quality_total' => $this->dblGarbageMissingTracePassedHighQualityTotal,
+            'dbl_trace_missing_examples'                     => $this->dblTraceMissingExamples,
+            'dbl_trace_reconstructed_examples'               => $this->dblTraceReconstructedExamples,
+            'dbl_garbage_missing_trace_block_examples'       => $this->dblGarbageMissingTraceBlockExamples,
+            'dbl_garbage_reclaim_not_confirmed_examples'     => $this->dblGarbageReclaimNotConfirmedExamples,
             // ── Scan suppression cache diagnostics (Task 7) ──────────────────────
             'scan_suppression_enabled'                   => $suppressionEnabled,
             'scan_suppression_entries_total'             => $suppressionEnabled ? count($this->scanSuppressionCache) : 0,
@@ -8387,6 +8430,54 @@ final class DoubleBottomLongService
                             $this->dblGarbageNearRecentSwingHighTotal++;
                         }
                     }
+                    // Trace completeness counters
+                    if (($gv['diag']['dbl_trace_checked'] ?? false) === true) {
+                        $this->dblTraceCheckedTotal++;
+                        if ($gv['diag']['dbl_trace_complete'] ?? false) {
+                            $this->dblTraceCompleteTotal++;
+                        } else {
+                            $this->dblTraceMissingTotal++;
+                            if (count($this->dblTraceMissingExamples) < 10) {
+                                $this->dblTraceMissingExamples[] = [
+                                    'symbol'                      => $r['symbol'] ?? null,
+                                    'signal_id'                   => $id,
+                                    'candidate_quality_score'     => $gv['diag']['candidate_quality_score'] ?? null,
+                                    'setup_class'                 => $gv['diag']['setup_class'] ?? null,
+                                    'pending_confirmation_status' => $gv['diag']['pending_confirmation_status'] ?? null,
+                                    'pending_confirmation_reason' => $r['strategy_signal_context']['pending_confirmation_reason'] ?? null,
+                                    'ob_wall_checked'             => $gv['diag']['ob_wall_checked'] ?? false,
+                                    'ob_ask_wall_risk'            => $gv['diag']['ob_ask_wall_risk'] ?? false,
+                                    'point_1_low_price'           => $r['strategy_signal_context']['point_1_low_price']  ?? null,
+                                    'point_2_neckline_price'      => $r['strategy_signal_context']['point_2_neckline_price'] ?? null,
+                                    'point_3_second_low_price'    => $gv['diag']['point_3_second_low_price'] ?? null,
+                                    'neckline_level'              => $r['strategy_signal_context']['neckline_level'] ?? null,
+                                    'reclaim_level'               => $gv['diag']['reclaim_level'] ?? null,
+                                    'reclaim_confirmed'           => $gv['diag']['reclaim_confirmed'] ?? false,
+                                    'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                    'dbl_trace_source'            => $gv['diag']['dbl_trace_source'] ?? 'missing',
+                                    'garbage_veto_reason'         => $gv['reason'] ?? null,
+                                ];
+                            }
+                        }
+                        if ($gv['diag']['dbl_trace_reconstructed_from_parser2'] ?? false) {
+                            $this->dblTraceReconstructedTotal++;
+                            if (count($this->dblTraceReconstructedExamples) < 5) {
+                                $this->dblTraceReconstructedExamples[] = [
+                                    'symbol'           => $r['symbol'] ?? null,
+                                    'signal_id'        => $id,
+                                    'dbl_trace_source' => $gv['diag']['dbl_trace_source'] ?? null,
+                                    'dbl_trace_complete' => $gv['diag']['dbl_trace_complete'] ?? false,
+                                    'point_3_second_low_price' => $gv['diag']['point_3_second_low_price'] ?? null,
+                                ];
+                            }
+                        }
+                        if ($gv['diag']['dbl_trace_reconstruction_failed'] ?? false) {
+                            $this->dblTraceReconstructionFailedTotal++;
+                        }
+                    }
+                    if ($gv['diag']['dbl_trace_missing_high_quality_bypass'] ?? false) {
+                        $this->dblGarbageMissingTracePassedHighQualityTotal++;
+                    }
 
                     if ($gv['veto_triggered']) {
                         $this->dblGarbageVetoBlockedTotal++;
@@ -8405,6 +8496,12 @@ final class DoubleBottomLongService
                                 break;
                             case 'garbage_local_late_entry_after_recovery':
                                 $this->dblGarbageLateLocalEntryBlockedTotal++;
+                                break;
+                            case 'garbage_missing_critical_dbl_trace':
+                                $this->dblGarbageMissingTraceBlockedTotal++;
+                                break;
+                            case 'garbage_reclaim_not_confirmed':
+                                $this->dblGarbageReclaimNotConfirmedTotal++;
                                 break;
                         }
                         $blockReason = (string)$gv['reason'];
@@ -8439,6 +8536,8 @@ final class DoubleBottomLongService
                                 'near_recent_swing_high' => $gv['diag']['near_recent_swing_high'] ?? null,
                                 'recent_swing_high_price' => $gv['diag']['recent_swing_high_price'] ?? null,
                                 'recent_swing_high_time' => $gv['diag']['recent_swing_high_time'] ?? null,
+                                'dbl_trace_source'        => $gv['diag']['dbl_trace_source'] ?? null,
+                                'dbl_trace_complete'      => $gv['diag']['dbl_trace_complete'] ?? null,
                             ];
                         }
                         if ($blockReason === 'garbage_local_late_entry_after_recovery'
@@ -8463,6 +8562,55 @@ final class DoubleBottomLongService
                                 'recent_swing_high_time'         => $gv['diag']['recent_swing_high_time'] ?? null,
                                 'garbage_veto_reason'            => $blockReason,
                                 'garbage_veto_secondary_reasons' => $gv['secondary_reasons'] ?? [],
+                                'dbl_trace_source'               => $gv['diag']['dbl_trace_source'] ?? null,
+                            ];
+                        }
+                        if ($blockReason === 'garbage_missing_critical_dbl_trace'
+                            && count($this->dblGarbageMissingTraceBlockExamples) < 10
+                        ) {
+                            $this->dblGarbageMissingTraceBlockExamples[] = [
+                                'symbol'                      => $r['symbol'] ?? null,
+                                'signal_id'                   => $id,
+                                'candidate_quality_score'     => $gv['diag']['candidate_quality_score'] ?? null,
+                                'setup_class'                 => $gv['diag']['setup_class'] ?? null,
+                                'pending_confirmation_status' => $gv['diag']['pending_confirmation_status'] ?? null,
+                                'pending_confirmation_reason' => $r['strategy_signal_context']['pending_confirmation_reason'] ?? null,
+                                'ob_wall_checked'             => $gv['diag']['ob_wall_checked'] ?? false,
+                                'ob_ask_wall_risk'            => $gv['diag']['ob_ask_wall_risk'] ?? false,
+                                'point_1_low_price'           => $r['strategy_signal_context']['point_1_low_price']  ?? null,
+                                'point_2_neckline_price'      => $r['strategy_signal_context']['point_2_neckline_price'] ?? null,
+                                'point_3_second_low_price'    => $gv['diag']['point_3_second_low_price'] ?? null,
+                                'neckline_level'              => $r['strategy_signal_context']['neckline_level'] ?? null,
+                                'reclaim_level'               => $gv['diag']['reclaim_level'] ?? null,
+                                'reclaim_confirmed'           => $gv['diag']['reclaim_confirmed'] ?? false,
+                                'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                'dbl_trace_source'            => $gv['diag']['dbl_trace_source'] ?? 'missing',
+                                'garbage_veto_reason'         => $blockReason,
+                                'secondary_reasons'           => $gv['secondary_reasons'] ?? [],
+                            ];
+                        }
+                        if ($blockReason === 'garbage_reclaim_not_confirmed'
+                            && count($this->dblGarbageReclaimNotConfirmedExamples) < 10
+                        ) {
+                            $this->dblGarbageReclaimNotConfirmedExamples[] = [
+                                'symbol'                      => $r['symbol'] ?? null,
+                                'signal_id'                   => $id,
+                                'candidate_quality_score'     => $gv['diag']['candidate_quality_score'] ?? null,
+                                'setup_class'                 => $gv['diag']['setup_class'] ?? null,
+                                'pending_confirmation_status' => $gv['diag']['pending_confirmation_status'] ?? null,
+                                'pending_confirmation_reason' => $r['strategy_signal_context']['pending_confirmation_reason'] ?? null,
+                                'ob_wall_checked'             => $gv['diag']['ob_wall_checked'] ?? false,
+                                'ob_ask_wall_risk'            => $gv['diag']['ob_ask_wall_risk'] ?? false,
+                                'point_1_low_price'           => $r['strategy_signal_context']['point_1_low_price']  ?? null,
+                                'point_2_neckline_price'      => $r['strategy_signal_context']['point_2_neckline_price'] ?? null,
+                                'point_3_second_low_price'    => $gv['diag']['point_3_second_low_price'] ?? null,
+                                'neckline_level'              => $r['strategy_signal_context']['neckline_level'] ?? null,
+                                'reclaim_level'               => $gv['diag']['reclaim_level'] ?? null,
+                                'reclaim_confirmed'           => $gv['diag']['reclaim_confirmed'] ?? false,
+                                'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                'dbl_trace_source'            => $gv['diag']['dbl_trace_source'] ?? null,
+                                'garbage_veto_reason'         => $blockReason,
+                                'secondary_reasons'           => $gv['secondary_reasons'] ?? [],
                             ];
                         }
                     } else {
@@ -8792,11 +8940,17 @@ final class DoubleBottomLongService
                 'fresh_lower_low_after_point3' => $signal['strategy_signal_context']['fresh_lower_low_after_point3'] ?? false,
                 'point3_confirmed'           => $signal['strategy_signal_context']['point3_confirmed']       ?? true,
                 'reclaim_confirmed'          => $signal['strategy_signal_context']['reclaim_confirmed']      ?? false,
+                'neckline_reclaim_confirmed' => $signal['neckline_reclaim_confirmed']                        ?? $signal['strategy_signal_context']['neckline_reclaim_confirmed'] ?? false,
                 // Garbage veto result (populated in updateBotHandoff normalization pass)
                 'garbage_veto_checked'       => $signal['strategy_signal_context']['garbage_veto_checked']   ?? false,
                 'garbage_veto_triggered'     => $signal['strategy_signal_context']['garbage_veto_triggered'] ?? false,
                 'garbage_veto_reason'        => $signal['strategy_signal_context']['garbage_veto_reason']    ?? null,
                 'garbage_veto_secondary_reasons' => $signal['strategy_signal_context']['garbage_veto_secondary_reasons'] ?? [],
+                // Trace completeness diagnostics (populated in updateBotHandoff normalization pass)
+                'dbl_trace_complete'                    => $signal['strategy_signal_context']['dbl_trace_complete']                    ?? null,
+                'dbl_trace_source'                      => $signal['strategy_signal_context']['dbl_trace_source']                      ?? null,
+                'dbl_trace_reconstructed_from_parser2'  => $signal['strategy_signal_context']['dbl_trace_reconstructed_from_parser2']  ?? false,
+                'dbl_trace_missing_high_quality_bypass' => $signal['strategy_signal_context']['dbl_trace_missing_high_quality_bypass'] ?? false,
             ],
 
             // Execution parameters (strategy-owned; no exchange-order fields yet)
@@ -8832,6 +8986,11 @@ final class DoubleBottomLongService
      *  3. Late daily extension long (already strongly extended on 24h)
      *  4. Whipsaw + weak quality
      *  5. Local late entry after recovery leg already spent
+     *  6. Missing critical DBL trace (point3/neckline/entry-distance null)
+     *  7. Reclaim not confirmed for medium-quality signals
+     *
+     * Before vetoes run, attempts to reconstruct missing point3/reclaim metrics
+     * from parser2 ticker history (lightweight; fails gracefully).
      *
      * Returns an array with:
      *  - veto_triggered: bool
@@ -8916,6 +9075,85 @@ final class DoubleBottomLongService
         $localRecoveryLegHighPrice = isset($ssc['local_recovery_leg_high_price'])
             ? ($ssc['local_recovery_leg_high_price'] !== null ? (float)$ssc['local_recovery_leg_high_price'] : null)
             : null;
+
+        // ── Trace completeness assessment + parser2 reconstruction ────────────
+        // Assess whether critical point-1-2-3 / neckline / reclaim fields are
+        // present.  If incomplete, attempt a lightweight reconstruction from
+        // parser2 ticker history so that Veto 5 (local late-entry) can evaluate,
+        // and Veto 6 (missing-trace) has accurate bypass conditions.
+        $necklineLevelTrace = isset($ssc['neckline_level'])
+            ? ($ssc['neckline_level'] !== null ? (float)$ssc['neckline_level'] : null)
+            : null;
+        $reclaimConfirmed         = (bool)($ssc['reclaim_confirmed']            ?? false);
+        $necklineReclaimConfirmed = (bool)($ssc['neckline_reclaim_confirmed']   ?? false);
+        $reclaimAfterFlat         = (bool)($record['reclaim_after_flat_detected'] ?? false);
+        $hasAnyReclaimConfirmation = $reclaimConfirmed || $reclaimAfterFlat || $necklineReclaimConfirmed;
+        $pendingConfirmStatus      = (string)($ssc['pending_confirmation_status'] ?? '');
+        $setupClass                = (string)($ssc['setup_class']                ?? '');
+        $obAskWallRisk             = (bool)($ssc['ob_ask_wall_risk']             ?? false);
+
+        $traceHasPoint3            = $point3SecondLowPrice !== null && $point3SecondLowPrice > 0.0;
+        $traceHasNeckline          = $necklineLevelTrace !== null && $necklineLevelTrace > 0.0;
+        $traceHasReclaim           = $reclaimLevel !== null && $reclaimLevel > 0.0;
+        $traceHasEntryDistFromPoint3 = $entryDistPoint3 !== null;
+        $traceHasReclaimConfirmation = $hasAnyReclaimConfirmation;
+        $traceComplete             = $traceHasPoint3 && $traceHasNeckline
+            && $traceHasReclaim && $traceHasEntryDistFromPoint3;
+
+        $traceChecked                  = true;
+        $traceSource                   = $traceComplete ? 'native' : 'missing';
+        $traceReconstructed            = false;
+        $traceReconstructionFailed     = false;
+        $traceReconstructionFailedReason = null;
+        $missingTraceHighQualityBypass = false;
+
+        // If trace is incomplete, attempt lightweight reconstruction from parser2.
+        if (!$traceComplete) {
+            $sym = (string)($record['symbol'] ?? '');
+            if ($sym !== '') {
+                $recon = $this->tryReconstructLocalTraceFromParser2($sym, $entryPrice, $config);
+                if ($recon['ok']) {
+                    $traceReconstructed = true;
+                    $traceSource        = 'parser2_reconstructed';
+                    if (!$traceHasPoint3 && $recon['point3_price'] !== null) {
+                        $point3SecondLowPrice = (float)$recon['point3_price'];
+                        $traceHasPoint3 = true;
+                    }
+                    if (!$traceHasEntryDistFromPoint3 && $recon['entry_distance_from_point3_pct'] !== null) {
+                        $entryDistPoint3 = (float)$recon['entry_distance_from_point3_pct'];
+                        $traceHasEntryDistFromPoint3 = true;
+                    }
+                    if ($localRecoveryLegLowPrice === null && $recon['local_low'] !== null) {
+                        $localRecoveryLegLowPrice = round((float)$recon['local_low'], 8);
+                    }
+                    if ($localRecoveryLegHighPrice === null && $recon['local_high'] !== null) {
+                        $localRecoveryLegHighPrice = round((float)$recon['local_high'], 8);
+                    }
+                    if ($postPoint3BounceRoi === null) {
+                        $postPoint3BounceRoi = $recon['post_point3_bounce_roi'];
+                    }
+                    if ($postPoint3ImpulseSpentPct === null) {
+                        $postPoint3ImpulseSpentPct = $recon['post_point3_impulse_spent_pct'];
+                    }
+                    if ($roomToRecentSwingHighRoi === null) {
+                        $roomToRecentSwingHighRoi = $recon['room_to_recent_swing_high_roi'];
+                    }
+                    if ($recentSwingHighPrice === null && $recon['recent_swing_high_price'] !== null) {
+                        $recentSwingHighPrice = (float)$recon['recent_swing_high_price'];
+                    }
+                    if (!$nearRecentSwingHigh && $recon['near_recent_swing_high'] !== null) {
+                        $nearRecentSwingHigh = (bool)$recon['near_recent_swing_high'];
+                    }
+                    // Re-evaluate completeness with reconstructed values.
+                    $traceComplete = $traceHasPoint3 && $traceHasNeckline
+                        && $traceHasReclaim && $traceHasEntryDistFromPoint3;
+                } else {
+                    $traceReconstructionFailed       = true;
+                    $traceReconstructionFailedReason = $recon['failed_reason'] ?? 'reconstruction_unavailable';
+                    $traceSource = 'missing';
+                }
+            }
+        }
 
         $secondaryReasons = [];
         $primaryReason    = null;
@@ -9046,6 +9284,60 @@ final class DoubleBottomLongService
             }
         }
 
+        // ── Veto 6: missing critical DBL trace ─────────────────────────────────
+        // Block handoff when point3 / entry-distance fields are null and we could
+        // not reconstruct them from parser2.  Only bypass for very strong signals
+        // with OBC confirmed and no generic quality warning.
+        if ($primaryReason === null && (bool)($config['dbl_garbage_block_missing_critical_trace'] ?? true)) {
+            if (!$traceComplete) {
+                $minBypassQuality    = (float)($config['dbl_garbage_missing_trace_min_quality_to_bypass']            ?? 0.82);
+                $requireObcForBypass = (bool) ($config['dbl_garbage_missing_trace_requires_obc_confirmed_to_bypass'] ?? true);
+                $canBypass = $qualityScore >= $minBypassQuality
+                    && (!$requireObcForBypass || ($obWallChecked && !$obAskWallRisk))
+                    && !$hasGenericWarning;
+                if ($canBypass) {
+                    $missingTraceHighQualityBypass = true;
+                } else {
+                    $primaryReason = 'garbage_missing_critical_dbl_trace';
+                    if (!$traceHasPoint3) {
+                        $secondaryReasons[] = 'missing_point3_trace';
+                    }
+                    if (!$traceHasNeckline || !$traceHasReclaim) {
+                        $secondaryReasons[] = 'missing_neckline_or_reclaim';
+                    }
+                    if (!$traceHasEntryDistFromPoint3) {
+                        $secondaryReasons[] = 'missing_entry_distance_from_point3';
+                    }
+                    if (!$traceHasReclaimConfirmation) {
+                        $secondaryReasons[] = 'missing_reclaim_confirmation';
+                    }
+                    if ($traceReconstructionFailed) {
+                        $secondaryReasons[] = 'parser2_reconstruction_failed';
+                    }
+                }
+            }
+        }
+
+        // ── Veto 7: reclaim not confirmed for medium-quality signals ───────────
+        // For signals where quality is medium (≤ configured threshold) and no
+        // reclaim confirmation is available, block the handoff.
+        if ($primaryReason === null
+            && (bool)($config['dbl_garbage_require_reclaim_confirmation_for_medium_quality'] ?? true)
+        ) {
+            $medQualMax      = (float)($config['dbl_garbage_reclaim_confirmation_medium_quality_max'] ?? 0.78);
+            $isMediumQuality = $qualityScore > 0.0 && $qualityScore <= $medQualMax;
+            if ($isMediumQuality && !$hasAnyReclaimConfirmation) {
+                $primaryReason = 'garbage_reclaim_not_confirmed';
+                $secondaryReasons[] = 'reclaim_confirmed_false';
+                if ($setupClass !== '') {
+                    $secondaryReasons[] = 'setup_class=' . $setupClass;
+                }
+                if ($pendingConfirmStatus !== '' && $pendingConfirmStatus !== 'confirmed') {
+                    $secondaryReasons[] = 'pending_confirmation_status=' . $pendingConfirmStatus;
+                }
+            }
+        }
+
         $vetoTriggered = $primaryReason !== null;
 
         return [
@@ -9087,6 +9379,24 @@ final class DoubleBottomLongService
                 'garbage_post_point3_impulse_already_spent' => $lateEntryFlags['garbage_post_point3_impulse_already_spent'],
                 'garbage_insufficient_room_to_recent_swing_high' => $lateEntryFlags['garbage_insufficient_room_to_recent_swing_high'],
                 'garbage_near_recent_swing_high'     => $lateEntryFlags['garbage_near_recent_swing_high'],
+                // Trace completeness diagnostics
+                'dbl_trace_checked'                      => $traceChecked,
+                'dbl_trace_complete'                     => $traceComplete,
+                'dbl_trace_source'                       => $traceSource,
+                'dbl_trace_has_point3'                   => $traceHasPoint3,
+                'dbl_trace_has_neckline'                 => $traceHasNeckline,
+                'dbl_trace_has_reclaim'                  => $traceHasReclaim,
+                'dbl_trace_has_entry_dist_from_point3'   => $traceHasEntryDistFromPoint3,
+                'dbl_trace_has_reclaim_confirmation'     => $traceHasReclaimConfirmation,
+                'dbl_trace_reconstructed_from_parser2'   => $traceReconstructed,
+                'dbl_trace_reconstruction_failed'        => $traceReconstructionFailed,
+                'dbl_trace_reconstruction_failed_reason' => $traceReconstructionFailedReason,
+                'dbl_trace_missing_high_quality_bypass'  => $missingTraceHighQualityBypass,
+                'ob_ask_wall_risk'                       => $obAskWallRisk,
+                'reclaim_confirmed'                      => $reclaimConfirmed,
+                'neckline_reclaim_confirmed'             => $necklineReclaimConfirmed,
+                'setup_class'                            => $setupClass !== '' ? $setupClass : null,
+                'pending_confirmation_status'            => $pendingConfirmStatus !== '' ? $pendingConfirmStatus : null,
             ],
         ];
     }
@@ -9171,6 +9481,140 @@ final class DoubleBottomLongService
             'recent_10m_direction_flips' => $flips10m,
             'recent_60m_direction_flips' => $flips60m,
             'whipsaw_score'              => $score,
+        ];
+    }
+
+    /**
+     * Lightweight reconstruction of local DBL 1-2-3 trace from parser2 ticker history.
+     *
+     * Reads today's and yesterday's ndjson files from the parser2 history accumulator
+     * storage for the given symbol.  Extracts last-price ticks within a 4-hour window
+     * and computes a proxy for:
+     *   - point3_price               (local price minimum = second-bottom proxy)
+     *   - local_low / local_high     (range over the lookback window)
+     *   - entry_distance_from_point3_pct
+     *   - post_point3_bounce_roi
+     *   - post_point3_impulse_spent_pct
+     *   - room_to_recent_swing_high_roi / near_recent_swing_high / recent_swing_high_price
+     *
+     * This is ONLY used to supply trace values for the garbage-veto and diagnostics
+     * when the native intraday-DB fields are null.  It does NOT alter detection logic.
+     *
+     * @param array<string,mixed> $config
+     * @return array{ok:bool,failed_reason:string|null,point3_price:float|null,local_low:float|null,local_high:float|null,entry_distance_from_point3_pct:float|null,post_point3_bounce_roi:float|null,post_point3_impulse_spent_pct:float|null,room_to_recent_swing_high_roi:float|null,near_recent_swing_high:bool|null,recent_swing_high_price:float|null,ticks_loaded:int,lookback_minutes:int}
+     */
+    private function tryReconstructLocalTraceFromParser2(string $symbol, float $entryPrice, array $config): array
+    {
+        /** @return array{ok:false,failed_reason:string,point3_price:null,local_low:null,local_high:null,entry_distance_from_point3_pct:null,post_point3_bounce_roi:null,post_point3_impulse_spent_pct:null,room_to_recent_swing_high_roi:null,near_recent_swing_high:null,recent_swing_high_price:null,ticks_loaded:0,lookback_minutes:0} */
+        $fail = static function (string $reason): array {
+            return [
+                'ok'                             => false,
+                'failed_reason'                  => $reason,
+                'point3_price'                   => null,
+                'local_low'                      => null,
+                'local_high'                     => null,
+                'entry_distance_from_point3_pct' => null,
+                'post_point3_bounce_roi'         => null,
+                'post_point3_impulse_spent_pct'  => null,
+                'room_to_recent_swing_high_roi'  => null,
+                'near_recent_swing_high'         => null,
+                'recent_swing_high_price'        => null,
+                'ticks_loaded'                   => 0,
+                'lookback_minutes'               => 0,
+            ];
+        };
+
+        $normalizedSymbol = strtoupper(trim($symbol));
+        if (!preg_match('/^[A-Z0-9]{2,30}$/', $normalizedSymbol)) {
+            return $fail('invalid_symbol');
+        }
+
+        $lookbackMinutes = 240;
+        $cutoffTs        = time() - ($lookbackMinutes * 60);
+        $storageRoot     = $this->repoRoot
+            . '/modules/parser/parser2_history_accumulator/storage/'
+            . $normalizedSymbol;
+        $files = [
+            $storageRoot . '/' . gmdate('Y-m-d') . '.ndjson',
+            $storageRoot . '/' . gmdate('Y-m-d', time() - 86400) . '.ndjson',
+        ];
+
+        $prices = [];
+        foreach ($files as $file) {
+            if (!is_file($file)) {
+                continue;
+            }
+            $fh = @fopen($file, 'r');
+            if (!is_resource($fh)) {
+                continue;
+            }
+            while (($line = fgets($fh)) !== false) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $row = json_decode($line, true);
+                if (!is_array($row)) {
+                    continue;
+                }
+                $ts = 0;
+                if (isset($row['ts_unix'])) {
+                    $ts = (int)$row['ts_unix'];
+                } elseif (isset($row['ts'])) {
+                    $parsed = strtotime((string)$row['ts']);
+                    $ts = $parsed !== false ? (int)$parsed : 0;
+                }
+                $price = (float)($row['last_price'] ?? ($row['data']['lastPrice'] ?? 0.0));
+                if ($ts <= 0 || $price <= 0.0 || $ts < $cutoffTs) {
+                    continue;
+                }
+                $prices[] = $price;
+            }
+            fclose($fh);
+        }
+
+        if (count($prices) < 5) {
+            return $fail('parser2_insufficient_data');
+        }
+
+        $localLow  = (float)min($prices);
+        $localHigh = (float)max($prices);
+
+        if ($localLow <= 0.0 || $localHigh <= $localLow) {
+            return $fail('parser2_invalid_price_range');
+        }
+
+        $entryDistFromPoint3 = $entryPrice > 0.0
+            ? round((($entryPrice - $localLow) / $localLow) * 100.0, 4)
+            : null;
+
+        $postPoint3BounceRoi = round((($localHigh - $localLow) / $localLow) * 100.0, 4);
+
+        $postPoint3ImpulseSpentPct = ($entryPrice > 0.0 && ($localHigh - $localLow) > 0.0)
+            ? round((($entryPrice - $localLow) / ($localHigh - $localLow)) * 100.0, 3)
+            : null;
+
+        $roomToSwingHighRoi = $entryPrice > 0.0
+            ? round((($localHigh - $entryPrice) / $entryPrice) * 100.0, 4)
+            : null;
+
+        $nearPct       = (float)($config['dbl_garbage_near_recent_swing_high_pct'] ?? 0.35);
+        $nearSwingHigh = $roomToSwingHighRoi !== null ? ($roomToSwingHighRoi <= $nearPct) : null;
+
+        return [
+            'ok'                             => true,
+            'failed_reason'                  => null,
+            'point3_price'                   => $localLow,
+            'local_low'                      => $localLow,
+            'local_high'                     => $localHigh,
+            'entry_distance_from_point3_pct' => $entryDistFromPoint3,
+            'post_point3_bounce_roi'         => $postPoint3BounceRoi,
+            'post_point3_impulse_spent_pct'  => $postPoint3ImpulseSpentPct,
+            'room_to_recent_swing_high_roi'  => $roomToSwingHighRoi,
+            'near_recent_swing_high'         => $nearSwingHigh,
+            'recent_swing_high_price'        => $localHigh,
+            'ticks_loaded'                   => count($prices),
+            'lookback_minutes'               => $lookbackMinutes,
         ];
     }
 }

@@ -398,4 +398,20 @@ return [
     'dbl_garbage_max_post_point3_impulse_spent_pct'       => 70.0,
     'dbl_garbage_min_room_to_recent_swing_high_roi'       => 8.0,
     'dbl_garbage_near_recent_swing_high_pct'              => 0.35,
+
+    // Hard veto 6: missing critical DBL trace (point3 / entry-distance null).
+    // Blocks handoff when the signal lacks point3/neckline/entry-distance metrics
+    // that are required to evaluate late-entry risk, unless the signal is very
+    // strong and OBC was checked with no ask-wall risk.
+    // Bypass requires: quality >= min_quality_to_bypass AND OBC checked AND no ask risk AND no generic warning.
+    'dbl_garbage_block_missing_critical_trace'              => true,
+    'dbl_garbage_missing_trace_min_quality_to_bypass'       => 0.82,
+    'dbl_garbage_missing_trace_requires_obc_confirmed_to_bypass' => true,
+
+    // Hard veto 7: reclaim not confirmed for medium-quality signals.
+    // Blocks handoff when quality is at or below the threshold and no reclaim
+    // confirmation is available (reclaim_confirmed, neckline_reclaim_confirmed,
+    // or reclaim_after_flat_detected).
+    'dbl_garbage_require_reclaim_confirmation_for_medium_quality' => true,
+    'dbl_garbage_reclaim_confirmation_medium_quality_max'         => 0.78,
 ];

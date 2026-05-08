@@ -2134,6 +2134,14 @@ final class DoubleBottomLongService
             'confirmed_pattern_expired_total'                           => $this->confirmedPatternExpiredTotal,
             'confirmed_pattern_invalidated_total'                       => $this->confirmedPatternInvalidatedTotal,
             'confirmed_pattern_blocked_by_generic_freshness_total'      => $this->confirmedPatternBlockedByGenericFreshnessTotal,
+            // Pending storage cleanup diagnostics
+            'pending_cleanup_checked_total'                             => $handoffStats['pending_cleanup_checked_total'] ?? 0,
+            'pending_cleanup_removed_confirmed_total'                   => $handoffStats['pending_cleanup_removed_confirmed_total'] ?? 0,
+            'pending_cleanup_removed_garbage_blocked_total'             => $handoffStats['pending_cleanup_removed_garbage_blocked_total'] ?? 0,
+            'pending_cleanup_removed_invalid_total'                     => $handoffStats['pending_cleanup_removed_invalid_total'] ?? 0,
+            'pending_cleanup_removed_expired_total'                     => $handoffStats['pending_cleanup_removed_expired_total'] ?? 0,
+            'pending_cleanup_history_written_total'                     => $handoffStats['pending_cleanup_history_written_total'] ?? 0,
+            'pending_cleanup_examples'                                  => $handoffStats['pending_cleanup_examples'] ?? [],
             // ── Lifecycle consistency diagnostics ─────────────────────────────────
             'lifecycle_consistency_checked_total'                       => $this->lifecycleConsistencyCheckedTotal,
             'lifecycle_inconsistent_fixed_total'                        => $this->lifecycleInconsistentFixedTotal,
@@ -8471,10 +8479,6 @@ final class DoubleBottomLongService
         $maxAgeSec              = $maxAgeMinutes > 0 ? $maxAgeMinutes * 60 : 0;
         $nowTs                  = time();
         $tickTs                 = strtotime($tickAt);
-        // Confirmed-pattern freshness override config
-        $confirmedPatternTtlMin      = (int)($config['dbl_confirmed_pattern_ttl_minutes']                    ?? 10);
-        $confirmedPatternRequireValid = (bool)($config['dbl_confirmed_pattern_require_price_still_valid']    ?? true);
-        $confirmedPatternMaxAgeMin   = (int)($config['dbl_confirmed_pattern_max_age_before_handoff_minutes'] ?? 10);
 
         $existing = (array)$this->readJson('storage/bot_handoff_queue.json', []);
 
@@ -8516,6 +8520,14 @@ final class DoubleBottomLongService
         $confirmedPatternBlockedByGenericFreshnessTotal = 0;
         // Map: signal_id → confirmed-pattern validity diag fields to merge into queue SSC.
         $confirmedPatternDiagMap                     = [];
+        // Pending storage cleanup diagnostics (active-only pending list hygiene).
+        $pendingCleanupCheckedTotal                  = 0;
+        $pendingCleanupRemovedConfirmedTotal         = 0;
+        $pendingCleanupRemovedGarbageBlockedTotal    = 0;
+        $pendingCleanupRemovedInvalidTotal           = 0;
+        $pendingCleanupRemovedExpiredTotal           = 0;
+        $pendingCleanupHistoryWrittenTotal           = 0;
+        $pendingCleanupExamples                      = [];
 
         // Process currently-active signals: new or refreshed
         foreach ($activeSignals as $signal) {
@@ -8599,6 +8611,36 @@ final class DoubleBottomLongService
                 || $dblStatusRaw === 'active'
                 || $pendingReasonRaw === 'waiting_dbl_pattern_confirmation';
             $isConfirmedPattern = $dblStatusRaw === 'confirmed';
+            $confirmedPatternDiag = null;
+            $confirmedPatternValid = true;
+            $confirmedPatternInvalidReason = null;
+            $confirmedPatternAgeMin = null;
+            $confirmedPatternTtlMinUsed = null;
+            if ($isConfirmedPattern) {
+                $confirmedPatternFreshnessCheckedTotal++;
+                $this->confirmedPatternFreshnessCheckedTotal++;
+                $confirmedPatternDiag = $this->computeConfirmedPatternValidityDiag(
+                    $signal,
+                    $config,
+                    $nowTs,
+                    $detectedAgeMin
+                );
+                $confirmedPatternDiagMap[$id] = $confirmedPatternDiag;
+                $confirmedPatternValid = (bool)($confirmedPatternDiag['confirmed_pattern_valid_for_handoff'] ?? false);
+                $confirmedPatternInvalidReason = (string)($confirmedPatternDiag['confirmed_pattern_invalid_reason'] ?? '');
+                $confirmedPatternAgeMin = $confirmedPatternDiag['confirmed_pattern_age_minutes'] ?? null;
+                $confirmedPatternTtlMinUsed = $confirmedPatternDiag['confirmed_pattern_ttl_minutes'] ?? null;
+                if ($confirmedPatternValid) {
+                    $confirmedPatternValidForHandoffTotal++;
+                    $this->confirmedPatternValidForHandoffTotal++;
+                } elseif ($confirmedPatternInvalidReason === 'confirmed_pattern_ttl_expired') {
+                    $confirmedPatternExpiredTotal++;
+                    $this->confirmedPatternExpiredTotal++;
+                } else {
+                    $confirmedPatternInvalidatedTotal++;
+                    $this->confirmedPatternInvalidatedTotal++;
+                }
+            }
 
             if ($requireCurrentRun && $tickTs !== false) {
                 $currentRunFreshnessCheckedTotal++;
@@ -8612,126 +8654,71 @@ final class DoubleBottomLongService
                 $staleFreshness = !$missingFreshness && $effectiveFreshAgeSec !== null && $effectiveFreshAgeSec > $currentRunFreshnessWindowSec;
                 $freshnessBlocked = $missingFreshness || $staleFreshness;
 
-                // ── Confirmed-pattern freshness bypass ───────────────────────────
-                // For dbl_pattern_status=confirmed, bypass the generic 300 s window.
-                // Instead evaluate confirmed-pattern TTL and validity.
-                if ($freshnessBlocked && $isConfirmedPattern) {
-                    $confirmedPatternFreshnessCheckedTotal++;
-                    $this->confirmedPatternFreshnessCheckedTotal++;
-
-                    $confirmedAtRaw = (string)($signal['strategy_signal_context']['dbl_pattern_confirmed_at'] ?? ($signal['dbl_pattern_confirmed_at'] ?? ''));
-                    $confirmedTs    = $confirmedAtRaw !== '' ? (int)strtotime($confirmedAtRaw) : 0;
-                    $confirmedAgeMin = $confirmedTs > 0 ? round(($nowTs - $confirmedTs) / 60, 1) : null;
-
-                    // Fallback: if no confirmed_at, use detected_at vs max_age_before_handoff
-                    $ageForTtlCheck   = $confirmedAgeMin ?? $detectedAgeMin;
-                    $ttlMin           = $confirmedTs > 0 ? $confirmedPatternTtlMin : $confirmedPatternMaxAgeMin;
-
-                    $point3Broken     = (bool)($signal['strategy_signal_context']['point3_broken'] ?? false);
-                    $reclaimLevelLost = (bool)($signal['strategy_signal_context']['reclaim_level_lost'] ?? false);
-                    $freshLowerLow    = (bool)($signal['strategy_signal_context']['fresh_lower_low_after_point3'] ?? false);
-
-                    $cpInvalidReason  = null;
-                    $cpValid          = true;
-
-                    if ($ageForTtlCheck !== null && $ageForTtlCheck > $ttlMin) {
-                        $cpValid         = false;
-                        $cpInvalidReason = 'confirmed_pattern_ttl_expired';
-                    } elseif ($confirmedPatternRequireValid) {
-                        if ($point3Broken) {
-                            $cpValid         = false;
-                            $cpInvalidReason = 'confirmed_pattern_point3_broken';
-                        } elseif ($reclaimLevelLost) {
-                            $cpValid         = false;
-                            $cpInvalidReason = 'confirmed_pattern_reclaim_lost';
-                        } elseif ($freshLowerLow) {
-                            $cpValid         = false;
-                            $cpInvalidReason = 'confirmed_pattern_price_invalidated';
-                        }
+                // ── Confirmed-pattern validity/freshness handling ─────────────────
+                // For confirmed patterns, always evaluate confirmed validity first.
+                if ($isConfirmedPattern && !$confirmedPatternValid) {
+                    $cpReason = $confirmedPatternInvalidReason !== ''
+                        ? $confirmedPatternInvalidReason
+                        : 'confirmed_pattern_price_invalidated';
+                    $currentRunFreshnessBlockedTotal++;
+                    if (count($staleBlockExamples) < 5) {
+                        $staleBlockExamples[] = [
+                            'symbol'                       => $signal['symbol']  ?? null,
+                            'side'                         => $signal['side']    ?? 'long',
+                            'strategy'                     => 'double_bottom_long',
+                            'signal_id'                    => $id,
+                            'detected_at'                  => $detectedAt,
+                            'effective_fresh_at'           => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
+                            'detected_age_minutes'         => $detectedAgeMin,
+                            'confirmed_pattern_age_minutes'=> $confirmedPatternAgeMin,
+                            'confirmed_pattern_ttl_minutes'=> $confirmedPatternTtlMinUsed,
+                            'reason'                       => $cpReason,
+                        ];
                     }
-
-                    $cpDiag = [
-                        'confirmed_pattern_age_minutes'       => $confirmedAgeMin,
-                        'confirmed_pattern_ttl_minutes'       => $ttlMin,
-                        'confirmed_pattern_valid_for_handoff' => $cpValid,
-                        'confirmed_pattern_invalid_reason'    => $cpInvalidReason,
-                        'confirmed_pattern_price_still_valid' => !$point3Broken && !$reclaimLevelLost && !$freshLowerLow,
-                        'confirmed_pattern_price_check_source'=> 'strategy_signal_context',
-                    ];
-
-                    if ($cpValid) {
-                        // Valid confirmed pattern — bypass generic freshness, proceed to garbage veto.
-                        $confirmedPatternValidForHandoffTotal++;
-                        $this->confirmedPatternValidForHandoffTotal++;
-                        $currentRunFreshnessPassedTotal++;
-                        $confirmedPatternDiagMap[$id] = $cpDiag;
-                        if (count($currentRunFreshnessExamples) < 10) {
-                            $currentRunFreshnessExamples[] = [
-                                'symbol'                       => $signal['symbol'] ?? null,
-                                'signal_id'                    => $id,
-                                'detected_at'                  => $detectedAt !== '' ? $detectedAt : null,
-                                'effective_fresh_at'           => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
-                                'detected_age_minutes'         => $detectedAgeMin,
-                                'effective_fresh_age_minutes'  => $effectiveFreshAgeMin,
-                                'current_run_freshness_source' => $freshnessSource,
-                                'current_run_freshness_passed' => true,
-                                'current_run_freshness_block_reason' => null,
-                                'confirmed_pattern_bypass'     => true,
-                                'confirmed_pattern_age_minutes'=> $confirmedAgeMin,
-                                'confirmed_pattern_ttl_minutes'=> $ttlMin,
-                            ];
-                        }
-                        // Fall through — do NOT continue; allow record building below.
-                    } else {
-                        // Confirmed pattern expired or price-invalidated — withdraw with specific reason.
-                        if ($cpInvalidReason === 'confirmed_pattern_ttl_expired') {
-                            $confirmedPatternExpiredTotal++;
-                            $this->confirmedPatternExpiredTotal++;
-                        } else {
-                            $confirmedPatternInvalidatedTotal++;
-                            $this->confirmedPatternInvalidatedTotal++;
-                        }
-                        $currentRunFreshnessBlockedTotal++;
-                        if (count($staleBlockExamples) < 5) {
-                            $staleBlockExamples[] = [
-                                'symbol'                       => $signal['symbol']  ?? null,
-                                'side'                         => $signal['side']    ?? 'long',
-                                'strategy'                     => 'double_bottom_long',
-                                'signal_id'                    => $id,
-                                'detected_at'                  => $detectedAt,
-                                'effective_fresh_at'           => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
-                                'detected_age_minutes'         => $detectedAgeMin,
-                                'confirmed_pattern_age_minutes'=> $confirmedAgeMin,
-                                'confirmed_pattern_ttl_minutes'=> $ttlMin,
-                                'reason'                       => $cpInvalidReason,
-                            ];
-                        }
-                        if (isset($existingMap[$id])) {
-                            $blocked = $existingMap[$id];
-                            $blocked['handoff_status']    = 'withdrawn';
-                            $blocked['withdrawn_at']      = date('c');
-                            $blocked['last_change_reason'] = $cpInvalidReason;
-                            $blocked['handoff_ready']     = false;
-                            $blocked['active_final']      = false;
-                            $blocked['stale']             = true;
-                            $blocked['stale_reason']      = $cpInvalidReason;
-                            $blocked['block_reason']      = $cpInvalidReason;
-                            $blocked['executable']        = false;
-                            $sscBlocked = is_array($blocked['strategy_signal_context'] ?? null) ? $blocked['strategy_signal_context'] : [];
-                            $sscBlocked = array_merge($sscBlocked, $cpDiag, [
-                                'effective_fresh_at'               => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
-                                'detected_age_minutes'             => $detectedAgeMin,
-                                'effective_fresh_age_minutes'      => $effectiveFreshAgeMin,
-                                'current_run_freshness_source'     => $freshnessSource,
-                                'current_run_freshness_passed'     => false,
-                                'current_run_freshness_block_reason' => $cpInvalidReason,
-                            ]);
-                            $blocked['strategy_signal_context'] = $sscBlocked;
-                            $result[$id] = $blocked;
-                            $removedStaleQueueEntriesTotal++;
-                        }
-                        $activeIds[$id] = true;
-                        continue;
+                    if (isset($existingMap[$id])) {
+                        $blocked = $existingMap[$id];
+                        $blocked['handoff_status']    = 'withdrawn';
+                        $blocked['withdrawn_at']      = date('c');
+                        $blocked['last_change_reason'] = $cpReason;
+                        $blocked['handoff_ready']     = false;
+                        $blocked['active_final']      = false;
+                        $blocked['stale']             = true;
+                        $blocked['stale_reason']      = $cpReason;
+                        $blocked['block_reason']      = $cpReason;
+                        $blocked['executable']        = false;
+                        $sscBlocked = is_array($blocked['strategy_signal_context'] ?? null) ? $blocked['strategy_signal_context'] : [];
+                        $sscBlocked = array_merge($sscBlocked, $confirmedPatternDiag ?? [], [
+                            'effective_fresh_at'               => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
+                            'detected_age_minutes'             => $detectedAgeMin,
+                            'effective_fresh_age_minutes'      => $effectiveFreshAgeMin,
+                            'current_run_freshness_source'     => $freshnessSource,
+                            'current_run_freshness_passed'     => false,
+                            'current_run_freshness_block_reason' => $cpReason,
+                        ]);
+                        $blocked['strategy_signal_context'] = $sscBlocked;
+                        $result[$id] = $blocked;
+                        $removedStaleQueueEntriesTotal++;
+                    }
+                    $activeIds[$id] = true;
+                    continue;
+                } elseif ($freshnessBlocked && $isConfirmedPattern) {
+                    // Confirmed+valid patterns bypass the generic 300 s freshness gate.
+                    $currentRunFreshnessPassedTotal++;
+                    if (count($currentRunFreshnessExamples) < 10) {
+                        $currentRunFreshnessExamples[] = [
+                            'symbol'                       => $signal['symbol'] ?? null,
+                            'signal_id'                    => $id,
+                            'detected_at'                  => $detectedAt !== '' ? $detectedAt : null,
+                            'effective_fresh_at'           => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
+                            'detected_age_minutes'         => $detectedAgeMin,
+                            'effective_fresh_age_minutes'  => $effectiveFreshAgeMin,
+                            'current_run_freshness_source' => $freshnessSource,
+                            'current_run_freshness_passed' => true,
+                            'current_run_freshness_block_reason' => null,
+                            'confirmed_pattern_bypass'     => true,
+                            'confirmed_pattern_age_minutes'=> $confirmedPatternAgeMin,
+                            'confirmed_pattern_ttl_minutes'=> $confirmedPatternTtlMinUsed,
+                        ];
                     }
                 } elseif ($freshnessBlocked && !$isPatternPendingRecheck) {
                     // Generic freshness block (non-confirmed patterns).
@@ -8864,6 +8851,11 @@ final class DoubleBottomLongService
             $record['current_run_freshness_source'] = $freshnessSource;
             $record['current_run_freshness_passed'] = true;
             $record['current_run_freshness_block_reason'] = null;
+            if (isset($confirmedPatternDiagMap[$id])) {
+                foreach ($confirmedPatternDiagMap[$id] as $cpField => $cpVal) {
+                    $record[$cpField] = $cpVal;
+                }
+            }
             $sscFresh = is_array($record['strategy_signal_context'] ?? null) ? $record['strategy_signal_context'] : [];
             $sscFresh['detected_at'] = $record['detected_at'] ?? ($detectedAt !== '' ? $detectedAt : ($sscFresh['detected_at'] ?? null));
             $sscFresh['effective_fresh_at'] = $record['effective_fresh_at'];
@@ -8872,7 +8864,7 @@ final class DoubleBottomLongService
             $sscFresh['current_run_freshness_source'] = $freshnessSource;
             $sscFresh['current_run_freshness_passed'] = true;
             $sscFresh['current_run_freshness_block_reason'] = null;
-            // Merge confirmed-pattern validity diag if this signal bypassed generic freshness.
+            // Merge confirmed-pattern validity diag for every confirmed pattern.
             if (isset($confirmedPatternDiagMap[$id])) {
                 $sscFresh = array_merge($sscFresh, $confirmedPatternDiagMap[$id]);
             }
@@ -9516,6 +9508,16 @@ final class DoubleBottomLongService
             }
         }
 
+        // Cleanup pending_patterns active storage after final handoff lifecycle is known.
+        $pendingCleanup = $this->cleanupDblPendingPatternsAfterHandoff($result);
+        $pendingCleanupCheckedTotal               = (int)($pendingCleanup['pending_cleanup_checked_total'] ?? 0);
+        $pendingCleanupRemovedConfirmedTotal      = (int)($pendingCleanup['pending_cleanup_removed_confirmed_total'] ?? 0);
+        $pendingCleanupRemovedGarbageBlockedTotal = (int)($pendingCleanup['pending_cleanup_removed_garbage_blocked_total'] ?? 0);
+        $pendingCleanupRemovedInvalidTotal        = (int)($pendingCleanup['pending_cleanup_removed_invalid_total'] ?? 0);
+        $pendingCleanupRemovedExpiredTotal        = (int)($pendingCleanup['pending_cleanup_removed_expired_total'] ?? 0);
+        $pendingCleanupHistoryWrittenTotal        = (int)($pendingCleanup['pending_cleanup_history_written_total'] ?? 0);
+        $pendingCleanupExamples                   = (array)($pendingCleanup['pending_cleanup_examples'] ?? []);
+
         $this->writeJson('storage/bot_handoff_queue.json', array_values($result));
 
         // Accumulate soft_demote handoff-block counters into class properties for last_run.
@@ -9554,6 +9556,14 @@ final class DoubleBottomLongService
             'confirmed_pattern_expired_total'                    => $confirmedPatternExpiredTotal,
             'confirmed_pattern_invalidated_total'                => $confirmedPatternInvalidatedTotal,
             'confirmed_pattern_blocked_by_generic_freshness_total' => $confirmedPatternBlockedByGenericFreshnessTotal,
+            // Pending storage cleanup diagnostics
+            'pending_cleanup_checked_total'                      => $pendingCleanupCheckedTotal,
+            'pending_cleanup_removed_confirmed_total'            => $pendingCleanupRemovedConfirmedTotal,
+            'pending_cleanup_removed_garbage_blocked_total'      => $pendingCleanupRemovedGarbageBlockedTotal,
+            'pending_cleanup_removed_invalid_total'              => $pendingCleanupRemovedInvalidTotal,
+            'pending_cleanup_removed_expired_total'              => $pendingCleanupRemovedExpiredTotal,
+            'pending_cleanup_history_written_total'              => $pendingCleanupHistoryWrittenTotal,
+            'pending_cleanup_examples'                           => $pendingCleanupExamples,
             // Queue normalization counters (Task: explicit non-executable flags)
             'queue_entries_normalized_total'              => $queueNormalizedTotal,
             'queue_entries_marked_non_executable_total'   => $queueMarkedNonExecutableTotal,
@@ -11449,6 +11459,226 @@ final class DoubleBottomLongService
         $ctx['dbl_pattern_confirmation_error']          = null;
 
         return $ctx;
+    }
+
+    /**
+     * Compute confirmed-pattern validity diagnostics for a signal.
+     *
+     * @return array{
+     *   confirmed_pattern_age_minutes: float|int|null,
+     *   confirmed_pattern_ttl_minutes: int,
+     *   confirmed_pattern_valid_for_handoff: bool,
+     *   confirmed_pattern_invalid_reason: ?string,
+     *   confirmed_pattern_price_still_valid: bool,
+     *   confirmed_pattern_price_check_source: string
+     * }
+     */
+    private function computeConfirmedPatternValidityDiag(array $signal, array $config, int $nowTs, mixed $detectedAgeMin = null): array
+    {
+        $confirmedPatternTtlMin = (int)($config['dbl_confirmed_pattern_ttl_minutes'] ?? 10);
+        $confirmedPatternRequireValid = (bool)($config['dbl_confirmed_pattern_require_price_still_valid'] ?? true);
+        $confirmedPatternMaxAgeMin = (int)($config['dbl_confirmed_pattern_max_age_before_handoff_minutes'] ?? 10);
+
+        $confirmedAtRaw = (string)($signal['strategy_signal_context']['dbl_pattern_confirmed_at'] ?? ($signal['dbl_pattern_confirmed_at'] ?? ''));
+        $confirmedTs = $confirmedAtRaw !== '' ? (int)strtotime($confirmedAtRaw) : 0;
+        $confirmedAgeMin = $confirmedTs > 0 ? round(($nowTs - $confirmedTs) / 60, 1) : null;
+
+        // Fallback: if no confirmed_at, use detected_at vs max_age_before_handoff.
+        $ageForTtlCheck = $confirmedAgeMin ?? (is_numeric($detectedAgeMin) ? (float)$detectedAgeMin : null);
+        $ttlMin = $confirmedTs > 0 ? $confirmedPatternTtlMin : $confirmedPatternMaxAgeMin;
+
+        $point3Broken = (bool)($signal['strategy_signal_context']['point3_broken'] ?? false);
+        $reclaimLevelLost = (bool)($signal['strategy_signal_context']['reclaim_level_lost'] ?? false);
+        $freshLowerLow = (bool)($signal['strategy_signal_context']['fresh_lower_low_after_point3'] ?? false);
+
+        $priceStillValid = !$point3Broken && !$reclaimLevelLost && !$freshLowerLow;
+        $invalidReason = null;
+        $valid = true;
+
+        if ($ageForTtlCheck !== null && $ageForTtlCheck > $ttlMin) {
+            $valid = false;
+            $invalidReason = 'confirmed_pattern_ttl_expired';
+        } elseif ($confirmedPatternRequireValid && !$priceStillValid) {
+            $valid = false;
+            if ($point3Broken) {
+                $invalidReason = 'confirmed_pattern_point3_broken';
+            } elseif ($reclaimLevelLost) {
+                $invalidReason = 'confirmed_pattern_reclaim_lost';
+            } else {
+                $invalidReason = 'confirmed_pattern_price_invalidated';
+            }
+        }
+
+        return [
+            'confirmed_pattern_age_minutes'       => $confirmedAgeMin,
+            'confirmed_pattern_ttl_minutes'       => $ttlMin,
+            'confirmed_pattern_valid_for_handoff' => $valid,
+            'confirmed_pattern_invalid_reason'    => $invalidReason,
+            'confirmed_pattern_price_still_valid' => $priceStillValid,
+            'confirmed_pattern_price_check_source'=> 'strategy_signal_context',
+        ];
+    }
+
+    /**
+     * Remove processed (non-active-pending) entries from pending_patterns.json and
+     * append compact lifecycle rows to pending_patterns_history.ndjson.
+     *
+     * @param array<string,array<string,mixed>> $queueResult signal_id => queue entry
+     * @return array<string,mixed>
+     */
+    private function cleanupDblPendingPatternsAfterHandoff(array $queueResult): array
+    {
+        $existing = (array)$this->readJson('storage/pending_patterns.json', []);
+        if (empty($existing)) {
+            return [
+                'pending_cleanup_checked_total' => 0,
+                'pending_cleanup_removed_confirmed_total' => 0,
+                'pending_cleanup_removed_garbage_blocked_total' => 0,
+                'pending_cleanup_removed_invalid_total' => 0,
+                'pending_cleanup_removed_expired_total' => 0,
+                'pending_cleanup_history_written_total' => 0,
+                'pending_cleanup_examples' => [],
+            ];
+        }
+
+        $queueBySignalId = [];
+        $queueBySymbol = [];
+        foreach ($queueResult as $qid => $qEntry) {
+            if (!is_array($qEntry)) {
+                continue;
+            }
+            $sigId = (string)($qEntry['signal_id'] ?? $qid);
+            if ($sigId !== '') {
+                $queueBySignalId[$sigId] = $qEntry;
+            }
+            $sym = strtolower((string)($qEntry['symbol'] ?? ''));
+            if ($sym !== '') {
+                $queueBySymbol[$sym] = $qEntry;
+            }
+        }
+
+        $checked = 0;
+        $removedConfirmed = 0;
+        $removedGarbage = 0;
+        $removedInvalid = 0;
+        $removedExpired = 0;
+        $historyWritten = 0;
+        $examples = [];
+        $kept = [];
+        $historyRows = [];
+
+        foreach ($existing as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $checked++;
+            $sigId = (string)($entry['signal_id'] ?? '');
+            $sym = strtolower((string)($entry['symbol'] ?? ''));
+            $entryStatus = (string)($entry['dbl_pattern_status'] ?? 'active');
+            $entryPendingReason = (string)($entry['pending_reason'] ?? '');
+
+            $q = null;
+            if ($sigId !== '' && isset($queueBySignalId[$sigId])) {
+                $q = $queueBySignalId[$sigId];
+            } elseif ($sym !== '' && isset($queueBySymbol[$sym])) {
+                $q = $queueBySymbol[$sym];
+            }
+
+            $qStatus = (string)($q['handoff_status'] ?? '');
+            $qBlockReason = (string)($q['block_reason'] ?? '');
+            $qExecutable = (bool)($q['executable'] ?? false);
+            $qReady = (bool)($q['handoff_ready'] ?? false);
+            $qPatternStatus = (string)($q['strategy_signal_context']['dbl_pattern_status'] ?? ($q['dbl_pattern_status'] ?? ''));
+            $isGarbageBlocked = $qBlockReason !== '' && str_starts_with($qBlockReason, 'garbage_');
+
+            // Active pending list must never contain confirmed entries with pending_reason.
+            $isConfirmedPendingEntry = $entryStatus === 'confirmed'
+                || ($entryPendingReason !== '' && str_starts_with($entryPendingReason, 'waiting_') && $qPatternStatus === 'confirmed');
+
+            $shouldRemove = $isConfirmedPendingEntry
+                || in_array($qStatus, ['blocked', 'withdrawn', 'expired'], true)
+                || $isGarbageBlocked
+                || $qExecutable
+                || $qReady
+                || $qPatternStatus === 'confirmed'
+                || $qPatternStatus === 'invalid';
+
+            if (!$shouldRemove) {
+                $kept[] = $entry;
+                continue;
+            }
+
+            if ($isConfirmedPendingEntry || $qPatternStatus === 'confirmed') {
+                $removedConfirmed++;
+            }
+            if ($isGarbageBlocked) {
+                $removedGarbage++;
+            }
+            if ($qPatternStatus === 'invalid') {
+                $removedInvalid++;
+            }
+            if ($qStatus === 'expired') {
+                $removedExpired++;
+            }
+
+            $finalStatus = 'withdrawn';
+            if ($qExecutable || $qReady) {
+                $finalStatus = 'confirmed_handoff_ready';
+            } elseif ($isGarbageBlocked) {
+                $finalStatus = 'confirmed_blocked_by_garbage';
+            } elseif ($qPatternStatus === 'invalid') {
+                $finalStatus = 'invalid';
+            } elseif ($qStatus === 'expired') {
+                $finalStatus = 'expired';
+            } elseif ($qStatus === 'withdrawn') {
+                $finalStatus = 'withdrawn';
+            }
+
+            $historyRows[] = [
+                'signal_id'      => $sigId !== '' ? $sigId : ($entry['signal_id'] ?? null),
+                'symbol'         => $entry['symbol'] ?? ($q['symbol'] ?? null),
+                'processed_at'   => date('c'),
+                'final_status'   => $finalStatus,
+                'handoff_status' => $qStatus !== '' ? $qStatus : ($q['handoff_status'] ?? null),
+                'block_reason'   => $qBlockReason !== '' ? $qBlockReason : ($q['block_reason'] ?? null),
+                'dbl_pattern_status' => $qPatternStatus !== '' ? $qPatternStatus : $entryStatus,
+                'pending_reason' => $entryPendingReason !== '' ? $entryPendingReason : null,
+            ];
+            $historyWritten++;
+
+            if (count($examples) < 10) {
+                $examples[] = [
+                    'signal_id'      => $sigId !== '' ? $sigId : null,
+                    'symbol'         => $entry['symbol'] ?? null,
+                    'entry_status'   => $entryStatus,
+                    'queue_status'   => $qStatus !== '' ? $qStatus : null,
+                    'queue_pattern_status' => $qPatternStatus !== '' ? $qPatternStatus : null,
+                    'block_reason'   => $qBlockReason !== '' ? $qBlockReason : null,
+                    'final_status'   => $finalStatus,
+                    'removed'        => true,
+                ];
+            }
+        }
+
+        $this->writeJson('storage/pending_patterns.json', array_values($kept));
+        if (!empty($historyRows)) {
+            $historyPath = $this->moduleDir . '/storage/pending_patterns_history.ndjson';
+            $blob = '';
+            foreach ($historyRows as $row) {
+                $blob .= json_encode($row, JSON_UNESCAPED_UNICODE) . "\n";
+            }
+            @file_put_contents($historyPath, $blob, FILE_APPEND | LOCK_EX);
+        }
+
+        return [
+            'pending_cleanup_checked_total' => $checked,
+            'pending_cleanup_removed_confirmed_total' => $removedConfirmed,
+            'pending_cleanup_removed_garbage_blocked_total' => $removedGarbage,
+            'pending_cleanup_removed_invalid_total' => $removedInvalid,
+            'pending_cleanup_removed_expired_total' => $removedExpired,
+            'pending_cleanup_history_written_total' => $historyWritten,
+            'pending_cleanup_examples' => $examples,
+        ];
     }
 
     /**

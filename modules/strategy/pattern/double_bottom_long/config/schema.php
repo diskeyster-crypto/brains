@@ -186,4 +186,8 @@ return [
     'dbl_pattern_pending_max_items'                            => 'int',
     'dbl_pattern_allow_active_to_pending'                      => 'bool',
     'dbl_pattern_allow_confirmed_to_handoff'                   => 'bool',
+    // DBL confirmed-pattern freshness override
+    'dbl_confirmed_pattern_ttl_minutes'                        => 'int',
+    'dbl_confirmed_pattern_require_price_still_valid'          => 'bool',
+    'dbl_confirmed_pattern_max_age_before_handoff_minutes'     => 'int',
 ];

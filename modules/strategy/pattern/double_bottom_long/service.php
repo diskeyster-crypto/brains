@@ -121,6 +121,14 @@ final class DoubleBottomLongService
     private int $dblPatternInvalidPoint3BrokenTotal         = 0;
     private int $dblPatternInvalidFreshLowerLowTotal        = 0;
     private int $dblPatternInvalidReclaimLostTotal          = 0;
+    private int $dblTraceIncompleteTotal                    = 0;
+    private int $dblTraceReconstructedBeforePatternStateTotal = 0;
+    private int $dblTraceReconstructionFailedBeforePatternStateTotal = 0;
+    private int $reclaimLostCheckedTotal                    = 0;
+    private int $reclaimLostTerminalTotal                   = 0;
+    private int $reclaimLostRecoveredTotal                  = 0;
+    private int $reclaimLostAmbiguousTotal                  = 0;
+    private int $patternStateBlockedBeforeGarbageTotal      = 0;
     private int $dblPatternInvalidTtlExpiredTotal           = 0;
     private int $dblPatternInvalidWeakBounceTotal           = 0;
     private int $dblPatternConfirmedSentToGarbageVetoTotal  = 0;
@@ -139,6 +147,14 @@ final class DoubleBottomLongService
     private array $dblPatternPendingConfirmedExamples       = [];
     /** @var list<array<string,mixed>> */
     private array $dblPatternPendingInvalidatedExamples     = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblTraceIncompleteExamples               = [];
+    /** @var list<array<string,mixed>> */
+    private array $reclaimLostTerminalExamples              = [];
+    /** @var list<array<string,mixed>> */
+    private array $reclaimLostRecoveredExamples             = [];
+    /** @var list<array<string,mixed>> */
+    private array $patternStateBlockedBeforeGarbageExamples = [];
     private int $dblPatternPendingSweepTotal              = 0;
     private int $dblPatternPendingSweepConfirmedTotal     = 0;
     private int $dblPatternPendingSweepInvalidTotal       = 0;
@@ -606,6 +622,14 @@ final class DoubleBottomLongService
         $this->dblPatternInvalidPoint3BrokenTotal        = 0;
         $this->dblPatternInvalidFreshLowerLowTotal       = 0;
         $this->dblPatternInvalidReclaimLostTotal         = 0;
+        $this->dblTraceIncompleteTotal                   = 0;
+        $this->dblTraceReconstructedBeforePatternStateTotal = 0;
+        $this->dblTraceReconstructionFailedBeforePatternStateTotal = 0;
+        $this->reclaimLostCheckedTotal                   = 0;
+        $this->reclaimLostTerminalTotal                  = 0;
+        $this->reclaimLostRecoveredTotal                 = 0;
+        $this->reclaimLostAmbiguousTotal                 = 0;
+        $this->patternStateBlockedBeforeGarbageTotal     = 0;
         $this->dblPatternInvalidTtlExpiredTotal          = 0;
         $this->dblPatternInvalidWeakBounceTotal          = 0;
         $this->dblPatternConfirmedSentToGarbageVetoTotal = 0;
@@ -618,6 +642,10 @@ final class DoubleBottomLongService
         $this->dblPatternPendingExamples           = [];
         $this->dblPatternPendingConfirmedExamples  = [];
         $this->dblPatternPendingInvalidatedExamples = [];
+        $this->dblTraceIncompleteExamples          = [];
+        $this->reclaimLostTerminalExamples         = [];
+        $this->reclaimLostRecoveredExamples        = [];
+        $this->patternStateBlockedBeforeGarbageExamples = [];
         $this->dblPatternPendingSweepTotal               = 0;
         $this->dblPatternPendingSweepConfirmedTotal      = 0;
         $this->dblPatternPendingSweepInvalidTotal        = 0;
@@ -2189,10 +2217,14 @@ final class DoubleBottomLongService
             'dbl_trace_missing_total'                        => $this->dblTraceMissingTotal,
             'dbl_trace_reconstructed_total'                  => $this->dblTraceReconstructedTotal,
             'dbl_trace_reconstruction_failed_total'          => $this->dblTraceReconstructionFailedTotal,
+            'dbl_trace_incomplete_total'                     => $this->dblTraceIncompleteTotal,
+            'dbl_trace_reconstructed_before_pattern_state_total' => $this->dblTraceReconstructedBeforePatternStateTotal,
+            'dbl_trace_reconstruction_failed_before_pattern_state_total' => $this->dblTraceReconstructionFailedBeforePatternStateTotal,
             'dbl_garbage_missing_trace_blocked_total'        => $this->dblGarbageMissingTraceBlockedTotal,
             'dbl_garbage_reclaim_not_confirmed_total'        => $this->dblGarbageReclaimNotConfirmedTotal,
             'dbl_garbage_missing_trace_passed_high_quality_total' => $this->dblGarbageMissingTracePassedHighQualityTotal,
             'dbl_trace_missing_examples'                     => $this->dblTraceMissingExamples,
+            'dbl_trace_incomplete_examples'                  => $this->dblTraceIncompleteExamples,
             'dbl_trace_reconstructed_examples'               => $this->dblTraceReconstructedExamples,
             'dbl_garbage_missing_trace_block_examples'       => $this->dblGarbageMissingTraceBlockExamples,
             'dbl_garbage_reclaim_not_confirmed_examples'     => $this->dblGarbageReclaimNotConfirmedExamples,
@@ -2240,6 +2272,14 @@ final class DoubleBottomLongService
             'dbl_pattern_confirmed_sent_to_garbage_veto_total'       => $this->dblPatternConfirmedSentToGarbageVetoTotal,
             'dbl_pattern_active_blocked_from_handoff_total'          => $this->dblPatternActiveBlockedFromHandoffTotal,
             'dbl_pattern_invalid_blocked_from_handoff_total'         => $this->dblPatternInvalidBlockedFromHandoffTotal,
+            'pattern_state_blocked_before_garbage_total'             => $this->patternStateBlockedBeforeGarbageTotal,
+            'pattern_state_blocked_before_garbage_examples'          => $this->patternStateBlockedBeforeGarbageExamples,
+            'reclaim_lost_checked_total'                             => $this->reclaimLostCheckedTotal,
+            'reclaim_lost_terminal_total'                            => $this->reclaimLostTerminalTotal,
+            'reclaim_lost_recovered_total'                           => $this->reclaimLostRecoveredTotal,
+            'reclaim_lost_ambiguous_total'                           => $this->reclaimLostAmbiguousTotal,
+            'reclaim_lost_terminal_examples'                         => $this->reclaimLostTerminalExamples,
+            'reclaim_lost_recovered_examples'                        => $this->reclaimLostRecoveredExamples,
             'dbl_pattern_confirmed_handoff_ready_total'              => $this->dblPatternConfirmedHandoffReadyTotal,
             'dbl_pattern_active_examples'                             => $this->dblPatternActiveExamples,
             'dbl_pattern_confirmed_examples'                          => $this->dblPatternConfirmedExamples,
@@ -8968,12 +9008,48 @@ final class DoubleBottomLongService
                         $sscForPs1,
                         $config
                     );
+                    $prepPs1 = $this->prepareDblPatternStateContextWithTrace(
+                        (string)($r['symbol'] ?? ''),
+                        (string)($r['detected_at'] ?? ''),
+                        $r,
+                        $sscForPs1,
+                        $config
+                    );
+                    $sscForPs1 = $prepPs1['context'];
                     $ps = $this->applyDblPatternStatusStateMachine($r, $sscForPs1, $config);
                     $this->dblPatternStatusCheckedTotal++;
                     $sscPatternMerge = is_array($result[$id]['strategy_signal_context'] ?? null)
                         ? $result[$id]['strategy_signal_context'] : [];
-                    $result[$id]['strategy_signal_context'] = array_merge($sscPatternMerge, $ps['diag']);
+                    $result[$id]['strategy_signal_context'] = array_merge($sscPatternMerge, $prepPs1['diag'], $ps['diag']);
                     $psStatus = (string)($ps['status'] ?? 'raw_candidate');
+                    $reclaimFinalState = (string)($ps['diag']['reclaim_loss_final_state'] ?? 'unknown');
+                    if (($ps['diag']['reclaim_lost_after_confirm'] ?? false) === true) {
+                        $this->reclaimLostCheckedTotal++;
+                        if (($ps['diag']['reclaim_level_lost'] ?? false) === true) {
+                            $this->reclaimLostTerminalTotal++;
+                            if (count($this->reclaimLostTerminalExamples) < 10) {
+                                $this->reclaimLostTerminalExamples[] = [
+                                    'symbol' => $r['symbol'] ?? null,
+                                    'signal_id' => $id,
+                                    'reclaim_loss_final_state' => $reclaimFinalState,
+                                    'latest_price' => $ps['diag']['latest_price'] ?? null,
+                                    'latest_price_distance_from_reclaim_pct' => $ps['diag']['latest_price_distance_from_reclaim_pct'] ?? null,
+                                ];
+                            }
+                        } elseif ($reclaimFinalState === 'recovered') {
+                            $this->reclaimLostRecoveredTotal++;
+                            if (count($this->reclaimLostRecoveredExamples) < 10) {
+                                $this->reclaimLostRecoveredExamples[] = [
+                                    'symbol' => $r['symbol'] ?? null,
+                                    'signal_id' => $id,
+                                    'reclaim_loss_final_state' => $reclaimFinalState,
+                                    'reclaim_retest_held' => $ps['diag']['reclaim_retest_held'] ?? null,
+                                ];
+                            }
+                        } else {
+                            $this->reclaimLostAmbiguousTotal++;
+                        }
+                    }
                     if ($psStatus === 'active') {
                         $this->dblPatternActiveTotal++;
                         $this->dblPatternPendingTotal++;
@@ -9003,6 +9079,7 @@ final class DoubleBottomLongService
                     }
                     if ($psStatus === 'invalid') {
                         $this->dblPatternInvalidTotal++;
+                        $this->patternStateBlockedBeforeGarbageTotal++;
                         $this->dblPatternInvalidBlockedFromHandoffTotal++;
                         // Sync pending_patterns.json: remove this signal if it's there as active
                         $this->removeDblPendingPatternEntry((string)($r['signal_id'] ?? $id));
@@ -9023,6 +9100,9 @@ final class DoubleBottomLongService
                         }
                         $queueMarkedNonExecutableTotal++;
                         switch ($invReason) {
+                            case 'dbl_trace_incomplete':
+                                $this->dblTraceIncompleteTotal++;
+                                break;
                             case 'point3_broken':
                                 $this->dblPatternInvalidPoint3BrokenTotal++;
                                 break;
@@ -9044,8 +9124,29 @@ final class DoubleBottomLongService
                         if (count($this->dblPatternInvalidExamples) < 5) {
                             $this->dblPatternInvalidExamples[] = $this->buildDblPatternExample($r, $id, $ps);
                         }
+                        if (count($this->patternStateBlockedBeforeGarbageExamples) < 10) {
+                            $this->patternStateBlockedBeforeGarbageExamples[] = [
+                                'symbol' => $r['symbol'] ?? null,
+                                'signal_id' => $id,
+                                'dbl_pattern_status' => $psStatus,
+                                'invalid_reason' => $invReason,
+                                'dbl_trace_complete' => $ps['diag']['dbl_trace_complete'] ?? null,
+                                'dbl_trace_source' => $ps['diag']['dbl_trace_source'] ?? null,
+                            ];
+                        }
                         if (count($this->dblPatternPendingInvalidatedExamples) < 5) {
                             $this->dblPatternPendingInvalidatedExamples[] = $this->buildDblPatternExample($r, $id, $ps);
+                        }
+                        if ($invReason === 'dbl_trace_incomplete' && count($this->dblTraceIncompleteExamples) < 10) {
+                            $this->dblTraceIncompleteExamples[] = [
+                                'symbol' => $r['symbol'] ?? null,
+                                'signal_id' => $id,
+                                'point_1_missing' => $ps['diag']['point_1_missing'] ?? null,
+                                'point_3_missing' => $ps['diag']['point_3_missing'] ?? null,
+                                'neckline_present' => $ps['diag']['neckline_present'] ?? null,
+                                'reclaim_present' => $ps['diag']['reclaim_present'] ?? null,
+                                'dbl_trace_source' => $ps['diag']['dbl_trace_source'] ?? null,
+                            ];
                         }
                         continue;
                     }
@@ -9347,11 +9448,30 @@ final class DoubleBottomLongService
                         $sscForPs2,
                         $config
                     );
+                    $prepPs2 = $this->prepareDblPatternStateContextWithTrace(
+                        (string)($r['symbol'] ?? ''),
+                        (string)($r['detected_at'] ?? ''),
+                        $r,
+                        $sscForPs2,
+                        $config
+                    );
+                    $sscForPs2 = $prepPs2['context'];
                     $ps = $this->applyDblPatternStatusStateMachine($r, $sscForPs2, $config);
                     $this->dblPatternStatusCheckedTotal++;
                     $sscPatternMerge = is_array($result[$id]['strategy_signal_context'] ?? null)
                         ? $result[$id]['strategy_signal_context'] : [];
-                    $result[$id]['strategy_signal_context'] = array_merge($sscPatternMerge, $ps['diag']);
+                    $result[$id]['strategy_signal_context'] = array_merge($sscPatternMerge, $prepPs2['diag'], $ps['diag']);
+                    $reclaimFinalState = (string)($ps['diag']['reclaim_loss_final_state'] ?? 'unknown');
+                    if (($ps['diag']['reclaim_lost_after_confirm'] ?? false) === true) {
+                        $this->reclaimLostCheckedTotal++;
+                        if (($ps['diag']['reclaim_level_lost'] ?? false) === true) {
+                            $this->reclaimLostTerminalTotal++;
+                        } elseif ($reclaimFinalState === 'recovered') {
+                            $this->reclaimLostRecoveredTotal++;
+                        } else {
+                            $this->reclaimLostAmbiguousTotal++;
+                        }
+                    }
                     if (($ps['status'] ?? 'raw_candidate') === 'confirmed') {
                         $this->dblPatternConfirmedTotal++;
                         $this->dblPatternConfirmedHandoffReadyTotal++;
@@ -9366,6 +9486,7 @@ final class DoubleBottomLongService
                             $softDemoteAllowedTotal++;
                         }
                     } else {
+                        $this->patternStateBlockedBeforeGarbageTotal++;
                         $blockReason = ($ps['status'] ?? '') === 'active'
                             ? 'waiting_dbl_pattern_confirmation'
                             : ((string)($ps['invalid_reason'] ?? 'dbl_pattern_invalid'));
@@ -9608,6 +9729,12 @@ final class DoubleBottomLongService
             'neckline_closes_above_count', 'reclaim_hold_bars', 'reclaim_hold_minutes',
             'reclaim_retest_held', 'higher_low_after_point3', 'fresh_lower_low_after_point3',
             'point3_broken', 'reclaim_level_lost',
+            'point_1_missing', 'point_3_missing', 'neckline_present', 'reclaim_present',
+            'dbl_trace_complete', 'dbl_trace_source',
+            'reclaim_went_above', 'reclaim_lost_after_confirm', 'reclaim_recovered_after_loss',
+            'current_price_above_reclaim', 'latest_price', 'latest_price_distance_from_reclaim_pct',
+            'reclaim_loss_duration_minutes', 'reclaim_loss_final_state',
+            'dbl_pattern_diag_recomputed_at', 'dbl_pattern_diag_source', 'stale_pattern_diag_cleared',
             'effective_fresh_at', 'detected_age_minutes', 'effective_fresh_age_minutes',
             'current_run_freshness_source', 'current_run_freshness_passed', 'current_run_freshness_block_reason',
             // Confirmed-pattern validity diagnostics
@@ -10345,6 +10472,200 @@ final class DoubleBottomLongService
     }
 
     /**
+     * Prepare DBL context before pattern-state decision:
+     * - optionally reconstruct missing trace fields from parser2 history
+     * - clear stale contradictory pattern diag flags
+     *
+     * @return array{context:array<string,mixed>,diag:array<string,mixed>}
+     */
+    private function prepareDblPatternStateContextWithTrace(
+        string $symbol,
+        string $detectedAt,
+        array $record,
+        array $context,
+        array $config
+    ): array {
+        $ctx = is_array($context) ? $context : [];
+        $recomputedAt = date('c');
+        $staleCleared = false;
+
+        $point1 = (float)($ctx['point_1_low_price'] ?? 0.0);
+        $point2 = (float)($ctx['point_2_neckline_price'] ?? ($ctx['neckline_level'] ?? 0.0));
+        $point3 = (float)($ctx['point_3_second_low_price'] ?? 0.0);
+        $traceMissing = $point1 <= 0.0 || $point3 <= 0.0 || $point2 <= 0.0;
+        $reconDiag = [
+            'dbl_trace_reconstructed_before_pattern_state' => false,
+            'dbl_trace_reconstruction_failed_before_pattern_state' => false,
+            'dbl_trace_reconstruction_failed_reason_before_pattern_state' => null,
+            'dbl_trace_source' => (string)($ctx['dbl_trace_source'] ?? ($ctx['dbl_pattern_confirmation_source'] ?? 'signal_context')),
+        ];
+
+        if ($traceMissing && $symbol !== '') {
+            $entryPrice = (float)($record['entry_price'] ?? $record['last_price'] ?? 0.0);
+            $recon = $this->tryReconstructDblPatternTraceFromParser2($symbol, $detectedAt, $entryPrice, $config);
+            if (($recon['ok'] ?? false) === true) {
+                if ($point1 <= 0.0 && (float)($recon['point_1_low_price'] ?? 0.0) > 0.0) {
+                    $ctx['point_1_low_price'] = (float)$recon['point_1_low_price'];
+                    $ctx['point_1_low_time'] = $recon['point_1_low_time'] ?? ($ctx['point_1_low_time'] ?? null);
+                }
+                if ($point2 <= 0.0 && (float)($recon['point_2_neckline_price'] ?? 0.0) > 0.0) {
+                    $ctx['point_2_neckline_price'] = (float)$recon['point_2_neckline_price'];
+                    $ctx['point_2_neckline_time'] = $recon['point_2_neckline_time'] ?? ($ctx['point_2_neckline_time'] ?? null);
+                }
+                if ($point3 <= 0.0 && (float)($recon['point_3_second_low_price'] ?? 0.0) > 0.0) {
+                    $ctx['point_3_second_low_price'] = (float)$recon['point_3_second_low_price'];
+                    $ctx['point_3_second_low_time'] = $recon['point_3_second_low_time'] ?? ($ctx['point_3_second_low_time'] ?? null);
+                }
+                if (!isset($ctx['dbl_trace_source']) || (string)$ctx['dbl_trace_source'] === '') {
+                    $ctx['dbl_trace_source'] = 'parser2_reconstructed_pattern_state';
+                }
+                $this->dblTraceReconstructedBeforePatternStateTotal++;
+                $reconDiag['dbl_trace_reconstructed_before_pattern_state'] = true;
+                $reconDiag['dbl_trace_source'] = 'parser2_reconstructed_pattern_state';
+            } else {
+                $this->dblTraceReconstructionFailedBeforePatternStateTotal++;
+                $reconDiag['dbl_trace_reconstruction_failed_before_pattern_state'] = true;
+                $reconDiag['dbl_trace_reconstruction_failed_reason_before_pattern_state'] = $recon['failed_reason'] ?? 'unknown';
+            }
+        }
+
+        // Clear stale contradictory diag fields before recalculation.
+        $staleFields = [
+            'confirmation_ttl_expired',
+            'dbl_pattern_confirmed_at',
+            'dbl_pattern_invalidated_at',
+            'dbl_pattern_invalid_reason',
+            'dbl_pattern_pending_reason',
+            'dbl_pattern_status_reason',
+        ];
+        foreach ($staleFields as $field) {
+            if (array_key_exists($field, $ctx)) {
+                $ctx[$field] = null;
+                $staleCleared = true;
+            }
+        }
+        $ctx['dbl_pattern_diag_recomputed_at'] = $recomputedAt;
+        $ctx['dbl_pattern_diag_source'] = $reconDiag['dbl_trace_reconstructed_before_pattern_state']
+            ? 'parser2_recomputed'
+            : ((string)($ctx['dbl_pattern_confirmation_source'] ?? '') !== '' ? 'mixed' : 'signal_context');
+        $ctx['stale_pattern_diag_cleared'] = $staleCleared;
+
+        return [
+            'context' => $ctx,
+            'diag' => array_merge($reconDiag, [
+                'dbl_pattern_diag_recomputed_at' => $recomputedAt,
+                'dbl_pattern_diag_source' => $ctx['dbl_pattern_diag_source'],
+                'stale_pattern_diag_cleared' => $staleCleared,
+            ]),
+        ];
+    }
+
+    /**
+     * Reconstruct DBL pattern trace points (1-2-3 + times) from parser2 tick history.
+     *
+     * @return array<string,mixed>
+     */
+    private function tryReconstructDblPatternTraceFromParser2(
+        string $symbol,
+        string $detectedAt,
+        float $entryPrice,
+        array $config
+    ): array {
+        $normalizedSymbol = strtoupper(trim($symbol));
+        if ($normalizedSymbol === '' || !preg_match('/^[A-Z0-9]{2,30}$/', $normalizedSymbol)) {
+            return ['ok' => false, 'failed_reason' => 'invalid_symbol'];
+        }
+        $detectedTs = $detectedAt !== '' ? (int)strtotime($detectedAt) : 0;
+        if ($detectedTs <= 0) {
+            $detectedTs = time() - 3600;
+        }
+        $storageRoot = $this->repoRoot . '/modules/parser/parser2_history_accumulator/storage/' . $normalizedSymbol;
+        $files = [
+            $storageRoot . '/' . gmdate('Y-m-d') . '.ndjson',
+            $storageRoot . '/' . gmdate('Y-m-d', time() - 86400) . '.ndjson',
+        ];
+        $ticks = [];
+        foreach ($files as $file) {
+            if (!is_file($file)) {
+                continue;
+            }
+            $fh = @fopen($file, 'r');
+            if (!is_resource($fh)) {
+                continue;
+            }
+            while (($line = fgets($fh)) !== false) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $row = json_decode($line, true);
+                if (!is_array($row)) {
+                    continue;
+                }
+                $ts = 0;
+                if (isset($row['ts_unix'])) {
+                    $ts = (int)$row['ts_unix'];
+                } elseif (isset($row['ts'])) {
+                    $parsed = strtotime((string)$row['ts']);
+                    $ts = $parsed !== false ? (int)$parsed : 0;
+                }
+                $price = (float)($row['last_price'] ?? ($row['data']['lastPrice'] ?? 0.0));
+                if ($ts <= 0 || $price <= 0.0 || $ts < ($detectedTs - 60)) {
+                    continue;
+                }
+                $ticks[] = ['ts' => $ts, 'price' => $price];
+            }
+            fclose($fh);
+        }
+        if (count($ticks) < 5) {
+            return ['ok' => false, 'failed_reason' => 'insufficient_ticks'];
+        }
+        usort($ticks, static fn($a, $b) => $a['ts'] <=> $b['ts']);
+
+        $maxIdx = 0;
+        $maxPrice = 0.0;
+        foreach ($ticks as $i => $t) {
+            if ((float)$t['price'] > $maxPrice) {
+                $maxPrice = (float)$t['price'];
+                $maxIdx = $i;
+            }
+        }
+        $before = array_slice($ticks, 0, max(1, $maxIdx));
+        $after = array_slice($ticks, min(count($ticks) - 1, $maxIdx + 1));
+        if (empty($before) || empty($after)) {
+            return ['ok' => false, 'failed_reason' => 'insufficient_split_ticks'];
+        }
+        $point1 = array_reduce($before, static function ($c, $t) {
+            if ($c === null || (float)$t['price'] < (float)$c['price']) {
+                return $t;
+            }
+            return $c;
+        });
+        $point3 = array_reduce($after, static function ($c, $t) {
+            if ($c === null || (float)$t['price'] < (float)$c['price']) {
+                return $t;
+            }
+            return $c;
+        });
+        if (!is_array($point1) || !is_array($point3)) {
+            return ['ok' => false, 'failed_reason' => 'failed_points'];
+        }
+
+        return [
+            'ok' => true,
+            'point_1_low_price' => (float)$point1['price'],
+            'point_1_low_time' => date('c', (int)$point1['ts']),
+            'point_2_neckline_price' => $maxPrice > 0.0 ? $maxPrice : null,
+            'point_2_neckline_time' => isset($ticks[$maxIdx]['ts']) ? date('c', (int)$ticks[$maxIdx]['ts']) : null,
+            'point_3_second_low_price' => (float)$point3['price'],
+            'point_3_second_low_time' => date('c', (int)$point3['ts']),
+            'entry_price_used' => $entryPrice > 0.0 ? $entryPrice : null,
+            'ticks_loaded' => count($ticks),
+            'failed_reason' => null,
+        ];
+    }
+
+    /**
      * DBL pattern-status state machine gate (primary pre-handoff gate).
      *
      * States:
@@ -10380,6 +10701,11 @@ final class DoubleBottomLongService
         $hasPoint2 = $point2 > 0.0 || $necklineLevel > 0.0;
         $hasPoint3 = $point3 > 0.0;
         $hasStructure = $hasPoint1 && $hasPoint2 && $hasPoint3;
+        $traceComplete = $hasPoint1 && $hasPoint3;
+        $point1Missing = !$hasPoint1;
+        $point3Missing = !$hasPoint3;
+        $necklinePresent = $necklineLevel > 0.0 || $point2 > 0.0;
+        $reclaimPresent = $reclaimLevel > 0.0;
 
         $point3TolerancePct = (float)($config['dbl_pattern_point3_break_tolerance_pct'] ?? 0.20);
         $point3ToleranceMult = 1.0 - max(0.0, $point3TolerancePct) / 100.0;
@@ -10407,6 +10733,39 @@ final class DoubleBottomLongService
         $reclaimConfirmed = (bool)($ssc['reclaim_confirmed'] ?? false);
         $necklineReclaimConfirmed = (bool)($ssc['neckline_reclaim_confirmed'] ?? false);
         $reclaimRetestHeld = (bool)($ssc['reclaim_retest_held'] ?? false);
+        $reclaimWentAbove = (bool)($ssc['reclaim_went_above'] ?? ($reclaimConfirmed || $necklineReclaimConfirmed));
+        $reclaimLostAfterConfirm = (bool)($ssc['reclaim_lost_after_confirm'] ?? false) || $reclaimLost;
+        $reclaimRecoveredAfterLoss = (bool)($ssc['reclaim_recovered_after_loss'] ?? false);
+        $latestPrice = isset($ssc['latest_price']) ? (float)$ssc['latest_price'] : (float)($record['entry_price'] ?? $record['last_price'] ?? 0.0);
+        $reclaimTolerancePct = (float)($config['dbl_pattern_reclaim_loss_tolerance_pct'] ?? 0.10);
+        $reclaimToleranceMult = 1.0 - max(0.0, $reclaimTolerancePct) / 100.0;
+        $currentPriceAboveReclaim = $reclaimPresent && $latestPrice > 0.0
+            ? $latestPrice >= ($reclaimLevel * $reclaimToleranceMult)
+            : false;
+        $latestPriceDistanceFromReclaimPct = ($reclaimPresent && $latestPrice > 0.0)
+            ? round((($latestPrice - $reclaimLevel) / $reclaimLevel) * 100.0, 4)
+            : null;
+        $reclaimLossDurationMinutes = isset($ssc['reclaim_loss_duration_minutes']) && is_numeric($ssc['reclaim_loss_duration_minutes'])
+            ? (float)$ssc['reclaim_loss_duration_minutes']
+            : null;
+        if ($reclaimLostAfterConfirm && $reclaimRecoveredAfterLoss === false && $reclaimLossDurationMinutes === null && isset($ssc['reclaim_lost_since_ts'])) {
+            $lostSinceTs = (int)$ssc['reclaim_lost_since_ts'];
+            if ($lostSinceTs > 0) {
+                $reclaimLossDurationMinutes = round((time() - $lostSinceTs) / 60, 2);
+            }
+        }
+        if ($reclaimLostAfterConfirm && $currentPriceAboveReclaim) {
+            $reclaimRecoveredAfterLoss = true;
+        }
+        $reclaimLossFinalState = 'unknown';
+        if ($reclaimLostAfterConfirm) {
+            $reclaimLossFinalState = $reclaimRecoveredAfterLoss ? 'recovered' : ($currentPriceAboveReclaim ? 'recovered' : 'still_lost');
+        }
+        $reclaimLossTerminal = $reclaimLostAfterConfirm && (
+            (!$reclaimRecoveredAfterLoss && !$currentPriceAboveReclaim)
+            || $point3Broken
+            || $freshLowerLow
+        );
 
         $necklineBreakConfirmed = $closesAbove >= $minClosesAbove && !$reclaimLost;
         $reclaimHoldConfirmed = ($reclaimConfirmed || $necklineReclaimConfirmed)
@@ -10436,6 +10795,9 @@ final class DoubleBottomLongService
                 $ttlExpired = (time() - $detTs) > ($ttlMinutes * 60);
             }
         }
+        if ($ttlExpired && $reclaimLostAfterConfirm && !$reclaimRecoveredAfterLoss) {
+            $reclaimLossTerminal = true;
+        }
 
         $status = 'raw_candidate';
         $statusReason = 'pattern_status_not_evaluated';
@@ -10450,7 +10812,11 @@ final class DoubleBottomLongService
             $confirmationPath = 'mixed';
             $confirmedAt = $nowIso;
         } else {
-            if ($point3Broken) {
+            if (!$traceComplete) {
+                $status = 'invalid';
+                $statusReason = 'dbl_trace_incomplete';
+                $invalidReason = 'dbl_trace_incomplete';
+            } elseif ($point3Broken) {
                 $status = 'invalid';
                 $statusReason = 'point3_broken';
                 $invalidReason = 'point3_broken';
@@ -10458,7 +10824,7 @@ final class DoubleBottomLongService
                 $status = 'invalid';
                 $statusReason = 'fresh_lower_low_after_point3';
                 $invalidReason = 'fresh_lower_low_after_point3';
-            } elseif ($reclaimLost) {
+            } elseif ($reclaimLossTerminal) {
                 $status = 'invalid';
                 $statusReason = 'reclaim_level_lost';
                 $invalidReason = 'reclaim_level_lost';
@@ -10521,12 +10887,29 @@ final class DoubleBottomLongService
             'reclaim_hold_bars'               => $reclaimHoldBars > 0 ? $reclaimHoldBars : null,
             'reclaim_hold_minutes'            => $reclaimHoldMinutes > 0.0 ? $reclaimHoldMinutes : null,
             'reclaim_retest_held'             => $reclaimRetestHeld,
+            'reclaim_went_above'              => $reclaimWentAbove,
+            'reclaim_lost_after_confirm'      => $reclaimLostAfterConfirm,
+            'reclaim_recovered_after_loss'    => $reclaimRecoveredAfterLoss,
+            'current_price_above_reclaim'     => $currentPriceAboveReclaim,
+            'latest_price'                    => $latestPrice > 0.0 ? $latestPrice : null,
+            'latest_price_distance_from_reclaim_pct' => $latestPriceDistanceFromReclaimPct,
+            'reclaim_loss_duration_minutes'   => $reclaimLossDurationMinutes,
+            'reclaim_loss_final_state'        => $reclaimLossFinalState,
             'higher_low_after_point3'         => $higherLowAfterPoint3,
             'higher_low_after_point3_price'   => $higherLowPrice > 0.0 ? $higherLowPrice : null,
             'fresh_lower_low_after_point3'    => $freshLowerLow,
             'point3_broken'                   => $point3Broken,
-            'reclaim_level_lost'              => $reclaimLost,
+            'reclaim_level_lost'              => $reclaimLossTerminal,
             'confirmation_ttl_expired'        => $ttlExpired,
+            'point_1_missing'                 => $point1Missing,
+            'point_3_missing'                 => $point3Missing,
+            'neckline_present'                => $necklinePresent,
+            'reclaim_present'                 => $reclaimPresent,
+            'dbl_trace_complete'              => $traceComplete,
+            'dbl_trace_source'                => $ssc['dbl_trace_source'] ?? ($ssc['dbl_pattern_confirmation_source'] ?? 'signal_context'),
+            'dbl_pattern_diag_recomputed_at'  => $ssc['dbl_pattern_diag_recomputed_at'] ?? date('c'),
+            'dbl_pattern_diag_source'         => $ssc['dbl_pattern_diag_source'] ?? 'mixed',
+            'stale_pattern_diag_cleared'      => (bool)($ssc['stale_pattern_diag_cleared'] ?? false),
             // keep trend-shift fields for backward compatibility
             'trend_shift_gate_enabled'        => (bool)($config['dbl_trend_shift_gate_enabled'] ?? true),
             'trend_shift_checked'             => true,
@@ -11163,6 +11546,14 @@ final class DoubleBottomLongService
             'point3_broken'                 => false,
             'reclaim_level_lost'            => false,
             'weak_bounce_after_point3'      => false,
+            'reclaim_went_above'            => false,
+            'reclaim_lost_after_confirm'    => false,
+            'reclaim_recovered_after_loss'  => false,
+            'current_price_above_reclaim'   => false,
+            'latest_price'                  => null,
+            'latest_price_distance_from_reclaim_pct' => null,
+            'reclaim_loss_duration_minutes' => null,
+            'reclaim_loss_final_state'      => 'unknown',
         ];
 
         $normalizedSymbol = strtoupper(trim($symbol));
@@ -11258,6 +11649,8 @@ final class DoubleBottomLongService
         $reclaimHoldSecondsTotal = 0;
         $reclaimWentAbove       = false;
         $reclaimLostAfter       = false;
+        $reclaimRecoveredAfterLoss = false;
+        $reclaimLostSinceTs     = null;
         $point3Broken           = false;
         $freshLowerLow          = false;
         $prevAboveReclaim       = false;
@@ -11305,8 +11698,16 @@ final class DoubleBottomLongService
                 if ($reclaimWentAbove && !$aboveReclaim) {
                     // Dropped below reclaim after having been above it
                     $reclaimLostAfter = true;
+                    if ($reclaimLostSinceTs === null) {
+                        $reclaimLostSinceTs = $ts;
+                    }
                 }
                 $consecAboveReclaim = 0;
+            }
+
+            if ($reclaimLostAfter && $aboveReclaim) {
+                $reclaimRecoveredAfterLoss = true;
+                $reclaimLostSinceTs = null;
             }
 
             $prevAboveReclaim = $aboveReclaim;
@@ -11338,6 +11739,22 @@ final class DoubleBottomLongService
             if ($lastPrice >= $reclaimRetestZone) {
                 $reclaimRetestHeld = true;
             }
+        }
+        $latestPrice = count($pricesSinceDetected) > 0 ? (float)end($pricesSinceDetected) : null;
+        $currentPriceAboveReclaim = $latestPrice !== null && $refReclaim > 0.0 ? ($latestPrice >= ($refReclaim * 0.999)) : false;
+        if ($reclaimLostAfter && $currentPriceAboveReclaim) {
+            $reclaimRecoveredAfterLoss = true;
+        }
+        $latestPriceDistanceFromReclaimPct = ($latestPrice !== null && $refReclaim > 0.0)
+            ? round((($latestPrice - $refReclaim) / $refReclaim) * 100.0, 4)
+            : null;
+        $reclaimLossDurationMinutes = null;
+        if ($reclaimLostAfter && $reclaimLostSinceTs !== null) {
+            $reclaimLossDurationMinutes = round((max($lastTs, time()) - $reclaimLostSinceTs) / 60.0, 2);
+        }
+        $reclaimLossFinalState = 'unknown';
+        if ($reclaimLostAfter) {
+            $reclaimLossFinalState = $reclaimRecoveredAfterLoss ? 'recovered' : 'still_lost';
         }
 
         // Weak bounce: bounced < 50% of distance from point3 to neckline, never reached neckline
@@ -11372,6 +11789,14 @@ final class DoubleBottomLongService
             'point3_broken'                 => $point3Broken,
             'reclaim_level_lost'            => $reclaimLostAfter,
             'weak_bounce_after_point3'      => $weakBounce,
+            'reclaim_went_above'            => $reclaimWentAbove,
+            'reclaim_lost_after_confirm'    => $reclaimLostAfter,
+            'reclaim_recovered_after_loss'  => $reclaimRecoveredAfterLoss,
+            'current_price_above_reclaim'   => $currentPriceAboveReclaim,
+            'latest_price'                  => $latestPrice,
+            'latest_price_distance_from_reclaim_pct' => $latestPriceDistanceFromReclaimPct,
+            'reclaim_loss_duration_minutes' => $reclaimLossDurationMinutes,
+            'reclaim_loss_final_state'      => $reclaimLossFinalState,
         ];
     }
 
@@ -11438,6 +11863,14 @@ final class DoubleBottomLongService
             'reclaim_hold_bars',
             'reclaim_hold_minutes',
             'reclaim_retest_held',
+            'reclaim_went_above',
+            'reclaim_lost_after_confirm',
+            'reclaim_recovered_after_loss',
+            'current_price_above_reclaim',
+            'latest_price',
+            'latest_price_distance_from_reclaim_pct',
+            'reclaim_loss_duration_minutes',
+            'reclaim_loss_final_state',
             'higher_low_after_point3',
             'higher_low_after_point3_price',
             'fresh_lower_low_after_point3',
@@ -11454,6 +11887,7 @@ final class DoubleBottomLongService
         }
 
         $ctx['dbl_pattern_confirmation_source']         = 'parser2';
+        $ctx['dbl_trace_source'] = 'parser2';
         $ctx['dbl_pattern_confirmation_candles_loaded'] = $computed['candles_loaded'];
         $ctx['dbl_pattern_confirmation_window_minutes'] = $computed['window_minutes'];
         $ctx['dbl_pattern_confirmation_error']          = null;
@@ -11794,7 +12228,15 @@ final class DoubleBottomLongService
                 'entry_price'             => $entry['last_price'] ?? null,
             ];
 
-            $ps        = $this->applyDblPatternStatusStateMachine($fakeRecord, $ctx, $config);
+            $prepSweep = $this->prepareDblPatternStateContextWithTrace(
+                $symbol,
+                $detectedAt,
+                $fakeRecord,
+                $ctx,
+                $config
+            );
+            $ctx = $prepSweep['context'];
+            $ps  = $this->applyDblPatternStatusStateMachine($fakeRecord, $ctx, $config);
             $newStatus = (string)($ps['status'] ?? 'raw_candidate');
 
             $entry['last_checked_at']                      = date('c');

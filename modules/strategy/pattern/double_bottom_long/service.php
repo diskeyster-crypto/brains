@@ -1448,17 +1448,8 @@ final class DoubleBottomLongService
                 'final_status'           => $continuousEnabled ? 'continuous' : 'done',
             ];
             $state['last_cycle_summary'] = $lastCycleSummary;
-
-            // Append a compact record to cycle_history.ndjson for operator audit trail.
-            $cycleHistoryRecord = json_encode(array_merge($lastCycleSummary, [
-                'reject_reason_distribution'       => $cycleStats['reject_reason_distribution'] ?? (object)[],
-                'final_reject_reason_distribution' => $cycleStats['final_reject_reason_distribution'] ?? (object)[],
-            ])) . "\n";
-            @file_put_contents(
-                $this->moduleDir . '/storage/cycle_history.ndjson',
-                $cycleHistoryRecord,
-                FILE_APPEND | LOCK_EX
-            );
+            // cycle_history.ndjson is written after updateBotHandoff() and lifecycle update
+            // so that handoff/pattern-status/freshness/garbage counters are all available.
 
             if ($continuousEnabled && $total > 0) {
                 // Cycle window complete with continuous scan enabled.
@@ -1608,6 +1599,7 @@ final class DoubleBottomLongService
         // non-executable must be marked stale in signals.json so it no longer
         // appears as active_final=true.  Diagnostic fields are preserved.
         $blockedSigIds          = $handoffStats['blocked_signal_ids'] ?? [];
+        $signalSscPatchMap      = $handoffStats['signal_ssc_patch_map'] ?? [];
         $sigMarkedStale         = 0;
         $sigActiveNow           = 0;
         $sigStaleCurrent        = 0;
@@ -1699,6 +1691,13 @@ final class DoubleBottomLongService
                     $sigStaleCurrent++;
                 }
             }
+            // Propagate pattern-status and freshness diagnostics from handoff queue into signals.json SSC.
+            // This ensures signals.json consumers see the same dbl_pattern_status, confirmation fields,
+            // and freshness fields that are in bot_handoff_queue.strategy_signal_context.
+            if (isset($signalSscPatchMap[$sid])) {
+                $existingSscSignal = is_array($sig['strategy_signal_context'] ?? null) ? $sig['strategy_signal_context'] : [];
+                $sig['strategy_signal_context'] = array_merge($existingSscSignal, $signalSscPatchMap[$sid]);
+            }
         }
         unset($sig);
 
@@ -1713,6 +1712,48 @@ final class DoubleBottomLongService
         $cycleStats = $this->finalizeStats($cycleStats, $total, $totalProcessed, $batchSz, count($signals));
         $this->writeJson('storage/stats.json',       $stats);
         $this->writeJson('storage/cycle_stats.json', $cycleStats);
+
+        // ── Deferred cycle_history.ndjson write ──────────────────────────────────
+        // Written here (after updateBotHandoff + signals lifecycle update + finalizeStats)
+        // so that handoff, pattern-status, garbage-veto, and freshness counters are all
+        // available for aggregation over time.
+        if ($isDone && isset($lastCycleSummary)) {
+            $cycleHistoryRecord = json_encode(array_merge($lastCycleSummary, [
+                // Original distribution maps
+                'reject_reason_distribution'       => $cycleStats['reject_reason_distribution'] ?? (object)[],
+                'final_reject_reason_distribution' => $cycleStats['final_reject_reason_distribution'] ?? (object)[],
+                // Signal counts (post-lifecycle-update)
+                'current_cycle_signals_emitted_total' => (int)($cycleStats['signals_emitted_total'] ?? 0),
+                'final_signals_total'                 => count($signals),
+                'final_signals_active_final_total'    => $sigActiveTotal,
+                // Handoff counters
+                'bot_handoff_ready_total'             => $handoffStats['ready_total'],
+                'handoff_queue_ready_written_total'   => $handoffStats['handoff_queue_ready_written_total'] ?? 0,
+                // Pattern-status state machine counters
+                'dbl_pattern_status_checked_total'          => $this->dblPatternStatusCheckedTotal,
+                'dbl_pattern_active_total'                  => $this->dblPatternActiveTotal,
+                'dbl_pattern_confirmed_total'               => $this->dblPatternConfirmedTotal,
+                'dbl_pattern_invalid_total'                 => $this->dblPatternInvalidTotal,
+                'dbl_pattern_pending_total'                 => $this->dblPatternPendingTotal,
+                'dbl_pattern_pending_sweep_total'           => $this->dblPatternPendingSweepTotal,
+                'dbl_pattern_pending_sweep_confirmed_total' => $this->dblPatternPendingSweepConfirmedTotal,
+                'dbl_pattern_pending_sweep_invalid_total'   => $this->dblPatternPendingSweepInvalidTotal,
+                'dbl_pattern_pending_sweep_expired_total'   => $this->dblPatternPendingSweepExpiredTotal,
+                // Garbage veto counters
+                'dbl_garbage_veto_checked_total'  => $this->dblGarbageVetoCheckedTotal,
+                'dbl_garbage_veto_blocked_total'  => $this->dblGarbageVetoBlockedTotal,
+                'dbl_garbage_passed_total'        => $this->dblGarbagePassedTotal,
+                // Current-run freshness counters
+                'current_run_freshness_checked_total' => $handoffStats['current_run_freshness_checked_total'] ?? 0,
+                'current_run_freshness_passed_total'  => $handoffStats['current_run_freshness_passed_total'] ?? 0,
+                'current_run_freshness_blocked_total' => $handoffStats['current_run_freshness_blocked_total'] ?? 0,
+            ])) . "\n";
+            @file_put_contents(
+                $this->moduleDir . '/storage/cycle_history.ndjson',
+                $cycleHistoryRecord,
+                FILE_APPEND | LOCK_EX
+            );
+        }
 
         $regimeSummary = [
             'current_regime'   => $prevRegimeData['regime']           ?? 'unknown',
@@ -9324,7 +9365,51 @@ final class DoubleBottomLongService
                 $result,
                 fn($r) => ($r['executable'] ?? false) === true
             )),
+            // SSC patch map: signal_id → pattern-status + freshness fields to propagate back to signals.json
+            'signal_ssc_patch_map' => $this->buildHandoffSscPatchMap($result),
         ];
+    }
+
+    /**
+     * Extract pattern-status and freshness SSC fields from all queue entries and
+     * return a map of signal_id → fields to merge back into signals.json SSC.
+     *
+     * @param array $queueResult Finalized handoff queue result (signal_id → record)
+     * @return array signal_id → array of SSC fields
+     */
+    private function buildHandoffSscPatchMap(array $queueResult): array
+    {
+        static $sscPatternFields = [
+            'dbl_pattern_status', 'dbl_pattern_status_reason', 'dbl_pattern_confirmation_path',
+            'dbl_pattern_invalid_reason', 'dbl_pattern_pending_reason', 'dbl_pattern_confirmation_source',
+            'dbl_pattern_confirmed_at', 'dbl_pattern_invalidated_at',
+            'neckline_closes_above_count', 'reclaim_hold_bars', 'reclaim_hold_minutes',
+            'reclaim_retest_held', 'higher_low_after_point3', 'fresh_lower_low_after_point3',
+            'point3_broken', 'reclaim_level_lost',
+            'effective_fresh_at', 'detected_age_minutes', 'effective_fresh_age_minutes',
+            'current_run_freshness_source', 'current_run_freshness_passed', 'current_run_freshness_block_reason',
+        ];
+
+        $map = [];
+        foreach ($queueResult as $id => $qEntry) {
+            $sigId = (string)($qEntry['signal_id'] ?? $id);
+            if ($sigId === '') {
+                continue;
+            }
+            $qSsc  = is_array($qEntry['strategy_signal_context'] ?? null) ? $qEntry['strategy_signal_context'] : [];
+            $patch = [];
+            foreach ($sscPatternFields as $field) {
+                if (array_key_exists($field, $qSsc)) {
+                    $patch[$field] = $qSsc[$field];
+                } elseif (array_key_exists($field, $qEntry)) {
+                    $patch[$field] = $qEntry[$field];
+                }
+            }
+            if (!empty($patch)) {
+                $map[$sigId] = $patch;
+            }
+        }
+        return $map;
     }
 
     /**

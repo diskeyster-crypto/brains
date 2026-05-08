@@ -2050,6 +2050,13 @@ final class DoubleBottomLongService
             'handoff_removed_stale_queue_entries_total'                 => $handoffStats['removed_stale_queue_entries_total'] ?? 0,
             'stale_handoff_block_examples'                              => $handoffStats['stale_block_examples']             ?? [],
             'revalidation_required_examples'                            => $handoffStats['revalidation_required_examples']   ?? [],
+            'current_run_freshness_checked_total'                       => $handoffStats['current_run_freshness_checked_total'] ?? 0,
+            'current_run_freshness_passed_total'                        => $handoffStats['current_run_freshness_passed_total'] ?? 0,
+            'current_run_freshness_blocked_total'                       => $handoffStats['current_run_freshness_blocked_total'] ?? 0,
+            'current_run_freshness_detected_at_only_total'              => $handoffStats['current_run_freshness_detected_at_only_total'] ?? 0,
+            'current_run_freshness_refreshed_at_used_total'             => $handoffStats['current_run_freshness_refreshed_at_used_total'] ?? 0,
+            'current_run_freshness_pending_recheck_bypassed_total'      => $handoffStats['current_run_freshness_pending_recheck_bypassed_total'] ?? 0,
+            'current_run_freshness_examples'                            => $handoffStats['current_run_freshness_examples'] ?? [],
             // ── Queue entry normalization counters (explicit non-executable flags) ──
             'queue_entries_normalized_total'              => $handoffStats['queue_entries_normalized_total']              ?? 0,
             'queue_entries_marked_non_executable_total'   => $handoffStats['queue_entries_marked_non_executable_total']   ?? 0,
@@ -8409,6 +8416,14 @@ final class DoubleBottomLongService
         $staleBlockExamples                          = [];
         $revalidationRequiredExamples                = [];
         $result                                      = [];
+        $currentRunFreshnessWindowSec                = max(1, (int)($config['current_run_freshness_window_seconds'] ?? 300));
+        $currentRunFreshnessCheckedTotal             = 0;
+        $currentRunFreshnessPassedTotal              = 0;
+        $currentRunFreshnessBlockedTotal             = 0;
+        $currentRunFreshnessDetectedAtOnlyTotal      = 0;
+        $currentRunFreshnessRefreshedAtUsedTotal     = 0;
+        $currentRunFreshnessPendingRecheckBypassedTotal = 0;
+        $currentRunFreshnessExamples                 = [];
 
         // Process currently-active signals: new or refreshed
         foreach ($activeSignals as $signal) {
@@ -8452,13 +8467,63 @@ final class DoubleBottomLongService
             }
 
             // ── Current-run freshness gate ───────────────────────────────────
-            // A signal is "current-run" if its detected_at is within the current run tick
-            // or if it was emitted in this tick's batch (detected within ~5 min of tickTs).
+            // Current-run freshness must use last-refresh activity, not only detected_at.
+            $effectiveFreshAt = '';
+            $freshnessSource  = 'missing';
+            $freshCandidates = [
+                'refreshed_at'            => (string)($signal['refreshed_at'] ?? ''),
+                'last_refreshed_at'       => (string)($signal['last_refreshed_at'] ?? ''),
+                'last_lifecycle_update_at'=> (string)($signal['last_lifecycle_update_at'] ?? ''),
+                'updated_at'              => (string)($signal['updated_at'] ?? ''),
+                'detected_at'             => $detectedAt,
+            ];
+            foreach ($freshCandidates as $src => $val) {
+                if ($val !== '') {
+                    $effectiveFreshAt = $val;
+                    $freshnessSource = $src === 'detected_at' ? 'detected_at_only' : $src;
+                    break;
+                }
+            }
+            $effectiveFreshTs = $effectiveFreshAt !== '' ? (int)strtotime($effectiveFreshAt) : 0;
+
+            $sigCurrentCycleId = (int)($signal['current_cycle_id'] ?? 0);
+            $sigLastSeenCycleId = (int)($signal['last_seen_cycle_id'] ?? 0);
+            $sigEmittedCycleId = (int)($signal['emitted_cycle_id'] ?? 0);
+            $cycleMarksCurrent = $sigCurrentCycleId > 0
+                && ($sigLastSeenCycleId === $sigCurrentCycleId || $sigEmittedCycleId === $sigCurrentCycleId);
+            if ($cycleMarksCurrent && $tickTs !== false) {
+                $effectiveFreshAt = $tickAt;
+                $effectiveFreshTs = (int)$tickTs;
+                $freshnessSource = 'current_cycle_id';
+            }
+
+            $detectedAgeMin = $detectedTs > 0 ? round(($nowTs - $detectedTs) / 60, 1) : null;
+            $effectiveFreshAgeMin = $effectiveFreshTs > 0 ? round(($nowTs - $effectiveFreshTs) / 60, 1) : null;
+            $effectiveFreshAgeSec = $effectiveFreshTs > 0 ? ($nowTs - $effectiveFreshTs) : null;
+            $pendingReasonRaw = (string)($signal['pending_reason'] ?? ($signal['strategy_signal_context']['dbl_pattern_pending_reason'] ?? ''));
+            $dblStatusRaw = (string)($signal['dbl_pattern_status'] ?? ($signal['strategy_signal_context']['dbl_pattern_status'] ?? ''));
+            $existingPending = (string)($existingMap[$id]['handoff_status'] ?? '') === 'pending';
+            $isPatternPendingRecheck = $existingPending
+                || $dblStatusRaw === 'active'
+                || $pendingReasonRaw === 'waiting_dbl_pattern_confirmation';
+
             if ($requireCurrentRun && $tickTs !== false) {
-                $signalAge = $nowTs - ($detectedTs > 0 ? $detectedTs : $nowTs);
-                if ($detectedTs === 0 || $signalAge > 300) {
-                    // Signal was not produced or refreshed in the current run window.
+                $currentRunFreshnessCheckedTotal++;
+                if ($freshnessSource === 'detected_at_only') {
+                    $currentRunFreshnessDetectedAtOnlyTotal++;
+                } elseif ($freshnessSource !== 'missing') {
+                    $currentRunFreshnessRefreshedAtUsedTotal++;
+                }
+
+                $missingFreshness = $effectiveFreshTs <= 0;
+                $staleFreshness = !$missingFreshness && $effectiveFreshAgeSec !== null && $effectiveFreshAgeSec > $currentRunFreshnessWindowSec;
+                $freshnessBlocked = $missingFreshness || $staleFreshness;
+                if ($freshnessBlocked && !$isPatternPendingRecheck) {
                     $blockedNotCurrentRunTotal++;
+                    $currentRunFreshnessBlockedTotal++;
+                    $freshnessReason = $missingFreshness
+                        ? 'missing_effective_fresh_at'
+                        : 'effective_freshness_window_exceeded';
                     if (count($staleBlockExamples) < 5) {
                         $staleBlockExamples[] = [
                             'symbol'      => $signal['symbol']    ?? null,
@@ -8466,8 +8531,24 @@ final class DoubleBottomLongService
                             'strategy'    => 'double_bottom_long',
                             'signal_id'   => $id,
                             'detected_at' => $detectedAt,
-                            'age_minutes' => round($signalAge / 60, 1),
+                            'effective_fresh_at' => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
+                            'detected_age_minutes' => $detectedAgeMin,
+                            'effective_fresh_age_minutes' => $effectiveFreshAgeMin,
+                            'current_run_freshness_source' => $freshnessSource,
                             'reason'      => 'handoff_blocked_not_current_run',
+                        ];
+                    }
+                    if (count($currentRunFreshnessExamples) < 10) {
+                        $currentRunFreshnessExamples[] = [
+                            'symbol' => $signal['symbol'] ?? null,
+                            'signal_id' => $id,
+                            'detected_at' => $detectedAt !== '' ? $detectedAt : null,
+                            'effective_fresh_at' => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
+                            'detected_age_minutes' => $detectedAgeMin,
+                            'effective_fresh_age_minutes' => $effectiveFreshAgeMin,
+                            'current_run_freshness_source' => $freshnessSource,
+                            'current_run_freshness_passed' => false,
+                            'current_run_freshness_block_reason' => $freshnessReason,
                         ];
                     }
                     // Mark existing queue entry as blocked-not-current-run if it exists
@@ -8481,11 +8562,44 @@ final class DoubleBottomLongService
                         $blocked['stale_reason']      = 'handoff_blocked_not_current_run';
                         $blocked['block_reason']      = 'handoff_blocked_not_current_run';
                         $blocked['executable']        = false;
+                        $blocked['effective_fresh_at'] = $effectiveFreshAt !== '' ? $effectiveFreshAt : null;
+                        $blocked['detected_age_minutes'] = $detectedAgeMin;
+                        $blocked['effective_fresh_age_minutes'] = $effectiveFreshAgeMin;
+                        $blocked['current_run_freshness_source'] = $freshnessSource;
+                        $blocked['current_run_freshness_passed'] = false;
+                        $blocked['current_run_freshness_block_reason'] = $freshnessReason;
+                        $sscBlocked = is_array($blocked['strategy_signal_context'] ?? null) ? $blocked['strategy_signal_context'] : [];
+                        $sscBlocked['detected_at'] = $detectedAt !== '' ? $detectedAt : ($sscBlocked['detected_at'] ?? null);
+                        $sscBlocked['effective_fresh_at'] = $effectiveFreshAt !== '' ? $effectiveFreshAt : null;
+                        $sscBlocked['detected_age_minutes'] = $detectedAgeMin;
+                        $sscBlocked['effective_fresh_age_minutes'] = $effectiveFreshAgeMin;
+                        $sscBlocked['current_run_freshness_source'] = $freshnessSource;
+                        $sscBlocked['current_run_freshness_passed'] = false;
+                        $sscBlocked['current_run_freshness_block_reason'] = $freshnessReason;
+                        $blocked['strategy_signal_context'] = $sscBlocked;
                         $result[$id] = $blocked;
                         $removedStaleQueueEntriesTotal++;
                     }
                     $activeIds[$id] = true;
                     continue;
+                }
+                if ($freshnessBlocked && $isPatternPendingRecheck) {
+                    $currentRunFreshnessPendingRecheckBypassedTotal++;
+                }
+                $currentRunFreshnessPassedTotal++;
+                if (count($currentRunFreshnessExamples) < 10) {
+                    $currentRunFreshnessExamples[] = [
+                        'symbol' => $signal['symbol'] ?? null,
+                        'signal_id' => $id,
+                        'detected_at' => $detectedAt !== '' ? $detectedAt : null,
+                        'effective_fresh_at' => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
+                        'detected_age_minutes' => $detectedAgeMin,
+                        'effective_fresh_age_minutes' => $effectiveFreshAgeMin,
+                        'current_run_freshness_source' => $freshnessSource,
+                        'current_run_freshness_passed' => true,
+                        'current_run_freshness_block_reason' => null,
+                        'pending_recheck_bypass' => $freshnessBlocked && $isPatternPendingRecheck,
+                    ];
                 }
             }
 
@@ -8514,6 +8628,25 @@ final class DoubleBottomLongService
             }
 
             $record['last_refreshed_at'] = date('c');
+            $recordDetectedTs = isset($record['detected_at']) ? (int)strtotime((string)$record['detected_at']) : 0;
+            $recordDetectedAgeMin = $recordDetectedTs > 0 ? round(($nowTs - $recordDetectedTs) / 60, 1) : null;
+            $record['effective_fresh_at'] = $effectiveFreshAt !== '' ? $effectiveFreshAt : $record['last_refreshed_at'];
+            $recordEffectiveFreshTs = isset($record['effective_fresh_at']) ? (int)strtotime((string)$record['effective_fresh_at']) : 0;
+            $recordEffectiveFreshAgeMin = $recordEffectiveFreshTs > 0 ? round(($nowTs - $recordEffectiveFreshTs) / 60, 1) : null;
+            $record['detected_age_minutes'] = $recordDetectedAgeMin;
+            $record['effective_fresh_age_minutes'] = $recordEffectiveFreshAgeMin;
+            $record['current_run_freshness_source'] = $freshnessSource;
+            $record['current_run_freshness_passed'] = true;
+            $record['current_run_freshness_block_reason'] = null;
+            $sscFresh = is_array($record['strategy_signal_context'] ?? null) ? $record['strategy_signal_context'] : [];
+            $sscFresh['detected_at'] = $record['detected_at'] ?? ($detectedAt !== '' ? $detectedAt : ($sscFresh['detected_at'] ?? null));
+            $sscFresh['effective_fresh_at'] = $record['effective_fresh_at'];
+            $sscFresh['detected_age_minutes'] = $recordDetectedAgeMin;
+            $sscFresh['effective_fresh_age_minutes'] = $recordEffectiveFreshAgeMin;
+            $sscFresh['current_run_freshness_source'] = $freshnessSource;
+            $sscFresh['current_run_freshness_passed'] = true;
+            $sscFresh['current_run_freshness_block_reason'] = null;
+            $record['strategy_signal_context'] = $sscFresh;
             $result[$id] = $record;
         }
 
@@ -9160,6 +9293,14 @@ final class DoubleBottomLongService
             'revalidated_after_unblock_total'            => $revalidatedAfterUnblockTotal,
             'stale_block_examples'                       => $staleBlockExamples,
             'revalidation_required_examples'             => $revalidationRequiredExamples,
+            // Current-run freshness diagnostics
+            'current_run_freshness_checked_total'        => $currentRunFreshnessCheckedTotal,
+            'current_run_freshness_passed_total'         => $currentRunFreshnessPassedTotal,
+            'current_run_freshness_blocked_total'        => $currentRunFreshnessBlockedTotal,
+            'current_run_freshness_detected_at_only_total' => $currentRunFreshnessDetectedAtOnlyTotal,
+            'current_run_freshness_refreshed_at_used_total' => $currentRunFreshnessRefreshedAtUsedTotal,
+            'current_run_freshness_pending_recheck_bypassed_total' => $currentRunFreshnessPendingRecheckBypassedTotal,
+            'current_run_freshness_examples'             => $currentRunFreshnessExamples,
             // Queue normalization counters (Task: explicit non-executable flags)
             'queue_entries_normalized_total'              => $queueNormalizedTotal,
             'queue_entries_marked_non_executable_total'   => $queueMarkedNonExecutableTotal,
@@ -9221,6 +9362,12 @@ final class DoubleBottomLongService
             'executable'     => true,
             'stale'          => false,
             'stale_reason'   => null,
+            'effective_fresh_at' => $signal['effective_fresh_at'] ?? null,
+            'detected_age_minutes' => $signal['detected_age_minutes'] ?? null,
+            'effective_fresh_age_minutes' => $signal['effective_fresh_age_minutes'] ?? null,
+            'current_run_freshness_source' => $signal['current_run_freshness_source'] ?? null,
+            'current_run_freshness_passed' => $signal['current_run_freshness_passed'] ?? null,
+            'current_run_freshness_block_reason' => $signal['current_run_freshness_block_reason'] ?? null,
 
             // Entry geometry
             'entry_mode'      => (string)($config['entry_mode']          ?? 'limit'),
@@ -9351,6 +9498,14 @@ final class DoubleBottomLongService
                 'point3_broken'                    => $signal['strategy_signal_context']['point3_broken'] ?? false,
                 'reclaim_level_lost'               => $signal['strategy_signal_context']['reclaim_level_lost'] ?? false,
                 'confirmation_ttl_expired'         => $signal['strategy_signal_context']['confirmation_ttl_expired'] ?? false,
+                // Current-run freshness diagnostics
+                'detected_at'                      => $signal['strategy_signal_context']['detected_at'] ?? ($signal['detected_at'] ?? null),
+                'effective_fresh_at'               => $signal['strategy_signal_context']['effective_fresh_at'] ?? ($signal['effective_fresh_at'] ?? null),
+                'detected_age_minutes'             => $signal['strategy_signal_context']['detected_age_minutes'] ?? ($signal['detected_age_minutes'] ?? null),
+                'effective_fresh_age_minutes'      => $signal['strategy_signal_context']['effective_fresh_age_minutes'] ?? ($signal['effective_fresh_age_minutes'] ?? null),
+                'current_run_freshness_source'     => $signal['strategy_signal_context']['current_run_freshness_source'] ?? ($signal['current_run_freshness_source'] ?? null),
+                'current_run_freshness_passed'     => $signal['strategy_signal_context']['current_run_freshness_passed'] ?? ($signal['current_run_freshness_passed'] ?? null),
+                'current_run_freshness_block_reason' => $signal['strategy_signal_context']['current_run_freshness_block_reason'] ?? ($signal['current_run_freshness_block_reason'] ?? null),
             ],
 
             // Execution parameters (strategy-owned; no exchange-order fields yet)

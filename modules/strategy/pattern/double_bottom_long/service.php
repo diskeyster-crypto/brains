@@ -8416,7 +8416,7 @@ final class DoubleBottomLongService
         $staleBlockExamples                          = [];
         $revalidationRequiredExamples                = [];
         $result                                      = [];
-        $currentRunFreshnessWindowSec                = max(1, (int)($config['current_run_freshness_window_seconds'] ?? 300));
+        $currentRunFreshnessWindowSec                = 300;
         $currentRunFreshnessCheckedTotal             = 0;
         $currentRunFreshnessPassedTotal              = 0;
         $currentRunFreshnessBlockedTotal             = 0;

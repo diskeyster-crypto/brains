@@ -462,4 +462,11 @@ return [
     'dbl_pattern_pending_max_items'                            => 100,
     'dbl_pattern_allow_active_to_pending'                      => true,
     'dbl_pattern_allow_confirmed_to_handoff'                   => true,
+    // ── DBL confirmed-pattern freshness override ──────────────────────────────
+    // For signals with dbl_pattern_status=confirmed, bypass the generic current-run
+    // freshness window (300 s) and use confirmed-pattern TTL + validity check instead.
+    // This prevents valid confirmed patterns from being withdrawn by the generic gate.
+    'dbl_confirmed_pattern_ttl_minutes'                        => 10,
+    'dbl_confirmed_pattern_require_price_still_valid'          => true,
+    'dbl_confirmed_pattern_max_age_before_handoff_minutes'     => 10,
 ];

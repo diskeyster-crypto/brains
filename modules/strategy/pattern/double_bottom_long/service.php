@@ -147,6 +147,17 @@ final class DoubleBottomLongService
     private int $dblPatternPendingStorageBeforeTotal      = 0;
     private int $dblPatternPendingStorageAfterTotal       = 0;
     private int $dblPatternPendingStorageStaleRemovedTotal = 0;
+    // ── Confirmed-pattern freshness counters (reset at start of each tickBatch) ─
+    private int $confirmedPatternFreshnessCheckedTotal          = 0;
+    private int $confirmedPatternValidForHandoffTotal           = 0;
+    private int $confirmedPatternExpiredTotal                   = 0;
+    private int $confirmedPatternInvalidatedTotal               = 0;
+    private int $confirmedPatternBlockedByGenericFreshnessTotal = 0;
+    // ── Lifecycle consistency counters (reset at start of each tickBatch) ──────
+    private int $lifecycleConsistencyCheckedTotal               = 0;
+    private int $lifecycleInconsistentFixedTotal                = 0;
+    /** @var list<array<string,mixed>> */
+    private array $lifecycleInconsistentExamples                = [];
     // ── DBL trace completeness counters (reset at start of each tickBatch) ────
     private int $dblTraceCheckedTotal                        = 0;
     private int $dblTraceCompleteTotal                       = 0;
@@ -615,6 +626,16 @@ final class DoubleBottomLongService
         $this->dblPatternPendingStorageBeforeTotal       = 0;
         $this->dblPatternPendingStorageAfterTotal        = 0;
         $this->dblPatternPendingStorageStaleRemovedTotal = 0;
+        // Reset per-tick confirmed-pattern freshness counters.
+        $this->confirmedPatternFreshnessCheckedTotal          = 0;
+        $this->confirmedPatternValidForHandoffTotal           = 0;
+        $this->confirmedPatternExpiredTotal                   = 0;
+        $this->confirmedPatternInvalidatedTotal               = 0;
+        $this->confirmedPatternBlockedByGenericFreshnessTotal = 0;
+        // Reset per-tick lifecycle consistency counters.
+        $this->lifecycleConsistencyCheckedTotal               = 0;
+        $this->lifecycleInconsistentFixedTotal                = 0;
+        $this->lifecycleInconsistentExamples                  = [];
 
         $symbols = (array)($state['symbols']  ?? []);
         $cursor  = (int)($state['cursor']      ?? 0);
@@ -1747,6 +1768,15 @@ final class DoubleBottomLongService
                 'current_run_freshness_checked_total' => $handoffStats['current_run_freshness_checked_total'] ?? 0,
                 'current_run_freshness_passed_total'  => $handoffStats['current_run_freshness_passed_total'] ?? 0,
                 'current_run_freshness_blocked_total' => $handoffStats['current_run_freshness_blocked_total'] ?? 0,
+                // Confirmed-pattern freshness counters
+                'confirmed_pattern_freshness_checked_total'            => $this->confirmedPatternFreshnessCheckedTotal,
+                'confirmed_pattern_valid_for_handoff_total'            => $this->confirmedPatternValidForHandoffTotal,
+                'confirmed_pattern_expired_total'                      => $this->confirmedPatternExpiredTotal,
+                'confirmed_pattern_invalidated_total'                  => $this->confirmedPatternInvalidatedTotal,
+                'confirmed_pattern_blocked_by_generic_freshness_total' => $this->confirmedPatternBlockedByGenericFreshnessTotal,
+                // Lifecycle consistency counters
+                'lifecycle_consistency_checked_total'  => $this->lifecycleConsistencyCheckedTotal,
+                'lifecycle_inconsistent_fixed_total'   => $this->lifecycleInconsistentFixedTotal,
             ])) . "\n";
             @file_put_contents(
                 $this->moduleDir . '/storage/cycle_history.ndjson',
@@ -2098,6 +2128,16 @@ final class DoubleBottomLongService
             'current_run_freshness_refreshed_at_used_total'             => $handoffStats['current_run_freshness_refreshed_at_used_total'] ?? 0,
             'current_run_freshness_pending_recheck_bypassed_total'      => $handoffStats['current_run_freshness_pending_recheck_bypassed_total'] ?? 0,
             'current_run_freshness_examples'                            => $handoffStats['current_run_freshness_examples'] ?? [],
+            // ── Confirmed-pattern freshness diagnostics ───────────────────────────
+            'confirmed_pattern_freshness_checked_total'                 => $this->confirmedPatternFreshnessCheckedTotal,
+            'confirmed_pattern_valid_for_handoff_total'                 => $this->confirmedPatternValidForHandoffTotal,
+            'confirmed_pattern_expired_total'                           => $this->confirmedPatternExpiredTotal,
+            'confirmed_pattern_invalidated_total'                       => $this->confirmedPatternInvalidatedTotal,
+            'confirmed_pattern_blocked_by_generic_freshness_total'      => $this->confirmedPatternBlockedByGenericFreshnessTotal,
+            // ── Lifecycle consistency diagnostics ─────────────────────────────────
+            'lifecycle_consistency_checked_total'                       => $this->lifecycleConsistencyCheckedTotal,
+            'lifecycle_inconsistent_fixed_total'                        => $this->lifecycleInconsistentFixedTotal,
+            'lifecycle_inconsistent_examples'                           => $this->lifecycleInconsistentExamples,
             // ── Queue entry normalization counters (explicit non-executable flags) ──
             'queue_entries_normalized_total'              => $handoffStats['queue_entries_normalized_total']              ?? 0,
             'queue_entries_marked_non_executable_total'   => $handoffStats['queue_entries_marked_non_executable_total']   ?? 0,
@@ -8431,6 +8471,10 @@ final class DoubleBottomLongService
         $maxAgeSec              = $maxAgeMinutes > 0 ? $maxAgeMinutes * 60 : 0;
         $nowTs                  = time();
         $tickTs                 = strtotime($tickAt);
+        // Confirmed-pattern freshness override config
+        $confirmedPatternTtlMin      = (int)($config['dbl_confirmed_pattern_ttl_minutes']                    ?? 10);
+        $confirmedPatternRequireValid = (bool)($config['dbl_confirmed_pattern_require_price_still_valid']    ?? true);
+        $confirmedPatternMaxAgeMin   = (int)($config['dbl_confirmed_pattern_max_age_before_handoff_minutes'] ?? 10);
 
         $existing = (array)$this->readJson('storage/bot_handoff_queue.json', []);
 
@@ -8465,6 +8509,13 @@ final class DoubleBottomLongService
         $currentRunFreshnessRefreshedAtUsedTotal     = 0;
         $currentRunFreshnessPendingRecheckBypassedTotal = 0;
         $currentRunFreshnessExamples                 = [];
+        $confirmedPatternFreshnessCheckedTotal       = 0;
+        $confirmedPatternValidForHandoffTotal        = 0;
+        $confirmedPatternExpiredTotal                = 0;
+        $confirmedPatternInvalidatedTotal            = 0;
+        $confirmedPatternBlockedByGenericFreshnessTotal = 0;
+        // Map: signal_id → confirmed-pattern validity diag fields to merge into queue SSC.
+        $confirmedPatternDiagMap                     = [];
 
         // Process currently-active signals: new or refreshed
         foreach ($activeSignals as $signal) {
@@ -8547,6 +8598,7 @@ final class DoubleBottomLongService
             $isPatternPendingRecheck = $existingPending
                 || $dblStatusRaw === 'active'
                 || $pendingReasonRaw === 'waiting_dbl_pattern_confirmation';
+            $isConfirmedPattern = $dblStatusRaw === 'confirmed';
 
             if ($requireCurrentRun && $tickTs !== false) {
                 $currentRunFreshnessCheckedTotal++;
@@ -8559,7 +8611,135 @@ final class DoubleBottomLongService
                 $missingFreshness = $effectiveFreshTs <= 0;
                 $staleFreshness = !$missingFreshness && $effectiveFreshAgeSec !== null && $effectiveFreshAgeSec > $currentRunFreshnessWindowSec;
                 $freshnessBlocked = $missingFreshness || $staleFreshness;
-                if ($freshnessBlocked && !$isPatternPendingRecheck) {
+
+                // ── Confirmed-pattern freshness bypass ───────────────────────────
+                // For dbl_pattern_status=confirmed, bypass the generic 300 s window.
+                // Instead evaluate confirmed-pattern TTL and validity.
+                if ($freshnessBlocked && $isConfirmedPattern) {
+                    $confirmedPatternFreshnessCheckedTotal++;
+                    $this->confirmedPatternFreshnessCheckedTotal++;
+
+                    $confirmedAtRaw = (string)($signal['strategy_signal_context']['dbl_pattern_confirmed_at'] ?? ($signal['dbl_pattern_confirmed_at'] ?? ''));
+                    $confirmedTs    = $confirmedAtRaw !== '' ? (int)strtotime($confirmedAtRaw) : 0;
+                    $confirmedAgeMin = $confirmedTs > 0 ? round(($nowTs - $confirmedTs) / 60, 1) : null;
+
+                    // Fallback: if no confirmed_at, use detected_at vs max_age_before_handoff
+                    $ageForTtlCheck   = $confirmedAgeMin ?? $detectedAgeMin;
+                    $ttlMin           = $confirmedTs > 0 ? $confirmedPatternTtlMin : $confirmedPatternMaxAgeMin;
+
+                    $point3Broken     = (bool)($signal['strategy_signal_context']['point3_broken'] ?? false);
+                    $reclaimLevelLost = (bool)($signal['strategy_signal_context']['reclaim_level_lost'] ?? false);
+                    $freshLowerLow    = (bool)($signal['strategy_signal_context']['fresh_lower_low_after_point3'] ?? false);
+
+                    $cpInvalidReason  = null;
+                    $cpValid          = true;
+
+                    if ($ageForTtlCheck !== null && $ageForTtlCheck > $ttlMin) {
+                        $cpValid         = false;
+                        $cpInvalidReason = 'confirmed_pattern_ttl_expired';
+                    } elseif ($confirmedPatternRequireValid) {
+                        if ($point3Broken) {
+                            $cpValid         = false;
+                            $cpInvalidReason = 'confirmed_pattern_point3_broken';
+                        } elseif ($reclaimLevelLost) {
+                            $cpValid         = false;
+                            $cpInvalidReason = 'confirmed_pattern_reclaim_lost';
+                        } elseif ($freshLowerLow) {
+                            $cpValid         = false;
+                            $cpInvalidReason = 'confirmed_pattern_price_invalidated';
+                        }
+                    }
+
+                    $cpDiag = [
+                        'confirmed_pattern_age_minutes'       => $confirmedAgeMin,
+                        'confirmed_pattern_ttl_minutes'       => $ttlMin,
+                        'confirmed_pattern_valid_for_handoff' => $cpValid,
+                        'confirmed_pattern_invalid_reason'    => $cpInvalidReason,
+                        'confirmed_pattern_price_still_valid' => !$point3Broken && !$reclaimLevelLost && !$freshLowerLow,
+                        'confirmed_pattern_price_check_source'=> 'strategy_signal_context',
+                    ];
+
+                    if ($cpValid) {
+                        // Valid confirmed pattern — bypass generic freshness, proceed to garbage veto.
+                        $confirmedPatternValidForHandoffTotal++;
+                        $this->confirmedPatternValidForHandoffTotal++;
+                        $currentRunFreshnessPassedTotal++;
+                        $confirmedPatternDiagMap[$id] = $cpDiag;
+                        if (count($currentRunFreshnessExamples) < 10) {
+                            $currentRunFreshnessExamples[] = [
+                                'symbol'                       => $signal['symbol'] ?? null,
+                                'signal_id'                    => $id,
+                                'detected_at'                  => $detectedAt !== '' ? $detectedAt : null,
+                                'effective_fresh_at'           => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
+                                'detected_age_minutes'         => $detectedAgeMin,
+                                'effective_fresh_age_minutes'  => $effectiveFreshAgeMin,
+                                'current_run_freshness_source' => $freshnessSource,
+                                'current_run_freshness_passed' => true,
+                                'current_run_freshness_block_reason' => null,
+                                'confirmed_pattern_bypass'     => true,
+                                'confirmed_pattern_age_minutes'=> $confirmedAgeMin,
+                                'confirmed_pattern_ttl_minutes'=> $ttlMin,
+                            ];
+                        }
+                        // Fall through — do NOT continue; allow record building below.
+                    } else {
+                        // Confirmed pattern expired or price-invalidated — withdraw with specific reason.
+                        if ($cpInvalidReason === 'confirmed_pattern_ttl_expired') {
+                            $confirmedPatternExpiredTotal++;
+                            $this->confirmedPatternExpiredTotal++;
+                        } else {
+                            $confirmedPatternInvalidatedTotal++;
+                            $this->confirmedPatternInvalidatedTotal++;
+                        }
+                        $currentRunFreshnessBlockedTotal++;
+                        if (count($staleBlockExamples) < 5) {
+                            $staleBlockExamples[] = [
+                                'symbol'                       => $signal['symbol']  ?? null,
+                                'side'                         => $signal['side']    ?? 'long',
+                                'strategy'                     => 'double_bottom_long',
+                                'signal_id'                    => $id,
+                                'detected_at'                  => $detectedAt,
+                                'effective_fresh_at'           => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
+                                'detected_age_minutes'         => $detectedAgeMin,
+                                'confirmed_pattern_age_minutes'=> $confirmedAgeMin,
+                                'confirmed_pattern_ttl_minutes'=> $ttlMin,
+                                'reason'                       => $cpInvalidReason,
+                            ];
+                        }
+                        if (isset($existingMap[$id])) {
+                            $blocked = $existingMap[$id];
+                            $blocked['handoff_status']    = 'withdrawn';
+                            $blocked['withdrawn_at']      = date('c');
+                            $blocked['last_change_reason'] = $cpInvalidReason;
+                            $blocked['handoff_ready']     = false;
+                            $blocked['active_final']      = false;
+                            $blocked['stale']             = true;
+                            $blocked['stale_reason']      = $cpInvalidReason;
+                            $blocked['block_reason']      = $cpInvalidReason;
+                            $blocked['executable']        = false;
+                            $sscBlocked = is_array($blocked['strategy_signal_context'] ?? null) ? $blocked['strategy_signal_context'] : [];
+                            $sscBlocked = array_merge($sscBlocked, $cpDiag, [
+                                'effective_fresh_at'               => $effectiveFreshAt !== '' ? $effectiveFreshAt : null,
+                                'detected_age_minutes'             => $detectedAgeMin,
+                                'effective_fresh_age_minutes'      => $effectiveFreshAgeMin,
+                                'current_run_freshness_source'     => $freshnessSource,
+                                'current_run_freshness_passed'     => false,
+                                'current_run_freshness_block_reason' => $cpInvalidReason,
+                            ]);
+                            $blocked['strategy_signal_context'] = $sscBlocked;
+                            $result[$id] = $blocked;
+                            $removedStaleQueueEntriesTotal++;
+                        }
+                        $activeIds[$id] = true;
+                        continue;
+                    }
+                } elseif ($freshnessBlocked && !$isPatternPendingRecheck) {
+                    // Generic freshness block (non-confirmed patterns).
+                    // Safety guard: if a confirmed pattern somehow reaches here, count it.
+                    if ($isConfirmedPattern) {
+                        $confirmedPatternBlockedByGenericFreshnessTotal++;
+                        $this->confirmedPatternBlockedByGenericFreshnessTotal++;
+                    }
                     $blockedNotCurrentRunTotal++;
                     $currentRunFreshnessBlockedTotal++;
                     $freshnessReason = $missingFreshness
@@ -8599,6 +8779,7 @@ final class DoubleBottomLongService
                         $blocked['withdrawn_at']      = date('c');
                         $blocked['last_change_reason'] = 'not_current_run';
                         $blocked['handoff_ready']     = false;
+                        $blocked['active_final']      = false;
                         $blocked['stale']             = true;
                         $blocked['stale_reason']      = 'handoff_blocked_not_current_run';
                         $blocked['block_reason']      = 'handoff_blocked_not_current_run';
@@ -8627,8 +8808,12 @@ final class DoubleBottomLongService
                 if ($freshnessBlocked && $isPatternPendingRecheck) {
                     $currentRunFreshnessPendingRecheckBypassedTotal++;
                 }
-                $currentRunFreshnessPassedTotal++;
-                if (count($currentRunFreshnessExamples) < 10) {
+                // Increment pass counter for all signals reaching here, EXCEPT confirmed
+                // patterns that were freshness-blocked (those already incremented above in the bypass block).
+                if (!($isConfirmedPattern && $freshnessBlocked)) {
+                    $currentRunFreshnessPassedTotal++;
+                }
+                if (count($currentRunFreshnessExamples) < 10 && !($isConfirmedPattern && $freshnessBlocked)) {
                     $currentRunFreshnessExamples[] = [
                         'symbol' => $signal['symbol'] ?? null,
                         'signal_id' => $id,
@@ -8687,6 +8872,10 @@ final class DoubleBottomLongService
             $sscFresh['current_run_freshness_source'] = $freshnessSource;
             $sscFresh['current_run_freshness_passed'] = true;
             $sscFresh['current_run_freshness_block_reason'] = null;
+            // Merge confirmed-pattern validity diag if this signal bypassed generic freshness.
+            if (isset($confirmedPatternDiagMap[$id])) {
+                $sscFresh = array_merge($sscFresh, $confirmedPatternDiagMap[$id]);
+            }
             $record['strategy_signal_context'] = $sscFresh;
             $result[$id] = $record;
         }
@@ -9218,6 +9407,23 @@ final class DoubleBottomLongService
 
                 if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
                 if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
+                // Lifecycle consistency: withdrawn/expired/blocked/stale records must not have active_final=true.
+                $this->lifecycleConsistencyCheckedTotal++;
+                $prevActiveFinal = $result[$id]['active_final'] ?? null;
+                if ($prevActiveFinal !== false) {
+                    $result[$id]['active_final'] = false;
+                    $changed = true;
+                    $this->lifecycleInconsistentFixedTotal++;
+                    if (count($this->lifecycleInconsistentExamples) < 5) {
+                        $this->lifecycleInconsistentExamples[] = [
+                            'symbol'                => $r['symbol']     ?? null,
+                            'signal_id'             => $id,
+                            'handoff_status'        => $status,
+                            'previous_active_final' => $prevActiveFinal,
+                            'block_reason'          => $blockReason,
+                        ];
+                    }
+                }
                 if ($needsRevalid && ($r['blocked_by_symbol_guard'] ?? false) !== true) {
                     $result[$id]['blocked_by_symbol_guard'] = true;
                     $changed = true;
@@ -9342,6 +9548,12 @@ final class DoubleBottomLongService
             'current_run_freshness_refreshed_at_used_total' => $currentRunFreshnessRefreshedAtUsedTotal,
             'current_run_freshness_pending_recheck_bypassed_total' => $currentRunFreshnessPendingRecheckBypassedTotal,
             'current_run_freshness_examples'             => $currentRunFreshnessExamples,
+            // Confirmed-pattern freshness diagnostics
+            'confirmed_pattern_freshness_checked_total'          => $confirmedPatternFreshnessCheckedTotal,
+            'confirmed_pattern_valid_for_handoff_total'          => $confirmedPatternValidForHandoffTotal,
+            'confirmed_pattern_expired_total'                    => $confirmedPatternExpiredTotal,
+            'confirmed_pattern_invalidated_total'                => $confirmedPatternInvalidatedTotal,
+            'confirmed_pattern_blocked_by_generic_freshness_total' => $confirmedPatternBlockedByGenericFreshnessTotal,
             // Queue normalization counters (Task: explicit non-executable flags)
             'queue_entries_normalized_total'              => $queueNormalizedTotal,
             'queue_entries_marked_non_executable_total'   => $queueMarkedNonExecutableTotal,
@@ -9388,6 +9600,10 @@ final class DoubleBottomLongService
             'point3_broken', 'reclaim_level_lost',
             'effective_fresh_at', 'detected_age_minutes', 'effective_fresh_age_minutes',
             'current_run_freshness_source', 'current_run_freshness_passed', 'current_run_freshness_block_reason',
+            // Confirmed-pattern validity diagnostics
+            'confirmed_pattern_age_minutes', 'confirmed_pattern_ttl_minutes',
+            'confirmed_pattern_valid_for_handoff', 'confirmed_pattern_invalid_reason',
+            'confirmed_pattern_price_still_valid', 'confirmed_pattern_price_check_source',
         ];
 
         $map = [];
@@ -9591,6 +9807,13 @@ final class DoubleBottomLongService
                 'current_run_freshness_source'     => $signal['strategy_signal_context']['current_run_freshness_source'] ?? ($signal['current_run_freshness_source'] ?? null),
                 'current_run_freshness_passed'     => $signal['strategy_signal_context']['current_run_freshness_passed'] ?? ($signal['current_run_freshness_passed'] ?? null),
                 'current_run_freshness_block_reason' => $signal['strategy_signal_context']['current_run_freshness_block_reason'] ?? ($signal['current_run_freshness_block_reason'] ?? null),
+                // Confirmed-pattern validity diagnostics (populated in updateBotHandoff freshness bypass)
+                'confirmed_pattern_age_minutes'       => $signal['strategy_signal_context']['confirmed_pattern_age_minutes']       ?? null,
+                'confirmed_pattern_ttl_minutes'       => $signal['strategy_signal_context']['confirmed_pattern_ttl_minutes']       ?? null,
+                'confirmed_pattern_valid_for_handoff' => $signal['strategy_signal_context']['confirmed_pattern_valid_for_handoff'] ?? null,
+                'confirmed_pattern_invalid_reason'    => $signal['strategy_signal_context']['confirmed_pattern_invalid_reason']    ?? null,
+                'confirmed_pattern_price_still_valid' => $signal['strategy_signal_context']['confirmed_pattern_price_still_valid'] ?? null,
+                'confirmed_pattern_price_check_source'=> $signal['strategy_signal_context']['confirmed_pattern_price_check_source']?? null,
             ],
 
             // Execution parameters (strategy-owned; no exchange-order fields yet)

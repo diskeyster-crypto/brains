@@ -172,4 +172,18 @@ return [
     'dbl_trend_shift_high_quality_threshold'                   => 'float',
     'dbl_trend_shift_pending_ttl_minutes'                      => 'int',
     'dbl_trend_shift_pending_recheck_enabled'                  => 'bool',
+    // DBL pattern-status state machine
+    'dbl_pattern_status_enabled'                               => 'bool',
+    'dbl_pattern_confirmation_required_for_handoff'            => 'bool',
+    'dbl_pattern_min_closes_above_neckline'                    => 'int',
+    'dbl_pattern_reclaim_hold_bars'                            => 'int',
+    'dbl_pattern_reclaim_hold_minutes'                         => 'int',
+    'dbl_pattern_point3_break_tolerance_pct'                   => 'float',
+    'dbl_pattern_higher_low_tolerance_pct'                     => 'float',
+    'dbl_pattern_pending_enabled'                              => 'bool',
+    'dbl_pattern_pending_ttl_minutes'                          => 'int',
+    'dbl_pattern_pending_recheck_enabled'                      => 'bool',
+    'dbl_pattern_pending_max_items'                            => 'int',
+    'dbl_pattern_allow_active_to_pending'                      => 'bool',
+    'dbl_pattern_allow_confirmed_to_handoff'                   => 'bool',
 ];

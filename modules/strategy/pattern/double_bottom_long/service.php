@@ -104,6 +104,41 @@ final class DoubleBottomLongService
     private array $dblTrendShiftFailedExamples              = [];
     /** @var list<array<string,mixed>> */
     private array $dblTrendShiftBlockedUnconfirmedExamples  = [];
+    // ── DBL pattern-status state machine counters (reset at start of each tickBatch) ──
+    private int $dblPatternStatusCheckedTotal               = 0;
+    private int $dblPatternActiveTotal                      = 0;
+    private int $dblPatternConfirmedTotal                   = 0;
+    private int $dblPatternInvalidTotal                     = 0;
+    private int $dblPatternPendingTotal                     = 0;
+    private int $dblPatternPendingRecheckedTotal            = 0;
+    private int $dblPatternPendingConfirmedTotal            = 0;
+    private int $dblPatternPendingInvalidatedTotal          = 0;
+    private int $dblPatternPendingExpiredTotal              = 0;
+    private int $dblPatternConfirmedNecklineBreakTotal      = 0;
+    private int $dblPatternConfirmedReclaimHoldTotal        = 0;
+    private int $dblPatternConfirmedRetestHoldTotal         = 0;
+    private int $dblPatternConfirmedHigherLowTotal          = 0;
+    private int $dblPatternInvalidPoint3BrokenTotal         = 0;
+    private int $dblPatternInvalidFreshLowerLowTotal        = 0;
+    private int $dblPatternInvalidReclaimLostTotal          = 0;
+    private int $dblPatternInvalidTtlExpiredTotal           = 0;
+    private int $dblPatternInvalidWeakBounceTotal           = 0;
+    private int $dblPatternConfirmedSentToGarbageVetoTotal  = 0;
+    private int $dblPatternActiveBlockedFromHandoffTotal    = 0;
+    private int $dblPatternInvalidBlockedFromHandoffTotal   = 0;
+    private int $dblPatternConfirmedHandoffReadyTotal       = 0;
+    /** @var list<array<string,mixed>> */
+    private array $dblPatternActiveExamples                 = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblPatternConfirmedExamples              = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblPatternInvalidExamples                = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblPatternPendingExamples                = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblPatternPendingConfirmedExamples       = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblPatternPendingInvalidatedExamples     = [];
     // ── DBL trace completeness counters (reset at start of each tickBatch) ────
     private int $dblTraceCheckedTotal                        = 0;
     private int $dblTraceCompleteTotal                       = 0;
@@ -535,6 +570,35 @@ final class DoubleBottomLongService
         $this->dblTrendShiftPendingExamples            = [];
         $this->dblTrendShiftFailedExamples             = [];
         $this->dblTrendShiftBlockedUnconfirmedExamples = [];
+        // Reset per-tick pattern-status state machine counters.
+        $this->dblPatternStatusCheckedTotal              = 0;
+        $this->dblPatternActiveTotal                     = 0;
+        $this->dblPatternConfirmedTotal                  = 0;
+        $this->dblPatternInvalidTotal                    = 0;
+        $this->dblPatternPendingTotal                    = 0;
+        $this->dblPatternPendingRecheckedTotal           = 0;
+        $this->dblPatternPendingConfirmedTotal           = 0;
+        $this->dblPatternPendingInvalidatedTotal         = 0;
+        $this->dblPatternPendingExpiredTotal             = 0;
+        $this->dblPatternConfirmedNecklineBreakTotal     = 0;
+        $this->dblPatternConfirmedReclaimHoldTotal       = 0;
+        $this->dblPatternConfirmedRetestHoldTotal        = 0;
+        $this->dblPatternConfirmedHigherLowTotal         = 0;
+        $this->dblPatternInvalidPoint3BrokenTotal        = 0;
+        $this->dblPatternInvalidFreshLowerLowTotal       = 0;
+        $this->dblPatternInvalidReclaimLostTotal         = 0;
+        $this->dblPatternInvalidTtlExpiredTotal          = 0;
+        $this->dblPatternInvalidWeakBounceTotal          = 0;
+        $this->dblPatternConfirmedSentToGarbageVetoTotal = 0;
+        $this->dblPatternActiveBlockedFromHandoffTotal   = 0;
+        $this->dblPatternInvalidBlockedFromHandoffTotal  = 0;
+        $this->dblPatternConfirmedHandoffReadyTotal      = 0;
+        $this->dblPatternActiveExamples            = [];
+        $this->dblPatternConfirmedExamples         = [];
+        $this->dblPatternInvalidExamples           = [];
+        $this->dblPatternPendingExamples           = [];
+        $this->dblPatternPendingConfirmedExamples  = [];
+        $this->dblPatternPendingInvalidatedExamples = [];
 
         $symbols = (array)($state['symbols']  ?? []);
         $cursor  = (int)($state['cursor']      ?? 0);
@@ -2040,6 +2104,37 @@ final class DoubleBottomLongService
             'dbl_trend_shift_pending_examples'                       => $this->dblTrendShiftPendingExamples,
             'dbl_trend_shift_failed_examples'                        => $this->dblTrendShiftFailedExamples,
             'dbl_trend_shift_blocked_unconfirmed_examples'           => $this->dblTrendShiftBlockedUnconfirmedExamples,
+            // ── DBL pattern-status state machine counters (per tick) ────────────────
+            'dbl_pattern_status_enabled'                             => (bool)($config['dbl_pattern_status_enabled'] ?? true),
+            'dbl_pattern_confirmation_required_for_handoff'          => (bool)($config['dbl_pattern_confirmation_required_for_handoff'] ?? true),
+            'dbl_pattern_status_checked_total'                       => $this->dblPatternStatusCheckedTotal,
+            'dbl_pattern_active_total'                               => $this->dblPatternActiveTotal,
+            'dbl_pattern_confirmed_total'                            => $this->dblPatternConfirmedTotal,
+            'dbl_pattern_invalid_total'                              => $this->dblPatternInvalidTotal,
+            'dbl_pattern_pending_total'                              => $this->dblPatternPendingTotal,
+            'dbl_pattern_pending_rechecked_total'                    => $this->dblPatternPendingRecheckedTotal,
+            'dbl_pattern_pending_confirmed_total'                    => $this->dblPatternPendingConfirmedTotal,
+            'dbl_pattern_pending_invalidated_total'                  => $this->dblPatternPendingInvalidatedTotal,
+            'dbl_pattern_pending_expired_total'                      => $this->dblPatternPendingExpiredTotal,
+            'dbl_pattern_confirmed_neckline_break_total'             => $this->dblPatternConfirmedNecklineBreakTotal,
+            'dbl_pattern_confirmed_reclaim_hold_total'               => $this->dblPatternConfirmedReclaimHoldTotal,
+            'dbl_pattern_confirmed_retest_hold_total'                => $this->dblPatternConfirmedRetestHoldTotal,
+            'dbl_pattern_confirmed_higher_low_total'                 => $this->dblPatternConfirmedHigherLowTotal,
+            'dbl_pattern_invalid_point3_broken_total'                => $this->dblPatternInvalidPoint3BrokenTotal,
+            'dbl_pattern_invalid_fresh_lower_low_total'              => $this->dblPatternInvalidFreshLowerLowTotal,
+            'dbl_pattern_invalid_reclaim_lost_total'                 => $this->dblPatternInvalidReclaimLostTotal,
+            'dbl_pattern_invalid_ttl_expired_total'                  => $this->dblPatternInvalidTtlExpiredTotal,
+            'dbl_pattern_invalid_weak_bounce_total'                  => $this->dblPatternInvalidWeakBounceTotal,
+            'dbl_pattern_confirmed_sent_to_garbage_veto_total'       => $this->dblPatternConfirmedSentToGarbageVetoTotal,
+            'dbl_pattern_active_blocked_from_handoff_total'          => $this->dblPatternActiveBlockedFromHandoffTotal,
+            'dbl_pattern_invalid_blocked_from_handoff_total'         => $this->dblPatternInvalidBlockedFromHandoffTotal,
+            'dbl_pattern_confirmed_handoff_ready_total'              => $this->dblPatternConfirmedHandoffReadyTotal,
+            'dbl_pattern_active_examples'                             => $this->dblPatternActiveExamples,
+            'dbl_pattern_confirmed_examples'                          => $this->dblPatternConfirmedExamples,
+            'dbl_pattern_invalid_examples'                            => $this->dblPatternInvalidExamples,
+            'dbl_pattern_pending_examples'                            => $this->dblPatternPendingExamples,
+            'dbl_pattern_pending_confirmed_examples'                  => $this->dblPatternPendingConfirmedExamples,
+            'dbl_pattern_pending_invalidated_examples'                => $this->dblPatternPendingInvalidatedExamples,
             // ── Scan suppression cache diagnostics (Task 7) ──────────────────────
             'scan_suppression_enabled'                   => $suppressionEnabled,
             'scan_suppression_entries_total'             => $suppressionEnabled ? count($this->scanSuppressionCache) : 0,
@@ -8455,6 +8550,7 @@ final class DoubleBottomLongService
             $needsRevalid = (bool)($r['needs_revalidation_after_unblock'] ?? false);
             $prevReady    = $r['handoff_ready'] ?? null;
             $prevExec     = $r['executable']    ?? null;
+            $prevQueueStatus = (string)($existingMap[$id]['handoff_status'] ?? '');
             $changed      = false;
 
             if ($isActive && !$needsRevalid) {
@@ -8482,6 +8578,114 @@ final class DoubleBottomLongService
                     }
                     $queueMarkedNonExecutableTotal++;
                 } elseif ($garbageVetoEnabled) {
+                    // ── DBL pattern-status state machine (primary gate) ────────────────
+                    $ps = $this->applyDblPatternStatusStateMachine(
+                        $r,
+                        is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [],
+                        $config
+                    );
+                    $this->dblPatternStatusCheckedTotal++;
+                    $sscPatternMerge = is_array($result[$id]['strategy_signal_context'] ?? null)
+                        ? $result[$id]['strategy_signal_context'] : [];
+                    $result[$id]['strategy_signal_context'] = array_merge($sscPatternMerge, $ps['diag']);
+                    $psStatus = (string)($ps['status'] ?? 'raw_candidate');
+                    if ($psStatus === 'active') {
+                        $this->dblPatternActiveTotal++;
+                        $this->dblPatternPendingTotal++;
+                        $this->dblPatternActiveBlockedFromHandoffTotal++;
+                        if ($prevQueueStatus === 'pending') {
+                            $this->dblPatternPendingRecheckedTotal++;
+                        }
+                        $blockReason = 'waiting_dbl_pattern_confirmation';
+                        if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
+                        if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
+                        if (($result[$id]['active_final'] ?? null) !== false) { $result[$id]['active_final'] = false; $changed = true; }
+                        if (($result[$id]['block_reason'] ?? null) !== $blockReason) { $result[$id]['block_reason'] = $blockReason; $changed = true; }
+                        if (($result[$id]['handoff_status'] ?? '') !== 'pending') { $result[$id]['handoff_status'] = 'pending'; $changed = true; }
+                        $sigIdInQueue = (string)($r['signal_id'] ?? $id);
+                        if ($sigIdInQueue !== '') {
+                            $blockedSignalIds[$sigIdInQueue] = $blockReason;
+                        }
+                        $queueMarkedNonExecutableTotal++;
+                        $this->writePendingPatternWatchEntry($r, $id, $ps, $config);
+                        if (count($this->dblPatternActiveExamples) < 5) {
+                            $this->dblPatternActiveExamples[] = $this->buildDblPatternExample($r, $id, $ps);
+                        }
+                        if (count($this->dblPatternPendingExamples) < 5) {
+                            $this->dblPatternPendingExamples[] = $this->buildDblPatternExample($r, $id, $ps);
+                        }
+                        continue;
+                    }
+                    if ($psStatus === 'invalid') {
+                        $this->dblPatternInvalidTotal++;
+                        $this->dblPatternInvalidBlockedFromHandoffTotal++;
+                        if ($prevQueueStatus === 'pending') {
+                            $this->dblPatternPendingRecheckedTotal++;
+                            $this->dblPatternPendingInvalidatedTotal++;
+                        }
+                        $invReason = (string)($ps['invalid_reason'] ?? 'pattern_structure_invalid');
+                        $blockReason = $invReason !== '' ? $invReason : 'dbl_pattern_invalid';
+                        if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
+                        if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
+                        if (($result[$id]['active_final'] ?? null) !== false) { $result[$id]['active_final'] = false; $changed = true; }
+                        if (($result[$id]['block_reason'] ?? null) !== $blockReason) { $result[$id]['block_reason'] = $blockReason; $changed = true; }
+                        if (($result[$id]['handoff_status'] ?? '') !== 'blocked') { $result[$id]['handoff_status'] = 'blocked'; $changed = true; }
+                        $sigIdInQueue = (string)($r['signal_id'] ?? $id);
+                        if ($sigIdInQueue !== '') {
+                            $blockedSignalIds[$sigIdInQueue] = $blockReason;
+                        }
+                        $queueMarkedNonExecutableTotal++;
+                        switch ($invReason) {
+                            case 'point3_broken':
+                                $this->dblPatternInvalidPoint3BrokenTotal++;
+                                break;
+                            case 'fresh_lower_low_after_point3':
+                                $this->dblPatternInvalidFreshLowerLowTotal++;
+                                break;
+                            case 'reclaim_level_lost':
+                            case 'neckline_reclaim_failed':
+                                $this->dblPatternInvalidReclaimLostTotal++;
+                                break;
+                            case 'confirmation_ttl_expired':
+                                $this->dblPatternInvalidTtlExpiredTotal++;
+                                $this->dblPatternPendingExpiredTotal++;
+                                break;
+                            case 'weak_bounce_after_point3':
+                                $this->dblPatternInvalidWeakBounceTotal++;
+                                break;
+                        }
+                        if (count($this->dblPatternInvalidExamples) < 5) {
+                            $this->dblPatternInvalidExamples[] = $this->buildDblPatternExample($r, $id, $ps);
+                        }
+                        if (count($this->dblPatternPendingInvalidatedExamples) < 5) {
+                            $this->dblPatternPendingInvalidatedExamples[] = $this->buildDblPatternExample($r, $id, $ps);
+                        }
+                        continue;
+                    }
+                    // confirmed/raw_candidate fallback that proceeds to garbage veto
+                    $this->dblPatternConfirmedTotal++;
+                    $this->dblPatternConfirmedSentToGarbageVetoTotal++;
+                    $psPath = (string)($ps['confirmation_path'] ?? '');
+                    if ($psPath === 'neckline_break') {
+                        $this->dblPatternConfirmedNecklineBreakTotal++;
+                    } elseif ($psPath === 'reclaim_hold') {
+                        $this->dblPatternConfirmedReclaimHoldTotal++;
+                    } elseif ($psPath === 'retest_hold') {
+                        $this->dblPatternConfirmedRetestHoldTotal++;
+                    } elseif ($psPath === 'higher_low_after_point3') {
+                        $this->dblPatternConfirmedHigherLowTotal++;
+                    }
+                    if ($prevQueueStatus === 'pending') {
+                        $this->dblPatternPendingRecheckedTotal++;
+                        $this->dblPatternPendingConfirmedTotal++;
+                        if (count($this->dblPatternPendingConfirmedExamples) < 5) {
+                            $this->dblPatternPendingConfirmedExamples[] = $this->buildDblPatternExample($r, $id, $ps);
+                        }
+                    }
+                    if (count($this->dblPatternConfirmedExamples) < 5) {
+                        $this->dblPatternConfirmedExamples[] = $this->buildDblPatternExample($r, $id, $ps);
+                    }
+
                     // ── DBL garbage veto ─────────────────────────────────────────────
                     $gv = $this->applyDblGarbageVeto(
                         $r,
@@ -8723,151 +8927,67 @@ final class DoubleBottomLongService
                             ];
                         }
                     } else {
-                        // Veto passed — run trend-shift confirmation gate
+                        // Veto passed and pattern is confirmed — allow handoff
                         $this->dblGarbagePassedTotal++;
-
-                        // ── Trend-shift confirmation gate ────────────────────────────────
-                        $tsGate = $this->applyDblTrendShiftConfirmationGate(
-                            $r,
-                            is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [],
-                            $config
-                        );
-                        // Merge trend-shift diagnostics into strategy_signal_context
-                        $sscMerge2 = is_array($result[$id]['strategy_signal_context'] ?? null)
-                            ? $result[$id]['strategy_signal_context'] : [];
-                        $result[$id]['strategy_signal_context'] = array_merge($sscMerge2, $tsGate['diag']);
-
-                        $tsState = (string)($tsGate['state'] ?? 'not_checked');
-                        if ($tsGate['gate_enabled']) {
-                            $this->dblTrendShiftCheckedTotal++;
+                        $this->dblPatternConfirmedHandoffReadyTotal++;
+                        if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
+                        if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
+                        if (($result[$id]['active_final'] ?? null) !== true) { $result[$id]['active_final'] = true; $changed = true; }
+                        if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
+                        if (($r['stale_reason'] ?? null) !== null)  { $result[$id]['stale_reason'] = null;  $changed = true; }
+                        if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
+                        $queueExecutableTotal++;
+                        if ($isSoftDemoted) {
+                            $softDemoteAllowedTotal++;
                         }
-
-                        if ($tsState === 'confirmed' || $tsState === 'not_checked') {
-                            // Gate confirmed or disabled — allow handoff
-                            if ($tsGate['gate_enabled'] && $tsState === 'confirmed') {
-                                $this->dblTrendShiftConfirmedTotal++;
-                                $tsPath = (string)($tsGate['confirmation_path'] ?? '');
-                                switch ($tsPath) {
-                                    case 'reclaim_hold':
-                                        $this->dblTrendShiftReclaimHoldConfirmedTotal++;
-                                        break;
-                                    case 'retest_hold':
-                                        $this->dblTrendShiftRetestHoldConfirmedTotal++;
-                                        break;
-                                    case 'higher_low_after_point3':
-                                        $this->dblTrendShiftHigherLowConfirmedTotal++;
-                                        break;
-                                    case 'short_structure_break':
-                                        $this->dblTrendShiftShortStructureBreakConfirmedTotal++;
-                                        break;
-                                }
-                                if (count($this->dblTrendShiftConfirmedExamples) < 5) {
-                                    $this->dblTrendShiftConfirmedExamples[] =
-                                        $this->buildTrendShiftExample($r, $id, $tsGate);
-                                }
-                            }
-                            if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
-                            if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
-                            if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
-                            if (($r['stale_reason'] ?? null) !== null)  { $result[$id]['stale_reason'] = null;  $changed = true; }
-                            if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
-                            $queueExecutableTotal++;
-                            if ($isSoftDemoted) {
-                                $softDemoteAllowedTotal++;
-                            }
-                            if (count($this->dblGarbagePassExamples) < 5) {
-                                $this->dblGarbagePassExamples[] = [
-                                    'symbol'                  => $r['symbol']      ?? null,
-                                    'signal_id'               => $id,
-                                    'detected_at'             => $r['detected_at'] ?? null,
-                                    'candidate_quality_score' => $gv['diag']['candidate_quality_score'],
-                                    'day_change_pct'          => $gv['diag']['day_change_pct'],
-                                    'position_in_24h_range_pct' => $gv['diag']['position_in_24h_range_pct'],
-                                ];
-                            }
-                        } elseif ($tsState === 'pending') {
-                            // Pending: block handoff, keep in queue for recheck on next tick
-                            $this->dblTrendShiftPendingTotal++;
-                            $this->dblTrendShiftHandoffBlockedUnconfirmedTotal++;
-                            $tsBlockReason = 'waiting_trend_shift_confirmation';
-                            if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
-                            if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
-                            if (($r['block_reason'] ?? null) !== $tsBlockReason) {
-                                $result[$id]['block_reason'] = $tsBlockReason;
-                                $changed = true;
-                            }
-                            if (($result[$id]['handoff_status'] ?? '') !== 'blocked') {
-                                $result[$id]['handoff_status'] = 'blocked';
-                                $changed = true;
-                            }
-                            $sigIdInQueue = (string)($r['signal_id'] ?? $id);
-                            if ($sigIdInQueue !== '') {
-                                $blockedSignalIds[$sigIdInQueue] = $tsBlockReason;
-                            }
-                            $queueMarkedNonExecutableTotal++;
-                            if (count($this->dblTrendShiftPendingExamples) < 5) {
-                                $this->dblTrendShiftPendingExamples[] =
-                                    $this->buildTrendShiftExample($r, $id, $tsGate);
-                            }
-                            if (count($this->dblTrendShiftBlockedUnconfirmedExamples) < 5) {
-                                $this->dblTrendShiftBlockedUnconfirmedExamples[] =
-                                    $this->buildTrendShiftExample($r, $id, $tsGate);
-                            }
-                        } else {
-                            // Failed: hard block
-                            $this->dblTrendShiftFailedTotal++;
-                            $this->dblTrendShiftHandoffBlockedUnconfirmedTotal++;
-                            $tsFailedReason = (string)($tsGate['failed_reason'] ?? 'trend_shift_confirmation_failed');
-                            switch ($tsFailedReason) {
-                                case 'reclaim_level_lost':
-                                    $this->dblTrendShiftReclaimLostTotal++;
-                                    break;
-                                case 'point3_broken':
-                                    $this->dblTrendShiftPoint3BrokenTotal++;
-                                    break;
-                                case 'fresh_lower_low_after_point3':
-                                    $this->dblTrendShiftFreshLowerLowTotal++;
-                                    break;
-                                case 'pending_ttl_expired':
-                                    $this->dblTrendShiftPendingExpiredTotal++;
-                                    break;
-                            }
-                            $tsBlockReason = 'trend_shift_confirmation_failed';
-                            if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
-                            if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
-                            if (($r['block_reason'] ?? null) !== $tsBlockReason) {
-                                $result[$id]['block_reason'] = $tsBlockReason;
-                                $changed = true;
-                            }
-                            if (($result[$id]['handoff_status'] ?? '') !== 'blocked') {
-                                $result[$id]['handoff_status'] = 'blocked';
-                                $changed = true;
-                            }
-                            $sigIdInQueue = (string)($r['signal_id'] ?? $id);
-                            if ($sigIdInQueue !== '') {
-                                $blockedSignalIds[$sigIdInQueue] = $tsBlockReason;
-                            }
-                            $queueMarkedNonExecutableTotal++;
-                            if (count($this->dblTrendShiftFailedExamples) < 5) {
-                                $this->dblTrendShiftFailedExamples[] =
-                                    $this->buildTrendShiftExample($r, $id, $tsGate);
-                            }
-                            if (count($this->dblTrendShiftBlockedUnconfirmedExamples) < 5) {
-                                $this->dblTrendShiftBlockedUnconfirmedExamples[] =
-                                    $this->buildTrendShiftExample($r, $id, $tsGate);
-                            }
+                        if (count($this->dblGarbagePassExamples) < 5) {
+                            $this->dblGarbagePassExamples[] = [
+                                'symbol'                  => $r['symbol']      ?? null,
+                                'signal_id'               => $id,
+                                'detected_at'             => $r['detected_at'] ?? null,
+                                'candidate_quality_score' => $gv['diag']['candidate_quality_score'],
+                                'day_change_pct'          => $gv['diag']['day_change_pct'],
+                                'position_in_24h_range_pct' => $gv['diag']['position_in_24h_range_pct'],
+                            ];
                         }
                     }
                 } else {
-                    // Garbage veto disabled — fully executable
-                    if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
-                    if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
-                    if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
-                    if (($r['stale_reason'] ?? null) !== null)  { $result[$id]['stale_reason'] = null;  $changed = true; }
-                    if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
-                    $queueExecutableTotal++;
-                    if ($isSoftDemoted) {
-                        $softDemoteAllowedTotal++;
+                    // Garbage veto disabled — still require confirmed DBL pattern status.
+                    $ps = $this->applyDblPatternStatusStateMachine(
+                        $r,
+                        is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [],
+                        $config
+                    );
+                    $this->dblPatternStatusCheckedTotal++;
+                    $sscPatternMerge = is_array($result[$id]['strategy_signal_context'] ?? null)
+                        ? $result[$id]['strategy_signal_context'] : [];
+                    $result[$id]['strategy_signal_context'] = array_merge($sscPatternMerge, $ps['diag']);
+                    if (($ps['status'] ?? 'raw_candidate') === 'confirmed') {
+                        $this->dblPatternConfirmedTotal++;
+                        $this->dblPatternConfirmedHandoffReadyTotal++;
+                        if ($prevReady !== true)  { $result[$id]['handoff_ready']  = true;  $changed = true; }
+                        if ($prevExec  !== true)  { $result[$id]['executable']     = true;  $changed = true; }
+                        if (($result[$id]['active_final'] ?? null) !== true) { $result[$id]['active_final'] = true; $changed = true; }
+                        if (($r['stale']        ?? null) !== false) { $result[$id]['stale']       = false; $changed = true; }
+                        if (($r['stale_reason'] ?? null) !== null)  { $result[$id]['stale_reason'] = null;  $changed = true; }
+                        if (($r['block_reason'] ?? null) !== null)  { $result[$id]['block_reason'] = null;  $changed = true; }
+                        $queueExecutableTotal++;
+                        if ($isSoftDemoted) {
+                            $softDemoteAllowedTotal++;
+                        }
+                    } else {
+                        $blockReason = ($ps['status'] ?? '') === 'active'
+                            ? 'waiting_dbl_pattern_confirmation'
+                            : ((string)($ps['invalid_reason'] ?? 'dbl_pattern_invalid'));
+                        if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
+                        if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
+                        if (($result[$id]['active_final'] ?? null) !== false) { $result[$id]['active_final'] = false; $changed = true; }
+                        if (($result[$id]['block_reason'] ?? null) !== $blockReason) { $result[$id]['block_reason'] = $blockReason; $changed = true; }
+                        if (($result[$id]['handoff_status'] ?? '') !== (($ps['status'] ?? '') === 'active' ? 'pending' : 'blocked')) {
+                            $result[$id]['handoff_status'] = (($ps['status'] ?? '') === 'active' ? 'pending' : 'blocked');
+                            $changed = true;
+                        }
+                        $queueMarkedNonExecutableTotal++;
                     }
                 }
             } else {
@@ -9173,6 +9293,29 @@ final class DoubleBottomLongService
                 'dbl_trace_source'                      => $signal['strategy_signal_context']['dbl_trace_source']                      ?? null,
                 'dbl_trace_reconstructed_from_parser2'  => $signal['strategy_signal_context']['dbl_trace_reconstructed_from_parser2']  ?? false,
                 'dbl_trace_missing_high_quality_bypass' => $signal['strategy_signal_context']['dbl_trace_missing_high_quality_bypass'] ?? false,
+                // DBL pattern-status state machine diagnostics
+                'dbl_pattern_status_enabled'        => $signal['strategy_signal_context']['dbl_pattern_status_enabled'] ?? (bool)($config['dbl_pattern_status_enabled'] ?? true),
+                'dbl_pattern_status'                => $signal['strategy_signal_context']['dbl_pattern_status'] ?? null,
+                'dbl_pattern_status_reason'         => $signal['strategy_signal_context']['dbl_pattern_status_reason'] ?? null,
+                'dbl_pattern_confirmation_path'     => $signal['strategy_signal_context']['dbl_pattern_confirmation_path'] ?? 'none',
+                'dbl_pattern_invalid_reason'        => $signal['strategy_signal_context']['dbl_pattern_invalid_reason'] ?? null,
+                'dbl_pattern_pending_reason'        => $signal['strategy_signal_context']['dbl_pattern_pending_reason'] ?? null,
+                'dbl_pattern_detected_at'           => $signal['strategy_signal_context']['dbl_pattern_detected_at'] ?? ($signal['detected_at'] ?? null),
+                'dbl_pattern_confirmed_at'          => $signal['strategy_signal_context']['dbl_pattern_confirmed_at'] ?? null,
+                'dbl_pattern_invalidated_at'        => $signal['strategy_signal_context']['dbl_pattern_invalidated_at'] ?? null,
+                'point_1_low_time'                 => $signal['strategy_signal_context']['point_1_low_time'] ?? null,
+                'point_2_neckline_time'            => $signal['strategy_signal_context']['point_2_neckline_time'] ?? null,
+                'point_3_second_low_time'          => $signal['strategy_signal_context']['point_3_second_low_time'] ?? null,
+                'neckline_break_confirmed'         => $signal['strategy_signal_context']['neckline_break_confirmed'] ?? false,
+                'neckline_closes_above_count'      => $signal['strategy_signal_context']['neckline_closes_above_count'] ?? null,
+                'reclaim_hold_bars'                => $signal['strategy_signal_context']['reclaim_hold_bars'] ?? null,
+                'reclaim_hold_minutes'             => $signal['strategy_signal_context']['reclaim_hold_minutes'] ?? null,
+                'reclaim_retest_held'              => $signal['strategy_signal_context']['reclaim_retest_held'] ?? false,
+                'higher_low_after_point3'          => $signal['strategy_signal_context']['higher_low_after_point3'] ?? false,
+                'higher_low_after_point3_price'    => $signal['strategy_signal_context']['higher_low_after_point3_price'] ?? null,
+                'point3_broken'                    => $signal['strategy_signal_context']['point3_broken'] ?? false,
+                'reclaim_level_lost'               => $signal['strategy_signal_context']['reclaim_level_lost'] ?? false,
+                'confirmation_ttl_expired'         => $signal['strategy_signal_context']['confirmation_ttl_expired'] ?? false,
             ],
 
             // Execution parameters (strategy-owned; no exchange-order fields yet)
@@ -9690,6 +9833,292 @@ final class DoubleBottomLongService
                 'setup_class'                            => $setupClass !== '' ? $setupClass : null,
                 'pending_confirmation_status'            => $pendingConfirmStatus !== '' ? $pendingConfirmStatus : null,
             ],
+        ];
+    }
+
+    /**
+     * DBL pattern-status state machine gate (primary pre-handoff gate).
+     *
+     * States:
+     *  - raw_candidate
+     *  - active
+     *  - confirmed
+     *  - invalid
+     *
+     * Only confirmed patterns are allowed to continue to garbage-veto/handoff.
+     *
+     * @return array{status:string,reason:string|null,confirmation_path:string,invalid_reason:?string,pending_reason:?string,diag:array<string,mixed>}
+     */
+    private function applyDblPatternStatusStateMachine(array $record, array $context, array $config): array
+    {
+        $ssc = is_array($context) ? $context : [];
+        $enabled = (bool)($config['dbl_pattern_status_enabled'] ?? true);
+        $confirmRequired = (bool)($config['dbl_pattern_confirmation_required_for_handoff'] ?? true);
+        $allowPending = (bool)($config['dbl_pattern_allow_active_to_pending'] ?? true);
+        $allowConfirmedToHandoff = (bool)($config['dbl_pattern_allow_confirmed_to_handoff'] ?? true);
+
+        $detectedAt = (string)($record['detected_at'] ?? date('c'));
+        $nowIso = date('c');
+        $qualityScore = (float)($record['candidate_quality_score'] ?? $ssc['candidate_quality_score'] ?? 0.0);
+
+        $point1 = isset($ssc['point_1_low_price']) ? (float)$ssc['point_1_low_price'] : 0.0;
+        $point2 = isset($ssc['point_2_neckline_price']) ? (float)$ssc['point_2_neckline_price'] : 0.0;
+        $point3 = isset($ssc['point_3_second_low_price']) ? (float)$ssc['point_3_second_low_price'] : 0.0;
+        $necklineLevel = isset($ssc['neckline_level']) ? (float)$ssc['neckline_level'] : 0.0;
+        $reclaimLevel = isset($ssc['reclaim_level']) ? (float)$ssc['reclaim_level'] : 0.0;
+        $secondBottomLevel = isset($ssc['second_bottom_level']) ? (float)$ssc['second_bottom_level'] : 0.0;
+
+        $hasPoint1 = $point1 > 0.0;
+        $hasPoint2 = $point2 > 0.0 || $necklineLevel > 0.0;
+        $hasPoint3 = $point3 > 0.0;
+        $hasStructure = $hasPoint1 && $hasPoint2 && $hasPoint3;
+
+        $point3TolerancePct = (float)($config['dbl_pattern_point3_break_tolerance_pct'] ?? 0.20);
+        $point3ToleranceMult = 1.0 - max(0.0, $point3TolerancePct) / 100.0;
+        $point3BrokenByTolerance = $hasPoint1 && $hasPoint3 && $point3 < ($point1 * $point3ToleranceMult);
+
+        $freshLowerLow = (bool)($ssc['fresh_lower_low_after_point3'] ?? false);
+        $point3Broken = (bool)($ssc['point3_broken'] ?? false) || $point3BrokenByTolerance;
+        $reclaimLost = (bool)($ssc['reclaim_lost_after_confirm'] ?? false) || (bool)($ssc['reclaim_level_lost'] ?? false);
+        $weakBounce = (bool)($ssc['weak_bounce_after_point3'] ?? false);
+
+        $closesAbove = isset($ssc['neckline_closes_above_count'])
+            ? (int)$ssc['neckline_closes_above_count']
+            : (isset($ssc['reclaim_closes_above_count']) ? (int)$ssc['reclaim_closes_above_count'] : 0);
+        $minClosesAbove = max(1, (int)($config['dbl_pattern_min_closes_above_neckline'] ?? 2));
+        $reclaimHoldBars = isset($ssc['reclaim_hold_bars']) ? (int)$ssc['reclaim_hold_bars'] : 0;
+        $requiredHoldBars = max(1, (int)($config['dbl_pattern_reclaim_hold_bars'] ?? 2));
+        $reclaimHoldMinutes = isset($ssc['reclaim_hold_minutes']) ? (float)$ssc['reclaim_hold_minutes'] : 0.0;
+        $requiredHoldMinutes = max(1, (int)($config['dbl_pattern_reclaim_hold_minutes'] ?? 2));
+        $higherLowAfterPoint3 = (bool)($ssc['higher_low_after_point3'] ?? false);
+        $higherLowPrice = isset($ssc['higher_low_after_point3_price']) ? (float)$ssc['higher_low_after_point3_price'] : 0.0;
+        $higherLowTolPct = (float)($config['dbl_pattern_higher_low_tolerance_pct'] ?? 0.15);
+        $higherLowMin = $hasPoint3 ? ($point3 * (1.0 + max(0.0, $higherLowTolPct) / 100.0)) : 0.0;
+        $higherLowPathValid = $higherLowAfterPoint3 && $higherLowPrice > 0.0 && $higherLowPrice >= $higherLowMin && !$freshLowerLow;
+
+        $reclaimConfirmed = (bool)($ssc['reclaim_confirmed'] ?? false);
+        $necklineReclaimConfirmed = (bool)($ssc['neckline_reclaim_confirmed'] ?? false);
+        $reclaimRetestHeld = (bool)($ssc['reclaim_retest_held'] ?? false);
+
+        $necklineBreakConfirmed = $closesAbove >= $minClosesAbove && !$reclaimLost;
+        $reclaimHoldConfirmed = ($reclaimConfirmed || $necklineReclaimConfirmed)
+            && !$reclaimLost
+            && ($reclaimHoldBars >= $requiredHoldBars || $reclaimHoldMinutes >= $requiredHoldMinutes);
+        $retestHoldConfirmed = $reclaimRetestHeld && !$freshLowerLow && !$reclaimLost;
+
+        $confirmedPaths = [];
+        if ($necklineBreakConfirmed) { $confirmedPaths[] = 'neckline_break'; }
+        if ($reclaimHoldConfirmed)   { $confirmedPaths[] = 'reclaim_hold'; }
+        if ($retestHoldConfirmed)    { $confirmedPaths[] = 'retest_hold'; }
+        if ($higherLowPathValid)     { $confirmedPaths[] = 'higher_low_after_point3'; }
+
+        $confirmationPath = 'none';
+        if (count($confirmedPaths) === 1) {
+            $confirmationPath = $confirmedPaths[0];
+        } elseif (count($confirmedPaths) > 1) {
+            $confirmationPath = 'mixed';
+        }
+        $isConfirmed = !empty($confirmedPaths);
+
+        $ttlMinutes = (int)($config['dbl_pattern_pending_ttl_minutes'] ?? 10);
+        $ttlExpired = false;
+        if ($ttlMinutes > 0) {
+            $detTs = strtotime($detectedAt);
+            if ($detTs !== false && $detTs > 0) {
+                $ttlExpired = (time() - $detTs) > ($ttlMinutes * 60);
+            }
+        }
+
+        $status = 'raw_candidate';
+        $statusReason = 'pattern_status_not_evaluated';
+        $invalidReason = null;
+        $pendingReason = null;
+        $confirmedAt = null;
+        $invalidatedAt = null;
+
+        if (!$enabled) {
+            $status = 'confirmed';
+            $statusReason = 'pattern_status_gate_disabled';
+            $confirmationPath = 'mixed';
+            $confirmedAt = $nowIso;
+        } else {
+            if ($point3Broken) {
+                $status = 'invalid';
+                $statusReason = 'point3_broken';
+                $invalidReason = 'point3_broken';
+            } elseif ($freshLowerLow) {
+                $status = 'invalid';
+                $statusReason = 'fresh_lower_low_after_point3';
+                $invalidReason = 'fresh_lower_low_after_point3';
+            } elseif ($reclaimLost) {
+                $status = 'invalid';
+                $statusReason = 'reclaim_level_lost';
+                $invalidReason = 'reclaim_level_lost';
+            } elseif ($ttlExpired) {
+                $status = 'invalid';
+                $statusReason = 'confirmation_ttl_expired';
+                $invalidReason = 'confirmation_ttl_expired';
+            } elseif ($weakBounce) {
+                $status = 'invalid';
+                $statusReason = 'weak_bounce_after_point3';
+                $invalidReason = 'weak_bounce_after_point3';
+            } elseif ($isConfirmed && (!$confirmRequired || $allowConfirmedToHandoff)) {
+                $status = 'confirmed';
+                $statusReason = 'pattern_confirmation_path_valid';
+                $confirmedAt = $nowIso;
+            } elseif ($hasStructure && $allowPending) {
+                $status = 'active';
+                $statusReason = 'waiting_dbl_pattern_confirmation';
+                $pendingReason = $reclaimConfirmed || $necklineReclaimConfirmed
+                    ? 'waiting_retest_hold_confirmation'
+                    : 'waiting_neckline_reclaim_confirmation';
+            } elseif ($hasStructure) {
+                $status = 'invalid';
+                $statusReason = 'pattern_confirmation_required';
+                $invalidReason = 'pattern_structure_invalid';
+            } else {
+                $status = 'raw_candidate';
+                $statusReason = 'pattern_structure_incomplete';
+            }
+            if ($status === 'invalid') {
+                $invalidatedAt = $nowIso;
+            }
+        }
+
+        $diag = [
+            'dbl_pattern_status_enabled'      => $enabled,
+            'dbl_pattern_status'              => $status,
+            'dbl_pattern_status_reason'       => $statusReason,
+            'dbl_pattern_confirmation_path'   => $confirmationPath,
+            'dbl_pattern_invalid_reason'      => $invalidReason,
+            'dbl_pattern_pending_reason'      => $pendingReason,
+            'dbl_pattern_detected_at'         => $detectedAt,
+            'dbl_pattern_confirmed_at'        => $confirmedAt,
+            'dbl_pattern_invalidated_at'      => $invalidatedAt,
+            'point_1_low_price'               => $hasPoint1 ? $point1 : null,
+            'point_1_low_time'                => $ssc['point_1_low_time'] ?? null,
+            'point_2_neckline_price'          => $hasPoint2 ? ($point2 > 0.0 ? $point2 : $necklineLevel) : null,
+            'point_2_neckline_time'           => $ssc['point_2_neckline_time'] ?? null,
+            'point_3_second_low_price'        => $hasPoint3 ? $point3 : null,
+            'point_3_second_low_time'         => $ssc['point_3_second_low_time'] ?? null,
+            'neckline_level'                  => $necklineLevel > 0.0 ? $necklineLevel : null,
+            'reclaim_level'                   => $reclaimLevel > 0.0 ? $reclaimLevel : null,
+            'second_bottom_level'             => $secondBottomLevel > 0.0 ? $secondBottomLevel : null,
+            'entry_distance_from_point3_pct'  => $ssc['entry_distance_from_point3_pct'] ?? null,
+            'entry_distance_from_reclaim_pct' => $ssc['entry_distance_from_reclaim_pct'] ?? null,
+            'neckline_break_confirmed'        => $necklineBreakConfirmed,
+            'neckline_closes_above_count'     => $closesAbove > 0 ? $closesAbove : null,
+            'reclaim_confirmed'               => $reclaimConfirmed,
+            'neckline_reclaim_confirmed'      => $necklineReclaimConfirmed,
+            'reclaim_hold_bars'               => $reclaimHoldBars > 0 ? $reclaimHoldBars : null,
+            'reclaim_hold_minutes'            => $reclaimHoldMinutes > 0.0 ? $reclaimHoldMinutes : null,
+            'reclaim_retest_held'             => $reclaimRetestHeld,
+            'higher_low_after_point3'         => $higherLowAfterPoint3,
+            'higher_low_after_point3_price'   => $higherLowPrice > 0.0 ? $higherLowPrice : null,
+            'fresh_lower_low_after_point3'    => $freshLowerLow,
+            'point3_broken'                   => $point3Broken,
+            'reclaim_level_lost'              => $reclaimLost,
+            'confirmation_ttl_expired'        => $ttlExpired,
+            // keep trend-shift fields for backward compatibility
+            'trend_shift_gate_enabled'        => (bool)($config['dbl_trend_shift_gate_enabled'] ?? true),
+            'trend_shift_checked'             => true,
+            'trend_shift_confirmed'           => $status === 'confirmed',
+            'trend_shift_confirmation_path'   => $confirmationPath,
+            'trend_shift_state'               => $status === 'active' ? 'pending' : ($status === 'invalid' ? 'failed' : ($status === 'confirmed' ? 'confirmed' : 'not_checked')),
+            'trend_shift_pending_reason'      => $pendingReason,
+            'trend_shift_failed_reason'       => $invalidReason,
+            'trend_direction_before_entry'    => $ssc['trend_direction'] ?? null,
+            'recent_60m_direction_flips'      => $ssc['recent_60m_direction_flips'] ?? null,
+            'room_to_recent_swing_high_roi'   => $ssc['room_to_recent_swing_high_roi'] ?? null,
+            'post_point3_impulse_spent_pct'   => $ssc['post_point3_impulse_spent_pct'] ?? null,
+        ];
+
+        return [
+            'status'            => $status,
+            'reason'            => $statusReason,
+            'confirmation_path' => $confirmationPath,
+            'invalid_reason'    => $invalidReason,
+            'pending_reason'    => $pendingReason,
+            'diag'              => $diag,
+        ];
+    }
+
+    /**
+     * Persist/update a DBL active pattern watch entry.
+     */
+    private function writePendingPatternWatchEntry(array $record, string $signalId, array $ps, array $config): void
+    {
+        if (!(bool)($config['dbl_pattern_pending_enabled'] ?? true)) {
+            return;
+        }
+        $path = $this->moduleDir . '/storage/pending_patterns.json';
+        $maxItems = max(1, (int)($config['dbl_pattern_pending_max_items'] ?? 100));
+        $existing = (array)$this->readJson('storage/pending_patterns.json', []);
+        $ssc = is_array($record['strategy_signal_context'] ?? null) ? $record['strategy_signal_context'] : [];
+        $ttlMin = (int)($config['dbl_pattern_pending_ttl_minutes'] ?? 10);
+        $expiresAt = $ttlMin > 0 ? date('c', time() + ($ttlMin * 60)) : null;
+        $entry = [
+            'symbol'                 => (string)($record['symbol'] ?? ''),
+            'signal_id'              => $signalId,
+            'setup_class'            => $ssc['setup_class'] ?? null,
+            'candidate_quality_score'=> $record['candidate_quality_score'] ?? ($ssc['candidate_quality_score'] ?? null),
+            'dbl_pattern_status'     => 'active',
+            'pending_reason'         => $ps['pending_reason'] ?? 'waiting_dbl_pattern_confirmation',
+            'point_1_low_price'      => $ssc['point_1_low_price'] ?? null,
+            'point_1_low_time'       => $ssc['point_1_low_time'] ?? null,
+            'point_2_neckline_price' => $ssc['point_2_neckline_price'] ?? null,
+            'point_2_neckline_time'  => $ssc['point_2_neckline_time'] ?? null,
+            'point_3_second_low_price' => $ssc['point_3_second_low_price'] ?? null,
+            'point_3_second_low_time'=> $ssc['point_3_second_low_time'] ?? null,
+            'neckline_level'         => $ssc['neckline_level'] ?? null,
+            'reclaim_level'          => $ssc['reclaim_level'] ?? null,
+            'detected_at'            => $record['detected_at'] ?? date('c'),
+            'last_checked_at'        => date('c'),
+            'expires_at'             => $expiresAt,
+            'required_confirmation_paths' => ['neckline_break', 'reclaim_hold', 'retest_hold', 'higher_low_after_point3'],
+            'last_price'             => $record['entry_price'] ?? null,
+        ];
+
+        $kept = [];
+        foreach ($existing as $e) {
+            if (!is_array($e)) { continue; }
+            $sameId = (string)($e['signal_id'] ?? '') === $signalId;
+            if (!$sameId) { $kept[] = $e; }
+        }
+        $kept[] = $entry;
+        if (count($kept) > $maxItems) {
+            $kept = array_slice($kept, -$maxItems);
+        }
+        @file_put_contents($path, json_encode(array_values($kept), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), LOCK_EX);
+    }
+
+    /**
+     * Build a compact DBL pattern-status example payload for last_run.
+     */
+    private function buildDblPatternExample(array $r, string $id, array $ps): array
+    {
+        $ssc = is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [];
+        $d = is_array($ps['diag'] ?? null) ? $ps['diag'] : [];
+        return [
+            'symbol'                        => $r['symbol'] ?? null,
+            'signal_id'                     => $id,
+            'setup_class'                   => $ssc['setup_class'] ?? null,
+            'candidate_quality_score'       => $r['candidate_quality_score'] ?? ($ssc['candidate_quality_score'] ?? null),
+            'dbl_pattern_status'            => $ps['status'] ?? null,
+            'dbl_pattern_confirmation_path' => $ps['confirmation_path'] ?? 'none',
+            'dbl_pattern_invalid_reason'    => $ps['invalid_reason'] ?? null,
+            'point_1_low_price'             => $d['point_1_low_price'] ?? ($ssc['point_1_low_price'] ?? null),
+            'point_2_neckline_price'        => $d['point_2_neckline_price'] ?? ($ssc['point_2_neckline_price'] ?? null),
+            'point_3_second_low_price'      => $d['point_3_second_low_price'] ?? ($ssc['point_3_second_low_price'] ?? null),
+            'neckline_level'                => $d['neckline_level'] ?? ($ssc['neckline_level'] ?? null),
+            'reclaim_level'                 => $d['reclaim_level'] ?? ($ssc['reclaim_level'] ?? null),
+            'neckline_closes_above_count'   => $d['neckline_closes_above_count'] ?? null,
+            'reclaim_confirmed'             => $d['reclaim_confirmed'] ?? false,
+            'neckline_reclaim_confirmed'    => $d['neckline_reclaim_confirmed'] ?? false,
+            'reclaim_retest_held'           => $d['reclaim_retest_held'] ?? false,
+            'higher_low_after_point3'       => $d['higher_low_after_point3'] ?? false,
+            'fresh_lower_low_after_point3'  => $d['fresh_lower_low_after_point3'] ?? false,
+            'point3_broken'                 => $d['point3_broken'] ?? false,
         ];
     }
 

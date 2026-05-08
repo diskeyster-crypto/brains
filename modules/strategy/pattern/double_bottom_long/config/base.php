@@ -444,4 +444,22 @@ return [
     'dbl_trend_shift_high_quality_threshold'                   => 0.82,
     'dbl_trend_shift_pending_ttl_minutes'                      => 10,
     'dbl_trend_shift_pending_recheck_enabled'                  => true,
+    // ── DBL pattern-status state machine (primary handoff gate) ───────────────
+    // Flow:
+    //   raw_candidate -> active -> confirmed -> (then) garbage_veto -> handoff_ready
+    //   raw/active    -> invalid
+    // Only confirmed patterns can proceed to garbage veto / Bot handoff.
+    'dbl_pattern_status_enabled'                               => true,
+    'dbl_pattern_confirmation_required_for_handoff'            => true,
+    'dbl_pattern_min_closes_above_neckline'                    => 2,
+    'dbl_pattern_reclaim_hold_bars'                            => 2,
+    'dbl_pattern_reclaim_hold_minutes'                         => 2,
+    'dbl_pattern_point3_break_tolerance_pct'                   => 0.20,
+    'dbl_pattern_higher_low_tolerance_pct'                     => 0.15,
+    'dbl_pattern_pending_enabled'                              => true,
+    'dbl_pattern_pending_ttl_minutes'                          => 10,
+    'dbl_pattern_pending_recheck_enabled'                      => true,
+    'dbl_pattern_pending_max_items'                            => 100,
+    'dbl_pattern_allow_active_to_pending'                      => true,
+    'dbl_pattern_allow_confirmed_to_handoff'                   => true,
 ];

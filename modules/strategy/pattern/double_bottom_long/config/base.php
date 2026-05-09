@@ -482,6 +482,15 @@ return [
     'dbl_point3_break_recovery_requires_reclaim_recovered'     => true,
     'dbl_point3_recovery_watch_ttl_minutes'                    => 10,
     'dbl_point3_recovery_min_confirm_bars'                     => 2,
+    // ── DBL filter-audit calibration mode ─────────────────────────────────────
+    'dbl_filter_audit_mode_enabled'                            => true,
+    'dbl_filter_audit_mode_demo_only'                          => true,
+    'dbl_filter_audit_send_to_bot'                             => true,
+    'dbl_filter_audit_only_when_no_normal_ready'               => true,
+    'dbl_filter_audit_max_signals_per_cycle'                   => 1,
+    'dbl_filter_audit_max_signals_per_6h'                      => 3,
+    'dbl_filter_audit_min_quality_score'                       => 0.68,
+    'dbl_filter_audit_require_no_fatal_break'                  => true,
     // ── DBL confirmed-pattern freshness override ──────────────────────────────
     // For signals with dbl_pattern_status=confirmed, bypass the generic current-run
     // freshness window (300 s) and use confirmed-pattern TTL + validity check instead.

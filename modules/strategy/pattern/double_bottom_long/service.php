@@ -80,6 +80,8 @@ final class DoubleBottomLongService
     // ── DBL near-miss counters (reset at start of each tickBatch) ────────────
     private int $dblNearMissTotal                     = 0;
     /** @var array<string,int> */
+    private array $dblNearMissByStage                = [];
+    /** @var array<string,int> */
     private array $dblNearMissByReason                = [];
     /** @var list<array<string,mixed>> */
     private array $dblGarbageBlockExamples = [];
@@ -584,6 +586,7 @@ final class DoubleBottomLongService
         $this->dblGarbageLateLocalTinyRoomWithoutReclaimTotal = 0;
         $this->dblRawCandidatesTotal               = 0;
         $this->dblNearMissTotal                    = 0;
+        $this->dblNearMissByStage                  = [];
         $this->dblNearMissByReason                 = [];
         $this->dblGarbageBlockExamples             = [];
         $this->dblGarbagePassExamples              = [];
@@ -1605,6 +1608,29 @@ final class DoubleBottomLongService
             $this->writeJson($suppRelFile, array_values($this->scanSuppressionCache));
         }
 
+        // Pre-handoff near-miss bucket: final eligibility low-quality rejects.
+        foreach ($finalLowQualityRejectExamples as $nmEx) {
+            $this->addDblNearMiss('final_eligibility', 'final_low_quality', [
+                'symbol' => $nmEx['symbol'] ?? null,
+                'candidate_quality_score' => $nmEx['candidate_quality_score'] ?? null,
+                'setup_class' => $nmEx['setup_class'] ?? null,
+                'dbl_pattern_status' => null,
+                'dbl_pattern_invalid_reason' => null,
+                'garbage_veto_reason' => null,
+                'point3_confirmed' => (bool)($nmEx['point3_confirmed'] ?? false),
+                'entry_distance_from_point3_pct' => $nmEx['entry_distance_from_point3_pct'] ?? null,
+                'room_to_recent_swing_high_roi' => $nmEx['room_to_recent_swing_high_roi'] ?? null,
+                'local_late_flags_total' => $nmEx['local_late_flags_total'] ?? null,
+                'local_late_flags_required' => $nmEx['local_late_flags_required'] ?? null,
+                'reclaim_confirmed' => $nmEx['reclaim_confirmed'] ?? false,
+                'neckline_reclaim_confirmed' => $nmEx['neckline_reclaim_confirmed'] ?? false,
+                'reclaim_retest_held' => $nmEx['reclaim_retest_held'] ?? false,
+                'handoff_status' => 'not_handed_off',
+                'handoff_ready' => false,
+                'executable' => false,
+            ]);
+        }
+
         // Refresh bot handoff queue with the current active-pool winner signals.
         $handoffStats = $this->updateBotHandoff($signals, $config, $tickAt);
 
@@ -1779,6 +1805,63 @@ final class DoubleBottomLongService
         $this->writeJson('storage/stats.json',       $stats);
         $this->writeJson('storage/cycle_stats.json', $cycleStats);
 
+        // ── DBL funnel diagnostics from full pipeline (not only handoff-active) ─────
+        $dblRawCandidatesTotalDiag = max(
+            (int)($cycleStats['setup_candidates_total'] ?? 0),
+            (int)($cycleStats['double_bottom_found_total'] ?? 0),
+            (int)($state['found'] ?? 0)
+        );
+        $dblCandidatesBeforeQualityTotal = (int)($cycleStats['setup_allowed_quality_checked_total'] ?? $dblRawCandidatesTotalDiag);
+        $dblCandidatesAfterQualityTotal  = (int)($cycleStats['setup_allowed_quality_pass_total'] ?? 0);
+        $dblQualityRejectedTotal         = max(0, $dblCandidatesBeforeQualityTotal - $dblCandidatesAfterQualityTotal);
+        $dblFinalEligibilityCheckedTotal = (int)($cycleStats['signals_before_final_eligibility_total'] ?? 0);
+        $dblFinalEligibilityRejectedTotal = (int)($cycleStats['signals_rejected_final_eligibility_total'] ?? 0);
+        $dblFinalLowQualityRejectedTotal = (int)($cycleStats['signals_rejected_final_low_quality_total'] ?? 0);
+        $dblQualityBlockedTotal          = $dblQualityRejectedTotal + $dblFinalLowQualityRejectedTotal;
+        $dblPatternStateCheckedTotalDiag = $this->dblPatternStatusCheckedTotal;
+        $dblPatternStateBlockedTotalDiag = $this->patternStateBlockedBeforeGarbageTotal;
+        $dblGarbageVetoCheckedTotalDiag  = $this->dblGarbageVetoCheckedTotal;
+        $dblGarbageVetoBlockedTotalDiag  = $this->dblGarbageVetoBlockedTotal;
+        $dblGarbageVetoPassedTotalDiag   = $this->dblGarbagePassedTotal;
+        $dblHandoffReadyTotalDiag        = (int)($handoffStats['ready_total'] ?? 0);
+        $dblBotQueueReadyWrittenTotalDiag = (int)($handoffStats['handoff_queue_ready_written_total'] ?? 0);
+
+        // Throughput bool for cycle_history record (best effort, pre-write).
+        $dblThroughputTooLowForCycleHistory = false;
+        try {
+            $cycleHistFile = $this->moduleDir . '/storage/cycle_history.ndjson';
+            if (is_file($cycleHistFile)) {
+                $lines = @file($cycleHistFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                if (is_array($lines) && count($lines) > 0) {
+                    $nowTsForThroughput = time();
+                    $windowSec = 6 * 3600;
+                    $handoffReadySumWindow = 0;
+                    $firstTsInWindow = null;
+                    $lastTsInWindow  = null;
+                    foreach ($lines as $line) {
+                        $rec = @json_decode($line, true);
+                        if (!is_array($rec)) { continue; }
+                        $recTs = isset($rec['finished_at']) ? @strtotime((string)$rec['finished_at']) : false;
+                        if ($recTs === false || $recTs <= 0 || ($nowTsForThroughput - $recTs) > $windowSec) {
+                            continue;
+                        }
+                        $handoffReadySumWindow += (int)($rec['bot_handoff_ready_total'] ?? 0);
+                        if ($firstTsInWindow === null || $recTs < $firstTsInWindow) { $firstTsInWindow = $recTs; }
+                        if ($lastTsInWindow === null || $recTs > $lastTsInWindow) { $lastTsInWindow = $recTs; }
+                    }
+                    if ($firstTsInWindow !== null && $lastTsInWindow !== null && $lastTsInWindow > $firstTsInWindow) {
+                        $spanHours = ($lastTsInWindow - $firstTsInWindow) / 3600.0;
+                        if ($spanHours >= 1.0) {
+                            $handoffPerHour = $handoffReadySumWindow / $spanHours;
+                            $dblThroughputTooLowForCycleHistory = ($handoffPerHour * 6.0) < (int)($config['dbl_expected_min_handoff_per_6h'] ?? 3);
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            $dblThroughputTooLowForCycleHistory = false;
+        }
+
         // ── Deferred cycle_history.ndjson write ──────────────────────────────────
         // Written here (after updateBotHandoff + signals lifecycle update + finalizeStats)
         // so that handoff, pattern-status, garbage-veto, and freshness counters are all
@@ -1809,6 +1892,23 @@ final class DoubleBottomLongService
                 'dbl_garbage_veto_checked_total'  => $this->dblGarbageVetoCheckedTotal,
                 'dbl_garbage_veto_blocked_total'  => $this->dblGarbageVetoBlockedTotal,
                 'dbl_garbage_passed_total'        => $this->dblGarbagePassedTotal,
+                // Full funnel diagnostics
+                'dbl_raw_candidates_total'                 => $dblRawCandidatesTotalDiag,
+                'dbl_candidates_before_quality_total'      => $dblCandidatesBeforeQualityTotal,
+                'dbl_candidates_after_quality_total'       => $dblCandidatesAfterQualityTotal,
+                'dbl_quality_rejected_total'               => $dblQualityRejectedTotal,
+                'dbl_final_eligibility_checked_total'      => $dblFinalEligibilityCheckedTotal,
+                'dbl_final_eligibility_rejected_total'     => $dblFinalEligibilityRejectedTotal,
+                'dbl_pattern_state_checked_total'          => $dblPatternStateCheckedTotalDiag,
+                'dbl_pattern_state_blocked_total'          => $dblPatternStateBlockedTotalDiag,
+                'dbl_garbage_veto_checked_total_funnel'    => $dblGarbageVetoCheckedTotalDiag,
+                'dbl_garbage_veto_blocked_total_funnel'    => $dblGarbageVetoBlockedTotalDiag,
+                'dbl_garbage_veto_passed_total'            => $dblGarbageVetoPassedTotalDiag,
+                'dbl_near_miss_total'                      => $this->dblNearMissTotal,
+                'dbl_near_miss_by_reason'                  => $this->dblNearMissByReason,
+                'dbl_handoff_ready_total'                  => $dblHandoffReadyTotalDiag,
+                'dbl_bot_queue_ready_written_total'        => $dblBotQueueReadyWrittenTotalDiag,
+                'dbl_throughput_too_low'                  => $dblThroughputTooLowForCycleHistory,
                 // Current-run freshness counters
                 'current_run_freshness_checked_total' => $handoffStats['current_run_freshness_checked_total'] ?? 0,
                 'current_run_freshness_passed_total'  => $handoffStats['current_run_freshness_passed_total'] ?? 0,
@@ -1943,6 +2043,46 @@ final class DoubleBottomLongService
         } catch (\Throwable) {
             // Throughput diagnostics are best-effort; never block the tick.
         }
+
+        $normalizeDblExample = static function (array $row): array {
+            return [
+                'symbol'                         => $row['symbol'] ?? null,
+                'candidate_quality_score'        => $row['candidate_quality_score'] ?? ($row['q'] ?? null),
+                'setup_class'                    => $row['setup_class'] ?? null,
+                'dbl_pattern_status'             => $row['dbl_pattern_status'] ?? null,
+                'dbl_pattern_invalid_reason'     => $row['dbl_pattern_invalid_reason'] ?? ($row['invalid_reason'] ?? null),
+                'block_reason'                   => $row['block_reason'] ?? null,
+                'garbage_veto_reason'            => $row['garbage_veto_reason'] ?? null,
+                'point3_confirmed'               => (bool)($row['point3_confirmed'] ?? $row['point_3_confirmed'] ?? false),
+                'reclaim_confirmed'              => (bool)($row['reclaim_confirmed'] ?? false),
+                'neckline_reclaim_confirmed'     => (bool)($row['neckline_reclaim_confirmed'] ?? false),
+                'reclaim_retest_held'            => (bool)($row['reclaim_retest_held'] ?? false),
+                'entry_distance_from_point3_pct' => $row['entry_distance_from_point3_pct'] ?? null,
+                'room_to_recent_swing_high_roi'  => $row['room_to_recent_swing_high_roi'] ?? null,
+                'local_late_flags_total'         => $row['local_late_flags_total'] ?? null,
+                'local_late_flags_required'      => $row['local_late_flags_required'] ?? null,
+            ];
+        };
+        $dblQualityBlockedExamples = array_map(
+            $normalizeDblExample,
+            array_slice($finalLowQualityRejectExamples, 0, 10)
+        );
+        $dblPatternInvalidExamplesNormalized = array_map(
+            $normalizeDblExample,
+            array_slice($this->dblPatternInvalidExamples, 0, 10)
+        );
+        $dblTraceIncompleteExamplesNormalized = array_map(
+            $normalizeDblExample,
+            array_slice($this->dblTraceIncompleteExamples, 0, 10)
+        );
+        $dblGarbageBlockExamplesNormalized = array_map(
+            $normalizeDblExample,
+            array_slice($this->dblGarbageBlockExamples, 0, 10)
+        );
+        $dblGarbagePassExamplesNormalized = array_map(
+            $normalizeDblExample,
+            array_slice($this->dblGarbagePassExamples, 0, 10)
+        );
 
         $this->writeJson('storage/last_run.json', [
             // done_retryable = empty universe (registry not yet populated, will retry)
@@ -2276,27 +2416,43 @@ final class DoubleBottomLongService
             'dbl_garbage_near_recent_swing_high_total'   => $this->dblGarbageNearRecentSwingHighTotal,
             'dbl_garbage_passed_total'                   => $this->dblGarbagePassedTotal,
             'dbl_garbage_late_local_tiny_room_without_reclaim_total' => $this->dblGarbageLateLocalTinyRoomWithoutReclaimTotal,
-            'dbl_garbage_block_examples'                 => $this->dblGarbageBlockExamples,
-            'dbl_garbage_pass_examples'                  => $this->dblGarbagePassExamples,
+            'dbl_garbage_block_examples'                 => $dblGarbageBlockExamplesNormalized,
+            'dbl_garbage_pass_examples'                  => $dblGarbagePassExamplesNormalized,
             'dbl_garbage_late_local_entry_examples'      => $this->dblGarbageLateLocalEntryExamples,
             'dbl_garbage_late_local_passed_examples'     => $this->dblGarbageLateLocalPassedExamples,
             'dbl_garbage_late_local_tiny_room_without_reclaim_examples' => $this->dblGarbageLateLocalTinyRoomWithoutReclaimExamples,
             // ── DBL funnel counters (per tick) ────────────────────────────────────
-            'dbl_raw_candidates_total'                   => $this->dblRawCandidatesTotal,
+            'dbl_raw_candidates_total'                   => $dblRawCandidatesTotalDiag,
+            'dbl_candidates_before_quality_total'        => $dblCandidatesBeforeQualityTotal,
+            'dbl_candidates_after_quality_total'         => $dblCandidatesAfterQualityTotal,
+            'dbl_quality_rejected_total'                 => $dblQualityRejectedTotal,
+            'dbl_final_eligibility_checked_total'        => $dblFinalEligibilityCheckedTotal,
+            'dbl_final_eligibility_rejected_total'       => $dblFinalEligibilityRejectedTotal,
+            'dbl_final_low_quality_rejected_total'       => $dblFinalLowQualityRejectedTotal,
+            'dbl_quality_blocked_total'                  => $dblQualityBlockedTotal,
+            'dbl_pattern_active_total'                   => $this->dblPatternActiveTotal,
+            'dbl_pattern_confirmed_total'                => $this->dblPatternConfirmedTotal,
+            'dbl_pattern_invalid_total'                  => $this->dblPatternInvalidTotal,
+            'dbl_pattern_state_checked_total'            => $dblPatternStateCheckedTotalDiag,
+            'dbl_freshness_blocked_total'                => $handoffStats['current_run_freshness_blocked_total'] ?? 0,
+            'dbl_pattern_state_blocked_total'            => $dblPatternStateBlockedTotalDiag,
+            'dbl_garbage_veto_checked_total'             => $dblGarbageVetoCheckedTotalDiag,
+            'dbl_garbage_veto_blocked_total'             => $dblGarbageVetoBlockedTotalDiag,
+            'dbl_garbage_veto_passed_total'              => $dblGarbageVetoPassedTotalDiag,
+            'dbl_handoff_ready_total'                    => $dblHandoffReadyTotalDiag,
+            'dbl_bot_queue_ready_written_total'          => $dblBotQueueReadyWrittenTotalDiag,
+            // Legacy aliases kept for compatibility with prior archive tooling
             'dbl_pattern_active_total_funnel'            => $this->dblPatternActiveTotal,
             'dbl_pattern_confirmed_total_funnel'         => $this->dblPatternConfirmedTotal,
             'dbl_pattern_invalid_total_funnel'           => $this->dblPatternInvalidTotal,
-            'dbl_freshness_blocked_total'                => $handoffStats['current_run_freshness_blocked_total'] ?? 0,
-            'dbl_pattern_state_blocked_total'            => $this->patternStateBlockedBeforeGarbageTotal,
-            'dbl_garbage_veto_checked_total_funnel'      => $this->dblGarbageVetoCheckedTotal,
-            'dbl_garbage_veto_blocked_total_funnel'      => $this->dblGarbageVetoBlockedTotal,
-            'dbl_garbage_veto_passed_total'              => $this->dblGarbagePassedTotal,
-            'dbl_handoff_ready_total'                    => $handoffStats['ready_total'] ?? 0,
-            'dbl_bot_queue_ready_written_total'          => $handoffStats['handoff_queue_ready_written_total'] ?? 0,
+            'dbl_garbage_veto_checked_total_funnel'      => $dblGarbageVetoCheckedTotalDiag,
+            'dbl_garbage_veto_blocked_total_funnel'      => $dblGarbageVetoBlockedTotalDiag,
             // ── DBL near-miss bucket ──────────────────────────────────────────────
             'dbl_near_miss_total'                        => $this->dblNearMissTotal,
+            'dbl_near_miss_by_stage'                     => $this->dblNearMissByStage,
             'dbl_near_miss_by_reason'                    => $this->dblNearMissByReason,
             'dbl_near_miss_examples'                     => $this->dblNearMissExamples,
+            'dbl_quality_blocked_examples'               => $dblQualityBlockedExamples,
             // ── DBL trace completeness counters (per tick) ────────────────────────
             'dbl_trace_checked_total'                        => $this->dblTraceCheckedTotal,
             'dbl_trace_complete_total'                       => $this->dblTraceCompleteTotal,
@@ -2310,7 +2466,7 @@ final class DoubleBottomLongService
             'dbl_garbage_reclaim_not_confirmed_total'        => $this->dblGarbageReclaimNotConfirmedTotal,
             'dbl_garbage_missing_trace_passed_high_quality_total' => $this->dblGarbageMissingTracePassedHighQualityTotal,
             'dbl_trace_missing_examples'                     => $this->dblTraceMissingExamples,
-            'dbl_trace_incomplete_examples'                  => $this->dblTraceIncompleteExamples,
+            'dbl_trace_incomplete_examples'                  => $dblTraceIncompleteExamplesNormalized,
             'dbl_trace_reconstructed_examples'               => $this->dblTraceReconstructedExamples,
             'dbl_garbage_missing_trace_block_examples'       => $this->dblGarbageMissingTraceBlockExamples,
             'dbl_garbage_reclaim_not_confirmed_examples'     => $this->dblGarbageReclaimNotConfirmedExamples,
@@ -2369,7 +2525,7 @@ final class DoubleBottomLongService
             'dbl_pattern_confirmed_handoff_ready_total'              => $this->dblPatternConfirmedHandoffReadyTotal,
             'dbl_pattern_active_examples'                             => $this->dblPatternActiveExamples,
             'dbl_pattern_confirmed_examples'                          => $this->dblPatternConfirmedExamples,
-            'dbl_pattern_invalid_examples'                            => $this->dblPatternInvalidExamples,
+            'dbl_pattern_invalid_examples'                            => $dblPatternInvalidExamplesNormalized,
             'dbl_pattern_pending_examples'                            => $this->dblPatternPendingExamples,
             'dbl_pattern_pending_confirmed_examples'                  => $this->dblPatternPendingConfirmedExamples,
             'dbl_pattern_pending_invalidated_examples'                => $this->dblPatternPendingInvalidatedExamples,
@@ -9092,6 +9248,23 @@ final class DoubleBottomLongService
                         $blockedSignalIds[$sigIdInQueue] = $blockReason;
                     }
                     $queueMarkedNonExecutableTotal++;
+                    $this->addDblNearMiss('handoff_soft_demote', $blockReason, [
+                        'symbol' => $r['symbol'] ?? null,
+                        'candidate_quality_score' => $r['candidate_quality_score'] ?? ($r['strategy_signal_context']['candidate_quality_score'] ?? null),
+                        'setup_class' => $r['strategy_signal_context']['setup_class'] ?? null,
+                        'dbl_pattern_status' => $r['dbl_pattern_status'] ?? ($r['strategy_signal_context']['dbl_pattern_status'] ?? null),
+                        'point3_confirmed' => (bool)($r['strategy_signal_context']['point_3_confirmed'] ?? false),
+                        'entry_distance_from_point3_pct' => $r['strategy_signal_context']['entry_distance_from_point3_pct'] ?? null,
+                        'room_to_recent_swing_high_roi' => $r['strategy_signal_context']['room_to_recent_swing_high_roi'] ?? null,
+                        'local_late_flags_total' => $r['strategy_signal_context']['local_late_flags_total'] ?? null,
+                        'local_late_flags_required' => $r['strategy_signal_context']['local_late_flags_required'] ?? null,
+                        'reclaim_confirmed' => $r['strategy_signal_context']['reclaim_confirmed'] ?? false,
+                        'neckline_reclaim_confirmed' => $r['strategy_signal_context']['neckline_reclaim_confirmed'] ?? false,
+                        'reclaim_retest_held' => $r['strategy_signal_context']['reclaim_retest_held'] ?? false,
+                        'handoff_status' => 'blocked',
+                        'handoff_ready' => false,
+                        'executable' => false,
+                    ]);
                 } elseif ($garbageVetoEnabled) {
                     // ── DBL pattern-status state machine (primary gate) ────────────────
                     $sscForPs1 = is_array($r['strategy_signal_context'] ?? null) ? $r['strategy_signal_context'] : [];
@@ -9240,6 +9413,26 @@ final class DoubleBottomLongService
                                 'reclaim_present' => $ps['diag']['reclaim_present'] ?? null,
                                 'dbl_trace_source' => $ps['diag']['dbl_trace_source'] ?? null,
                             ];
+                        }
+                        if (in_array($invReason, ['point3_broken', 'confirmation_ttl_expired'], true)) {
+                            $this->addDblNearMiss('pattern_state', $invReason, [
+                                'symbol' => $r['symbol'] ?? null,
+                                'candidate_quality_score' => $r['candidate_quality_score'] ?? ($r['strategy_signal_context']['candidate_quality_score'] ?? null),
+                                'setup_class' => $r['strategy_signal_context']['setup_class'] ?? null,
+                                'dbl_pattern_status' => $psStatus,
+                                'dbl_pattern_invalid_reason' => $invReason,
+                                'point3_confirmed' => (bool)($r['strategy_signal_context']['point_3_confirmed'] ?? false),
+                                'entry_distance_from_point3_pct' => $r['strategy_signal_context']['entry_distance_from_point3_pct'] ?? null,
+                                'room_to_recent_swing_high_roi' => $r['strategy_signal_context']['room_to_recent_swing_high_roi'] ?? null,
+                                'local_late_flags_total' => $r['strategy_signal_context']['local_late_flags_total'] ?? null,
+                                'local_late_flags_required' => $r['strategy_signal_context']['local_late_flags_required'] ?? null,
+                                'reclaim_confirmed' => $ps['diag']['reclaim_confirmed'] ?? ($r['strategy_signal_context']['reclaim_confirmed'] ?? false),
+                                'neckline_reclaim_confirmed' => $ps['diag']['neckline_reclaim_confirmed'] ?? ($r['strategy_signal_context']['neckline_reclaim_confirmed'] ?? false),
+                                'reclaim_retest_held' => $ps['diag']['reclaim_retest_held'] ?? ($r['strategy_signal_context']['reclaim_retest_held'] ?? false),
+                                'handoff_status' => 'blocked',
+                                'handoff_ready' => false,
+                                'executable' => false,
+                            ]);
                         }
                         continue;
                     }
@@ -9406,39 +9599,31 @@ final class DoubleBottomLongService
                             $blockedSignalIds[$sigIdInQueue] = $blockReason;
                         }
                         $queueMarkedNonExecutableTotal++;
-                        // Near-miss: veto triggered with at most one secondary reason
-                        // means the signal was close to passing (one factor pushed it over).
-                        $nmSecondary = array_filter(
-                            $gv['secondary_reasons'] ?? [],
-                            fn($s) => !str_starts_with($s, 'local_late_quality_tier=')
-                                   && !str_starts_with($s, 'local_late_flags=')
-                                   && !str_starts_with($s, 'setup_class=')
-                                   && !str_starts_with($s, 'pending_confirmation_status=')
-                        );
-                        if (count($nmSecondary) <= 1) {
-                            $this->dblNearMissTotal++;
-                            $this->dblNearMissByReason[$blockReason] = ($this->dblNearMissByReason[$blockReason] ?? 0) + 1;
-                            if (count($this->dblNearMissExamples) < 10) {
-                                $this->dblNearMissExamples[] = [
-                                    'symbol'                         => $r['symbol'] ?? null,
-                                    'signal_id'                      => $id,
-                                    'candidate_quality_score'        => $gv['diag']['candidate_quality_score'] ?? null,
-                                    'setup_class'                    => $gv['diag']['setup_class'] ?? null,
-                                    'dbl_pattern_status'             => $r['dbl_pattern_status'] ?? ($r['strategy_signal_context']['dbl_pattern_status'] ?? null),
-                                    'block_reason'                   => $blockReason,
-                                    'garbage_veto_reason'            => $blockReason,
-                                    'secondary_reasons'              => $gv['secondary_reasons'] ?? [],
-                                    'point3_confirmed'               => (bool)($r['strategy_signal_context']['point_3_confirmed'] ?? false),
-                                    'reclaim_confirmed'              => $gv['diag']['reclaim_confirmed'] ?? false,
-                                    'neckline_reclaim_confirmed'     => $gv['diag']['neckline_reclaim_confirmed'] ?? false,
-                                    'reclaim_retest_held'            => (bool)($r['strategy_signal_context']['reclaim_retest_held'] ?? false),
-                                    'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
-                                    'room_to_recent_swing_high_roi'  => $gv['diag']['room_to_recent_swing_high_roi'] ?? null,
-                                    'local_late_flags_total'         => $gv['diag']['local_late_flags_total'] ?? null,
-                                    'local_late_flags_required'      => $gv['diag']['local_late_flags_required'] ?? null,
-                                    'local_late_tiny_room_detected'  => $gv['diag']['local_late_tiny_room_detected'] ?? false,
-                                ];
-                            }
+                        $nearMissReasons = [
+                            'garbage_low_quality_without_obc_confirmation',
+                            'garbage_obc_quality_skip',
+                            'garbage_local_late_entry_after_recovery',
+                        ];
+                        if (in_array($blockReason, $nearMissReasons, true)) {
+                            $this->addDblNearMiss('garbage_veto', $blockReason, [
+                                'symbol' => $r['symbol'] ?? null,
+                                'candidate_quality_score' => $gv['diag']['candidate_quality_score'] ?? null,
+                                'setup_class' => $gv['diag']['setup_class'] ?? null,
+                                'dbl_pattern_status' => $r['dbl_pattern_status'] ?? ($r['strategy_signal_context']['dbl_pattern_status'] ?? null),
+                                'dbl_pattern_invalid_reason' => $r['strategy_signal_context']['dbl_pattern_invalid_reason'] ?? null,
+                                'garbage_veto_reason' => $blockReason,
+                                'point3_confirmed' => (bool)($r['strategy_signal_context']['point_3_confirmed'] ?? false),
+                                'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                'room_to_recent_swing_high_roi' => $gv['diag']['room_to_recent_swing_high_roi'] ?? null,
+                                'local_late_flags_total' => $gv['diag']['local_late_flags_total'] ?? null,
+                                'local_late_flags_required' => $gv['diag']['local_late_flags_required'] ?? null,
+                                'reclaim_confirmed' => $gv['diag']['reclaim_confirmed'] ?? false,
+                                'neckline_reclaim_confirmed' => $gv['diag']['neckline_reclaim_confirmed'] ?? false,
+                                'reclaim_retest_held' => $r['strategy_signal_context']['reclaim_retest_held'] ?? false,
+                                'handoff_status' => 'blocked',
+                                'handoff_ready' => false,
+                                'executable' => false,
+                            ]);
                         }
                         if (count($this->dblGarbageBlockExamples) < 10) {
                             $this->dblGarbageBlockExamples[] = [
@@ -9577,31 +9762,24 @@ final class DoubleBottomLongService
                         }
                         // If Veto 8 soft penalty fired (diagnostic_only mode), count as near-miss for awareness.
                         if (($gv['diag']['local_late_tiny_room_soft_penalty'] ?? false) === true) {
-                            $nmReason = 'soft_late_local_tiny_room_no_reclaim';
-                            $this->dblNearMissTotal++;
-                            $this->dblNearMissByReason[$nmReason] = ($this->dblNearMissByReason[$nmReason] ?? 0) + 1;
-                            if (count($this->dblNearMissExamples) < 10) {
-                                $this->dblNearMissExamples[] = [
-                                    'symbol'                         => $r['symbol'] ?? null,
-                                    'signal_id'                      => $id,
-                                    'candidate_quality_score'        => $gv['diag']['candidate_quality_score'] ?? null,
-                                    'setup_class'                    => $gv['diag']['setup_class'] ?? null,
-                                    'dbl_pattern_status'             => 'confirmed',
-                                    'block_reason'                   => null,
-                                    'garbage_veto_reason'            => null,
-                                    'secondary_reasons'              => ['soft_penalty:local_late_tiny_room_no_reclaim'],
-                                    'point3_confirmed'               => (bool)($r['strategy_signal_context']['point_3_confirmed'] ?? false),
-                                    'reclaim_confirmed'              => $gv['diag']['reclaim_confirmed'] ?? false,
-                                    'neckline_reclaim_confirmed'     => $gv['diag']['neckline_reclaim_confirmed'] ?? false,
-                                    'reclaim_retest_held'            => (bool)($r['strategy_signal_context']['reclaim_retest_held'] ?? false),
-                                    'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
-                                    'room_to_recent_swing_high_roi'  => $gv['diag']['room_to_recent_swing_high_roi'] ?? null,
-                                    'local_late_flags_total'         => $gv['diag']['local_late_flags_total'] ?? null,
-                                    'local_late_flags_required'      => $gv['diag']['local_late_flags_required'] ?? null,
-                                    'local_late_tiny_room_detected'  => true,
-                                    'note'                           => 'diagnostic_only_veto8_would_have_blocked',
-                                ];
-                            }
+                            $this->addDblNearMiss('garbage_veto_soft', 'soft_late_local_tiny_room_no_reclaim', [
+                                'symbol' => $r['symbol'] ?? null,
+                                'candidate_quality_score' => $gv['diag']['candidate_quality_score'] ?? null,
+                                'setup_class' => $gv['diag']['setup_class'] ?? null,
+                                'dbl_pattern_status' => 'confirmed',
+                                'garbage_veto_reason' => null,
+                                'point3_confirmed' => (bool)($r['strategy_signal_context']['point_3_confirmed'] ?? false),
+                                'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                'room_to_recent_swing_high_roi' => $gv['diag']['room_to_recent_swing_high_roi'] ?? null,
+                                'local_late_flags_total' => $gv['diag']['local_late_flags_total'] ?? null,
+                                'local_late_flags_required' => $gv['diag']['local_late_flags_required'] ?? null,
+                                'reclaim_confirmed' => $gv['diag']['reclaim_confirmed'] ?? false,
+                                'neckline_reclaim_confirmed' => $gv['diag']['neckline_reclaim_confirmed'] ?? false,
+                                'reclaim_retest_held' => $r['strategy_signal_context']['reclaim_retest_held'] ?? false,
+                                'handoff_status' => $result[$id]['handoff_status'] ?? null,
+                                'handoff_ready' => $result[$id]['handoff_ready'] ?? null,
+                                'executable' => $result[$id]['executable'] ?? null,
+                            ]);
                         }
                         if (count($this->dblGarbagePassExamples) < 5) {
                             $this->dblGarbagePassExamples[] = [
@@ -10583,25 +10761,29 @@ final class DoubleBottomLongService
         $lateLocalTinyRoomReason   = null;
         $lateLocalTinyRoomSoftPenalty = false;
         $reclaimRetestHeldForV8    = (bool)($ssc['reclaim_retest_held'] ?? false);
-        if ($primaryReason === null) {
-            $v8FarPoint3Pct   = (float)($config['dbl_garbage_late_local_far_point3_pct']    ?? 1.8);
-            $v8TinyRoomRoi    = (float)($config['dbl_garbage_late_local_tiny_room_roi']     ?? 2.0);
-            $v8DiagOnly       = (bool) ($config['dbl_garbage_late_local_tiny_room_diagnostic_only'] ?? true);
-            $v8FarFromPoint3  = $entryDistPoint3 !== null && $entryDistPoint3 >= $v8FarPoint3Pct;
-            $v8TinyRoom       = $roomToRecentSwingHighRoi !== null && $roomToRecentSwingHighRoi <= $v8TinyRoomRoi;
-            $v8NoReclaim      = !$hasAnyReclaimConfirmation && !$reclaimRetestHeldForV8;
-            if ($v8FarFromPoint3 && $v8TinyRoom && $v8NoReclaim) {
-                $lateLocalTinyRoomDetected = true;
-                $lateLocalTinyRoomReason   = 'late_entry_far_from_point3_tiny_room_no_reclaim';
-                if ($v8DiagOnly) {
-                    $lateLocalTinyRoomSoftPenalty = true;
-                    $secondaryReasons[] = 'soft_late_local_tiny_room_no_reclaim';
-                } else {
-                    $primaryReason = 'garbage_late_local_tiny_room_without_reclaim';
-                    $secondaryReasons[] = 'entry_dist_from_point3=' . round($entryDistPoint3, 2);
-                    $secondaryReasons[] = 'room_to_swing_high=' . round($roomToRecentSwingHighRoi, 2);
-                    $secondaryReasons[] = 'reclaim_confirmed_false';
-                }
+        $v8FarPoint3Pct            = (float)($config['dbl_garbage_late_local_far_point3_pct']    ?? 1.8);
+        $v8TinyRoomRoi             = (float)($config['dbl_garbage_late_local_tiny_room_roi']     ?? 2.0);
+        $v8DiagOnly                = (bool) ($config['dbl_garbage_late_local_tiny_room_diagnostic_only'] ?? true);
+        $v8FarFromPoint3           = $entryDistPoint3 !== null && $entryDistPoint3 >= $v8FarPoint3Pct;
+        $v8TinyRoom                = $roomToRecentSwingHighRoi !== null && $roomToRecentSwingHighRoi <= $v8TinyRoomRoi;
+        $v8NoReclaim               = !$hasAnyReclaimConfirmation && !$reclaimRetestHeldForV8;
+        $v8ConditionMet            = $v8FarFromPoint3 && $v8TinyRoom && $v8NoReclaim;
+        if ($v8ConditionMet) {
+            $lateLocalTinyRoomDetected = true;
+            $lateLocalTinyRoomReason   = 'late_entry_far_from_point3_tiny_room_no_reclaim';
+            if ($primaryReason !== null) {
+                $lateLocalTinyRoomSoftPenalty = true;
+                $secondaryReasons[] = $v8DiagOnly
+                    ? 'soft_late_local_tiny_room_no_reclaim'
+                    : 'local_late_tiny_room_overlap';
+            } elseif ($v8DiagOnly) {
+                $lateLocalTinyRoomSoftPenalty = true;
+                $secondaryReasons[] = 'soft_late_local_tiny_room_no_reclaim';
+            } else {
+                $primaryReason = 'garbage_late_local_tiny_room_without_reclaim';
+                $secondaryReasons[] = 'entry_dist_from_point3=' . round($entryDistPoint3, 2);
+                $secondaryReasons[] = 'room_to_swing_high=' . round($roomToRecentSwingHighRoi, 2);
+                $secondaryReasons[] = 'reclaim_confirmed_false';
             }
         }
 
@@ -11223,6 +11405,44 @@ final class DoubleBottomLongService
             'higher_low_after_point3'       => $d['higher_low_after_point3'] ?? false,
             'fresh_lower_low_after_point3'  => $d['fresh_lower_low_after_point3'] ?? false,
             'point3_broken'                 => $d['point3_broken'] ?? false,
+        ];
+    }
+
+    /**
+     * Append one near-miss diagnostic row with stable required fields.
+     *
+     * @param array<string,mixed> $payload
+     */
+    private function addDblNearMiss(string $stage, string $reason, array $payload = []): void
+    {
+        $this->dblNearMissTotal++;
+        $this->dblNearMissByStage[$stage] = (int)($this->dblNearMissByStage[$stage] ?? 0) + 1;
+        $this->dblNearMissByReason[$reason] = (int)($this->dblNearMissByReason[$reason] ?? 0) + 1;
+        if (count($this->dblNearMissExamples) >= 10) {
+            return;
+        }
+
+        $this->dblNearMissExamples[] = [
+            'symbol'                         => $payload['symbol'] ?? null,
+            'stage'                          => $stage,
+            'reason'                         => $reason,
+            'candidate_quality_score'        => $payload['candidate_quality_score'] ?? null,
+            'setup_class'                    => $payload['setup_class'] ?? null,
+            'dbl_pattern_status'             => $payload['dbl_pattern_status'] ?? null,
+            'dbl_pattern_invalid_reason'     => $payload['dbl_pattern_invalid_reason'] ?? null,
+            'block_reason'                   => $payload['block_reason'] ?? $reason,
+            'garbage_veto_reason'            => $payload['garbage_veto_reason'] ?? null,
+            'point3_confirmed'               => (bool)($payload['point3_confirmed'] ?? false),
+            'entry_distance_from_point3_pct' => $payload['entry_distance_from_point3_pct'] ?? null,
+            'room_to_recent_swing_high_roi'  => $payload['room_to_recent_swing_high_roi'] ?? null,
+            'local_late_flags_total'         => $payload['local_late_flags_total'] ?? null,
+            'local_late_flags_required'      => $payload['local_late_flags_required'] ?? null,
+            'reclaim_confirmed'              => (bool)($payload['reclaim_confirmed'] ?? false),
+            'neckline_reclaim_confirmed'     => (bool)($payload['neckline_reclaim_confirmed'] ?? false),
+            'reclaim_retest_held'            => (bool)($payload['reclaim_retest_held'] ?? false),
+            'handoff_status'                 => $payload['handoff_status'] ?? null,
+            'handoff_ready'                  => $payload['handoff_ready'] ?? null,
+            'executable'                     => $payload['executable'] ?? null,
         ];
     }
 

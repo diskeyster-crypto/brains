@@ -1848,7 +1848,7 @@ final class DoubleBottomLongService
                     }
                     if ($firstTsInWindow !== null && $lastTsInWindow !== null && $lastTsInWindow > $firstTsInWindow) {
                         $spanHours = ($lastTsInWindow - $firstTsInWindow) / 3600.0;
-                        if ($spanHours >= 1.0) {
+                        if ($spanHours >= 1.0 && $spanHours > 0.0) {
                             $handoffPerHour = $handoffReadySumWindow / $spanHours;
                             $dblThroughputTooLowForCycleHistory = ($handoffPerHour * 6.0) < (int)($config['dbl_expected_min_handoff_per_6h'] ?? 3);
                         }
@@ -2073,7 +2073,7 @@ final class DoubleBottomLongService
                     }
                     if ($firstTsInWindow !== null && $lastTsInWindow !== null && $lastTsInWindow > $firstTsInWindow) {
                         $spanHours = ($lastTsInWindow - $firstTsInWindow) / 3600.0;
-                        if ($spanHours >= 0.1) {
+                        if ($spanHours >= 0.1 && $spanHours > 0.0) {
                             $dblRuntimeHoursEstimated        = round($spanHours, 2);
                             $dblHandoffReadyPerHourEstimated = round($handoffReadySumWindow / $spanHours, 2);
                             $dblOrdersPerHourEstimated       = round($ordersCreatedSumWindow / $spanHours, 2);
@@ -12227,7 +12227,7 @@ final class DoubleBottomLongService
             if ($low <= 0.0) {
                 return null;
             }
-            return round(($high - $low) / $low * 100.0, 3);
+            return $low > 0.0 ? round(($high - $low) / $low * 100.0, 3) : null;
         };
 
         $dirFlips = static function (array $win): int {
@@ -12375,7 +12375,7 @@ final class DoubleBottomLongService
             return $fail('parser2_invalid_price_range');
         }
 
-        $entryDistFromPoint3 = $entryPrice > 0.0
+        $entryDistFromPoint3 = ($entryPrice > 0.0 && $localLow > 0.0)
             ? round((($entryPrice - $localLow) / $localLow) * 100.0, 4)
             : null;
 

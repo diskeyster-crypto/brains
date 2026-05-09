@@ -74,6 +74,13 @@ final class DoubleBottomLongService
     private int $dblGarbageInsufficientRoomSwingHighTotal = 0;
     private int $dblGarbageNearRecentSwingHighTotal   = 0;
     private int $dblGarbagePassedTotal                = 0;
+    private int $dblGarbageLateLocalTinyRoomWithoutReclaimTotal = 0;
+    // ── DBL funnel counters (reset at start of each tickBatch) ───────────────
+    private int $dblRawCandidatesTotal                = 0;
+    // ── DBL near-miss counters (reset at start of each tickBatch) ────────────
+    private int $dblNearMissTotal                     = 0;
+    /** @var array<string,int> */
+    private array $dblNearMissByReason                = [];
     /** @var list<array<string,mixed>> */
     private array $dblGarbageBlockExamples = [];
     /** @var list<array<string,mixed>> */
@@ -82,6 +89,10 @@ final class DoubleBottomLongService
     private array $dblGarbageLateLocalEntryExamples = [];
     /** @var list<array<string,mixed>> */
     private array $dblGarbageLateLocalPassedExamples = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblGarbageLateLocalTinyRoomWithoutReclaimExamples = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblNearMissExamples               = [];
     // ── DBL trend-shift confirmation gate counters (reset at start of each tickBatch) ──
     private int $dblTrendShiftCheckedTotal                       = 0;
     private int $dblTrendShiftConfirmedTotal                     = 0;
@@ -570,10 +581,16 @@ final class DoubleBottomLongService
         $this->dblGarbageInsufficientRoomSwingHighTotal = 0;
         $this->dblGarbageNearRecentSwingHighTotal = 0;
         $this->dblGarbagePassedTotal               = 0;
+        $this->dblGarbageLateLocalTinyRoomWithoutReclaimTotal = 0;
+        $this->dblRawCandidatesTotal               = 0;
+        $this->dblNearMissTotal                    = 0;
+        $this->dblNearMissByReason                 = [];
         $this->dblGarbageBlockExamples             = [];
         $this->dblGarbagePassExamples              = [];
         $this->dblGarbageLateLocalEntryExamples    = [];
         $this->dblGarbageLateLocalPassedExamples   = [];
+        $this->dblGarbageLateLocalTinyRoomWithoutReclaimExamples = [];
+        $this->dblNearMissExamples                 = [];
         // Reset per-tick trace completeness counters.
         $this->dblTraceCheckedTotal                        = 0;
         $this->dblTraceCompleteTotal                       = 0;
@@ -1876,6 +1893,57 @@ final class DoubleBottomLongService
             ];
         }
 
+        // ── Throughput health diagnostics ────────────────────────────────────
+        // Estimate orders-per-hour and handoff-per-hour by reading cycle_history.
+        // This is diagnostics only: no thresholds are auto-loosened.
+        $dblRuntimeHoursEstimated        = null;
+        $dblOrdersPerHourEstimated       = null;
+        $dblHandoffReadyPerHourEstimated = null;
+        $dblExpectedMinHandoffPer6h      = (int)($config['dbl_expected_min_handoff_per_6h'] ?? 3);
+        $dblThroughputTooLow             = false;
+        try {
+            $cycleHistFile = $this->moduleDir . '/storage/cycle_history.ndjson';
+            if (is_file($cycleHistFile)) {
+                $lines = @file($cycleHistFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                if (is_array($lines) && count($lines) > 0) {
+                    // Use last 6 hours of records
+                    $nowTsForThroughput = time();
+                    $windowSec = 6 * 3600;
+                    $handoffReadySumWindow = 0;
+                    $ordersCreatedSumWindow = 0;
+                    $firstTsInWindow = null;
+                    $lastTsInWindow  = null;
+                    foreach ($lines as $line) {
+                        $rec = @json_decode($line, true);
+                        if (!is_array($rec)) continue;
+                        $recTs = isset($rec['finished_at']) ? @strtotime((string)$rec['finished_at']) : false;
+                        if ($recTs === false || $recTs <= 0) continue;
+                        if (($nowTsForThroughput - $recTs) > $windowSec) continue;
+                        $handoffReadySumWindow += (int)($rec['bot_handoff_ready_total'] ?? 0);
+                        $ordersCreatedSumWindow += (int)($rec['orders_created'] ?? 0);
+                        if ($firstTsInWindow === null || $recTs < $firstTsInWindow) $firstTsInWindow = $recTs;
+                        if ($lastTsInWindow  === null || $recTs > $lastTsInWindow)  $lastTsInWindow  = $recTs;
+                    }
+                    if ($firstTsInWindow !== null && $lastTsInWindow !== null && $lastTsInWindow > $firstTsInWindow) {
+                        $spanHours = ($lastTsInWindow - $firstTsInWindow) / 3600.0;
+                        if ($spanHours >= 0.1) {
+                            $dblRuntimeHoursEstimated        = round($spanHours, 2);
+                            $dblHandoffReadyPerHourEstimated = round($handoffReadySumWindow / $spanHours, 2);
+                            $dblOrdersPerHourEstimated       = round($ordersCreatedSumWindow / $spanHours, 2);
+                            // Flag throughput too low if we have enough runtime data
+                            if ($spanHours >= 1.0) {
+                                $expectedPer6h = $dblExpectedMinHandoffPer6h;
+                                $actualPer6h   = $dblHandoffReadyPerHourEstimated * 6.0;
+                                $dblThroughputTooLow = $actualPer6h < $expectedPer6h;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable) {
+            // Throughput diagnostics are best-effort; never block the tick.
+        }
+
         $this->writeJson('storage/last_run.json', [
             // done_retryable = empty universe (registry not yet populated, will retry)
             // done           = normal cycle completion (continuous or not)
@@ -2207,10 +2275,28 @@ final class DoubleBottomLongService
             'dbl_garbage_insufficient_room_to_recent_swing_high_total' => $this->dblGarbageInsufficientRoomSwingHighTotal,
             'dbl_garbage_near_recent_swing_high_total'   => $this->dblGarbageNearRecentSwingHighTotal,
             'dbl_garbage_passed_total'                   => $this->dblGarbagePassedTotal,
+            'dbl_garbage_late_local_tiny_room_without_reclaim_total' => $this->dblGarbageLateLocalTinyRoomWithoutReclaimTotal,
             'dbl_garbage_block_examples'                 => $this->dblGarbageBlockExamples,
             'dbl_garbage_pass_examples'                  => $this->dblGarbagePassExamples,
             'dbl_garbage_late_local_entry_examples'      => $this->dblGarbageLateLocalEntryExamples,
             'dbl_garbage_late_local_passed_examples'     => $this->dblGarbageLateLocalPassedExamples,
+            'dbl_garbage_late_local_tiny_room_without_reclaim_examples' => $this->dblGarbageLateLocalTinyRoomWithoutReclaimExamples,
+            // ── DBL funnel counters (per tick) ────────────────────────────────────
+            'dbl_raw_candidates_total'                   => $this->dblRawCandidatesTotal,
+            'dbl_pattern_active_total_funnel'            => $this->dblPatternActiveTotal,
+            'dbl_pattern_confirmed_total_funnel'         => $this->dblPatternConfirmedTotal,
+            'dbl_pattern_invalid_total_funnel'           => $this->dblPatternInvalidTotal,
+            'dbl_freshness_blocked_total'                => $handoffStats['current_run_freshness_blocked_total'] ?? 0,
+            'dbl_pattern_state_blocked_total'            => $this->patternStateBlockedBeforeGarbageTotal,
+            'dbl_garbage_veto_checked_total_funnel'      => $this->dblGarbageVetoCheckedTotal,
+            'dbl_garbage_veto_blocked_total_funnel'      => $this->dblGarbageVetoBlockedTotal,
+            'dbl_garbage_veto_passed_total'              => $this->dblGarbagePassedTotal,
+            'dbl_handoff_ready_total'                    => $handoffStats['ready_total'] ?? 0,
+            'dbl_bot_queue_ready_written_total'          => $handoffStats['handoff_queue_ready_written_total'] ?? 0,
+            // ── DBL near-miss bucket ──────────────────────────────────────────────
+            'dbl_near_miss_total'                        => $this->dblNearMissTotal,
+            'dbl_near_miss_by_reason'                    => $this->dblNearMissByReason,
+            'dbl_near_miss_examples'                     => $this->dblNearMissExamples,
             // ── DBL trace completeness counters (per tick) ────────────────────────
             'dbl_trace_checked_total'                        => $this->dblTraceCheckedTotal,
             'dbl_trace_complete_total'                       => $this->dblTraceCompleteTotal,
@@ -2374,6 +2460,12 @@ final class DoubleBottomLongService
                 $raw = @file_get_contents($path);
                 return $raw !== false ? md5($raw) : null;
             })($this->repoRoot),
+            // ── Throughput health diagnostics ─────────────────────────────────────
+            'dbl_runtime_hours_estimated'         => $dblRuntimeHoursEstimated,
+            'dbl_orders_per_hour_estimated'       => $dblOrdersPerHourEstimated,
+            'dbl_handoff_ready_per_hour_estimated' => $dblHandoffReadyPerHourEstimated,
+            'dbl_expected_min_handoff_per_6h'     => $dblExpectedMinHandoffPer6h,
+            'dbl_throughput_too_low'              => $dblThroughputTooLow,
         ]);
 
         if ($isDone) {
@@ -8976,6 +9068,7 @@ final class DoubleBottomLongService
             $changed      = false;
 
             if ($isActive && !$needsRevalid) {
+                $this->dblRawCandidatesTotal++;
                 // Check whether OBC soft_demote should block this handoff entry.
                 $isSoftDemoted = (bool)($r['strategy_signal_context']['ob_soft_demoted'] ?? false);
                 if ($isSoftDemoted && $softDemoteBlocksHandoff) {
@@ -9299,6 +9392,9 @@ final class DoubleBottomLongService
                             case 'garbage_reclaim_not_confirmed':
                                 $this->dblGarbageReclaimNotConfirmedTotal++;
                                 break;
+                            case 'garbage_late_local_tiny_room_without_reclaim':
+                                $this->dblGarbageLateLocalTinyRoomWithoutReclaimTotal++;
+                                break;
                         }
                         $blockReason = (string)$gv['reason'];
                         if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
@@ -9310,6 +9406,40 @@ final class DoubleBottomLongService
                             $blockedSignalIds[$sigIdInQueue] = $blockReason;
                         }
                         $queueMarkedNonExecutableTotal++;
+                        // Near-miss: veto triggered with at most one secondary reason
+                        // means the signal was close to passing (one factor pushed it over).
+                        $nmSecondary = array_filter(
+                            $gv['secondary_reasons'] ?? [],
+                            fn($s) => !str_starts_with($s, 'local_late_quality_tier=')
+                                   && !str_starts_with($s, 'local_late_flags=')
+                                   && !str_starts_with($s, 'setup_class=')
+                                   && !str_starts_with($s, 'pending_confirmation_status=')
+                        );
+                        if (count($nmSecondary) <= 1) {
+                            $this->dblNearMissTotal++;
+                            $this->dblNearMissByReason[$blockReason] = ($this->dblNearMissByReason[$blockReason] ?? 0) + 1;
+                            if (count($this->dblNearMissExamples) < 10) {
+                                $this->dblNearMissExamples[] = [
+                                    'symbol'                         => $r['symbol'] ?? null,
+                                    'signal_id'                      => $id,
+                                    'candidate_quality_score'        => $gv['diag']['candidate_quality_score'] ?? null,
+                                    'setup_class'                    => $gv['diag']['setup_class'] ?? null,
+                                    'dbl_pattern_status'             => $r['dbl_pattern_status'] ?? ($r['strategy_signal_context']['dbl_pattern_status'] ?? null),
+                                    'block_reason'                   => $blockReason,
+                                    'garbage_veto_reason'            => $blockReason,
+                                    'secondary_reasons'              => $gv['secondary_reasons'] ?? [],
+                                    'point3_confirmed'               => (bool)($r['strategy_signal_context']['point_3_confirmed'] ?? false),
+                                    'reclaim_confirmed'              => $gv['diag']['reclaim_confirmed'] ?? false,
+                                    'neckline_reclaim_confirmed'     => $gv['diag']['neckline_reclaim_confirmed'] ?? false,
+                                    'reclaim_retest_held'            => (bool)($r['strategy_signal_context']['reclaim_retest_held'] ?? false),
+                                    'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                    'room_to_recent_swing_high_roi'  => $gv['diag']['room_to_recent_swing_high_roi'] ?? null,
+                                    'local_late_flags_total'         => $gv['diag']['local_late_flags_total'] ?? null,
+                                    'local_late_flags_required'      => $gv['diag']['local_late_flags_required'] ?? null,
+                                    'local_late_tiny_room_detected'  => $gv['diag']['local_late_tiny_room_detected'] ?? false,
+                                ];
+                            }
+                        }
                         if (count($this->dblGarbageBlockExamples) < 10) {
                             $this->dblGarbageBlockExamples[] = [
                                 'symbol'                     => $r['symbol']       ?? null,
@@ -9414,6 +9544,23 @@ final class DoubleBottomLongService
                                 'secondary_reasons'           => $gv['secondary_reasons'] ?? [],
                             ];
                         }
+                        if ($blockReason === 'garbage_late_local_tiny_room_without_reclaim'
+                            && count($this->dblGarbageLateLocalTinyRoomWithoutReclaimExamples) < 10
+                        ) {
+                            $this->dblGarbageLateLocalTinyRoomWithoutReclaimExamples[] = [
+                                'symbol'                         => $r['symbol'] ?? null,
+                                'signal_id'                      => $id,
+                                'candidate_quality_score'        => $gv['diag']['candidate_quality_score'] ?? null,
+                                'setup_class'                    => $gv['diag']['setup_class'] ?? null,
+                                'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                'room_to_recent_swing_high_roi'  => $gv['diag']['room_to_recent_swing_high_roi'] ?? null,
+                                'reclaim_confirmed'              => $gv['diag']['reclaim_confirmed'] ?? false,
+                                'neckline_reclaim_confirmed'     => $gv['diag']['neckline_reclaim_confirmed'] ?? false,
+                                'local_late_tiny_room_reason'    => $gv['diag']['local_late_tiny_room_reason'] ?? null,
+                                'garbage_veto_reason'            => $blockReason,
+                                'secondary_reasons'              => $gv['secondary_reasons'] ?? [],
+                            ];
+                        }
                     } else {
                         // Veto passed and pattern is confirmed — allow handoff
                         $this->dblGarbagePassedTotal++;
@@ -9427,6 +9574,34 @@ final class DoubleBottomLongService
                         $queueExecutableTotal++;
                         if ($isSoftDemoted) {
                             $softDemoteAllowedTotal++;
+                        }
+                        // If Veto 8 soft penalty fired (diagnostic_only mode), count as near-miss for awareness.
+                        if (($gv['diag']['local_late_tiny_room_soft_penalty'] ?? false) === true) {
+                            $nmReason = 'soft_late_local_tiny_room_no_reclaim';
+                            $this->dblNearMissTotal++;
+                            $this->dblNearMissByReason[$nmReason] = ($this->dblNearMissByReason[$nmReason] ?? 0) + 1;
+                            if (count($this->dblNearMissExamples) < 10) {
+                                $this->dblNearMissExamples[] = [
+                                    'symbol'                         => $r['symbol'] ?? null,
+                                    'signal_id'                      => $id,
+                                    'candidate_quality_score'        => $gv['diag']['candidate_quality_score'] ?? null,
+                                    'setup_class'                    => $gv['diag']['setup_class'] ?? null,
+                                    'dbl_pattern_status'             => 'confirmed',
+                                    'block_reason'                   => null,
+                                    'garbage_veto_reason'            => null,
+                                    'secondary_reasons'              => ['soft_penalty:local_late_tiny_room_no_reclaim'],
+                                    'point3_confirmed'               => (bool)($r['strategy_signal_context']['point_3_confirmed'] ?? false),
+                                    'reclaim_confirmed'              => $gv['diag']['reclaim_confirmed'] ?? false,
+                                    'neckline_reclaim_confirmed'     => $gv['diag']['neckline_reclaim_confirmed'] ?? false,
+                                    'reclaim_retest_held'            => (bool)($r['strategy_signal_context']['reclaim_retest_held'] ?? false),
+                                    'entry_distance_from_point3_pct' => $gv['diag']['entry_distance_from_point3_pct'] ?? null,
+                                    'room_to_recent_swing_high_roi'  => $gv['diag']['room_to_recent_swing_high_roi'] ?? null,
+                                    'local_late_flags_total'         => $gv['diag']['local_late_flags_total'] ?? null,
+                                    'local_late_flags_required'      => $gv['diag']['local_late_flags_required'] ?? null,
+                                    'local_late_tiny_room_detected'  => true,
+                                    'note'                           => 'diagnostic_only_veto8_would_have_blocked',
+                                ];
+                            }
                         }
                         if (count($this->dblGarbagePassExamples) < 5) {
                             $this->dblGarbagePassExamples[] = [
@@ -10400,6 +10575,36 @@ final class DoubleBottomLongService
             }
         }
 
+        // ── Veto 8: late-local + tiny-room WITHOUT any reclaim confirmation ────
+        // Targets FHE/FIGHT-style entries: far from point3, tiny room to swing high,
+        // and zero reclaim evidence. Governed by diagnostic_only toggle so the
+        // first deployment only writes diagnostics; toggling to false adds the hard block.
+        $lateLocalTinyRoomDetected = false;
+        $lateLocalTinyRoomReason   = null;
+        $lateLocalTinyRoomSoftPenalty = false;
+        $reclaimRetestHeldForV8    = (bool)($ssc['reclaim_retest_held'] ?? false);
+        if ($primaryReason === null) {
+            $v8FarPoint3Pct   = (float)($config['dbl_garbage_late_local_far_point3_pct']    ?? 1.8);
+            $v8TinyRoomRoi    = (float)($config['dbl_garbage_late_local_tiny_room_roi']     ?? 2.0);
+            $v8DiagOnly       = (bool) ($config['dbl_garbage_late_local_tiny_room_diagnostic_only'] ?? true);
+            $v8FarFromPoint3  = $entryDistPoint3 !== null && $entryDistPoint3 >= $v8FarPoint3Pct;
+            $v8TinyRoom       = $roomToRecentSwingHighRoi !== null && $roomToRecentSwingHighRoi <= $v8TinyRoomRoi;
+            $v8NoReclaim      = !$hasAnyReclaimConfirmation && !$reclaimRetestHeldForV8;
+            if ($v8FarFromPoint3 && $v8TinyRoom && $v8NoReclaim) {
+                $lateLocalTinyRoomDetected = true;
+                $lateLocalTinyRoomReason   = 'late_entry_far_from_point3_tiny_room_no_reclaim';
+                if ($v8DiagOnly) {
+                    $lateLocalTinyRoomSoftPenalty = true;
+                    $secondaryReasons[] = 'soft_late_local_tiny_room_no_reclaim';
+                } else {
+                    $primaryReason = 'garbage_late_local_tiny_room_without_reclaim';
+                    $secondaryReasons[] = 'entry_dist_from_point3=' . round($entryDistPoint3, 2);
+                    $secondaryReasons[] = 'room_to_swing_high=' . round($roomToRecentSwingHighRoi, 2);
+                    $secondaryReasons[] = 'reclaim_confirmed_false';
+                }
+            }
+        }
+
         $vetoTriggered = $primaryReason !== null;
 
         return [
@@ -10467,6 +10672,10 @@ final class DoubleBottomLongService
                 'neckline_reclaim_confirmed'             => $necklineReclaimConfirmed,
                 'setup_class'                            => $setupClass !== '' ? $setupClass : null,
                 'pending_confirmation_status'            => $pendingConfirmStatus !== '' ? $pendingConfirmStatus : null,
+                // Veto 8 diagnostics
+                'local_late_tiny_room_detected'          => $lateLocalTinyRoomDetected,
+                'local_late_tiny_room_soft_penalty'      => $lateLocalTinyRoomSoftPenalty,
+                'local_late_tiny_room_reason'            => $lateLocalTinyRoomReason,
             ],
         ];
     }

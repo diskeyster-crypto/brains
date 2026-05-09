@@ -427,6 +427,20 @@ return [
     'dbl_garbage_require_reclaim_confirmation_for_medium_quality' => true,
     'dbl_garbage_reclaim_confirmation_medium_quality_max'         => 0.78,
 
+    // Veto 8: late-local + tiny-room + no reclaim confirmation.
+    // Targets entries far from point3, with tiny room to recent swing high,
+    // and no reclaim evidence (reclaim_confirmed, neckline_reclaim_confirmed,
+    // reclaim_after_flat_detected, or reclaim_retest_held all false).
+    // diagnostic_only=true means only a soft warning is written; the signal still passes.
+    // Set diagnostic_only=false to enable the hard block once the pattern is confirmed.
+    'dbl_garbage_late_local_tiny_room_diagnostic_only' => true,
+    'dbl_garbage_late_local_tiny_room_roi'             => 2.0,
+    'dbl_garbage_late_local_far_point3_pct'            => 1.8,
+
+    // ── Throughput health thresholds ──────────────────────────────────────────
+    // Diagnostics only — no auto-loosening based on these.
+    'dbl_expected_min_handoff_per_6h'                  => 3,
+
     // ── Trend-shift confirmation gate (final gate before Bot handoff) ─────────
     // Runs after garbage veto. Blocks handoff for signals where the DBL reversal
     // is not yet confirmed by at least one strong confirmation path.

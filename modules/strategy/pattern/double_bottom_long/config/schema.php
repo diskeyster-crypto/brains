@@ -160,6 +160,12 @@ return [
     // Veto 7: reclaim not confirmed
     'dbl_garbage_require_reclaim_confirmation_for_medium_quality' => 'bool',
     'dbl_garbage_reclaim_confirmation_medium_quality_max'         => 'float',
+    // Veto 8: late-local + tiny-room + no reclaim
+    'dbl_garbage_late_local_tiny_room_diagnostic_only' => 'bool',
+    'dbl_garbage_late_local_tiny_room_roi'             => 'float',
+    'dbl_garbage_late_local_far_point3_pct'            => 'float',
+    // Throughput health
+    'dbl_expected_min_handoff_per_6h'                  => 'int',
     // Trend-shift confirmation gate
     'dbl_trend_shift_gate_enabled'                             => 'bool',
     'dbl_trend_shift_required_for_handoff'                     => 'bool',

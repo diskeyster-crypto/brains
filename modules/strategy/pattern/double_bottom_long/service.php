@@ -97,8 +97,10 @@ final class DoubleBottomLongService
     private array $dblNearMissExamples               = [];
     private int $filterAuditCandidatesTotal          = 0;
     private int $filterAuditSentToBotTotal           = 0;
+    private int $filterAuditSentToBotLast30mTotal    = 0;
     private int $filterAuditHardBlockedTotal         = 0;
     private int $filterAuditSkippedTotal             = 0;
+    private int $filterAudit30mCapSkipTotal          = 0;
     /** @var array<string,int> */
     private array $filterAuditSkipReasons            = [];
     /** @var list<array<string,mixed>> */
@@ -2692,9 +2694,16 @@ final class DoubleBottomLongService
             'final_low_quality_cause_counts'           => $cycleStats['final_low_quality_cause_counts'] ?? (object)[],
             'filter_audit_candidates_total'            => $handoffStats['filter_audit_candidates_total'] ?? 0,
             'filter_audit_sent_to_bot_total'           => $handoffStats['filter_audit_sent_to_bot_total'] ?? 0,
+            'filter_audit_sent_to_bot_last_30m_total'  => $handoffStats['filter_audit_sent_to_bot_last_30m_total'] ?? 0,
+            'filter_audit_30m_cap_reached'             => $handoffStats['filter_audit_30m_cap_reached'] ?? false,
+            'filter_audit_30m_cap_skip_total'          => $handoffStats['filter_audit_30m_cap_skip_total'] ?? 0,
             'filter_audit_hard_blocked_total'          => $handoffStats['filter_audit_hard_blocked_total'] ?? 0,
             'filter_audit_skipped_total'               => $handoffStats['filter_audit_skipped_total'] ?? 0,
             'filter_audit_skip_reasons'                => $handoffStats['filter_audit_skip_reasons'] ?? (object)[],
+            'filter_audit_max_signals_per_cycle'       => $handoffStats['filter_audit_max_signals_per_cycle'] ?? 0,
+            'filter_audit_max_signals_per_30m'         => $handoffStats['filter_audit_max_signals_per_30m'] ?? 0,
+            'filter_audit_max_signals_per_6h'          => $handoffStats['filter_audit_max_signals_per_6h'] ?? 0,
+            'filter_audit_min_quality_score'           => $handoffStats['filter_audit_min_quality_score'] ?? 0.0,
             'filter_audit_pending_outcomes_total'      => $filterAudit['filter_audit_pending_outcomes_total'] ?? ($handoffStats['filter_audit_pending_outcomes_total'] ?? 0),
             'filter_audit_matched_closed_total'        => $filterAudit['filter_audit_matched_closed_total'] ?? ($handoffStats['filter_audit_matched_closed_total'] ?? 0),
             'filter_audit_filter_too_strict_total'     => $filterAudit['filter_audit_filter_too_strict_total'] ?? ($handoffStats['filter_audit_filter_too_strict_total'] ?? 0),
@@ -9100,8 +9109,9 @@ final class DoubleBottomLongService
         $filterAuditModeEnabled                      = (bool)($config['dbl_filter_audit_mode_enabled'] ?? false);
         $filterAuditSendToBot                        = (bool)($config['dbl_filter_audit_send_to_bot'] ?? true);
         $filterAuditOnlyWhenNoNormalReady            = (bool)($config['dbl_filter_audit_only_when_no_normal_ready'] ?? true);
-        $filterAuditMaxSignalsPerCycle               = max(0, (int)($config['dbl_filter_audit_max_signals_per_cycle'] ?? 1));
-        $filterAuditMaxSignalsPer6h                  = max(0, (int)($config['dbl_filter_audit_max_signals_per_6h'] ?? 3));
+        $filterAuditMaxSignalsPerCycle               = max(0, (int)($config['dbl_filter_audit_max_signals_per_cycle'] ?? 2));
+        $filterAuditMaxSignalsPer30m                 = max(0, (int)($config['dbl_filter_audit_max_signals_per_30m'] ?? 6));
+        $filterAuditMaxSignalsPer6h                  = max(0, (int)($config['dbl_filter_audit_max_signals_per_6h'] ?? 999));
         $filterAuditCandidates                       = [];
         $filterAuditSkipReasonsLocal                 = [];
 
@@ -10343,24 +10353,38 @@ final class DoubleBottomLongService
 
         $this->filterAuditCandidatesTotal += count($filterAuditCandidates);
         if ($filterAuditModeEnabled && $filterAuditSendToBot && $filterAuditMaxSignalsPerCycle > 0 && !empty($filterAuditCandidates)) {
-            $sentLast6h = 0;
+            $sentLast30m = 0;
+            $sentLast6h  = 0;
             foreach ((array)$this->readJson('storage/filter_audit_journal.json', []) as $journalEntry) {
                 if (!is_array($journalEntry) || !($journalEntry['filter_audit_sent_to_bot'] ?? false)) {
                     continue;
                 }
                 $createdTs = isset($journalEntry['created_at']) ? strtotime((string)$journalEntry['created_at']) : false;
-                if ($createdTs !== false && ($nowTs - $createdTs) <= 21600) {
+                if ($createdTs === false) {
+                    continue;
+                }
+                $ageInSeconds = $nowTs - $createdTs;
+                if ($ageInSeconds <= 1800) {
+                    $sentLast30m++;
+                }
+                if ($ageInSeconds <= 21600) {
                     $sentLast6h++;
                 }
             }
+            $this->filterAuditSentToBotLast30mTotal = $sentLast30m;
 
             if ($filterAuditOnlyWhenNoNormalReady && $normalReadyTotal > 0) {
                 $filterAuditSkipReasonsLocal['normal_ready_exists'] = count($filterAuditCandidates);
-            } elseif ($sentLast6h >= $filterAuditMaxSignalsPer6h) {
+            } elseif ($filterAuditMaxSignalsPer30m > 0 && $sentLast30m >= $filterAuditMaxSignalsPer30m) {
+                $filterAuditSkipReasonsLocal['max_signals_per_30m_reached'] = count($filterAuditCandidates);
+                $this->filterAudit30mCapSkipTotal += count($filterAuditCandidates);
+            } elseif ($filterAuditMaxSignalsPer6h > 0 && $sentLast6h >= $filterAuditMaxSignalsPer6h) {
                 $filterAuditSkipReasonsLocal['max_signals_per_6h_reached'] = count($filterAuditCandidates);
             } else {
                 $rankedAuditCandidates = $this->rankDblFilterAuditCandidates(array_values($filterAuditCandidates));
-                $allowCount = min($filterAuditMaxSignalsPerCycle, max(0, $filterAuditMaxSignalsPer6h - $sentLast6h));
+                $remainingPer30m  = $filterAuditMaxSignalsPer30m > 0 ? max(0, $filterAuditMaxSignalsPer30m - $sentLast30m) : PHP_INT_MAX;
+                $remainingPer6h   = $filterAuditMaxSignalsPer6h  > 0 ? max(0, $filterAuditMaxSignalsPer6h  - $sentLast6h)  : PHP_INT_MAX;
+                $allowCount = min($filterAuditMaxSignalsPerCycle, $remainingPer30m, $remainingPer6h);
                 $selected = array_slice($rankedAuditCandidates, 0, $allowCount);
                 $selectedIds = array_flip(array_map(static fn(array $row): string => (string)($row['signal_id'] ?? ''), $selected));
 
@@ -10524,9 +10548,16 @@ final class DoubleBottomLongService
             'handoff_queue_blocked_with_ready_status_examples' => $handoffQueueBlockedWithReadyStatusExamples,
             'filter_audit_candidates_total'                    => count($filterAuditCandidates),
             'filter_audit_sent_to_bot_total'                   => $this->filterAuditSentToBotTotal,
+            'filter_audit_sent_to_bot_last_30m_total'          => $this->filterAuditSentToBotLast30mTotal,
+            'filter_audit_30m_cap_reached'                     => ($filterAuditMaxSignalsPer30m > 0 && $this->filterAuditSentToBotLast30mTotal >= $filterAuditMaxSignalsPer30m),
+            'filter_audit_30m_cap_skip_total'                  => $this->filterAudit30mCapSkipTotal,
             'filter_audit_hard_blocked_total'                  => $this->filterAuditHardBlockedTotal,
             'filter_audit_skipped_total'                       => $this->filterAuditSkippedTotal,
             'filter_audit_skip_reasons'                        => $this->filterAuditSkipReasons,
+            'filter_audit_max_signals_per_cycle'               => $filterAuditMaxSignalsPerCycle,
+            'filter_audit_max_signals_per_30m'                 => $filterAuditMaxSignalsPer30m,
+            'filter_audit_max_signals_per_6h'                  => $filterAuditMaxSignalsPer6h,
+            'filter_audit_min_quality_score'                   => (float)($config['dbl_filter_audit_min_quality_score'] ?? 0.65),
             'filter_audit_pending_outcomes_total'              => $filterAuditSummary['filter_audit_pending_outcomes_total'] ?? 0,
             'filter_audit_matched_closed_total'                => $filterAuditSummary['filter_audit_matched_closed_total'] ?? 0,
             'filter_audit_filter_too_strict_total'             => $filterAuditSummary['filter_audit_filter_too_strict_total'] ?? 0,

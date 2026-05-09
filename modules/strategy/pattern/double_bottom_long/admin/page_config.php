@@ -378,6 +378,84 @@ $fMode    = (string)($config['mode']  ?? 'passive');
             </div>
         </div>
 
+        <div class="cfg-section mt-4" style="border-color:#7c3aed;">
+            <h6 style="color:#a78bfa;">Filter Audit — Калибровочный режим</h6>
+            <div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">
+                Демо-режим: разрешает отправку частично заблокированных сигналов в Бот с записью причин блокировки для последующего анализа.
+                Не влияет на живую торговлю. Только для demo/калибровки.
+            </div>
+            <div class="row g-3">
+                <div class="col-sm-3">
+                    <label class="form-label">Режим включён</label>
+                    <select name="dbl_filter_audit_mode_enabled" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_audit_mode_enabled'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_audit_mode_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Включить filter-audit calibration mode</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Только демо</label>
+                    <select name="dbl_filter_audit_mode_demo_only" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_audit_mode_demo_only'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_audit_mode_demo_only'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Запрещает использование вне демо-бота</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Отправлять в Бот</label>
+                    <select name="dbl_filter_audit_send_to_bot" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_audit_send_to_bot'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_audit_send_to_bot'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Разрешить handoff audit-кандидатов</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Только при отсутствии нормальных</label>
+                    <select name="dbl_filter_audit_only_when_no_normal_ready" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_audit_only_when_no_normal_ready'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_audit_only_when_no_normal_ready'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Audit-pass только если нет normal-ready</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Требовать отсутствие fatal-фильтров</label>
+                    <select name="dbl_filter_audit_require_no_fatal_break" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_audit_require_no_fatal_break'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_audit_require_no_fatal_break'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">Блокировать при fatal-фильтрах (рекомендуется Да)</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Макс. сигналов за цикл</label>
+                    <input type="number" name="dbl_filter_audit_max_signals_per_cycle"
+                           class="form-control form-control-sm" min="0" max="20" step="1"
+                           value="<?= (int)($config['dbl_filter_audit_max_signals_per_cycle'] ?? 2) ?>">
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">0–20. Лимит на один проход стратегии.</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Макс. сигналов за 30 мин</label>
+                    <input type="number" name="dbl_filter_audit_max_signals_per_30m"
+                           class="form-control form-control-sm" min="0" max="100" step="1"
+                           value="<?= (int)($config['dbl_filter_audit_max_signals_per_30m'] ?? 6) ?>">
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">0–100. Основной лимит для коротких тест-сессий (~30 мин).</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Макс. сигналов за 6 ч</label>
+                    <input type="number" name="dbl_filter_audit_max_signals_per_6h"
+                           class="form-control form-control-sm" min="0" max="999" step="1"
+                           value="<?= (int)($config['dbl_filter_audit_max_signals_per_6h'] ?? 999) ?>">
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">0–999. Поставьте 999 чтобы не ограничивать длинные сессии.</div>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Мин. quality score (audit-pass)</label>
+                    <input type="number" name="dbl_filter_audit_min_quality_score"
+                           class="form-control form-control-sm" min="0.0" max="1.0" step="0.01"
+                           value="<?= number_format((float)($config['dbl_filter_audit_min_quality_score'] ?? 0.65), 2, '.', '') ?>">
+                    <div style="font-size:11px;color:#64748b;margin-top:3px;">0.0–1.0. Ниже этого порога audit-pass запрещён.</div>
+                </div>
+            </div>
+        </div>
+
         <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
         <a href="<?= $ajaxUrl ?>?action=reset_active" class="btn btn-sm btn-outline-danger ms-2"
            onclick="return confirm('Сбросить все переопределения к базовым значениям?')">Сброс к базовым</a>

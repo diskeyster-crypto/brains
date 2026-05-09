@@ -202,6 +202,7 @@ return [
     'dbl_filter_audit_send_to_bot'                             => 'bool',
     'dbl_filter_audit_only_when_no_normal_ready'               => 'bool',
     'dbl_filter_audit_max_signals_per_cycle'                   => 'int',
+    'dbl_filter_audit_max_signals_per_30m'                     => 'int',
     'dbl_filter_audit_max_signals_per_6h'                      => 'int',
     'dbl_filter_audit_min_quality_score'                       => 'float',
     'dbl_filter_audit_require_no_fatal_break'                  => 'bool',

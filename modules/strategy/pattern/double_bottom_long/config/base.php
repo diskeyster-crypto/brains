@@ -476,6 +476,12 @@ return [
     'dbl_pattern_pending_max_items'                            => 100,
     'dbl_pattern_allow_active_to_pending'                      => true,
     'dbl_pattern_allow_confirmed_to_handoff'                   => true,
+    // Point3 break refinement (diagnostics + pending recovery watch)
+    'dbl_point3_recovery_watch_enabled'                        => true,
+    'dbl_point3_break_terminal_requires_current_below_point3'  => true,
+    'dbl_point3_break_recovery_requires_reclaim_recovered'     => true,
+    'dbl_point3_recovery_watch_ttl_minutes'                    => 10,
+    'dbl_point3_recovery_min_confirm_bars'                     => 2,
     // ── DBL confirmed-pattern freshness override ──────────────────────────────
     // For signals with dbl_pattern_status=confirmed, bypass the generic current-run
     // freshness window (300 s) and use confirmed-pattern TTL + validity check instead.

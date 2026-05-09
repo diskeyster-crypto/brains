@@ -1266,6 +1266,10 @@ final class DoubleBottomLongService
                         'reclaim_retest_held'            => $result['strategy_signal_context']['reclaim_retest_held'] ?? false,
                         'local_late_tiny_room_detected'  => $result['strategy_signal_context']['local_late_tiny_room_detected'] ?? false,
                         'local_late_tiny_room_reason'    => $result['strategy_signal_context']['local_late_tiny_room_reason'] ?? null,
+                        'final_low_quality_score'        => $result['strategy_signal_context']['final_low_quality_score'] ?? ($result['candidate_quality_score'] ?? null),
+                        'final_low_quality_threshold'    => $result['strategy_signal_context']['final_low_quality_threshold'] ?? ($config['min_candidate_quality_score'] ?? null),
+                        'final_low_quality_causes'       => $result['strategy_signal_context']['final_low_quality_causes'] ?? [],
+                        'final_low_quality_primary_cause'=> $result['strategy_signal_context']['final_low_quality_primary_cause'] ?? null,
                         'block_reason'                   => 'final_low_quality',
                         'handoff_status'                 => 'not_handed_off',
                         'handoff_ready'                  => false,
@@ -1864,6 +1868,7 @@ final class DoubleBottomLongService
                 // Original distribution maps
                 'reject_reason_distribution'       => $cycleStats['reject_reason_distribution'] ?? (object)[],
                 'final_reject_reason_distribution' => $cycleStats['final_reject_reason_distribution'] ?? (object)[],
+                'final_low_quality_cause_counts'   => $cycleStats['final_low_quality_cause_counts'] ?? (object)[],
                 // Signal counts (post-lifecycle-update)
                 'current_cycle_signals_emitted_total' => (int)($cycleStats['signals_emitted_total'] ?? 0),
                 'final_signals_total'                 => count($signals),
@@ -1901,6 +1906,15 @@ final class DoubleBottomLongService
                 'dbl_garbage_veto_passed_total'            => $dblGarbageVetoPassedTotalDiag,
                 'dbl_near_miss_total'                      => $this->dblNearMissTotal,
                 'dbl_near_miss_by_reason'                  => $this->dblNearMissByReason,
+                'dbl_near_miss_examples'                   => array_slice($this->dblNearMissExamples, 0, 10),
+                'dbl_point3_broken_examples'               => array_values(array_slice(array_filter(
+                    $this->dblNearMissExamples,
+                    static fn(array $row): bool => (string)($row['reason'] ?? '') === 'point3_broken'
+                ), 0, 10)),
+                'dbl_final_low_quality_examples'           => array_values(array_slice(array_filter(
+                    $this->dblNearMissExamples,
+                    static fn(array $row): bool => (string)($row['reason'] ?? '') === 'final_low_quality'
+                ), 0, 10)),
                 'dbl_handoff_ready_total'                  => $dblHandoffReadyTotalDiag,
                 'dbl_bot_queue_ready_written_total'        => $dblBotQueueReadyWrittenTotalDiag,
                 'dbl_throughput_too_low'                  => $dblThroughputTooLowForCycleHistory,
@@ -1996,6 +2010,13 @@ final class DoubleBottomLongService
         $dblHandoffReadyPerHourEstimated = null;
         $dblExpectedMinHandoffPer6h      = (int)($config['dbl_expected_min_handoff_per_6h'] ?? 3);
         $dblThroughputTooLow             = false;
+        $dblHandoffReadyLast1hTotal      = 0;
+        $dblNearMissLast1hTotal          = 0;
+        $dblRawCandidatesLast1hTotal     = 0;
+        $dblZeroHandoffWithCandidates    = false;
+        $dblRecentNearMissExamples       = [];
+        $dblRecentPoint3BrokenExamples   = [];
+        $dblRecentFinalLowQualityExamples = [];
         try {
             $cycleHistFile = $this->moduleDir . '/storage/cycle_history.ndjson';
             if (is_file($cycleHistFile)) {
@@ -2004,20 +2025,51 @@ final class DoubleBottomLongService
                     // Use last 6 hours of records
                     $nowTsForThroughput = time();
                     $windowSec = 6 * 3600;
+                    $window1hSec = 3600;
                     $handoffReadySumWindow = 0;
                     $ordersCreatedSumWindow = 0;
                     $firstTsInWindow = null;
                     $lastTsInWindow  = null;
-                    foreach ($lines as $line) {
+                    $linesToScan = array_slice($lines, -400);
+                    foreach ($linesToScan as $line) {
                         $rec = @json_decode($line, true);
                         if (!is_array($rec)) continue;
                         $recTs = isset($rec['finished_at']) ? @strtotime((string)$rec['finished_at']) : false;
                         if ($recTs === false || $recTs <= 0) continue;
-                        if (($nowTsForThroughput - $recTs) > $windowSec) continue;
-                        $handoffReadySumWindow += (int)($rec['bot_handoff_ready_total'] ?? 0);
-                        $ordersCreatedSumWindow += (int)($rec['orders_created'] ?? 0);
-                        if ($firstTsInWindow === null || $recTs < $firstTsInWindow) $firstTsInWindow = $recTs;
-                        if ($lastTsInWindow  === null || $recTs > $lastTsInWindow)  $lastTsInWindow  = $recTs;
+                        if (($nowTsForThroughput - $recTs) <= $windowSec) {
+                            $handoffReadySumWindow += (int)($rec['bot_handoff_ready_total'] ?? 0);
+                            $ordersCreatedSumWindow += (int)($rec['orders_created'] ?? 0);
+                            if ($firstTsInWindow === null || $recTs < $firstTsInWindow) $firstTsInWindow = $recTs;
+                            if ($lastTsInWindow  === null || $recTs > $lastTsInWindow)  $lastTsInWindow  = $recTs;
+                        }
+                        if (($nowTsForThroughput - $recTs) <= $window1hSec) {
+                            $dblHandoffReadyLast1hTotal += (int)($rec['dbl_handoff_ready_total'] ?? $rec['bot_handoff_ready_total'] ?? 0);
+                            $dblNearMissLast1hTotal += (int)($rec['dbl_near_miss_total'] ?? 0);
+                            $dblRawCandidatesLast1hTotal += (int)($rec['dbl_raw_candidates_total'] ?? 0);
+                        }
+                        if (count($dblRecentNearMissExamples) < 20) {
+                            foreach ((array)($rec['dbl_near_miss_examples'] ?? []) as $ex) {
+                                if (!is_array($ex)) { continue; }
+                                $dblRecentNearMissExamples[] = $ex;
+                                if (count($dblRecentNearMissExamples) >= 20) { break; }
+                            }
+                        }
+                        if (count($dblRecentPoint3BrokenExamples) < 20) {
+                            foreach ((array)($rec['dbl_point3_broken_examples'] ?? $rec['dbl_near_miss_examples'] ?? []) as $ex) {
+                                if (!is_array($ex)) { continue; }
+                                if ((string)($ex['reason'] ?? '') !== 'point3_broken') { continue; }
+                                $dblRecentPoint3BrokenExamples[] = $ex;
+                                if (count($dblRecentPoint3BrokenExamples) >= 20) { break; }
+                            }
+                        }
+                        if (count($dblRecentFinalLowQualityExamples) < 20) {
+                            foreach ((array)($rec['dbl_final_low_quality_examples'] ?? $rec['dbl_near_miss_examples'] ?? []) as $ex) {
+                                if (!is_array($ex)) { continue; }
+                                if ((string)($ex['reason'] ?? '') !== 'final_low_quality') { continue; }
+                                $dblRecentFinalLowQualityExamples[] = $ex;
+                                if (count($dblRecentFinalLowQualityExamples) >= 20) { break; }
+                            }
+                        }
                     }
                     if ($firstTsInWindow !== null && $lastTsInWindow !== null && $lastTsInWindow > $firstTsInWindow) {
                         $spanHours = ($lastTsInWindow - $firstTsInWindow) / 3600.0;
@@ -2038,6 +2090,25 @@ final class DoubleBottomLongService
         } catch (\Throwable) {
             // Throughput diagnostics are best-effort; never block the tick.
         }
+        $dblRecentNearMissExamples = array_slice(array_reverse($dblRecentNearMissExamples), 0, 10);
+        $dblRecentPoint3BrokenExamples = array_slice(array_reverse($dblRecentPoint3BrokenExamples), 0, 10);
+        $dblRecentFinalLowQualityExamples = array_slice(array_reverse($dblRecentFinalLowQualityExamples), 0, 10);
+        if (empty($dblRecentNearMissExamples)) {
+            $dblRecentNearMissExamples = array_slice($this->dblNearMissExamples, 0, 10);
+        }
+        if (empty($dblRecentPoint3BrokenExamples)) {
+            $dblRecentPoint3BrokenExamples = array_values(array_slice(array_filter(
+                $this->dblNearMissExamples,
+                static fn(array $row): bool => (string)($row['reason'] ?? '') === 'point3_broken'
+            ), 0, 10));
+        }
+        if (empty($dblRecentFinalLowQualityExamples)) {
+            $dblRecentFinalLowQualityExamples = array_values(array_slice(array_filter(
+                $this->dblNearMissExamples,
+                static fn(array $row): bool => (string)($row['reason'] ?? '') === 'final_low_quality'
+            ), 0, 10));
+        }
+        $dblZeroHandoffWithCandidates = $dblRawCandidatesLast1hTotal > 10 && $dblHandoffReadyLast1hTotal === 0;
 
         $normalizeDblExample = static function (array $row): array {
             return [
@@ -2063,6 +2134,10 @@ final class DoubleBottomLongService
                 'handoff_ready'                  => $row['handoff_ready'] ?? null,
                 'executable'                     => $row['executable'] ?? null,
                 'active_final'                   => $row['active_final'] ?? null,
+                'final_low_quality_score'        => $row['final_low_quality_score'] ?? null,
+                'final_low_quality_threshold'    => $row['final_low_quality_threshold'] ?? null,
+                'final_low_quality_causes'       => $row['final_low_quality_causes'] ?? [],
+                'final_low_quality_primary_cause'=> $row['final_low_quality_primary_cause'] ?? null,
             ];
         };
         $dblQualityBlockedExamples = array_map(
@@ -2454,6 +2529,9 @@ final class DoubleBottomLongService
             'dbl_near_miss_by_stage'                     => $this->dblNearMissByStage,
             'dbl_near_miss_by_reason'                    => $this->dblNearMissByReason,
             'dbl_near_miss_examples'                     => $this->dblNearMissExamples,
+            'dbl_recent_near_miss_examples'              => $dblRecentNearMissExamples,
+            'dbl_recent_point3_broken_examples'          => $dblRecentPoint3BrokenExamples,
+            'dbl_recent_final_low_quality_examples'      => $dblRecentFinalLowQualityExamples,
             'dbl_quality_blocked_examples'               => $dblQualityBlockedExamples,
             // ── DBL trace completeness counters (per tick) ────────────────────────
             'dbl_trace_checked_total'                        => $this->dblTraceCheckedTotal,
@@ -2560,6 +2638,7 @@ final class DoubleBottomLongService
             'normal_signal_examples'                   => $normalSignalExamples,
             'rejected_signal_examples'                 => $rejectedSignalExamples,
             'final_low_quality_reject_examples'        => $finalLowQualityRejectExamples,
+            'final_low_quality_cause_counts'           => $cycleStats['final_low_quality_cause_counts'] ?? (object)[],
             'setup_allowed_quality_failed_examples'    => $setupAllowedQualityFailedExamples,
             'setup_allowed_pending_examples'           => $setupAllowedPendingExamples,
             'setup_allowed_final_gate_warning_examples' => $setupAllowedFinalGateWarnExamples,
@@ -2624,6 +2703,10 @@ final class DoubleBottomLongService
             'dbl_handoff_ready_per_hour_estimated' => $dblHandoffReadyPerHourEstimated,
             'dbl_expected_min_handoff_per_6h'     => $dblExpectedMinHandoffPer6h,
             'dbl_throughput_too_low'              => $dblThroughputTooLow,
+            'dbl_handoff_ready_last_1h_total'     => $dblHandoffReadyLast1hTotal,
+            'dbl_near_miss_last_1h_total'         => $dblNearMissLast1hTotal,
+            'dbl_raw_candidates_last_1h_total'    => $dblRawCandidatesLast1hTotal,
+            'dbl_zero_handoff_with_candidates'    => $dblZeroHandoffWithCandidates,
         ]);
 
         if ($isDone) {
@@ -4504,6 +4587,7 @@ final class DoubleBottomLongService
         $stopWidthHardRejectTotal        = 0;
         $stopWidthBypassedForSynthTotal  = 0;
         $stopMissingForSynthTotal        = 0;
+        $finalLowQualityCauseCounts      = [];
 
         $merged = [];
         foreach ($existingSignals as $s) {
@@ -4559,6 +4643,15 @@ final class DoubleBottomLongService
 
             // 1a. Quality completeness
             if (!$isComplete($s)) {
+                $finalLowQualityDiag = $this->computeDblFinalLowQualityDiagnostics($s, $sscFilter, $config, 'final_low_quality');
+                $sscFilter = array_merge($sscFilter, $finalLowQualityDiag);
+                $s['strategy_signal_context'] = $sscFilter;
+                foreach ((array)($finalLowQualityDiag['final_low_quality_causes'] ?? []) as $cause) {
+                    $k = (string)$cause;
+                    if ($k !== '') {
+                        $finalLowQualityCauseCounts[$k] = (int)($finalLowQualityCauseCounts[$k] ?? 0) + 1;
+                    }
+                }
                 $rejectedFinalQuality++;
                 $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_low_quality'];
                 $finalRejectDist['final_low_quality'] = ($finalRejectDist['final_low_quality'] ?? 0) + 1;
@@ -4581,6 +4674,10 @@ final class DoubleBottomLongService
                     'reclaim_retest_held' => $sscFilter['reclaim_retest_held'] ?? false,
                     'local_late_tiny_room_detected' => $sscFilter['local_late_tiny_room_detected'] ?? false,
                     'local_late_tiny_room_reason' => $sscFilter['local_late_tiny_room_reason'] ?? null,
+                    'final_low_quality_score' => $sscFilter['final_low_quality_score'] ?? null,
+                    'final_low_quality_threshold' => $sscFilter['final_low_quality_threshold'] ?? null,
+                    'final_low_quality_causes' => $sscFilter['final_low_quality_causes'] ?? [],
+                    'final_low_quality_primary_cause' => $sscFilter['final_low_quality_primary_cause'] ?? null,
                 ]);
                 continue;
             }
@@ -4620,6 +4717,14 @@ final class DoubleBottomLongService
                         $s['final_stop_width_gate_bypassed_for_synthetic_setup'] = true;
                         // keep eligible
                     } elseif ($stopHardForSynth && $slPct > $stopHardPct) {
+                        $stopDiag = $this->computeDblFinalLowQualityDiagnostics($s, $sscFilter, $config, 'final_stop_too_wide');
+                        $sscFilter = array_merge($sscFilter, $stopDiag);
+                        foreach ((array)($stopDiag['final_low_quality_causes'] ?? []) as $cause) {
+                            $k = (string)$cause;
+                            if ($k !== '') {
+                                $finalLowQualityCauseCounts[$k] = (int)($finalLowQualityCauseCounts[$k] ?? 0) + 1;
+                            }
+                        }
                         // Exceeds emergency hard cap → reject
                         $stopWidthHardRejectTotal++;
                         $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_stop_too_wide'];
@@ -4631,6 +4736,14 @@ final class DoubleBottomLongService
                         $qualScore = (float)($s['candidate_quality_score'] ?? 0.0);
                         $qualOk    = $adaptiveStopMinQuality <= 0.0 || $qualScore >= $adaptiveStopMinQuality;
                         if (!$qualOk && $adaptiveStopMinQuality > 0.0) {
+                            $stopDiag = $this->computeDblFinalLowQualityDiagnostics($s, $sscFilter, $config, 'final_stop_too_wide');
+                            $sscFilter = array_merge($sscFilter, $stopDiag);
+                            foreach ((array)($stopDiag['final_low_quality_causes'] ?? []) as $cause) {
+                                $k = (string)$cause;
+                                if ($k !== '') {
+                                    $finalLowQualityCauseCounts[$k] = (int)($finalLowQualityCauseCounts[$k] ?? 0) + 1;
+                                }
+                            }
                             // Quality too low for adaptive wide-stop bypass → hard reject
                             $stopWidthHardRejectTotal++;
                             $s['adaptive_stop_width_allowed']         = false;
@@ -4681,6 +4794,14 @@ final class DoubleBottomLongService
                 } elseif ($maxStopLossPct > 0.0) {
                     // Classic hard-reject path — max_stop_loss_pct is the hard cap
                     if ($slPct === null || $slPct > $maxStopLossPct) {
+                        $stopDiag = $this->computeDblFinalLowQualityDiagnostics($s, $sscFilter, $config, 'final_stop_too_wide');
+                        $sscFilter = array_merge($sscFilter, $stopDiag);
+                        foreach ((array)($stopDiag['final_low_quality_causes'] ?? []) as $cause) {
+                            $k = (string)$cause;
+                            if ($k !== '') {
+                                $finalLowQualityCauseCounts[$k] = (int)($finalLowQualityCauseCounts[$k] ?? 0) + 1;
+                            }
+                        }
                         $stopWidthHardRejectTotal++;
                         $s['adaptive_stop_width_allowed']   = false;
                         $s['adaptive_stop_width_reason']    = 'classic_hard_cap_exceeded';
@@ -4757,6 +4878,15 @@ final class DoubleBottomLongService
 
             // 1e. Final quality composite floor
             if ($minFinalQuality > 0.0 && (float)($s['candidate_quality_score'] ?? 0.0) < $minFinalQuality) {
+                $finalLowQualityDiag = $this->computeDblFinalLowQualityDiagnostics($s, $sscFilter, $config, 'final_low_quality');
+                $sscFilter = array_merge($sscFilter, $finalLowQualityDiag);
+                $s['strategy_signal_context'] = $sscFilter;
+                foreach ((array)($finalLowQualityDiag['final_low_quality_causes'] ?? []) as $cause) {
+                    $k = (string)$cause;
+                    if ($k !== '') {
+                        $finalLowQualityCauseCounts[$k] = (int)($finalLowQualityCauseCounts[$k] ?? 0) + 1;
+                    }
+                }
                 $rejectedFinalLowQuality++;
                 $signalOutcomeMap[$id] = ['winner' => false, 'reason' => 'final_low_quality'];
                 $finalRejectDist['final_low_quality'] = ($finalRejectDist['final_low_quality'] ?? 0) + 1;
@@ -4779,6 +4909,10 @@ final class DoubleBottomLongService
                     'reclaim_retest_held' => $sscFilter['reclaim_retest_held'] ?? false,
                     'local_late_tiny_room_detected' => $sscFilter['local_late_tiny_room_detected'] ?? false,
                     'local_late_tiny_room_reason' => $sscFilter['local_late_tiny_room_reason'] ?? null,
+                    'final_low_quality_score' => $sscFilter['final_low_quality_score'] ?? null,
+                    'final_low_quality_threshold' => $sscFilter['final_low_quality_threshold'] ?? null,
+                    'final_low_quality_causes' => $sscFilter['final_low_quality_causes'] ?? [],
+                    'final_low_quality_primary_cause' => $sscFilter['final_low_quality_primary_cause'] ?? null,
                 ]);
                 continue;
             }
@@ -4863,6 +4997,7 @@ final class DoubleBottomLongService
             'setup_allowed_final_trend_warning_total'         => $setupAllowedFinalTrendWarningTotal,
             'setup_allowed_final_context_warning_total'       => $setupAllowedFinalContextWarningTotal,
             'setup_allowed_old_h4_final_gates_bypassed_total' => $setupAllowedOldH4FinalGatesBypassedTotal,
+            'final_low_quality_cause_counts'          => empty($finalLowQualityCauseCounts) ? (object)[] : $finalLowQualityCauseCounts,
         ];
 
         return [array_values($winnerSignals), $filterStats, $signalOutcomeMap];
@@ -5278,6 +5413,13 @@ final class DoubleBottomLongService
             ($s['setup_allowed_final_context_warning_total'] ?? 0) + (int)($filterStats['setup_allowed_final_context_warning_total'] ?? 0);
         $s['setup_allowed_old_h4_final_gates_bypassed_total'] =
             ($s['setup_allowed_old_h4_final_gates_bypassed_total'] ?? 0) + (int)($filterStats['setup_allowed_old_h4_final_gates_bypassed_total'] ?? 0);
+        $finalLowQualityCauseCounts = (array)($s['final_low_quality_cause_counts'] ?? []);
+        foreach ((array)($filterStats['final_low_quality_cause_counts'] ?? []) as $cause => $count) {
+            $k = (string)$cause;
+            if ($k === '') { continue; }
+            $finalLowQualityCauseCounts[$k] = (int)($finalLowQualityCauseCounts[$k] ?? 0) + (int)$count;
+        }
+        $s['final_low_quality_cause_counts'] = empty($finalLowQualityCauseCounts) ? (object)[] : $finalLowQualityCauseCounts;
         return $s;
     }
 
@@ -5296,7 +5438,7 @@ final class DoubleBottomLongService
         $s['signals_active_final_total'] = $activeSignals;
         $s['final_signals_total']        = $activeSignals;
         foreach (['reject_reason_distribution', 'quality_reject_reason_distribution',
-                  'pattern_reject_reason_distribution', 'final_reject_reason_distribution'] as $k) {
+                  'pattern_reject_reason_distribution', 'final_reject_reason_distribution', 'final_low_quality_cause_counts'] as $k) {
             if (empty($s[$k])) {
                 $s[$k] = (object)[];
             }
@@ -5361,6 +5503,7 @@ final class DoubleBottomLongService
             'signals_entered_final_eligibility_total'    => 0,
             'signals_rejected_during_finalization_total' => 0,
             'final_reject_reason_distribution'           => (object)[],
+            'final_low_quality_cause_counts'             => (object)[],
             'current_batch_size'           => 0,
             'last_updated_at'              => null,
             'reject_reason_distribution'         => (object)[],
@@ -9405,7 +9548,10 @@ final class DoubleBottomLongService
                         if ($prevQueueStatus === 'pending') {
                             $this->dblPatternPendingRecheckedTotal++;
                         }
-                        $blockReason = 'waiting_dbl_pattern_confirmation';
+                        $blockReason = (string)($ps['pending_reason'] ?? '');
+                        if ($blockReason === '') {
+                            $blockReason = 'waiting_dbl_pattern_confirmation';
+                        }
                         if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
                         if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
                         if (($result[$id]['active_final'] ?? null) !== false) { $result[$id]['active_final'] = false; $changed = true; }
@@ -9938,7 +10084,7 @@ final class DoubleBottomLongService
                     } else {
                         $this->patternStateBlockedBeforeGarbageTotal++;
                         $blockReason = ($ps['status'] ?? '') === 'active'
-                            ? 'waiting_dbl_pattern_confirmation'
+                            ? (string)($ps['pending_reason'] ?? 'waiting_dbl_pattern_confirmation')
                             : ((string)($ps['invalid_reason'] ?? 'dbl_pattern_invalid'));
                         if ($prevReady !== false) { $result[$id]['handoff_ready'] = false; $changed = true; }
                         if ($prevExec  !== false) { $result[$id]['executable']    = false; $changed = true; }
@@ -10426,6 +10572,72 @@ final class DoubleBottomLongService
     // =========================================================================
     // DBL Garbage Veto
     // =========================================================================
+
+    /**
+     * Build final low-quality cause diagnostics for calibration visibility.
+     *
+     * @return array<string,mixed>
+     */
+    private function computeDblFinalLowQualityDiagnostics(array $record, array $context, array $config, string $rejectReason = 'final_low_quality'): array
+    {
+        $ssc = is_array($context) ? $context : [];
+        $warnings = (array)($record['synthetic_quality_warnings'] ?? $record['warnings'] ?? $ssc['warnings'] ?? []);
+        $qualityRejectReason = (string)($record['quality_reject_reason'] ?? $ssc['quality_reject_reason'] ?? '');
+        $obSkipReason = (string)($record['ob_skip_reason'] ?? $ssc['ob_skip_reason'] ?? '');
+        $candidateQualityScore = isset($record['candidate_quality_score']) ? (float)$record['candidate_quality_score'] : (isset($ssc['candidate_quality_score']) ? (float)$ssc['candidate_quality_score'] : null);
+        $finalThreshold = (float)($config['min_candidate_quality_score'] ?? 0.0);
+        $contextScore = isset($record['context_score']) ? (float)$record['context_score'] : (isset($ssc['context_score']) ? (float)$ssc['context_score'] : null);
+        $reclaimConfirmed = (bool)($record['reclaim_confirmed'] ?? $ssc['reclaim_confirmed'] ?? false);
+        $necklineReclaimConfirmed = (bool)($record['neckline_reclaim_confirmed'] ?? $ssc['neckline_reclaim_confirmed'] ?? false);
+        $reclaimRetestHeld = (bool)($record['reclaim_retest_held'] ?? $ssc['reclaim_retest_held'] ?? false);
+        $entryDistanceFromPoint3 = isset($record['entry_distance_from_point3_pct']) ? (float)$record['entry_distance_from_point3_pct'] : (isset($ssc['entry_distance_from_point3_pct']) ? (float)$ssc['entry_distance_from_point3_pct'] : null);
+        $roomToRecentSwingHigh = isset($record['room_to_recent_swing_high_roi']) ? (float)$record['room_to_recent_swing_high_roi'] : (isset($ssc['room_to_recent_swing_high_roi']) ? (float)$ssc['room_to_recent_swing_high_roi'] : null);
+        $lateLocalTinyRoomDetected = (bool)($record['local_late_tiny_room_detected'] ?? $ssc['local_late_tiny_room_detected'] ?? false);
+        $lateLocalFarFromPoint3 = (bool)($record['local_late_tiny_room_far_from_point3'] ?? $ssc['local_late_tiny_room_far_from_point3'] ?? false);
+        $lateLocalTinyRoom = (bool)($record['local_late_tiny_room_tiny_room'] ?? $ssc['local_late_tiny_room_tiny_room'] ?? false);
+        $causes = [];
+
+        if (in_array('generic_entry_context_score_low', $warnings, true)) {
+            $causes[] = 'generic_entry_context_score_low';
+        }
+        if ($obSkipReason === 'quality_below_threshold') {
+            $causes[] = 'ob_quality_below_threshold';
+        }
+        if ($qualityRejectReason !== '' && (str_contains($qualityRejectReason, 'synthetic') || str_contains($qualityRejectReason, 'quality_weak_structure'))) {
+            $causes[] = 'synthetic_quality_too_low';
+        }
+        if ($contextScore !== null && $contextScore < 0.50) {
+            $causes[] = 'context_score_too_low';
+        }
+        if ((string)($record['adaptive_stop_width_reason'] ?? $ssc['adaptive_stop_width_reason'] ?? '') === 'adaptive_stop_quality_too_low') {
+            $causes[] = 'stop_width_quality_mismatch';
+        }
+        if (!$reclaimConfirmed && !$necklineReclaimConfirmed && !$reclaimRetestHeld) {
+            $causes[] = 'missing_reclaim_confirmation';
+        }
+        if ($lateLocalTinyRoomDetected) {
+            $causes[] = 'late_local_tiny_room';
+        }
+        if ($lateLocalFarFromPoint3 || ($entryDistanceFromPoint3 !== null && $entryDistanceFromPoint3 >= (float)($config['dbl_garbage_late_local_far_point3_pct'] ?? 1.8))) {
+            $causes[] = 'entry_far_from_point3';
+        }
+        if ($lateLocalTinyRoom || ($roomToRecentSwingHigh !== null && $roomToRecentSwingHigh < (float)($config['dbl_garbage_min_room_to_recent_swing_high_roi'] ?? 5.0))) {
+            $causes[] = 'insufficient_room_to_recent_swing_high';
+        }
+        if ($rejectReason === 'final_stop_too_wide') {
+            $causes[] = 'final_stop_too_wide';
+        }
+
+        $causes = array_values(array_unique($causes));
+        $primary = $causes[0] ?? ($rejectReason === 'final_stop_too_wide' ? 'final_stop_too_wide' : 'synthetic_quality_too_low');
+
+        return [
+            'final_low_quality_score'         => $candidateQualityScore,
+            'final_low_quality_threshold'     => $finalThreshold > 0.0 ? $finalThreshold : null,
+            'final_low_quality_causes'        => $causes,
+            'final_low_quality_primary_cause' => $primary,
+        ];
+    }
 
     /**
      * Compute late-local/tiny-room diagnostic fields without changing behavior.
@@ -11269,6 +11481,11 @@ final class DoubleBottomLongService
         $reclaimPresent = $reclaimLevel > 0.0;
 
         $point3TolerancePct = (float)($config['dbl_pattern_point3_break_tolerance_pct'] ?? 0.20);
+        $point3RecoveryWatchEnabled = (bool)($config['dbl_point3_recovery_watch_enabled'] ?? true);
+        $point3BreakTerminalRequiresCurrentBelow = (bool)($config['dbl_point3_break_terminal_requires_current_below_point3'] ?? true);
+        $point3BreakRecoveryRequiresReclaimRecovered = (bool)($config['dbl_point3_break_recovery_requires_reclaim_recovered'] ?? true);
+        $point3RecoveryWatchTtlMinutes = max(1, (int)($config['dbl_point3_recovery_watch_ttl_minutes'] ?? 10));
+        $point3RecoveryMinConfirmBars = max(1, (int)($config['dbl_point3_recovery_min_confirm_bars'] ?? 2));
         $point3ToleranceMult = 1.0 - max(0.0, $point3TolerancePct) / 100.0;
         $point3BrokenByTolerance = $hasPoint1 && $hasPoint3 && $point3 < ($point1 * $point3ToleranceMult);
 
@@ -11322,9 +11539,49 @@ final class DoubleBottomLongService
         if ($reclaimLostAfterConfirm) {
             $reclaimLossFinalState = $reclaimRecoveredAfterLoss ? 'recovered' : ($currentPriceAboveReclaim ? 'recovered' : 'still_lost');
         }
+        $point3BreakChecked = $hasPoint1 && $hasPoint3;
+        $point3BreakReferencePrice = $hasPoint3 ? $point3 : ($hasPoint1 ? $point1 : null);
+        $point3BreakLatestPrice = $latestPrice > 0.0 ? $latestPrice : null;
+        $point3BreakCurrentBelowPoint3 = $hasPoint3 && $latestPrice > 0.0
+            ? ($latestPrice < ($point3 * $point3ToleranceMult))
+            : null;
+        $point3BreakDepthPct = null;
+        if ($point3Broken && $point3BreakReferencePrice !== null && $point3BreakReferencePrice > 0.0 && $point3BreakLatestPrice !== null) {
+            $point3BreakDepthPct = round((($point3BreakReferencePrice - $point3BreakLatestPrice) / $point3BreakReferencePrice) * 100.0, 4);
+        }
+        $point3BreakDurationMinutes = null;
+        if (isset($ssc['point3_break_duration_minutes']) && is_numeric($ssc['point3_break_duration_minutes'])) {
+            $point3BreakDurationMinutes = (float)$ssc['point3_break_duration_minutes'];
+        } elseif (isset($ssc['point3_broken_since_ts'])) {
+            $point3BreakSinceTs = (int)$ssc['point3_broken_since_ts'];
+            if ($point3BreakSinceTs > 0) {
+                $point3BreakDurationMinutes = round((time() - $point3BreakSinceTs) / 60, 2);
+            }
+        } elseif (isset($ssc['reclaim_lost_since_ts'])) {
+            $point3BreakSinceTs = (int)$ssc['reclaim_lost_since_ts'];
+            if ($point3BreakSinceTs > 0) {
+                $point3BreakDurationMinutes = round((time() - $point3BreakSinceTs) / 60, 2);
+            }
+        }
+        $point3BreakRecoveredAboveReclaim = $reclaimRecoveredAfterLoss || $reclaimRetestHeld || $currentPriceAboveReclaim;
+        $point3BreakRecoveredByConfig = $point3BreakRecoveryRequiresReclaimRecovered
+            ? $reclaimRecoveredAfterLoss
+            : $point3BreakRecoveredAboveReclaim;
+        $point3BreakRecoveryConfirmBarsOk = $closesAbove >= $point3RecoveryMinConfirmBars;
+        $point3BreakRecovered = $point3Broken && $point3BreakRecoveredByConfig && $point3BreakRecoveryConfirmBarsOk;
+        $point3BreakTerminalByCurrentBelow = $point3BreakTerminalRequiresCurrentBelow
+            ? ($point3BreakCurrentBelowPoint3 === true)
+            : true;
+        $point3BreakTerminal = $point3Broken
+            && !$point3BreakRecovered
+            && ($freshLowerLow || $point3BreakTerminalByCurrentBelow);
+        $point3BreakFinalState = $point3Broken
+            ? ($point3BreakTerminal ? 'terminal' : ($point3BreakRecovered ? 'recovered' : 'ambiguous'))
+            : 'ambiguous';
+
         $reclaimLossTerminal = $reclaimLostAfterConfirm && (
             (!$reclaimRecoveredAfterLoss && !$currentPriceAboveReclaim)
-            || $point3Broken
+            || $point3BreakTerminal
             || $freshLowerLow
         );
 
@@ -11377,6 +11634,14 @@ final class DoubleBottomLongService
                 $status = 'invalid';
                 $statusReason = 'dbl_trace_incomplete';
                 $invalidReason = 'dbl_trace_incomplete';
+            } elseif ($point3BreakTerminal) {
+                $status = 'invalid';
+                $statusReason = 'point3_broken';
+                $invalidReason = 'point3_broken';
+            } elseif ($point3Broken && $point3RecoveryWatchEnabled && $allowPending) {
+                $status = 'active';
+                $statusReason = 'waiting_point3_recovery_confirmation';
+                $pendingReason = 'waiting_point3_recovery_confirmation';
             } elseif ($point3Broken) {
                 $status = 'invalid';
                 $statusReason = 'point3_broken';
@@ -11389,7 +11654,7 @@ final class DoubleBottomLongService
                 $status = 'invalid';
                 $statusReason = 'reclaim_level_lost';
                 $invalidReason = 'reclaim_level_lost';
-            } elseif ($ttlExpired) {
+            } elseif ($ttlExpired || ($point3Broken && $point3RecoveryWatchEnabled && $point3BreakDurationMinutes !== null && $point3BreakDurationMinutes > ($point3RecoveryWatchTtlMinutes * 1.0))) {
                 $status = 'invalid';
                 $statusReason = 'confirmation_ttl_expired';
                 $invalidReason = 'confirmation_ttl_expired';
@@ -11460,6 +11725,16 @@ final class DoubleBottomLongService
             'higher_low_after_point3_price'   => $higherLowPrice > 0.0 ? $higherLowPrice : null,
             'fresh_lower_low_after_point3'    => $freshLowerLow,
             'point3_broken'                   => $point3Broken,
+            'point3_break_checked'            => $point3BreakChecked,
+            'point3_break_terminal'           => $point3BreakTerminal,
+            'point3_break_recovered'          => $point3BreakRecovered,
+            'point3_break_depth_pct'          => $point3BreakDepthPct,
+            'point3_break_duration_minutes'   => $point3BreakDurationMinutes,
+            'point3_break_recovered_above_reclaim' => $point3BreakRecoveredAboveReclaim,
+            'point3_break_current_price_above_reclaim' => $currentPriceAboveReclaim,
+            'point3_break_latest_price'       => $point3BreakLatestPrice,
+            'point3_break_reference_price'    => $point3BreakReferencePrice,
+            'point3_break_final_state'        => $point3BreakFinalState,
             'reclaim_level_lost'              => $reclaimLossTerminal,
             'confirmation_ttl_expired'        => $ttlExpired,
             'point_1_missing'                 => $point1Missing,
@@ -11575,6 +11850,11 @@ final class DoubleBottomLongService
             'higher_low_after_point3'       => $d['higher_low_after_point3'] ?? false,
             'fresh_lower_low_after_point3'  => $d['fresh_lower_low_after_point3'] ?? false,
             'point3_broken'                 => $d['point3_broken'] ?? false,
+            'point3_break_terminal'         => $d['point3_break_terminal'] ?? null,
+            'point3_break_recovered'        => $d['point3_break_recovered'] ?? null,
+            'point3_break_final_state'      => $d['point3_break_final_state'] ?? null,
+            'point3_break_depth_pct'        => $d['point3_break_depth_pct'] ?? null,
+            'point3_break_duration_minutes' => $d['point3_break_duration_minutes'] ?? null,
             'entry_distance_from_point3_pct'=> $d['entry_distance_from_point3_pct'] ?? ($ssc['entry_distance_from_point3_pct'] ?? null),
             'room_to_recent_swing_high_roi' => $d['room_to_recent_swing_high_roi'] ?? ($ssc['room_to_recent_swing_high_roi'] ?? null),
             'local_late_tiny_room_detected' => $d['local_late_tiny_room_detected'] ?? ($ssc['local_late_tiny_room_detected'] ?? false),
@@ -11625,6 +11905,10 @@ final class DoubleBottomLongService
             'handoff_ready'                  => $payload['handoff_ready'] ?? null,
             'executable'                     => $payload['executable'] ?? null,
             'active_final'                   => $payload['active_final'] ?? null,
+            'final_low_quality_score'        => $payload['final_low_quality_score'] ?? null,
+            'final_low_quality_threshold'    => $payload['final_low_quality_threshold'] ?? null,
+            'final_low_quality_causes'       => $payload['final_low_quality_causes'] ?? [],
+            'final_low_quality_primary_cause'=> $payload['final_low_quality_primary_cause'] ?? null,
         ];
     }
 

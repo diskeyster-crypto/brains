@@ -192,6 +192,11 @@ return [
     'dbl_pattern_pending_max_items'                            => 'int',
     'dbl_pattern_allow_active_to_pending'                      => 'bool',
     'dbl_pattern_allow_confirmed_to_handoff'                   => 'bool',
+    'dbl_point3_recovery_watch_enabled'                        => 'bool',
+    'dbl_point3_break_terminal_requires_current_below_point3'  => 'bool',
+    'dbl_point3_break_recovery_requires_reclaim_recovered'     => 'bool',
+    'dbl_point3_recovery_watch_ttl_minutes'                    => 'int',
+    'dbl_point3_recovery_min_confirm_bars'                     => 'int',
     // DBL confirmed-pattern freshness override
     'dbl_confirmed_pattern_ttl_minutes'                        => 'int',
     'dbl_confirmed_pattern_require_price_still_valid'          => 'bool',

@@ -168,6 +168,16 @@ if ($action === 'save_config') {
                                                                ? (string)$p['orderbook_entry_wall_gate_mode'] : 'soft_demote',
         'orderbook_entry_wall_fetch_after_quality_score' => max(0.0, min(1.0, (float)($p['orderbook_entry_wall_fetch_after_quality_score'] ?? 0.0))),
         'orderbook_entry_wall_pending_enabled'           => ($p['orderbook_entry_wall_pending_enabled'] ?? '0') === '1',
+        // Filter-audit calibration
+        'dbl_filter_audit_mode_enabled'                  => ($p['dbl_filter_audit_mode_enabled'] ?? '0') === '1',
+        'dbl_filter_audit_mode_demo_only'                => ($p['dbl_filter_audit_mode_demo_only'] ?? '1') === '1',
+        'dbl_filter_audit_send_to_bot'                   => ($p['dbl_filter_audit_send_to_bot'] ?? '1') === '1',
+        'dbl_filter_audit_only_when_no_normal_ready'     => ($p['dbl_filter_audit_only_when_no_normal_ready'] ?? '1') === '1',
+        'dbl_filter_audit_require_no_fatal_break'        => ($p['dbl_filter_audit_require_no_fatal_break'] ?? '1') === '1',
+        'dbl_filter_audit_max_signals_per_cycle'         => max(0, min(20, (int)($p['dbl_filter_audit_max_signals_per_cycle'] ?? 2))),
+        'dbl_filter_audit_max_signals_per_30m'           => max(0, min(100, (int)($p['dbl_filter_audit_max_signals_per_30m'] ?? 6))),
+        'dbl_filter_audit_max_signals_per_6h'            => max(0, min(999, (int)($p['dbl_filter_audit_max_signals_per_6h'] ?? 999))),
+        'dbl_filter_audit_min_quality_score'             => max(0.0, min(1.0, (float)($p['dbl_filter_audit_min_quality_score'] ?? 0.65))),
     ];
 
     try {

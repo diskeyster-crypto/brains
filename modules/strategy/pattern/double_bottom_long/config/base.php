@@ -491,6 +491,8 @@ return [
     'dbl_filter_audit_max_signals_per_30m'                     => 6,
     'dbl_filter_audit_max_signals_per_6h'                      => 999,
     'dbl_filter_audit_min_quality_score'                       => 0.65,
+    'dbl_filter_audit_positive_roi_threshold'                  => 2.0,
+    'dbl_filter_audit_negative_roi_threshold'                  => -2.0,
     'dbl_filter_audit_require_no_fatal_break'                  => true,
     // ── DBL confirmed-pattern freshness override ──────────────────────────────
     // For signals with dbl_pattern_status=confirmed, bypass the generic current-run

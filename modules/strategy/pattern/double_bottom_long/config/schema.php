@@ -205,6 +205,8 @@ return [
     'dbl_filter_audit_max_signals_per_30m'                     => 'int',
     'dbl_filter_audit_max_signals_per_6h'                      => 'int',
     'dbl_filter_audit_min_quality_score'                       => 'float',
+    'dbl_filter_audit_positive_roi_threshold'                  => 'float',
+    'dbl_filter_audit_negative_roi_threshold'                  => 'float',
     'dbl_filter_audit_require_no_fatal_break'                  => 'bool',
     // DBL confirmed-pattern freshness override
     'dbl_confirmed_pattern_ttl_minutes'                        => 'int',

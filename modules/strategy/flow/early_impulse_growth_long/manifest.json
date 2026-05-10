@@ -1,0 +1,22 @@
+{
+    "name": "early_impulse_growth_long",
+    "strategy_id": "early_impulse_growth_long",
+    "title": "Early Impulse Growth Long",
+    "version": "0.1.0",
+    "description": "Raw long impulse-birth detector (window + price impulse growth + open interest growth). FilterEngine decides pass/block.",
+    "author": "Tredercopis",
+    "category": "strategy",
+    "family": "flow",
+    "side": "long",
+    "enabled_by_default": false,
+    "handoff_enabled_by_default": false,
+    "supports_long": true,
+    "supports_short": false,
+    "module_path": "modules/strategy/flow/early_impulse_growth_long",
+    "route_base": "/admin/strategy/early_impulse_growth_long",
+    "paths": {
+        "storage": "storage",
+        "config": "config/base.php",
+        "logs": "logs"
+    }
+}

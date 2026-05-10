@@ -1348,12 +1348,7 @@ Router::get('/admin/strategy/early_impulse_growth_long', function () {
         Router::redirect(System::web('admin/login'));
         return;
     }
-    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.early_impulse_growth_long');
-    ob_start();
-    require $moduleDir . '/admin/page_runtime.php';
-    $content = ob_get_clean();
-    require_once System::path('root') . '/admin/views/layout.php';
-    echo renderLayout('Early Impulse Growth Long', $content, 'strategy', []);
+    Router::redirect(System::web('admin/strategy/early_impulse_growth_long/runtime'));
 });
 
 Router::get('/admin/strategy/early_impulse_growth_long/config', function () {

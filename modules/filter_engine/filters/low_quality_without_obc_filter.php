@@ -38,7 +38,7 @@ final class LowQualityWithoutObcFilter
             false,
             $severity,
             // reason is kept for human-readable diagnostics; filter_engine.php uses filter_id in aggregated lists
-            'low_quality_without_obc_filter',
+            'garbage_low_quality_without_obc_confirmation',
             ['candidate_quality_score' => $quality, 'obc_quality_confirmed' => $obConfirmed],
             in_array($severity, ['soft_block', 'hard_block', 'fatal'], true),
             $severity === 'fatal'

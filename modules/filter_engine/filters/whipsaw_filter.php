@@ -38,7 +38,8 @@ final class WhipsawFilter
             true,
             false,
             $severity,
-            'whipsaw_filter',
+            // reason is kept for human-readable diagnostics; filter_engine.php uses filter_id in aggregated lists
+            'garbage_whipsaw_weak_quality',
             ['micro_range_roi_10m' => $range10m, 'direction_flips_60m' => $flips60m],
             in_array($severity, ['soft_block', 'hard_block', 'fatal'], true),
             $severity === 'fatal'

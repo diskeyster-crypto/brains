@@ -29,7 +29,8 @@ final class TinyRoomFilter
             true,
             false,
             $severity,
-            'tiny_room_filter',
+            // reason is kept for human-readable diagnostics; filter_engine.php uses filter_id in aggregated lists
+            'insufficient_room_to_recent_swing_high',
             ['room_to_recent_swing_high_roi' => $room],
             in_array($severity, ['soft_block', 'hard_block', 'fatal'], true),
             $severity === 'fatal'

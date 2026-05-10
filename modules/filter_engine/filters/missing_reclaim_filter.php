@@ -31,7 +31,8 @@ final class MissingReclaimFilter
             true,
             false,
             $severity,
-            'missing_reclaim_filter',
+            // reason is kept for human-readable diagnostics; filter_engine.php uses filter_id in aggregated lists
+            'missing_reclaim_confirmation',
             ['reclaim_confirmed' => false],
             in_array($severity, ['soft_block', 'hard_block', 'fatal'], true),
             $severity === 'fatal'

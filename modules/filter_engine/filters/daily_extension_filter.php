@@ -38,7 +38,8 @@ final class DailyExtensionFilter
             true,
             false,
             $severity,
-            'daily_extension_filter',
+            // reason is kept for human-readable diagnostics; filter_engine.php uses filter_id in aggregated lists
+            'garbage_late_daily_extension_long',
             ['daily_extension_pct' => $dailyExt, 'position_in_range_pct' => $rangePos],
             in_array($severity, ['soft_block', 'hard_block', 'fatal'], true),
             $severity === 'fatal'

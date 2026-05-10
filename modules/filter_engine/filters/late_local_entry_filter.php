@@ -34,7 +34,8 @@ final class LateLocalEntryFilter
             true,
             false,
             $severity,
-            'late_local_entry_filter',
+            // reason is kept for human-readable diagnostics; filter_engine.php uses filter_id in aggregated lists
+            'garbage_local_late_entry_after_recovery',
             ['entry_distance_from_point3_pct' => $distance, 'room_to_recent_swing_high_roi' => $room],
             in_array($severity, ['soft_block', 'hard_block', 'fatal'], true),
             $severity === 'fatal'

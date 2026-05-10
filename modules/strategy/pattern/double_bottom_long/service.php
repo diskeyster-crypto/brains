@@ -2802,6 +2802,10 @@ final class DoubleBottomLongService
             'filter_audit_cases_duplicate_outcomes_examples' => $filterAudit['filter_audit_cases_duplicate_outcomes_examples'] ?? ($handoffStats['filter_audit_cases_duplicate_outcomes_examples'] ?? []),
             'filter_audit_cases_unknown_reason_total'      => $filterAudit['filter_audit_cases_unknown_reason_total'] ?? ($handoffStats['filter_audit_cases_unknown_reason_total'] ?? 0),
             'filter_audit_cases_unknown_reason_examples'   => $filterAudit['filter_audit_cases_unknown_reason_examples'] ?? ($handoffStats['filter_audit_cases_unknown_reason_examples'] ?? []),
+            'filter_audit_cases_canonicalized_total'      => $filterAudit['filter_audit_cases_canonicalized_total'] ?? ($handoffStats['filter_audit_cases_canonicalized_total'] ?? 0),
+            'filter_audit_cases_legacy_ids_found_total'   => $filterAudit['filter_audit_cases_legacy_ids_found_total'] ?? ($handoffStats['filter_audit_cases_legacy_ids_found_total'] ?? 0),
+            'filter_audit_cases_legacy_ids_rewritten_total' => $filterAudit['filter_audit_cases_legacy_ids_rewritten_total'] ?? ($handoffStats['filter_audit_cases_legacy_ids_rewritten_total'] ?? 0),
+            'filter_audit_cases_legacy_ids_examples'      => $filterAudit['filter_audit_cases_legacy_ids_examples'] ?? ($handoffStats['filter_audit_cases_legacy_ids_examples'] ?? []),
             'dbl_case_stats_by_filter'                 => $filterAudit['dbl_case_stats_by_filter'] ?? ($handoffStats['dbl_case_stats_by_filter'] ?? (object)[]),
             'dbl_positive_case_examples'               => $filterAudit['dbl_positive_case_examples'] ?? ($handoffStats['dbl_positive_case_examples'] ?? []),
             'dbl_negative_case_examples'               => $filterAudit['dbl_negative_case_examples'] ?? ($handoffStats['dbl_negative_case_examples'] ?? []),
@@ -2817,6 +2821,9 @@ final class DoubleBottomLongService
             'filter_engine_results_by_filter'          => $handoffStats['filter_engine_results_by_filter'] ?? (object)[],
             'filter_engine_examples'                   => $handoffStats['filter_engine_examples'] ?? [],
             'filter_engine_ready_examples'             => $handoffStats['filter_engine_ready_examples'] ?? [],
+            'handoff_ready_duplicate_symbol_side_checked_total' => $handoffStats['handoff_ready_duplicate_symbol_side_checked_total'] ?? 0,
+            'handoff_ready_duplicate_symbol_side_withdrawn_total' => $handoffStats['handoff_ready_duplicate_symbol_side_withdrawn_total'] ?? 0,
+            'handoff_ready_duplicate_symbol_side_examples' => $handoffStats['handoff_ready_duplicate_symbol_side_examples'] ?? [],
             'restored_normal_handoff_total'            => $handoffStats['restored_normal_handoff_total'] ?? 0,
             'restored_normal_handoff_examples'         => $handoffStats['restored_normal_handoff_examples'] ?? [],
             'diagnostic_only_nonfatal_pass_total'      => $handoffStats['diagnostic_only_nonfatal_pass_total'] ?? $handoffStats['restored_normal_handoff_total'] ?? 0,
@@ -9625,6 +9632,9 @@ final class DoubleBottomLongService
         $queueBlockedFrTotal            = 0;  // blocked_by_freeze (strategy-side: always 0)
         $queueNonExecutableExamples     = [];
         $handoffQueueReadyWrittenTotal  = 0;
+        $handoffReadyDuplicateSymbolSideCheckedTotal = 0;
+        $handoffReadyDuplicateSymbolSideWithdrawnTotal = 0;
+        $handoffReadyDuplicateSymbolSideExamples = [];
         $handoffQueueBlockedDiagnosticTotal = 0;
         $handoffQueueBlockedWithReadyStatusTotal = 0;
         $handoffQueueBlockedWithReadyStatusExamples = [];
@@ -10502,23 +10512,6 @@ final class DoubleBottomLongService
                     'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
                 ];
             }
-            if ((bool)($entry['handoff_ready'] ?? false) && (bool)($entry['executable'] ?? false)
-                && count($filterEngineReadyExamples) < 5
-            ) {
-                $filterEngineReadyExamples[] = [
-                    'symbol'                        => $entry['symbol'] ?? null,
-                    'handoff_ready'                 => true,
-                    'executable'                    => true,
-                    'filter_enforcement_mode'        => $entry['filter_enforcement_mode'] ?? null,
-                    'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
-                    'fatal_filter_reasons'          => $entry['fatal_filter_reasons'] ?? [],
-                    'hard_block_filter_reasons'     => $entryHard,
-                    'soft_block_filter_reasons'     => $entrySoft,
-                    'warning_filter_reasons'        => $entryWarn,
-                    'filter_results'                => $entry['filter_results'] ?? [],
-                ];
-            }
-
             if ((bool)($entry['fatal_filter_hit'] ?? false)) {
                 $this->filterAuditHardBlockedTotal++;
                 $this->dblAuditIneligibleCandidatesTotal++;
@@ -10697,6 +10690,127 @@ final class DoubleBottomLongService
             $this->filterAuditSkippedTotal += (int)$count;
         }
 
+        // Enforce one ready handoff record per strategy_id + symbol + side.
+        // Keep freshest current-run record, then higher quality score when freshness ties.
+        $readyGroups = [];
+        foreach ($result as $id => $entry) {
+            $status = (string)($entry['handoff_status'] ?? '');
+            if (!in_array($status, ['new', 'refreshed'], true)
+                || !(bool)($entry['handoff_ready'] ?? false)
+                || !(bool)($entry['executable'] ?? false)
+                || !(bool)($entry['active_final'] ?? false)
+            ) {
+                continue;
+            }
+            $strategyId = (string)($entry['strategy_id'] ?? 'double_bottom_long');
+            $symbol = strtolower((string)($entry['symbol'] ?? ''));
+            $side = strtolower((string)($entry['side'] ?? 'long'));
+            $groupKey = $strategyId . '|' . $symbol . '|' . $side;
+            if ($symbol === '') {
+                continue;
+            }
+            $readyGroups[$groupKey][$id] = $entry;
+        }
+
+        foreach ($readyGroups as $groupKey => $group) {
+            if (count($group) <= 1) {
+                continue;
+            }
+            $handoffReadyDuplicateSymbolSideCheckedTotal += count($group);
+            $winnerId = null;
+            $winner = null;
+            foreach ($group as $candidateId => $candidate) {
+                if ($winner === null) {
+                    $winner = $candidate;
+                    $winnerId = (string)$candidateId;
+                    continue;
+                }
+                $winnerTs = strtotime((string)($winner['effective_fresh_at'] ?? $winner['refreshed_at'] ?? $winner['detected_at'] ?? ''));
+                $candidateTs = strtotime((string)($candidate['effective_fresh_at'] ?? $candidate['refreshed_at'] ?? $candidate['detected_at'] ?? ''));
+                $winnerTs = $winnerTs !== false ? (int)$winnerTs : 0;
+                $candidateTs = $candidateTs !== false ? (int)$candidateTs : 0;
+
+                $winnerIsCurrentRun = (bool)($winner['is_current_run'] ?? false);
+                $candidateIsCurrentRun = (bool)($candidate['is_current_run'] ?? false);
+                if (!$winnerIsCurrentRun && $winnerTs > 0 && $tickTs > 0 && abs($tickTs - $winnerTs) <= $currentRunFreshnessWindowSec) {
+                    $winnerIsCurrentRun = true;
+                }
+                if (!$candidateIsCurrentRun && $candidateTs > 0 && $tickTs > 0 && abs($tickTs - $candidateTs) <= $currentRunFreshnessWindowSec) {
+                    $candidateIsCurrentRun = true;
+                }
+
+                $winnerQuality = (float)($winner['candidate_quality_score'] ?? -INF);
+                $candidateQuality = (float)($candidate['candidate_quality_score'] ?? -INF);
+                $candidateWins = false;
+                if ($candidateIsCurrentRun !== $winnerIsCurrentRun) {
+                    $candidateWins = $candidateIsCurrentRun;
+                } elseif ($candidateTs !== $winnerTs) {
+                    $candidateWins = $candidateTs > $winnerTs;
+                } elseif ($candidateQuality !== $winnerQuality) {
+                    $candidateWins = $candidateQuality > $winnerQuality;
+                } else {
+                    $candidateWins = ((string)$candidateId > (string)$winnerId);
+                }
+                if ($candidateWins) {
+                    $winner = $candidate;
+                    $winnerId = (string)$candidateId;
+                }
+            }
+
+            foreach ($group as $candidateId => $candidate) {
+                if ((string)$candidateId === (string)$winnerId) {
+                    continue;
+                }
+                $handoffReadyDuplicateSymbolSideWithdrawnTotal++;
+                $result[$candidateId]['handoff_status'] = 'withdrawn';
+                $result[$candidateId]['handoff_ready'] = false;
+                $result[$candidateId]['executable'] = false;
+                $result[$candidateId]['active_final'] = false;
+                $result[$candidateId]['stale'] = true;
+                $result[$candidateId]['stale_reason'] = 'duplicate_ready_same_symbol_side';
+                if (count($handoffReadyDuplicateSymbolSideExamples) < 5) {
+                    $handoffReadyDuplicateSymbolSideExamples[] = [
+                        'group_key' => $groupKey,
+                        'winner_signal_id' => $winner['signal_id'] ?? null,
+                        'withdrawn_signal_id' => $candidate['signal_id'] ?? null,
+                        'symbol' => $candidate['symbol'] ?? null,
+                        'side' => $candidate['side'] ?? null,
+                    ];
+                }
+            }
+        }
+
+        // Build ready examples from final queue state only.
+        $filterEngineReadyExamples = [];
+        foreach ($result as $entry) {
+            $status = (string)($entry['handoff_status'] ?? '');
+            if (!in_array($status, ['new', 'refreshed'], true)
+                || !(bool)($entry['handoff_ready'] ?? false)
+                || !(bool)($entry['executable'] ?? false)
+                || !(bool)($entry['active_final'] ?? false)
+            ) {
+                continue;
+            }
+            if (count($filterEngineReadyExamples) >= 5) {
+                break;
+            }
+            $filterEngineReadyExamples[] = [
+                'symbol' => $entry['symbol'] ?? null,
+                'signal_id' => $entry['signal_id'] ?? null,
+                'candidate_quality_score' => $entry['candidate_quality_score'] ?? null,
+                'handoff_status' => $status,
+                'handoff_ready' => true,
+                'executable' => true,
+                'filter_enforcement_mode' => $entry['filter_enforcement_mode'] ?? null,
+                'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+                'fatal_filter_reasons' => $entry['fatal_filter_reasons'] ?? [],
+                'hard_block_filter_reasons' => $entry['hard_block_filter_reasons'] ?? [],
+                'soft_block_filter_reasons' => $entry['soft_block_filter_reasons'] ?? [],
+                'warning_filter_reasons' => $entry['warning_filter_reasons'] ?? [],
+                'filter_results' => $entry['filter_results'] ?? [],
+            ];
+        }
+
         $queueExecutableTotal = count(array_filter(
             $result,
             static fn(array $row): bool => (bool)($row['executable'] ?? false)
@@ -10844,6 +10958,9 @@ final class DoubleBottomLongService
             'queue_entries_blocked_freeze_total'          => $queueBlockedFrTotal,
             'queue_non_executable_examples'              => $queueNonExecutableExamples,
             'handoff_queue_ready_written_total'          => $handoffQueueReadyWrittenTotal,
+            'handoff_ready_duplicate_symbol_side_checked_total' => $handoffReadyDuplicateSymbolSideCheckedTotal,
+            'handoff_ready_duplicate_symbol_side_withdrawn_total' => $handoffReadyDuplicateSymbolSideWithdrawnTotal,
+            'handoff_ready_duplicate_symbol_side_examples' => $handoffReadyDuplicateSymbolSideExamples,
             'handoff_queue_blocked_diagnostic_total'     => $handoffQueueBlockedDiagnosticTotal,
             'handoff_queue_blocked_with_ready_status_total' => $handoffQueueBlockedWithReadyStatusTotal,
             'handoff_queue_blocked_with_ready_status_examples' => $handoffQueueBlockedWithReadyStatusExamples,
@@ -10902,6 +11019,10 @@ final class DoubleBottomLongService
             'filter_audit_cases_duplicate_outcomes_examples'   => $filterAuditSummary['filter_audit_cases_duplicate_outcomes_examples'] ?? [],
             'filter_audit_cases_unknown_reason_total'          => $filterAuditSummary['filter_audit_cases_unknown_reason_total'] ?? 0,
             'filter_audit_cases_unknown_reason_examples'       => $filterAuditSummary['filter_audit_cases_unknown_reason_examples'] ?? [],
+            'filter_audit_cases_canonicalized_total'           => $filterAuditSummary['filter_audit_cases_canonicalized_total'] ?? 0,
+            'filter_audit_cases_legacy_ids_found_total'        => $filterAuditSummary['filter_audit_cases_legacy_ids_found_total'] ?? 0,
+            'filter_audit_cases_legacy_ids_rewritten_total'    => $filterAuditSummary['filter_audit_cases_legacy_ids_rewritten_total'] ?? 0,
+            'filter_audit_cases_legacy_ids_examples'           => $filterAuditSummary['filter_audit_cases_legacy_ids_examples'] ?? [],
             'dbl_case_stats_by_filter'                         => $filterAuditSummary['dbl_case_stats_by_filter'] ?? (object)[],
             'dbl_positive_case_examples'                       => $filterAuditSummary['dbl_positive_case_examples'] ?? [],
             'dbl_negative_case_examples'                       => $filterAuditSummary['dbl_negative_case_examples'] ?? [],
@@ -12087,6 +12208,72 @@ final class DoubleBottomLongService
     }
 
     /**
+     * Legacy -> canonical filter ID mapping for DBL filter audit case stats/storage.
+     *
+     * @return array<string,string>
+     */
+    private function getDblLegacyFilterReasonToCanonicalIdMap(): array
+    {
+        return [
+            'garbage_low_quality_without_obc_confirmation'  => 'low_quality_without_obc_filter',
+            'garbage_obc_quality_skip'                      => 'low_quality_without_obc_filter',
+            'garbage_local_late_entry_after_recovery'       => 'late_local_entry_filter',
+            'garbage_late_local_tiny_room_far_from_point3'  => 'late_local_entry_filter',
+            'garbage_late_local_tiny_room_without_reclaim'  => 'late_local_entry_filter',
+            'garbage_late_daily_extension_long'             => 'daily_extension_filter',
+            'garbage_whipsaw_weak_quality'                  => 'whipsaw_filter',
+            'missing_reclaim_confirmation'                  => 'missing_reclaim_filter',
+            'insufficient_room_to_recent_swing_high'        => 'tiny_room_filter',
+            'late_local_tiny_room'                          => 'tiny_room_filter',
+            'point3_broken'                                 => 'point3_terminal_break_filter',
+            'terminal_point3_broken'                        => 'point3_terminal_break_filter',
+            'confirmation_ttl_expired'                      => 'confirmed_pattern_ttl_filter',
+            'confirmed_pattern_ttl_expired'                 => 'confirmed_pattern_ttl_filter',
+        ];
+    }
+
+    /**
+     * Normalize a filter-ID list to canonical IDs and dedupe.
+     *
+     * @param array<int,mixed> $reasons
+     * @param array<string,string> $legacyToCanonical
+     * @param int $legacyFoundTotal (by-ref counter for legacy IDs encountered)
+     * @param int $legacyRewrittenTotal (by-ref counter for legacy IDs rewritten to canonical IDs)
+     * @param array<int,array<string,mixed>> $legacyExamples (by-ref example list)
+     * @return array<int,string>
+     */
+    private function normalizeDblFilterIdList(
+        array $reasons,
+        array $legacyToCanonical,
+        int &$legacyFoundTotal,
+        int &$legacyRewrittenTotal,
+        array &$legacyExamples
+    ): array {
+        $out = [];
+        foreach ($reasons as $raw) {
+            $reason = trim((string)$raw);
+            if ($reason === '') {
+                continue;
+            }
+            $mapped = $legacyToCanonical[$reason] ?? $reason;
+            if (isset($legacyToCanonical[$reason])) {
+                $legacyFoundTotal++;
+                if ($mapped !== $reason) {
+                    $legacyRewrittenTotal++;
+                }
+                if (count($legacyExamples) < 10) {
+                    $legacyExamples[] = [
+                        'legacy'    => $reason,
+                        'canonical' => $mapped,
+                    ];
+                }
+            }
+            $out[] = $mapped;
+        }
+        return array_values(array_unique($out));
+    }
+
+    /**
      * Canonicalize case library by global outcome_key and compute accumulated learning stats.
      *
      * @return array<string,mixed>
@@ -12108,6 +12295,12 @@ final class DoubleBottomLongService
             $caseRows[] = $case;
         }
 
+        $legacyToCanonical = $this->getDblLegacyFilterReasonToCanonicalIdMap();
+        $casesCanonicalizedTotal = 0;
+        $legacyIdsFoundTotal = 0;
+        $legacyIdsRewrittenTotal = 0;
+        $legacyIdsExamples = [];
+
         $canonicalByOutcome = [];
         $duplicateOutcomesTotal = 0;
         $duplicateExamples = [];
@@ -12124,6 +12317,22 @@ final class DoubleBottomLongService
                     . '|' . ($closeRoi !== null ? number_format((float)$closeRoi, 6, '.', '') : 'null');
             }
             $case['outcome_key'] = $outcomeKey;
+
+            $originalFilters = array_values(array_unique(array_values(array_filter(
+                array_map(static fn($v): string => trim((string)$v), (array)($case['would_have_blocked_by_filters'] ?? [])),
+                static fn(string $r): bool => $r !== ''
+            ))));
+            $normalizedFilters = $this->normalizeDblFilterIdList(
+                $originalFilters,
+                $legacyToCanonical,
+                $legacyIdsFoundTotal,
+                $legacyIdsRewrittenTotal,
+                $legacyIdsExamples
+            );
+            if ($normalizedFilters !== $originalFilters) {
+                $casesCanonicalizedTotal++;
+            }
+            $case['would_have_blocked_by_filters'] = $normalizedFilters;
 
             if (!isset($canonicalByOutcome[$outcomeKey])) {
                 $case['related_filter_audit_ids'] = array_values(array_unique(array_filter([
@@ -12173,24 +12382,6 @@ final class DoubleBottomLongService
         $unknownReasonTotal = 0;
         $unknownReasonExamples = [];
 
-        // Canonical map for legacy reason strings in case records (e.g. historical journal entries).
-        $caseCanonical = [
-            'garbage_low_quality_without_obc_confirmation'  => 'low_quality_without_obc_filter',
-            'garbage_obc_quality_skip'                      => 'low_quality_without_obc_filter',
-            'garbage_local_late_entry_after_recovery'       => 'late_local_entry_filter',
-            'garbage_late_local_tiny_room_far_from_point3'  => 'late_local_entry_filter',
-            'garbage_late_local_tiny_room_without_reclaim'  => 'late_local_entry_filter',
-            'garbage_late_daily_extension_long'             => 'daily_extension_filter',
-            'garbage_whipsaw_weak_quality'                  => 'whipsaw_filter',
-            'missing_reclaim_confirmation'                  => 'missing_reclaim_filter',
-            'insufficient_room_to_recent_swing_high'        => 'tiny_room_filter',
-            'late_local_tiny_room'                          => 'tiny_room_filter',
-            'point3_broken'                                 => 'point3_terminal_break_filter',
-            'terminal_point3_broken'                        => 'point3_terminal_break_filter',
-            'confirmation_ttl_expired'                      => 'confirmed_pattern_ttl_filter',
-            'confirmed_pattern_ttl_expired'                 => 'confirmed_pattern_ttl_filter',
-        ];
-
         foreach ($canonicalByOutcome as $case) {
             $roi = isset($case['close_roi']) && $case['close_roi'] !== null ? (float)$case['close_roi'] : null;
             if ($roi === null) {
@@ -12203,14 +12394,16 @@ final class DoubleBottomLongService
                 $verdict = 'negative_case';
             }
 
-            $filters = [];
-            foreach ((array)($case['would_have_blocked_by_filters'] ?? []) as $reason) {
-                $r = trim((string)$reason);
-                if ($r !== '') {
-                    $filters[] = $caseCanonical[$r] ?? $r;
-                }
-            }
-            $filters = array_values(array_unique($filters));
+            $legacyFoundNoop = 0;
+            $legacyRewrittenNoop = 0;
+            $legacyExamplesNoop = [];
+            $filters = $this->normalizeDblFilterIdList(
+                (array)($case['would_have_blocked_by_filters'] ?? []),
+                $legacyToCanonical,
+                $legacyFoundNoop,
+                $legacyRewrittenNoop,
+                $legacyExamplesNoop
+            );
             $specificFilters = array_values(array_filter(
                 $filters,
                 static fn(string $r): bool => $r !== 'unknown_soft_block_reason'
@@ -12298,6 +12491,10 @@ final class DoubleBottomLongService
             'filter_audit_cases_duplicate_outcomes_examples' => $duplicateExamples,
             'filter_audit_cases_unknown_reason_total' => $unknownReasonTotal,
             'filter_audit_cases_unknown_reason_examples' => $unknownReasonExamples,
+            'filter_audit_cases_canonicalized_total' => $casesCanonicalizedTotal,
+            'filter_audit_cases_legacy_ids_found_total' => $legacyIdsFoundTotal,
+            'filter_audit_cases_legacy_ids_rewritten_total' => $legacyIdsRewrittenTotal,
+            'filter_audit_cases_legacy_ids_examples' => $legacyIdsExamples,
             'dbl_case_stats_by_filter' => empty($cleanCaseStats) ? (object)[] : $cleanCaseStats,
             'dbl_positive_case_examples' => $positiveExamples,
             'dbl_negative_case_examples' => $negativeExamples,
@@ -12339,6 +12536,17 @@ final class DoubleBottomLongService
 
         $roi         = $entry['close_roi'] ?? null;
         $ssc         = is_array($entry['strategy_signal_context'] ?? null) ? $entry['strategy_signal_context'] : [];
+        $legacyToCanonical = $this->getDblLegacyFilterReasonToCanonicalIdMap();
+        $legacyFoundNoop = 0;
+        $legacyRewrittenNoop = 0;
+        $legacyExamplesNoop = [];
+        $blockedByFilters = $this->normalizeDblFilterIdList(
+            (array)($entry['would_have_blocked_by_filters'] ?? []),
+            $legacyToCanonical,
+            $legacyFoundNoop,
+            $legacyRewrittenNoop,
+            $legacyExamplesNoop
+        );
         $newCase = [
             'case_id'                       => $caseId,
             'created_at'                    => $entry['created_at'] ?? date('c'),
@@ -12357,7 +12565,7 @@ final class DoubleBottomLongService
             'verdict'                       => $caseLabel,
             'filter_verdict'                => $entry['filter_verdict'] ?? 'pending',
             'would_have_blocked'            => $entry['would_have_blocked'] ?? false,
-            'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+            'would_have_blocked_by_filters' => $blockedByFilters,
             'filter_audit_sent_to_bot'      => (bool)($entry['filter_audit_sent_to_bot'] ?? false),
             'fatal_filter_reasons'          => $entry['fatal_filter_reasons'] ?? [],
             'final_quality_soft_causes'     => $ssc['final_quality_soft_causes'] ?? $entry['final_quality_soft_causes'] ?? null,

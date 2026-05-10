@@ -245,10 +245,12 @@ $storageExists = is_dir($storageDir);
     <table class="rt-kv">
       <tr><td style="color:#64748b">enabled</td><td><?= $fmtBool($config['enabled'] ?? false) ?></td>
           <td style="color:#64748b;padding-left:16px">handoff_enabled</td><td><?= $fmtBool($config['handoff_enabled'] ?? false) ?></td></tr>
-      <tr><td style="color:#64748b">impulse_window_minutes</td><td><code><?= $e($config['impulse_window_minutes'] ?? 10) ?></code></td>
+      <tr><td style="color:#64748b">recovery_window_minutes</td><td><code><?= $e($config['recovery_window_minutes'] ?? 180) ?></code></td>
           <td style="color:#64748b;padding-left:16px">batch_size</td><td><code><?= $e($config['batch_size'] ?? 100) ?></code></td></tr>
-      <tr><td style="color:#64748b">min_price_impulse_pct</td><td><code><?= $e($config['min_price_impulse_pct'] ?? 0.4) ?></code></td>
-          <td style="color:#64748b;padding-left:16px">max_price_impulse_pct</td><td><code><?= $e($config['max_price_impulse_pct'] ?? 4.0) ?></code></td></tr>
+      <tr><td style="color:#64748b">prior_decline_lookback_minutes</td><td><code><?= $e($config['prior_decline_lookback_minutes'] ?? 240) ?></code></td>
+          <td style="color:#64748b;padding-left:16px">min_prior_decline_pct</td><td><code><?= $e($config['min_prior_decline_pct'] ?? 2.0) ?></code></td></tr>
+      <tr><td style="color:#64748b">min_recovery_growth_pct</td><td><code><?= $e($config['min_recovery_growth_pct'] ?? 3.0) ?></code></td>
+          <td style="color:#64748b;padding-left:16px">min_recovery_score</td><td><code><?= $e($config['min_recovery_score'] ?? 0.55) ?></code></td></tr>
       <tr><td style="color:#64748b">open_interest_enabled</td><td><?= $fmtBool($config['open_interest_enabled'] ?? true) ?></td>
           <td style="color:#64748b;padding-left:16px">allow_missing_open_interest</td><td><?= $fmtBool($config['allow_missing_open_interest'] ?? true) ?></td></tr>
       <tr><td style="color:#64748b">filter_engine_enabled</td><td><?= $fmtBool($config['filter_engine_enabled'] ?? true) ?></td>

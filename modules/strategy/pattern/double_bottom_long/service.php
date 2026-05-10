@@ -2821,6 +2821,12 @@ final class DoubleBottomLongService
             'filter_engine_results_by_filter'          => $handoffStats['filter_engine_results_by_filter'] ?? (object)[],
             'filter_engine_examples'                   => $handoffStats['filter_engine_examples'] ?? [],
             'filter_engine_ready_examples'             => $handoffStats['filter_engine_ready_examples'] ?? [],
+            'filter_result_mismatch_checked_total'     => $handoffStats['filter_result_mismatch_checked_total'] ?? 0,
+            'filter_result_mismatch_fixed_total'       => $handoffStats['filter_result_mismatch_fixed_total'] ?? 0,
+            'filter_result_mismatch_examples'          => $handoffStats['filter_result_mismatch_examples'] ?? [],
+            'handoff_queue_nonready_with_ready_status_total' => $handoffStats['handoff_queue_nonready_with_ready_status_total'] ?? 0,
+            'handoff_queue_nonready_with_ready_status_fixed_total' => $handoffStats['handoff_queue_nonready_with_ready_status_fixed_total'] ?? 0,
+            'handoff_queue_nonready_with_ready_status_examples' => $handoffStats['handoff_queue_nonready_with_ready_status_examples'] ?? [],
             'handoff_ready_duplicate_symbol_side_checked_total' => $handoffStats['handoff_ready_duplicate_symbol_side_checked_total'] ?? 0,
             'handoff_ready_duplicate_symbol_side_withdrawn_total' => $handoffStats['handoff_ready_duplicate_symbol_side_withdrawn_total'] ?? 0,
             'handoff_ready_duplicate_symbol_side_examples' => $handoffStats['handoff_ready_duplicate_symbol_side_examples'] ?? [],
@@ -9248,6 +9254,9 @@ final class DoubleBottomLongService
         $filterEngineReadyExamples                   = [];
         $restoredNormalHandoffTotal                  = 0;
         $restoredNormalHandoffExamples               = [];
+        $filterResultMismatchCheckedTotal            = 0;
+        $filterResultMismatchFixedTotal              = 0;
+        $filterResultMismatchExamples                = [];
 
         // Process currently-active signals: new or refreshed
         foreach ($activeSignals as $signal) {
@@ -9632,6 +9641,9 @@ final class DoubleBottomLongService
         $queueBlockedFrTotal            = 0;  // blocked_by_freeze (strategy-side: always 0)
         $queueNonExecutableExamples     = [];
         $handoffQueueReadyWrittenTotal  = 0;
+        $handoffQueueNonreadyWithReadyStatusTotal = 0;
+        $handoffQueueNonreadyWithReadyStatusFixedTotal = 0;
+        $handoffQueueNonreadyWithReadyStatusExamples = [];
         $handoffReadyDuplicateSymbolSideCheckedTotal = 0;
         $handoffReadyDuplicateSymbolSideWithdrawnTotal = 0;
         $handoffReadyDuplicateSymbolSideExamples = [];
@@ -10453,6 +10465,18 @@ final class DoubleBottomLongService
                 $normalAllowed,
                 false
             );
+            $filterResultMismatchCheckedTotal++;
+            if ((bool)($entry['filter_result_mismatch_fixed'] ?? false)) {
+                $filterResultMismatchFixedTotal++;
+                if (count($filterResultMismatchExamples) < 5) {
+                    $filterResultMismatchExamples[] = [
+                        'symbol' => $entry['symbol'] ?? null,
+                        'signal_id' => $entry['signal_id'] ?? null,
+                        'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+                        'mismatch' => $entry['filter_result_mismatch_example'] ?? null,
+                    ];
+                }
+            }
 
             $filterEngineCheckedTotal++;
             if ((bool)($entry['fatal_filter_hit'] ?? false)) {
@@ -10780,6 +10804,95 @@ final class DoubleBottomLongService
             }
         }
 
+        // Enforce queue hygiene: non-ready records must never keep new/refreshed status.
+        foreach ($result as $id => &$entry) {
+            $status = (string)($entry['handoff_status'] ?? '');
+            $isReadyLikeStatus = in_array($status, ['new', 'refreshed'], true);
+            $isExecutable = (bool)($entry['executable'] ?? false);
+            $isReady = (bool)($entry['handoff_ready'] ?? false);
+            $isActiveFinal = (bool)($entry['active_final'] ?? false);
+            $isBotReady = $isExecutable && $isReady && $isActiveFinal && $isReadyLikeStatus;
+
+            if ($isBotReady) {
+                continue;
+            }
+
+            $changed = false;
+            $beforeStatus = $status;
+            $beforeReady = $isReady;
+            $beforeExecutable = $isExecutable;
+            $beforeActiveFinal = $isActiveFinal;
+            $beforeBlockReason = (string)($entry['block_reason'] ?? '');
+
+            $explicitReason = trim((string)($entry['block_reason'] ?? $entry['stale_reason'] ?? $entry['final_reject_reason'] ?? ''));
+            if ($explicitReason === '') {
+                $explicitReason = 'handoff_blocked_non_executable';
+            }
+            $targetStatus = in_array($status, ['withdrawn', 'expired'], true) ? 'withdrawn' : 'blocked';
+
+            if ((string)($entry['handoff_status'] ?? '') !== $targetStatus) {
+                $entry['handoff_status'] = $targetStatus;
+                $changed = true;
+            }
+            if ((bool)($entry['handoff_ready'] ?? false) !== false) {
+                $entry['handoff_ready'] = false;
+                $changed = true;
+            }
+            if ((bool)($entry['executable'] ?? false) !== false) {
+                $entry['executable'] = false;
+                $changed = true;
+            }
+            if ((bool)($entry['active_final'] ?? false) !== false) {
+                $entry['active_final'] = false;
+                $changed = true;
+            }
+            if ((string)($entry['block_reason'] ?? '') !== $explicitReason) {
+                $entry['block_reason'] = $explicitReason;
+                $changed = true;
+            }
+
+            if ($isReadyLikeStatus) {
+                if ($changed) {
+                    $handoffQueueNonreadyWithReadyStatusFixedTotal++;
+                }
+                if (count($handoffQueueNonreadyWithReadyStatusExamples) < 5) {
+                    $handoffQueueNonreadyWithReadyStatusExamples[] = [
+                        'symbol' => $entry['symbol'] ?? null,
+                        'signal_id' => $entry['signal_id'] ?? null,
+                        'before' => [
+                            'handoff_status' => $beforeStatus,
+                            'handoff_ready' => $beforeReady,
+                            'executable' => $beforeExecutable,
+                            'active_final' => $beforeActiveFinal,
+                            'block_reason' => $beforeBlockReason !== '' ? $beforeBlockReason : null,
+                        ],
+                        'after' => [
+                            'handoff_status' => $entry['handoff_status'] ?? null,
+                            'handoff_ready' => $entry['handoff_ready'] ?? null,
+                            'executable' => $entry['executable'] ?? null,
+                            'active_final' => $entry['active_final'] ?? null,
+                            'block_reason' => $entry['block_reason'] ?? null,
+                        ],
+                    ];
+                }
+            }
+            $result[$id] = $entry;
+        }
+        unset($entry);
+
+        foreach ($result as $entry) {
+            $status = (string)($entry['handoff_status'] ?? '');
+            if (!in_array($status, ['new', 'refreshed'], true)) {
+                continue;
+            }
+            if (!(bool)($entry['handoff_ready'] ?? false)
+                || !(bool)($entry['executable'] ?? false)
+                || !(bool)($entry['active_final'] ?? false)
+            ) {
+                $handoffQueueNonreadyWithReadyStatusTotal++;
+            }
+        }
+
         // Build ready examples from final queue state only.
         $filterEngineReadyExamples = [];
         foreach ($result as $entry) {
@@ -10958,6 +11071,9 @@ final class DoubleBottomLongService
             'queue_entries_blocked_freeze_total'          => $queueBlockedFrTotal,
             'queue_non_executable_examples'              => $queueNonExecutableExamples,
             'handoff_queue_ready_written_total'          => $handoffQueueReadyWrittenTotal,
+            'handoff_queue_nonready_with_ready_status_total' => $handoffQueueNonreadyWithReadyStatusTotal,
+            'handoff_queue_nonready_with_ready_status_fixed_total' => $handoffQueueNonreadyWithReadyStatusFixedTotal,
+            'handoff_queue_nonready_with_ready_status_examples' => $handoffQueueNonreadyWithReadyStatusExamples,
             'handoff_ready_duplicate_symbol_side_checked_total' => $handoffReadyDuplicateSymbolSideCheckedTotal,
             'handoff_ready_duplicate_symbol_side_withdrawn_total' => $handoffReadyDuplicateSymbolSideWithdrawnTotal,
             'handoff_ready_duplicate_symbol_side_examples' => $handoffReadyDuplicateSymbolSideExamples,
@@ -11039,6 +11155,9 @@ final class DoubleBottomLongService
             'filter_engine_results_by_filter'           => empty($filterEngineResultsByFilter) ? (object)[] : $filterEngineResultsByFilter,
             'filter_engine_examples'                    => $filterEngineExamples,
             'filter_engine_ready_examples'              => $filterEngineReadyExamples,
+            'filter_result_mismatch_checked_total'      => $filterResultMismatchCheckedTotal,
+            'filter_result_mismatch_fixed_total'        => $filterResultMismatchFixedTotal,
+            'filter_result_mismatch_examples'           => $filterResultMismatchExamples,
             'restored_normal_handoff_total'             => $restoredNormalHandoffTotal,
             'restored_normal_handoff_examples'          => $restoredNormalHandoffExamples,
             'diagnostic_only_nonfatal_pass_total'       => $restoredNormalHandoffTotal,
@@ -11661,6 +11780,26 @@ final class DoubleBottomLongService
             $wouldHaveBlocked = !$normalAllowed || !empty($wouldHaveBlockedByFilters);
         }
 
+        $legacyReasonsForFilterResults = array_values(array_unique(array_filter(array_map(
+            static fn($v): string => trim((string)$v),
+            array_merge(
+                [$garbageReason, (string)($blockReason ?? '')],
+                $finalLowQualityCauses,
+                (array)($ssc['final_quality_soft_causes'] ?? []),
+                (array)($record['final_quality_soft_causes'] ?? [])
+            )
+        ), static fn(string $v): bool => $v !== '')));
+        $mergedFilterResultsData = $this->mergeCanonicalFilterResults(
+            (array)$filterResults,
+            (array)$wouldHaveBlockedByFilters,
+            $legacyReasonsForFilterResults
+        );
+        $filterResults = (array)($mergedFilterResultsData['filter_results'] ?? []);
+        $filterResultMismatchDetected = (bool)($mergedFilterResultsData['mismatch_detected'] ?? false);
+        $filterResultMismatchFixed = (bool)($mergedFilterResultsData['mismatch_fixed'] ?? false);
+        $filterResultMismatchExample = is_array($mergedFilterResultsData['mismatch_example'] ?? null)
+            ? $mergedFilterResultsData['mismatch_example'] : null;
+
         $penaltyWeights = [
             'final_low_quality'                         => 0.05,
             'generic_entry_context_score_low'          => 0.04,
@@ -11738,6 +11877,9 @@ final class DoubleBottomLongService
             'filter_audit_score_after_penalty'=> $scoreAfterPenalty,
             'filter_audit_rank'               => $filterAuditRank,
             'filter_audit_decision'           => $decision,
+            'filter_result_mismatch_detected' => $filterResultMismatchDetected,
+            'filter_result_mismatch_fixed'    => $filterResultMismatchFixed,
+            'filter_result_mismatch_example'  => $filterResultMismatchExample,
         ];
 
         foreach ($fields as $k => $v) {
@@ -12271,6 +12413,212 @@ final class DoubleBottomLongService
             $out[] = $mapped;
         }
         return array_values(array_unique($out));
+    }
+
+    private function normalizeDblFilterSeverity(string $severity): string
+    {
+        $severity = strtolower(trim($severity));
+        return match ($severity) {
+            'fatal', 'hard_block', 'soft_block', 'warning', 'pass' => $severity,
+            default => 'pass',
+        };
+    }
+
+    private function dblFilterSeverityRank(string $severity): int
+    {
+        return match ($this->normalizeDblFilterSeverity($severity)) {
+            'fatal' => 5,
+            'hard_block' => 4,
+            'soft_block' => 3,
+            'warning' => 2,
+            default => 1,
+        };
+    }
+
+    private function defaultSeverityForCanonicalDblFilter(string $filterId): string
+    {
+        return match ($filterId) {
+            'point3_terminal_break_filter' => 'fatal',
+            'daily_extension_filter', 'whipsaw_filter', 'confirmed_pattern_ttl_filter' => 'hard_block',
+            'low_quality_without_obc_filter', 'late_local_entry_filter', 'missing_reclaim_filter', 'tiny_room_filter' => 'soft_block',
+            default => 'soft_block',
+        };
+    }
+
+    /**
+     * Merge direct FilterEngine rows with legacy-derived synthetic rows.
+     * Ensures any filter in $wouldHaveBlockedByFilters has a blocking FilterResult row.
+     *
+     * @param array<int,array<string,mixed>> $filterResults
+     * @param array<int,string> $wouldHaveBlockedByFilters
+     * @param array<int,string> $legacyReasons
+     * @return array{filter_results: array<int,array<string,mixed>>, mismatch_detected: bool, mismatch_fixed: bool, mismatch_example: ?array<string,mixed>}
+     */
+    private function mergeCanonicalFilterResults(
+        array $filterResults,
+        array $wouldHaveBlockedByFilters,
+        array $legacyReasons
+    ): array {
+        $legacyToCanonical = $this->getDblLegacyFilterReasonToCanonicalIdMap();
+
+        $canonicalBlocking = [];
+        foreach ($wouldHaveBlockedByFilters as $f) {
+            $id = trim((string)$f);
+            if ($id === '') {
+                continue;
+            }
+            $canonicalBlocking[] = $legacyToCanonical[$id] ?? $id;
+        }
+        $canonicalBlocking = array_values(array_unique($canonicalBlocking));
+
+        $legacyByCanonical = [];
+        foreach ($legacyReasons as $reasonRaw) {
+            $reason = trim((string)$reasonRaw);
+            if ($reason === '') {
+                continue;
+            }
+            $canonicalId = $legacyToCanonical[$reason] ?? $reason;
+            if (!isset($legacyByCanonical[$canonicalId])) {
+                $legacyByCanonical[$canonicalId] = $reason;
+            }
+        }
+
+        $mergeRows = static function (array $base, array $incoming, callable $normalizeSeverity, callable $rankSeverity): array {
+            $baseSeverity = $normalizeSeverity((string)($base['severity'] ?? 'pass'));
+            $incomingSeverity = $normalizeSeverity((string)($incoming['severity'] ?? 'pass'));
+            $useIncoming = $rankSeverity($incomingSeverity) > $rankSeverity($baseSeverity);
+
+            $merged = $base;
+            $merged['filter_id'] = (string)($base['filter_id'] ?? $incoming['filter_id'] ?? '');
+            $merged['enabled'] = (bool)($base['enabled'] ?? false) || (bool)($incoming['enabled'] ?? false);
+            $merged['would_block'] = (bool)($base['would_block'] ?? false) || (bool)($incoming['would_block'] ?? false);
+            $merged['severity'] = $useIncoming ? $incomingSeverity : $baseSeverity;
+            if ($merged['would_block'] && $rankSeverity((string)$merged['severity']) < $rankSeverity('warning')) {
+                $merged['severity'] = 'warning';
+            }
+            $merged['fatal'] = (bool)($base['fatal'] ?? false)
+                || (bool)($incoming['fatal'] ?? false)
+                || ((string)$merged['severity'] === 'fatal');
+            $merged['passed'] = !$merged['would_block'];
+            $merged['reason'] = $useIncoming
+                ? ((string)($incoming['reason'] ?? '') !== '' ? (string)$incoming['reason'] : (string)($base['reason'] ?? null))
+                : ((string)($base['reason'] ?? '') !== '' ? (string)$base['reason'] : (string)($incoming['reason'] ?? null));
+            $baseDetails = is_array($base['details'] ?? null) ? $base['details'] : [];
+            $incomingDetails = is_array($incoming['details'] ?? null) ? $incoming['details'] : [];
+            $merged['details'] = array_replace_recursive($baseDetails, $incomingDetails);
+            if (!array_key_exists('score_delta', $merged)) {
+                $merged['score_delta'] = null;
+            }
+            return $merged;
+        };
+
+        $rowsByFilter = [];
+        $mismatchDetected = false;
+        $mismatchFixed = false;
+        $mismatchExample = null;
+
+        foreach ($filterResults as $rowRaw) {
+            if (!is_array($rowRaw)) {
+                continue;
+            }
+            $idRaw = trim((string)($rowRaw['filter_id'] ?? ''));
+            if ($idRaw === '') {
+                continue;
+            }
+            $filterId = $legacyToCanonical[$idRaw] ?? $idRaw;
+            $normalized = [
+                'filter_id' => $filterId,
+                'enabled' => (bool)($rowRaw['enabled'] ?? true),
+                'passed' => (bool)($rowRaw['passed'] ?? true),
+                'severity' => $this->normalizeDblFilterSeverity((string)($rowRaw['severity'] ?? 'pass')),
+                'reason' => isset($rowRaw['reason']) ? (string)$rowRaw['reason'] : null,
+                'details' => is_array($rowRaw['details'] ?? null) ? $rowRaw['details'] : [],
+                'would_block' => (bool)($rowRaw['would_block'] ?? false),
+                'fatal' => (bool)($rowRaw['fatal'] ?? false),
+                'score_delta' => $rowRaw['score_delta'] ?? null,
+            ];
+            if ($normalized['would_block'] && ($normalized['reason'] === null || trim((string)$normalized['reason']) === '')) {
+                $normalized['reason'] = $filterId;
+                $mismatchDetected = true;
+                $mismatchFixed = true;
+            }
+            if (isset($rowsByFilter[$filterId])) {
+                $rowsByFilter[$filterId] = $mergeRows(
+                    $rowsByFilter[$filterId],
+                    $normalized,
+                    fn(string $s): string => $this->normalizeDblFilterSeverity($s),
+                    fn(string $s): int => $this->dblFilterSeverityRank($s),
+                );
+            } else {
+                $rowsByFilter[$filterId] = $normalized;
+            }
+        }
+
+        foreach ($canonicalBlocking as $filterId) {
+            $existing = $rowsByFilter[$filterId] ?? null;
+            $severity = $existing !== null
+                ? $this->normalizeDblFilterSeverity((string)($existing['severity'] ?? $this->defaultSeverityForCanonicalDblFilter($filterId)))
+                : $this->defaultSeverityForCanonicalDblFilter($filterId);
+            if ($this->dblFilterSeverityRank($severity) < $this->dblFilterSeverityRank('warning')) {
+                $severity = 'warning';
+            }
+            $legacyReason = $legacyByCanonical[$filterId] ?? null;
+            $reason = $legacyReason ?? (($existing !== null && trim((string)($existing['reason'] ?? '')) !== '') ? (string)$existing['reason'] : $filterId);
+            $synthetic = [
+                'filter_id' => $filterId,
+                'enabled' => true,
+                'passed' => false,
+                'severity' => $severity,
+                'reason' => $reason,
+                'details' => [
+                    'legacy_source' => $legacyReason !== null,
+                    'original_reason' => $legacyReason,
+                ],
+                'would_block' => true,
+                'fatal' => $severity === 'fatal',
+                'score_delta' => null,
+            ];
+
+            $needsFix = ($existing === null)
+                || !((bool)($existing['would_block'] ?? false))
+                || ($this->dblFilterSeverityRank((string)($existing['severity'] ?? 'pass')) < $this->dblFilterSeverityRank('warning'))
+                || trim((string)($existing['reason'] ?? '')) === '';
+            if ($needsFix) {
+                $mismatchDetected = true;
+                $mismatchFixed = true;
+                if ($mismatchExample === null) {
+                    $mismatchExample = [
+                        'filter_id' => $filterId,
+                        'legacy_reason' => $legacyReason,
+                        'existing' => $existing,
+                        'fixed' => $synthetic,
+                    ];
+                }
+            }
+
+            if ($existing !== null) {
+                $rowsByFilter[$filterId] = $mergeRows(
+                    $existing,
+                    $synthetic,
+                    fn(string $s): string => $this->normalizeDblFilterSeverity($s),
+                    fn(string $s): int => $this->dblFilterSeverityRank($s),
+                );
+            } else {
+                $rowsByFilter[$filterId] = $synthetic;
+            }
+        }
+
+        $mergedResults = array_values($rowsByFilter);
+        usort($mergedResults, static function (array $a, array $b): int {
+            return strcmp((string)($a['filter_id'] ?? ''), (string)($b['filter_id'] ?? ''));
+        });
+
+        return [
+            'filter_results' => $mergedResults,
+            'mismatch_detected' => $mismatchDetected,
+            'mismatch_fixed' => $mismatchFixed,
+            'mismatch_example' => $mismatchExample,
+        ];
     }
 
     /**

@@ -836,6 +836,16 @@ function renderDashboardHub(): string
                 $rsLastTick = $e((string)($stratLastRun['finished_at'] ?? $stratLastRun['started_at'] ?? '—'));
             }
 
+            // ── early_impulse_growth_long: remap run_state fields (registry_cursor, universe_total) ──
+            if ($stratId === 'early_impulse_growth_long') {
+                // run_state.json uses registry_cursor / universe_total / updated_at
+                if (!empty($runState)) {
+                    $rsCursor   = (int)($runState['registry_cursor'] ?? $runState['batch_offset'] ?? 0);
+                    $rsTotal    = (int)($runState['universe_total']  ?? $runState['selected_window_total'] ?? 0);
+                    $rsLastTick = $e((string)($runState['updated_at'] ?? $runState['queued_at'] ?? '—'));
+                }
+            }
+
             // ── Build cycle-line HTML (strategy-specific labels) ──────────
             // For double_bottom_long: extract registry rotation fields from last_run.
             $rsRuntimeExtra = '';
@@ -1012,6 +1022,30 @@ function renderDashboardHub(): string
                     . ' · handoff-ready <code>' . $_ccHandoffReady . '</code>'
                     . ' · OBC checked <code>' . $_ccObcChecked . '</code>'
                     . ' · anti-comb rejected <code>' . $_ccAntiCombRej . '</code>';
+            } elseif ($stratId === 'early_impulse_growth_long') {
+                $_eigCandidates  = (int)($stratLastRun['candidates_total']   ?? 0);
+                $_eigSignals     = (int)($stratLastRun['signals_total']      ?? 0);
+                $_eigHandoff     = (int)($stratLastRun['handoff_ready_total'] ?? 0);
+                $_eigPricePass   = (int)($stratLastRun['price_impulse_pass_total'] ?? 0);
+                $_eigOiPass      = (int)($stratLastRun['oi_growth_pass_total'] ?? 0);
+                $_eigOiMissing   = (int)($stratLastRun['oi_missing_allowed_total'] ?? 0);
+                $_eigFilterEn    = (bool)($stratLastRun['filter_engine_enabled'] ?? false);
+                $_eigFilterCnt   = (int)($stratLastRun['enabled_filters_count'] ?? 0);
+                $_eigWin         = (int)($stratLastRun['selected_window_total'] ?? 0);
+                $_eigBatch       = (int)($stratLastRun['batch_symbols_total'] ?? 0);
+                $_eigNextCursor  = (int)($stratLastRun['next_registry_cursor'] ?? 0);
+                $_eigUniverse    = (int)($stratLastRun['universe_total'] ?? 0);
+                $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
+                    . ' · окно <code>' . $_eigWin . '</code>'
+                    . ' · батч <code>' . $_eigBatch . '</code>'
+                    . ' · cursor <code>' . $_eigNextCursor . '/' . $_eigUniverse . '</code>'
+                    . ' · кандидатов <code>' . $_eigCandidates . '</code>'
+                    . ' · сигналов <code>' . $_eigSignals . '</code>'
+                    . ' · handoff-ready <code>' . $_eigHandoff . '</code>'
+                    . ' · price✓ <code>' . $_eigPricePass . '</code>'
+                    . ' · oi✓ <code>' . $_eigOiPass . '</code>'
+                    . ($_eigOiMissing > 0 ? ' · oi-miss-ok <code>' . $_eigOiMissing . '</code>' : '')
+                    . ($_eigFilterEn ? ' · filters <code>' . $_eigFilterCnt . '</code>' : '');
             } else {
                 $cycleLineHtml = 'статус <code>' . $slrStatus . '</code>'
                     . ' · кандидатов <code>' . $slrCandidates . '</code>'
@@ -1038,7 +1072,7 @@ function renderDashboardHub(): string
             // Manual run action buttons — only active for strategies with a wired service.
             // All other strategies show disabled/unavailable buttons so the operator can see
             // the actions exist but are not yet supported for that module.
-            if (in_array($stratId, ['double_bottom_long', 'confirmed_continuation'], true)) {
+            if (in_array($stratId, ['double_bottom_long', 'confirmed_continuation', 'early_impulse_growth_long'], true)) {
                 $actionButtonsHtml = <<<BTN
       <form method="post" action="{$stratActUrl}" style="margin:0;">
         <input type="hidden" name="dashboard_action" value="strategy_action">
@@ -1277,6 +1311,24 @@ HTML;
         <td colspan="3" style="padding:3px 0;font-size:11px;color:var(--ui-text-muted);">next {$_dblCursorStr}</td>
       </tr>
 HTML;
+            }
+            // For early_impulse_growth_long: show registry window diagnostics when data is available.
+            if ($stratId === 'early_impulse_growth_long' && $slrHasData) {
+                $_eigWinStart = (int)($stratLastRun['registry_window_start'] ?? 0);
+                $_eigWinEnd   = (int)($stratLastRun['registry_window_end']   ?? 0);
+                $_eigUniverse = (int)($stratLastRun['universe_total']        ?? 0);
+                $_eigNextCursDash = (int)($stratLastRun['next_registry_cursor'] ?? 0);
+                if ($_eigUniverse > 0) {
+                    $_eigCursorStr = 'next ' . $e((string)$_eigNextCursDash)
+                        . ' · окно ' . $e((string)$_eigWinStart) . '–' . $e((string)$_eigWinEnd)
+                        . ' из ' . $e((string)$_eigUniverse);
+                    $stratCards .= <<<HTML
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Cursor</td>
+        <td colspan="3" style="padding:3px 0;font-size:11px;color:var(--ui-text-muted);">{$_eigCursorStr}</td>
+      </tr>
+HTML;
+                }
             }
             $stratCards .= <<<HTML
     </table>
@@ -7636,6 +7688,10 @@ function handleDashboardStrategyAction(): void
             'path_key' => 'strategy.confirmed_continuation',
             'class'    => \Modules\Strategy\ConfirmedContinuation\ConfirmedContinuationService::class,
         ],
+        'early_impulse_growth_long' => [
+            'path_key' => 'strategy.early_impulse_growth_long',
+            'class'    => \Modules\Strategy\EarlyImpulseGrowthLong\EarlyImpulseGrowthLongService::class,
+        ],
     ];
     if (isset($strategyServiceMap[$stratId])) {
         $moduleDir = \Core\System\SystemPaths::instance()->get($strategyServiceMap[$stratId]['path_key']);
@@ -8262,7 +8318,7 @@ function handleDashboardChainRun(): void
     }
 
     // Strategies wired for manual runtime
-    $manualStrategyIds = ['double_bottom_long', 'confirmed_continuation'];
+    $manualStrategyIds = ['double_bottom_long', 'confirmed_continuation', 'early_impulse_growth_long'];
 
     foreach ($registry as $rec) {
         $sid = (string)($rec['strategy_id'] ?? '');
@@ -8286,9 +8342,10 @@ function handleDashboardChainRun(): void
             require_once $moduleDir . '/bootstrap.php';
             require_once $moduleDir . '/service.php';
             $svcClass = match ($sid) {
-                'double_bottom_long'     => \Modules\Strategy\DoubleBottomLong\DoubleBottomLongService::class,
-                'confirmed_continuation' => \Modules\Strategy\ConfirmedContinuation\ConfirmedContinuationService::class,
-                default                 => null,
+                'double_bottom_long'        => \Modules\Strategy\DoubleBottomLong\DoubleBottomLongService::class,
+                'confirmed_continuation'    => \Modules\Strategy\ConfirmedContinuation\ConfirmedContinuationService::class,
+                'early_impulse_growth_long' => \Modules\Strategy\EarlyImpulseGrowthLong\EarlyImpulseGrowthLongService::class,
+                default                    => null,
             };
             if ($svcClass === null) {
                 $steps[] = "Стратегия «{$sid}»: сервис не подключён";

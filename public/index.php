@@ -1340,6 +1340,73 @@ Router::get('/admin/strategy/confirmed_continuation/runtime', function () {
 });
 
 // ============================================================
+// strategy.early_impulse_growth_long routes
+// ============================================================
+
+Router::get('/admin/strategy/early_impulse_growth_long', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.early_impulse_growth_long');
+    ob_start();
+    require $moduleDir . '/admin/page_runtime.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Early Impulse Growth Long', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/early_impulse_growth_long/config', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.early_impulse_growth_long');
+    ob_start();
+    require $moduleDir . '/admin/page_config.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Early Impulse Growth Long — Config', $content, 'strategy', []);
+});
+
+Router::get('/admin/strategy/early_impulse_growth_long/stats', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.early_impulse_growth_long');
+    ob_start();
+    require $moduleDir . '/admin/page_stats.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Early Impulse Growth Long — Stats', $content, 'strategy', []);
+});
+
+Router::post('/admin/strategy/early_impulse_growth_long/ajax', function () {
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.early_impulse_growth_long');
+    require $moduleDir . '/admin/ajax_early_impulse_growth_long.php';
+});
+
+Router::get('/admin/strategy/early_impulse_growth_long/runtime', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = \Core\System\SystemPaths::instance()->get('strategy.early_impulse_growth_long');
+    ob_start();
+    require $moduleDir . '/admin/page_runtime.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Early Impulse Growth Long — Runtime', $content, 'strategy', []);
+});
+
+// ============================================================
 // DISPATCH
 // ============================================================
 

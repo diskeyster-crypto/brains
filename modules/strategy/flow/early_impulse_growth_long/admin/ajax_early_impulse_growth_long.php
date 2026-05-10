@@ -31,7 +31,7 @@ $service = EarlyImpulseGrowthLongService::instance($moduleDir);
 $configUrl = System::web('admin/strategy/early_impulse_growth_long/config');
 $runtimeUrl = System::web('admin/strategy/early_impulse_growth_long/runtime');
 
-function eigWriteActive(string $moduleDir, array $overrides): ?string
+function writeActiveConfig(string $moduleDir, array $overrides): ?string
 {
     $path = $moduleDir . '/config/active.php';
     $lines = ["<?php\n\ndeclare(strict_types=1);\n\n"];
@@ -40,7 +40,7 @@ function eigWriteActive(string $moduleDir, array $overrides): ?string
     return file_put_contents($path, implode('', $lines)) !== false ? null : 'Failed to write active.php';
 }
 
-function eigFlash(string $msg, string $type = 'success'): void
+function flashMessage(string $msg, string $type = 'success'): void
 {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
@@ -48,13 +48,13 @@ function eigFlash(string $msg, string $type = 'success'): void
     $_SESSION['eig_flash'] = ['type' => $type, 'msg' => $msg];
 }
 
-function eigRedirect(string $url): never
+function redirectTo(string $url): never
 {
     header('Location: ' . $url);
     exit;
 }
 
-function eigJsonExit(bool $ok, mixed $data = [], string $error = ''): never
+function jsonResponse(bool $ok, mixed $data = [], string $error = ''): never
 {
     header('Content-Type: application/json');
     echo json_encode(array_merge(['ok' => $ok], is_array($data) ? $data : [], $ok ? [] : ['error' => $error]), JSON_UNESCAPED_UNICODE);
@@ -65,16 +65,16 @@ if ($action === 'queue_run') {
     try {
         $result = $service->queueRun();
         if ($isJson) {
-            eigJsonExit(true, $result);
+            jsonResponse(true, $result);
         }
-        eigFlash('Запуск цикла поставлен в очередь. Window: ' . ($result['selected_window_total'] ?? 0) . ' symbols.');
-        eigRedirect($runtimeUrl);
+        flashMessage('Запуск цикла поставлен в очередь. Window: ' . ($result['selected_window_total'] ?? 0) . ' symbols.');
+        redirectTo($runtimeUrl);
     } catch (\Throwable $ex) {
         if ($isJson) {
-            eigJsonExit(false, [], $ex->getMessage());
+            jsonResponse(false, [], $ex->getMessage());
         }
-        eigFlash('Ошибка queue_run: ' . $ex->getMessage(), 'error');
-        eigRedirect($runtimeUrl);
+        flashMessage('Ошибка queue_run: ' . $ex->getMessage(), 'error');
+        redirectTo($runtimeUrl);
     }
 }
 
@@ -82,16 +82,16 @@ if ($action === 'tick_batch') {
     try {
         $result = $service->tickBatch();
         if ($isJson) {
-            eigJsonExit(true, $result);
+            jsonResponse(true, $result);
         }
-        eigFlash('Тик батча выполнен. Status: ' . ($result['status'] ?? '?') . ' · candidates: ' . ($result['candidates_total'] ?? 0) . ' · signals: ' . ($result['signals_total'] ?? 0));
-        eigRedirect($runtimeUrl);
+        flashMessage('Тик батча выполнен. Status: ' . ($result['status'] ?? '?') . ' · candidates: ' . ($result['candidates_total'] ?? 0) . ' · signals: ' . ($result['signals_total'] ?? 0));
+        redirectTo($runtimeUrl);
     } catch (\Throwable $ex) {
         if ($isJson) {
-            eigJsonExit(false, [], $ex->getMessage());
+            jsonResponse(false, [], $ex->getMessage());
         }
-        eigFlash('Ошибка tick_batch: ' . $ex->getMessage(), 'error');
-        eigRedirect($runtimeUrl);
+        flashMessage('Ошибка tick_batch: ' . $ex->getMessage(), 'error');
+        redirectTo($runtimeUrl);
     }
 }
 
@@ -185,39 +185,39 @@ if ($action === 'save_config') {
         $overrides['eig_filter_' . $filterId . '_enabled'] = !empty($filterConfig[$filterId]['enabled']);
     }
 
-    $err = eigWriteActive($moduleDir, $overrides);
+    $err = writeActiveConfig($moduleDir, $overrides);
     if ($isJson) {
         if ($err !== null) {
-            eigJsonExit(false, [], $err);
+            jsonResponse(false, [], $err);
         }
-        eigJsonExit(true, ['saved' => true, 'applied_profile' => $applyProfile ? $selectedProfile : null]);
+        jsonResponse(true, ['saved' => true, 'applied_profile' => $applyProfile ? $selectedProfile : null]);
     }
     if ($err !== null) {
-        eigFlash('Ошибка сохранения: ' . $err, 'error');
+        flashMessage('Ошибка сохранения: ' . $err, 'error');
     } else {
-        eigFlash($applyProfile ? ('Профиль фильтров применён: ' . $selectedProfile) : 'Конфигурация сохранена.');
+        flashMessage($applyProfile ? ('Профиль фильтров применён: ' . $selectedProfile) : 'Конфигурация сохранена.');
     }
-    eigRedirect($configUrl);
+    redirectTo($configUrl);
 }
 
 if ($action === 'reset_active') {
-    $err = eigWriteActive($moduleDir, []);
+    $err = writeActiveConfig($moduleDir, []);
     if ($isJson) {
         if ($err !== null) {
-            eigJsonExit(false, [], $err);
+            jsonResponse(false, [], $err);
         }
-        eigJsonExit(true, ['reset' => true]);
+        jsonResponse(true, ['reset' => true]);
     }
     if ($err !== null) {
-        eigFlash('Ошибка сброса: ' . $err, 'error');
+        flashMessage('Ошибка сброса: ' . $err, 'error');
     } else {
-        eigFlash('Конфигурация сброшена к значениям по умолчанию.');
+        flashMessage('Конфигурация сброшена к значениям по умолчанию.');
     }
-    eigRedirect($configUrl);
+    redirectTo($configUrl);
 }
 
 if ($isJson) {
-    eigJsonExit(false, [], 'Unknown action: ' . $action);
+    jsonResponse(false, [], 'Unknown action: ' . $action);
 }
-eigFlash('Неизвестное действие: ' . $action, 'error');
-eigRedirect($configUrl);
+flashMessage('Неизвестное действие: ' . $action, 'error');
+redirectTo($configUrl);

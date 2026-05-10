@@ -2808,6 +2808,16 @@ final class DoubleBottomLongService
             'dbl_inconclusive_case_examples'           => $filterAudit['dbl_inconclusive_case_examples'] ?? ($handoffStats['dbl_inconclusive_case_examples'] ?? []),
             'dbl_filters_likely_too_strict'            => $filterAudit['dbl_filters_likely_too_strict'] ?? ($handoffStats['dbl_filters_likely_too_strict'] ?? []),
             'dbl_filters_likely_validated'             => $filterAudit['dbl_filters_likely_validated'] ?? ($handoffStats['dbl_filters_likely_validated'] ?? []),
+            'filter_engine_checked_total'              => $handoffStats['filter_engine_checked_total'] ?? 0,
+            'filter_engine_fatal_blocked_total'        => $handoffStats['filter_engine_fatal_blocked_total'] ?? 0,
+            'filter_engine_hard_blocked_total'         => $handoffStats['filter_engine_hard_blocked_total'] ?? 0,
+            'filter_engine_soft_blocked_total'         => $handoffStats['filter_engine_soft_blocked_total'] ?? 0,
+            'filter_engine_warning_total'              => $handoffStats['filter_engine_warning_total'] ?? 0,
+            'filter_engine_diagnostic_only_passed_total' => $handoffStats['filter_engine_diagnostic_only_passed_total'] ?? 0,
+            'filter_engine_results_by_filter'          => $handoffStats['filter_engine_results_by_filter'] ?? (object)[],
+            'filter_engine_examples'                   => $handoffStats['filter_engine_examples'] ?? [],
+            'restored_normal_handoff_total'            => $handoffStats['restored_normal_handoff_total'] ?? 0,
+            'restored_normal_handoff_examples'         => $handoffStats['restored_normal_handoff_examples'] ?? [],
             'setup_allowed_quality_failed_examples'    => $setupAllowedQualityFailedExamples,
             'setup_allowed_pending_examples'           => $setupAllowedPendingExamples,
             'setup_allowed_final_gate_warning_examples' => $setupAllowedFinalGateWarnExamples,
@@ -9217,6 +9227,16 @@ final class DoubleBottomLongService
         $filterAuditMaxSignalsPer6h                  = max(0, (int)($config['dbl_filter_audit_max_signals_per_6h'] ?? 999));
         $filterAuditCandidates                       = [];
         $filterAuditSkipReasonsLocal                 = [];
+        $filterEngineCheckedTotal                    = 0;
+        $filterEngineFatalBlockedTotal               = 0;
+        $filterEngineHardBlockedTotal                = 0;
+        $filterEngineSoftBlockedTotal                = 0;
+        $filterEngineWarningTotal                    = 0;
+        $filterEngineDiagnosticOnlyPassedTotal       = 0;
+        $filterEngineResultsByFilter                 = [];
+        $filterEngineExamples                        = [];
+        $restoredNormalHandoffTotal                  = 0;
+        $restoredNormalHandoffExamples               = [];
 
         // Process currently-active signals: new or refreshed
         foreach ($activeSignals as $signal) {
@@ -10420,6 +10440,62 @@ final class DoubleBottomLongService
                 false
             );
 
+            $filterEngineCheckedTotal++;
+            if ((bool)($entry['fatal_filter_hit'] ?? false)) {
+                $filterEngineFatalBlockedTotal++;
+            }
+            $entryHard = (array)($entry['hard_block_filter_reasons'] ?? []);
+            $entrySoft = (array)($entry['soft_block_filter_reasons'] ?? []);
+            $entryWarn = (array)($entry['warning_filter_reasons'] ?? []);
+            if (!empty($entryHard)) { $filterEngineHardBlockedTotal++; }
+            if (!empty($entrySoft)) { $filterEngineSoftBlockedTotal++; }
+            if (!empty($entryWarn)) { $filterEngineWarningTotal++; }
+            if ((string)($entry['filter_enforcement_mode'] ?? '') === 'diagnostic_only'
+                && (bool)($entry['normal_handoff_allowed'] ?? false)
+                && !(bool)($entry['fatal_filter_hit'] ?? false)
+                && !empty(array_merge($entryHard, $entrySoft, $entryWarn))
+            ) {
+                $filterEngineDiagnosticOnlyPassedTotal++;
+            }
+            if ((bool)($entry['restored_normal_handoff'] ?? false)) {
+                $restoredNormalHandoffTotal++;
+                if (count($restoredNormalHandoffExamples) < 5) {
+                    $restoredNormalHandoffExamples[] = [
+                        'symbol' => $entry['symbol'] ?? null,
+                        'quality' => $entry['candidate_quality_score'] ?? null,
+                        'handoff_ready' => (bool)($entry['handoff_ready'] ?? false),
+                        'executable' => (bool)($entry['executable'] ?? false),
+                        'enforcement_mode' => $entry['filter_enforcement_mode'] ?? null,
+                        'fatal_filter_reasons' => $entry['fatal_filter_reasons'] ?? [],
+                        'hard_block_filter_reasons' => $entryHard,
+                        'soft_block_filter_reasons' => $entrySoft,
+                        'warning_filter_reasons' => $entryWarn,
+                        'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+                    ];
+                }
+            }
+            foreach ((array)($entry['filter_results'] ?? []) as $fr) {
+                if (!is_array($fr)) { continue; }
+                if ((bool)($fr['enabled'] ?? false) !== true || (bool)($fr['passed'] ?? true) === true) { continue; }
+                $fid = trim((string)($fr['filter_id'] ?? ''));
+                if ($fid === '') { continue; }
+                $filterEngineResultsByFilter[$fid] = (int)($filterEngineResultsByFilter[$fid] ?? 0) + 1;
+            }
+            if (count($filterEngineExamples) < 5) {
+                $filterEngineExamples[] = [
+                    'symbol' => $entry['symbol'] ?? null,
+                    'quality' => $entry['candidate_quality_score'] ?? null,
+                    'handoff_ready' => (bool)($entry['handoff_ready'] ?? false),
+                    'executable' => (bool)($entry['executable'] ?? false),
+                    'enforcement_mode' => $entry['filter_enforcement_mode'] ?? null,
+                    'fatal_filter_reasons' => $entry['fatal_filter_reasons'] ?? [],
+                    'hard_block_filter_reasons' => $entryHard,
+                    'soft_block_filter_reasons' => $entrySoft,
+                    'warning_filter_reasons' => $entryWarn,
+                    'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+                ];
+            }
+
             if ((bool)($entry['fatal_filter_hit'] ?? false)) {
                 $this->filterAuditHardBlockedTotal++;
                 $this->dblAuditIneligibleCandidatesTotal++;
@@ -10809,6 +10885,17 @@ final class DoubleBottomLongService
             'dbl_inconclusive_case_examples'                   => $filterAuditSummary['dbl_inconclusive_case_examples'] ?? [],
             'dbl_filters_likely_too_strict'                    => $filterAuditSummary['dbl_filters_likely_too_strict'] ?? [],
             'dbl_filters_likely_validated'                     => $filterAuditSummary['dbl_filters_likely_validated'] ?? [],
+            // Reusable filter-engine diagnostics
+            'filter_engine_checked_total'               => $filterEngineCheckedTotal,
+            'filter_engine_fatal_blocked_total'         => $filterEngineFatalBlockedTotal,
+            'filter_engine_hard_blocked_total'          => $filterEngineHardBlockedTotal,
+            'filter_engine_soft_blocked_total'          => $filterEngineSoftBlockedTotal,
+            'filter_engine_warning_total'               => $filterEngineWarningTotal,
+            'filter_engine_diagnostic_only_passed_total'=> $filterEngineDiagnosticOnlyPassedTotal,
+            'filter_engine_results_by_filter'           => empty($filterEngineResultsByFilter) ? (object)[] : $filterEngineResultsByFilter,
+            'filter_engine_examples'                    => $filterEngineExamples,
+            'restored_normal_handoff_total'             => $restoredNormalHandoffTotal,
+            'restored_normal_handoff_examples'          => $restoredNormalHandoffExamples,
             // OBC soft_demote handoff-block counters
             'soft_demote_blocked_handoff_total' => $softDemoteBlockedTotal,
             'soft_demote_allowed_handoff_total' => $softDemoteAllowedTotal,
@@ -11218,9 +11305,34 @@ final class DoubleBottomLongService
             ? (float)$record['candidate_quality_score']
             : (isset($ssc['candidate_quality_score']) ? (float)$ssc['candidate_quality_score'] : 0.0);
         $minQuality = (float)($config['dbl_filter_audit_min_quality_score'] ?? 0.68);
-        $fatalReasons = [];
-        $softReasons  = [];
+        $enforcementMode = (string)($config['dbl_filter_enforcement_mode'] ?? 'diagnostic_only');
+        if (!in_array($enforcementMode, ['diagnostic_only', 'soft', 'strict'], true)) {
+            $enforcementMode = 'diagnostic_only';
+        }
 
+        $fatalReasons = [];
+        $hardBlockReasons = [];
+        $softReasons = [];
+        $warningReasons = [];
+
+        $garbageReason = (string)($ssc['garbage_veto_reason'] ?? $record['garbage_veto_reason'] ?? $blockReason ?? '');
+        $auditBlockingReasons = [
+            'final_low_quality',
+            'generic_entry_context_score_low',
+            'ob_quality_below_threshold',
+            'missing_reclaim_confirmation',
+            'entry_far_from_point3',
+            'insufficient_room_to_recent_swing_high',
+            'late_local_tiny_room',
+            'final_stop_too_wide',
+            'garbage_low_quality_without_obc_confirmation',
+            'garbage_obc_quality_skip',
+            'garbage_local_late_entry_after_recovery',
+            'garbage_late_daily_extension_long',
+            'garbage_whipsaw_weak_quality',
+        ];
+
+        // Preserve existing fatal safety checks regardless of enforcement mode.
         if ((bool)($ssc['point3_break_terminal'] ?? false) || (string)($ssc['point3_break_final_state'] ?? '') === 'terminal') {
             $fatalReasons[] = 'terminal_point3_broken';
         }
@@ -11241,30 +11353,22 @@ final class DoubleBottomLongService
         if (((bool)($ssc['ob_ask_wall_risk'] ?? false)) && !((bool)($ssc['ob_soft_demoted'] ?? false))) {
             $fatalReasons[] = 'hard_obc_ask_wall_risk';
         }
-        $garbageReason = (string)($ssc['garbage_veto_reason'] ?? $record['garbage_veto_reason'] ?? $blockReason ?? '');
-        if ($garbageReason === 'garbage_late_daily_extension_long') {
-            $fatalReasons[] = 'late_daily_extension_long';
-        }
-        if ($garbageReason === 'garbage_whipsaw_weak_quality') {
-            $fatalReasons[] = 'comb_whipsaw_untradable';
-        }
         if ($quality < $minQuality) {
             $fatalReasons[] = 'candidate_quality_below_min_quality';
         }
 
-        $auditBlockingReasons = [
-            'final_low_quality',
-            'generic_entry_context_score_low',
-            'ob_quality_below_threshold',
-            'missing_reclaim_confirmation',
-            'entry_far_from_point3',
-            'insufficient_room_to_recent_swing_high',
-            'late_local_tiny_room',
-            'final_stop_too_wide',
-            'garbage_low_quality_without_obc_confirmation',
-            'garbage_obc_quality_skip',
-            'garbage_local_late_entry_after_recovery',
-        ];
+        // Strategy-local reusable filter engine.
+        $filterResults = [];
+        $filterEngineEnabled = (bool)($config['dbl_filter_engine_enabled'] ?? true);
+        if ($filterEngineEnabled) {
+            $engineData = $this->evaluateDblFilterEngine($record, $ssc, $config, $quality);
+            $filterResults = (array)($engineData['filter_results'] ?? []);
+            $fatalReasons = array_merge($fatalReasons, (array)($engineData['fatal_filter_reasons'] ?? []));
+            $hardBlockReasons = array_merge($hardBlockReasons, (array)($engineData['hard_block_filter_reasons'] ?? []));
+            $softReasons = array_merge($softReasons, (array)($engineData['soft_block_filter_reasons'] ?? []));
+            $warningReasons = array_merge($warningReasons, (array)($engineData['warning_filter_reasons'] ?? []));
+        }
+
         $finalLowQualityCauses = (array)($ssc['final_low_quality_causes'] ?? []);
         foreach ($finalLowQualityCauses as $cause) {
             $cause = (string)$cause;
@@ -11281,15 +11385,50 @@ final class DoubleBottomLongService
         if ((bool)($ssc['final_stop_width_warning'] ?? $record['final_stop_width_warning'] ?? false)) {
             $softReasons[] = 'final_stop_too_wide';
         }
-        $softReasons = array_values(array_unique($softReasons));
-        $fatalReasons = array_values(array_unique($fatalReasons));
 
-        $normalAllowed = $normalHandoffAllowed;
-        if ($normalAllowed === null) {
-            $normalAllowed = empty($fatalReasons) && empty($softReasons) && $blockReason === null;
+        // Compatibility mapping for legacy veto reasons -> reusable filter IDs.
+        $legacyToFilterId = [
+            'garbage_low_quality_without_obc_confirmation' => 'low_quality_without_obc_filter',
+            'garbage_obc_quality_skip' => 'low_quality_without_obc_filter',
+            'garbage_local_late_entry_after_recovery' => 'late_local_entry_filter',
+            'garbage_late_daily_extension_long' => 'daily_extension_filter',
+            'garbage_whipsaw_weak_quality' => 'whipsaw_filter',
+        ];
+        foreach (array_merge($softReasons, $hardBlockReasons, $warningReasons) as $legacyReason) {
+            $legacyReason = (string)$legacyReason;
+            if ($legacyReason !== '' && isset($legacyToFilterId[$legacyReason])) {
+                $softReasons[] = $legacyToFilterId[$legacyReason];
+            }
         }
-        $wouldHaveBlocked = !$normalAllowed || !empty($softReasons);
-        if (($wouldHaveBlocked || !$normalAllowed) && empty($softReasons)) {
+
+        $fatalReasons = array_values(array_unique(array_filter(array_map('strval', $fatalReasons), static fn(string $v): bool => $v !== '')));
+        $hardBlockReasons = array_values(array_unique(array_filter(array_map('strval', $hardBlockReasons), static fn(string $v): bool => $v !== '')));
+        $softReasons = array_values(array_unique(array_filter(array_map('strval', $softReasons), static fn(string $v): bool => $v !== '')));
+        $warningReasons = array_values(array_unique(array_filter(array_map('strval', $warningReasons), static fn(string $v): bool => $v !== '')));
+
+        $normalAllowedLegacy = $normalHandoffAllowed;
+        if ($normalAllowedLegacy === null) {
+            $normalAllowedLegacy = empty($fatalReasons) && empty($hardBlockReasons) && empty($softReasons) && $blockReason === null;
+        }
+        $normalAllowed = (bool)$normalAllowedLegacy;
+        $nonFatalWouldBlock = !empty($hardBlockReasons) || !empty($softReasons);
+        $restoredNormalHandoff = false;
+
+        // Enforce by mode; in diagnostic_only, only fatals block.
+        if (!empty($fatalReasons)) {
+            $normalAllowed = false;
+        } elseif ($enforcementMode === 'strict' && $nonFatalWouldBlock) {
+            $normalAllowed = false;
+        } elseif ($enforcementMode === 'soft' && !empty($hardBlockReasons)) {
+            $normalAllowed = false;
+        } elseif ($enforcementMode === 'diagnostic_only' && $normalAllowedLegacy && $nonFatalWouldBlock) {
+            $normalAllowed = true;
+            $restoredNormalHandoff = true;
+        }
+
+        $wouldHaveBlockedByFilters = array_values(array_unique(array_merge($hardBlockReasons, $softReasons)));
+        $wouldHaveBlocked = !$normalAllowed || !empty($wouldHaveBlockedByFilters);
+        if (($wouldHaveBlocked || !$normalAllowed) && empty($wouldHaveBlockedByFilters)) {
             $resolveReasons = static function ($value): array {
                 if (is_array($value)) {
                     $out = [];
@@ -11346,10 +11485,11 @@ final class DoubleBottomLongService
                     'signal_id' => $record['signal_id'] ?? null,
                     'normal_handoff_allowed' => $normalAllowed,
                     'block_reason' => $blockReason ?? ($record['block_reason'] ?? $ssc['block_reason'] ?? null),
-                    'resolved_soft_reasons' => $softReasons,
+                    'resolved_soft_reasons' => $wouldHaveBlockedByFilters,
                 ];
             }
-            $wouldHaveBlocked = !$normalAllowed || !empty($softReasons);
+            $wouldHaveBlockedByFilters = $softReasons;
+            $wouldHaveBlocked = !$normalAllowed || !empty($wouldHaveBlockedByFilters);
         }
 
         $penaltyWeights = [
@@ -11366,7 +11506,7 @@ final class DoubleBottomLongService
             'garbage_local_late_entry_after_recovery'  => 0.05,
         ];
         $penaltyScore = 0.0;
-        foreach ($softReasons as $reason) {
+        foreach ($wouldHaveBlockedByFilters as $reason) {
             $penaltyScore += (float)($penaltyWeights[$reason] ?? 0.02);
         }
         $scoreAfterPenalty = max(0.0, round($quality - $penaltyScore, 4));
@@ -11409,12 +11549,20 @@ final class DoubleBottomLongService
             'filter_audit_candidate'          => $filterAuditCandidate,
             'filter_audit_sent_to_bot'        => $filterAuditSentToBot,
             'normal_handoff_allowed'          => $normalAllowed,
+            'filter_engine_enabled'           => $filterEngineEnabled,
+            'filter_enforcement_mode'         => $enforcementMode,
+            'filter_results'                  => $filterResults,
             'fatal_filter_hit'                => !empty($fatalReasons),
             'fatal_filter_reasons'            => $fatalReasons,
+            'hard_block_filter_reasons'       => $hardBlockReasons,
+            'soft_block_filter_reasons'       => $softReasons,
+            'warning_filter_reasons'          => $warningReasons,
             'would_have_blocked'              => $wouldHaveBlocked,
-            'would_have_blocked_by_filters'   => $softReasons,
-            'would_have_blocked_primary_reason' => $softReasons[0] ?? null,
-            'filter_audit_soft_reasons'       => $softReasons,
+            'would_have_blocked_by_filters'   => $wouldHaveBlockedByFilters,
+            'would_have_blocked_primary_reason' => $wouldHaveBlockedByFilters[0] ?? null,
+            'filter_audit_soft_reasons'       => $wouldHaveBlockedByFilters,
+            'non_fatal_filter_warnings'       => $warningReasons,
+            'restored_normal_handoff'         => $restoredNormalHandoff,
             'filter_audit_score_before_penalty' => $quality,
             'filter_audit_penalty_score'      => round($penaltyScore, 4),
             'filter_audit_score_after_penalty'=> $scoreAfterPenalty,
@@ -11429,6 +11577,71 @@ final class DoubleBottomLongService
         $record['strategy_signal_context'] = $ssc;
 
         return $record;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function evaluateDblFilterEngine(array $record, array $ssc, array $config, float $quality): array
+    {
+        require_once $this->repoRoot . '/modules/strategy/filter_engine/filter_result.php';
+        require_once $this->repoRoot . '/modules/strategy/filter_engine/filter_engine.php';
+        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/late_local_entry_filter.php';
+        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/low_quality_without_obc_filter.php';
+        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/missing_reclaim_filter.php';
+        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/tiny_room_filter.php';
+        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/point3_terminal_break_filter.php';
+        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/daily_extension_filter.php';
+        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/whipsaw_filter.php';
+
+        $engineConfig = [
+            'point3_terminal_break_filter' => [
+                'enabled' => (bool)($config['dbl_filter_point3_terminal_enabled'] ?? true),
+            ],
+            'low_quality_without_obc_filter' => [
+                'enabled' => (bool)($config['dbl_filter_low_quality_without_obc_enabled'] ?? true),
+                'max_score' => (float)($config['dbl_filter_low_quality_without_obc_max_score'] ?? 0.70),
+                'require_generic_warning' => (bool)($config['dbl_filter_low_quality_without_obc_require_generic_warning'] ?? true),
+                'severity' => (string)($config['dbl_filter_low_quality_without_obc_severity'] ?? 'soft_block'),
+            ],
+            'missing_reclaim_filter' => [
+                'enabled' => (bool)($config['dbl_filter_missing_reclaim_enabled'] ?? true),
+                'severity' => (string)($config['dbl_filter_missing_reclaim_severity'] ?? 'warning'),
+            ],
+            'late_local_entry_filter' => [
+                'enabled' => (bool)($config['dbl_filter_late_local_entry_enabled'] ?? true),
+                'max_distance_from_point3_pct' => (float)($config['dbl_filter_late_local_entry_max_distance_from_point3_pct'] ?? 2.5),
+                'min_room_to_recent_high_roi' => (float)($config['dbl_filter_late_local_entry_min_room_to_recent_high_roi'] ?? 3.0),
+                'severity' => (string)($config['dbl_filter_late_local_entry_severity'] ?? 'soft_block'),
+            ],
+            'tiny_room_filter' => [
+                'enabled' => (bool)($config['dbl_filter_tiny_room_enabled'] ?? true),
+                'min_room_roi' => (float)($config['dbl_filter_tiny_room_min_room_roi'] ?? 2.0),
+                'severity' => (string)($config['dbl_filter_tiny_room_severity'] ?? 'warning'),
+            ],
+            'daily_extension_filter' => [
+                'enabled' => (bool)($config['dbl_filter_daily_extension_enabled'] ?? true),
+                'hot_pct' => (float)($config['dbl_filter_daily_extension_hot_pct'] ?? 35.0),
+                'position_in_range_max_pct' => (float)($config['dbl_filter_daily_extension_position_in_range_max_pct'] ?? 80.0),
+                'severity' => (string)($config['dbl_filter_daily_extension_severity'] ?? 'hard_block'),
+            ],
+            'whipsaw_filter' => [
+                'enabled' => (bool)($config['dbl_filter_whipsaw_enabled'] ?? true),
+                'max_10m_range_roi' => (float)($config['dbl_filter_whipsaw_max_10m_range_roi'] ?? 15.0),
+                'max_60m_direction_flips' => (int)($config['dbl_filter_whipsaw_max_60m_direction_flips'] ?? 10),
+                'requires_weak_quality' => (bool)($config['dbl_filter_whipsaw_requires_weak_quality'] ?? true),
+                'weak_quality_max_score' => (float)($config['dbl_filter_whipsaw_weak_quality_max_score'] ?? 0.72),
+                'severity' => (string)($config['dbl_filter_whipsaw_severity'] ?? 'hard_block'),
+            ],
+        ];
+
+        $ctx = array_merge($record, $ssc);
+        $ctx['candidate_quality_score'] = $quality;
+        $ctx['final_low_quality_causes'] = $ssc['final_low_quality_causes'] ?? ($record['final_low_quality_causes'] ?? []);
+        $ctx['final_low_quality_primary_cause'] = $ssc['final_low_quality_primary_cause'] ?? ($record['final_low_quality_primary_cause'] ?? null);
+
+        $engine = new \Modules\Strategy\FilterEngine\FilterEngine();
+        return $engine->evaluate($ctx, $engineConfig);
     }
 
     /**

@@ -252,6 +252,68 @@ $fMode    = (string)($config['mode']  ?? 'passive');
                            value="<?= (int)($config['signal_ttl_bars'] ?? 2) ?>">
                 </div>
             </div>
+        <div class="cfg-section mt-4" style="border-color:#0ea5e9;">
+            <h6 style="color:#38bdf8;">Reusable Filter Engine (DBL profile)</h6>
+            <div class="row g-3">
+                <div class="col-sm-3">
+                    <label class="form-label">Filter engine enabled</label>
+                    <select name="dbl_filter_engine_enabled" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_engine_enabled'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_engine_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Enforcement mode</label>
+                    <select name="dbl_filter_enforcement_mode" class="form-select form-select-sm">
+                        <?php foreach (['diagnostic_only', 'soft', 'strict'] as $mode): ?>
+                        <option value="<?= $mode ?>" <?= (($config['dbl_filter_enforcement_mode'] ?? 'diagnostic_only') === $mode) ? 'selected' : '' ?>><?= $mode ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Point3 terminal enabled</label>
+                    <select name="dbl_filter_point3_terminal_enabled" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_point3_terminal_enabled'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_point3_terminal_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Low quality without OBC enabled</label>
+                    <select name="dbl_filter_low_quality_without_obc_enabled" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_low_quality_without_obc_enabled'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_low_quality_without_obc_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                </div>
+                <div class="col-sm-3"><label class="form-label">Low-quality max score</label><input type="number" step="0.01" min="0" max="1" name="dbl_filter_low_quality_without_obc_max_score" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_low_quality_without_obc_max_score'] ?? 0.70), 2, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Require generic warning</label><select name="dbl_filter_low_quality_without_obc_require_generic_warning" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_low_quality_without_obc_require_generic_warning'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_low_quality_without_obc_require_generic_warning'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Low-quality severity</label><select name="dbl_filter_low_quality_without_obc_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_low_quality_without_obc_severity'] ?? 'soft_block') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+
+                <div class="col-sm-3"><label class="form-label">Missing reclaim enabled</label><select name="dbl_filter_missing_reclaim_enabled" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_missing_reclaim_enabled'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_missing_reclaim_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Missing reclaim severity</label><select name="dbl_filter_missing_reclaim_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_missing_reclaim_severity'] ?? 'warning') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+
+                <div class="col-sm-3"><label class="form-label">Late local enabled</label><select name="dbl_filter_late_local_entry_enabled" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_late_local_entry_enabled'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_late_local_entry_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Late local max distance pct</label><input type="number" step="0.1" min="0" max="50" name="dbl_filter_late_local_entry_max_distance_from_point3_pct" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_late_local_entry_max_distance_from_point3_pct'] ?? 2.5), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Late local min room ROI</label><input type="number" step="0.1" min="0" max="50" name="dbl_filter_late_local_entry_min_room_to_recent_high_roi" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_late_local_entry_min_room_to_recent_high_roi'] ?? 3.0), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Late local severity</label><select name="dbl_filter_late_local_entry_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_late_local_entry_severity'] ?? 'soft_block') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+
+                <div class="col-sm-3"><label class="form-label">Tiny room enabled</label><select name="dbl_filter_tiny_room_enabled" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_tiny_room_enabled'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_tiny_room_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Tiny room min ROI</label><input type="number" step="0.1" min="0" max="50" name="dbl_filter_tiny_room_min_room_roi" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_tiny_room_min_room_roi'] ?? 2.0), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Tiny room severity</label><select name="dbl_filter_tiny_room_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_tiny_room_severity'] ?? 'warning') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+
+                <div class="col-sm-3"><label class="form-label">Daily extension enabled</label><select name="dbl_filter_daily_extension_enabled" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_daily_extension_enabled'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_daily_extension_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Daily extension hot pct</label><input type="number" step="0.1" min="0" max="200" name="dbl_filter_daily_extension_hot_pct" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_daily_extension_hot_pct'] ?? 35.0), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Daily extension range max pct</label><input type="number" step="0.1" min="0" max="100" name="dbl_filter_daily_extension_position_in_range_max_pct" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_daily_extension_position_in_range_max_pct'] ?? 80.0), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Daily extension severity</label><select name="dbl_filter_daily_extension_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_daily_extension_severity'] ?? 'hard_block') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+
+                <div class="col-sm-3"><label class="form-label">Whipsaw enabled</label><select name="dbl_filter_whipsaw_enabled" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_whipsaw_enabled'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_whipsaw_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Whipsaw max 10m range ROI</label><input type="number" step="0.1" min="0" max="500" name="dbl_filter_whipsaw_max_10m_range_roi" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_whipsaw_max_10m_range_roi'] ?? 15.0), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Whipsaw max 60m flips</label><input type="number" step="1" min="0" max="200" name="dbl_filter_whipsaw_max_60m_direction_flips" class="form-control form-control-sm" value="<?= (int)($config['dbl_filter_whipsaw_max_60m_direction_flips'] ?? 10) ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Whipsaw requires weak quality</label><select name="dbl_filter_whipsaw_requires_weak_quality" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_whipsaw_requires_weak_quality'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_whipsaw_requires_weak_quality'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Whipsaw weak quality max</label><input type="number" step="0.01" min="0" max="1" name="dbl_filter_whipsaw_weak_quality_max_score" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_whipsaw_weak_quality_max_score'] ?? 0.72), 2, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Whipsaw severity</label><select name="dbl_filter_whipsaw_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_whipsaw_severity'] ?? 'hard_block') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+            </div>
+        </div>
+
         </div>
 
         <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>
@@ -454,6 +516,68 @@ $fMode    = (string)($config['mode']  ?? 'passive');
                     <div style="font-size:11px;color:#64748b;margin-top:3px;">0.0–1.0. Ниже этого порога audit-pass запрещён.</div>
                 </div>
             </div>
+        <div class="cfg-section mt-4" style="border-color:#0ea5e9;">
+            <h6 style="color:#38bdf8;">Reusable Filter Engine (DBL profile)</h6>
+            <div class="row g-3">
+                <div class="col-sm-3">
+                    <label class="form-label">Filter engine enabled</label>
+                    <select name="dbl_filter_engine_enabled" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_engine_enabled'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_engine_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Enforcement mode</label>
+                    <select name="dbl_filter_enforcement_mode" class="form-select form-select-sm">
+                        <?php foreach (['diagnostic_only', 'soft', 'strict'] as $mode): ?>
+                        <option value="<?= $mode ?>" <?= (($config['dbl_filter_enforcement_mode'] ?? 'diagnostic_only') === $mode) ? 'selected' : '' ?>><?= $mode ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Point3 terminal enabled</label>
+                    <select name="dbl_filter_point3_terminal_enabled" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_point3_terminal_enabled'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_point3_terminal_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                </div>
+                <div class="col-sm-3">
+                    <label class="form-label">Low quality without OBC enabled</label>
+                    <select name="dbl_filter_low_quality_without_obc_enabled" class="form-select form-select-sm">
+                        <option value="1" <?= ($config['dbl_filter_low_quality_without_obc_enabled'] ?? true) ? 'selected' : '' ?>>Да</option>
+                        <option value="0" <?= !($config['dbl_filter_low_quality_without_obc_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option>
+                    </select>
+                </div>
+                <div class="col-sm-3"><label class="form-label">Low-quality max score</label><input type="number" step="0.01" min="0" max="1" name="dbl_filter_low_quality_without_obc_max_score" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_low_quality_without_obc_max_score'] ?? 0.70), 2, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Require generic warning</label><select name="dbl_filter_low_quality_without_obc_require_generic_warning" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_low_quality_without_obc_require_generic_warning'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_low_quality_without_obc_require_generic_warning'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Low-quality severity</label><select name="dbl_filter_low_quality_without_obc_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_low_quality_without_obc_severity'] ?? 'soft_block') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+
+                <div class="col-sm-3"><label class="form-label">Missing reclaim enabled</label><select name="dbl_filter_missing_reclaim_enabled" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_missing_reclaim_enabled'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_missing_reclaim_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Missing reclaim severity</label><select name="dbl_filter_missing_reclaim_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_missing_reclaim_severity'] ?? 'warning') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+
+                <div class="col-sm-3"><label class="form-label">Late local enabled</label><select name="dbl_filter_late_local_entry_enabled" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_late_local_entry_enabled'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_late_local_entry_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Late local max distance pct</label><input type="number" step="0.1" min="0" max="50" name="dbl_filter_late_local_entry_max_distance_from_point3_pct" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_late_local_entry_max_distance_from_point3_pct'] ?? 2.5), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Late local min room ROI</label><input type="number" step="0.1" min="0" max="50" name="dbl_filter_late_local_entry_min_room_to_recent_high_roi" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_late_local_entry_min_room_to_recent_high_roi'] ?? 3.0), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Late local severity</label><select name="dbl_filter_late_local_entry_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_late_local_entry_severity'] ?? 'soft_block') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+
+                <div class="col-sm-3"><label class="form-label">Tiny room enabled</label><select name="dbl_filter_tiny_room_enabled" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_tiny_room_enabled'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_tiny_room_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Tiny room min ROI</label><input type="number" step="0.1" min="0" max="50" name="dbl_filter_tiny_room_min_room_roi" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_tiny_room_min_room_roi'] ?? 2.0), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Tiny room severity</label><select name="dbl_filter_tiny_room_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_tiny_room_severity'] ?? 'warning') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+
+                <div class="col-sm-3"><label class="form-label">Daily extension enabled</label><select name="dbl_filter_daily_extension_enabled" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_daily_extension_enabled'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_daily_extension_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Daily extension hot pct</label><input type="number" step="0.1" min="0" max="200" name="dbl_filter_daily_extension_hot_pct" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_daily_extension_hot_pct'] ?? 35.0), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Daily extension range max pct</label><input type="number" step="0.1" min="0" max="100" name="dbl_filter_daily_extension_position_in_range_max_pct" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_daily_extension_position_in_range_max_pct'] ?? 80.0), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Daily extension severity</label><select name="dbl_filter_daily_extension_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_daily_extension_severity'] ?? 'hard_block') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+
+                <div class="col-sm-3"><label class="form-label">Whipsaw enabled</label><select name="dbl_filter_whipsaw_enabled" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_whipsaw_enabled'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_whipsaw_enabled'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Whipsaw max 10m range ROI</label><input type="number" step="0.1" min="0" max="500" name="dbl_filter_whipsaw_max_10m_range_roi" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_whipsaw_max_10m_range_roi'] ?? 15.0), 1, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Whipsaw max 60m flips</label><input type="number" step="1" min="0" max="200" name="dbl_filter_whipsaw_max_60m_direction_flips" class="form-control form-control-sm" value="<?= (int)($config['dbl_filter_whipsaw_max_60m_direction_flips'] ?? 10) ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Whipsaw requires weak quality</label><select name="dbl_filter_whipsaw_requires_weak_quality" class="form-select form-select-sm"><option value="1" <?= ($config['dbl_filter_whipsaw_requires_weak_quality'] ?? true) ? 'selected' : '' ?>>Да</option><option value="0" <?= !($config['dbl_filter_whipsaw_requires_weak_quality'] ?? true) ? 'selected' : '' ?>>Нет</option></select></div>
+                <div class="col-sm-3"><label class="form-label">Whipsaw weak quality max</label><input type="number" step="0.01" min="0" max="1" name="dbl_filter_whipsaw_weak_quality_max_score" class="form-control form-control-sm" value="<?= number_format((float)($config['dbl_filter_whipsaw_weak_quality_max_score'] ?? 0.72), 2, '.', '') ?>"></div>
+                <div class="col-sm-3"><label class="form-label">Whipsaw severity</label><select name="dbl_filter_whipsaw_severity" class="form-select form-select-sm"><?php foreach (['warning','soft_block','hard_block','fatal'] as $sev): ?><option value="<?= $sev ?>" <?= (($config['dbl_filter_whipsaw_severity'] ?? 'hard_block') === $sev) ? 'selected' : '' ?>><?= $sev ?></option><?php endforeach; ?></select></div>
+            </div>
+        </div>
+
         </div>
 
         <button type="submit" class="btn btn-primary btn-sm">Сохранить</button>

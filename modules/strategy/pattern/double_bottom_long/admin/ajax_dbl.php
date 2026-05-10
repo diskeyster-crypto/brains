@@ -183,6 +183,40 @@ if ($action === 'save_config') {
         'dbl_filter_audit_ready_ttl_minutes'             => max(1, min(120, (int)($p['dbl_filter_audit_ready_ttl_minutes'] ?? 20))),
         'dbl_filter_audit_stale_ready_action'            => in_array($p['dbl_filter_audit_stale_ready_action'] ?? '', ['withdraw', 'keep'], true)
                                                                ? (string)$p['dbl_filter_audit_stale_ready_action'] : 'withdraw',
+        // Reusable filter engine profile (strategy-local DBL keys)
+        'dbl_filter_engine_enabled'                           => ($p['dbl_filter_engine_enabled'] ?? '1') === '1',
+        'dbl_filter_enforcement_mode'                         => in_array(($p['dbl_filter_enforcement_mode'] ?? 'diagnostic_only'), ['diagnostic_only', 'soft', 'strict'], true)
+                                                               ? (string)$p['dbl_filter_enforcement_mode'] : 'diagnostic_only',
+        'dbl_filter_point3_terminal_enabled'                  => ($p['dbl_filter_point3_terminal_enabled'] ?? '1') === '1',
+        'dbl_filter_low_quality_without_obc_enabled'          => ($p['dbl_filter_low_quality_without_obc_enabled'] ?? '1') === '1',
+        'dbl_filter_low_quality_without_obc_max_score'        => max(0.0, min(1.0, (float)($p['dbl_filter_low_quality_without_obc_max_score'] ?? 0.70))),
+        'dbl_filter_low_quality_without_obc_require_generic_warning' => ($p['dbl_filter_low_quality_without_obc_require_generic_warning'] ?? '1') === '1',
+        'dbl_filter_low_quality_without_obc_severity'         => in_array(($p['dbl_filter_low_quality_without_obc_severity'] ?? 'soft_block'), ['warning', 'soft_block', 'hard_block', 'fatal'], true)
+                                                               ? (string)$p['dbl_filter_low_quality_without_obc_severity'] : 'soft_block',
+        'dbl_filter_missing_reclaim_enabled'                  => ($p['dbl_filter_missing_reclaim_enabled'] ?? '1') === '1',
+        'dbl_filter_missing_reclaim_severity'                 => in_array(($p['dbl_filter_missing_reclaim_severity'] ?? 'warning'), ['warning', 'soft_block', 'hard_block', 'fatal'], true)
+                                                               ? (string)$p['dbl_filter_missing_reclaim_severity'] : 'warning',
+        'dbl_filter_late_local_entry_enabled'                 => ($p['dbl_filter_late_local_entry_enabled'] ?? '1') === '1',
+        'dbl_filter_late_local_entry_max_distance_from_point3_pct' => max(0.0, min(50.0, (float)($p['dbl_filter_late_local_entry_max_distance_from_point3_pct'] ?? 2.5))),
+        'dbl_filter_late_local_entry_min_room_to_recent_high_roi'  => max(0.0, min(50.0, (float)($p['dbl_filter_late_local_entry_min_room_to_recent_high_roi'] ?? 3.0))),
+        'dbl_filter_late_local_entry_severity'                => in_array(($p['dbl_filter_late_local_entry_severity'] ?? 'soft_block'), ['warning', 'soft_block', 'hard_block', 'fatal'], true)
+                                                               ? (string)$p['dbl_filter_late_local_entry_severity'] : 'soft_block',
+        'dbl_filter_tiny_room_enabled'                        => ($p['dbl_filter_tiny_room_enabled'] ?? '1') === '1',
+        'dbl_filter_tiny_room_min_room_roi'                   => max(0.0, min(50.0, (float)($p['dbl_filter_tiny_room_min_room_roi'] ?? 2.0))),
+        'dbl_filter_tiny_room_severity'                       => in_array(($p['dbl_filter_tiny_room_severity'] ?? 'warning'), ['warning', 'soft_block', 'hard_block', 'fatal'], true)
+                                                               ? (string)$p['dbl_filter_tiny_room_severity'] : 'warning',
+        'dbl_filter_daily_extension_enabled'                  => ($p['dbl_filter_daily_extension_enabled'] ?? '1') === '1',
+        'dbl_filter_daily_extension_hot_pct'                  => max(0.0, min(200.0, (float)($p['dbl_filter_daily_extension_hot_pct'] ?? 35.0))),
+        'dbl_filter_daily_extension_position_in_range_max_pct' => max(0.0, min(100.0, (float)($p['dbl_filter_daily_extension_position_in_range_max_pct'] ?? 80.0))),
+        'dbl_filter_daily_extension_severity'                 => in_array(($p['dbl_filter_daily_extension_severity'] ?? 'hard_block'), ['warning', 'soft_block', 'hard_block', 'fatal'], true)
+                                                               ? (string)$p['dbl_filter_daily_extension_severity'] : 'hard_block',
+        'dbl_filter_whipsaw_enabled'                          => ($p['dbl_filter_whipsaw_enabled'] ?? '1') === '1',
+        'dbl_filter_whipsaw_max_10m_range_roi'                => max(0.0, min(500.0, (float)($p['dbl_filter_whipsaw_max_10m_range_roi'] ?? 15.0))),
+        'dbl_filter_whipsaw_max_60m_direction_flips'          => max(0, min(200, (int)($p['dbl_filter_whipsaw_max_60m_direction_flips'] ?? 10))),
+        'dbl_filter_whipsaw_requires_weak_quality'            => ($p['dbl_filter_whipsaw_requires_weak_quality'] ?? '1') === '1',
+        'dbl_filter_whipsaw_weak_quality_max_score'           => max(0.0, min(1.0, (float)($p['dbl_filter_whipsaw_weak_quality_max_score'] ?? 0.72))),
+        'dbl_filter_whipsaw_severity'                         => in_array(($p['dbl_filter_whipsaw_severity'] ?? 'hard_block'), ['warning', 'soft_block', 'hard_block', 'fatal'], true)
+                                                               ? (string)$p['dbl_filter_whipsaw_severity'] : 'hard_block',
     ];
 
     try {

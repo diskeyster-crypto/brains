@@ -159,6 +159,24 @@ if ($action === 'save_config') {
         }
     }
 
+    $resolvedFilterEngineEnabled = $boolField('filter_engine_enabled', true);
+    $resolvedFilterEnforcementMode = $strField('filter_enforcement_mode', ['diagnostic_only', 'soft', 'strict'], 'diagnostic_only');
+    if ($selectedProfile === 'raw_no_filters') {
+        $resolvedFilterEngineEnabled = true;
+        $resolvedFilterEnforcementMode = 'diagnostic_only';
+    } elseif ($applyProfile) {
+        if (array_key_exists('filter_engine_enabled', $selectedProfileConfig)) {
+            $resolvedFilterEngineEnabled = (bool)$selectedProfileConfig['filter_engine_enabled'];
+        }
+        if (isset($selectedProfileConfig['filter_enforcement_mode'])) {
+            $resolvedFilterEnforcementMode = $strField(
+                'filter_enforcement_mode',
+                ['diagnostic_only', 'soft', 'strict'],
+                (string)$selectedProfileConfig['filter_enforcement_mode']
+            );
+        }
+    }
+
     $overrides = array_merge($existing, [
         'enabled' => $boolField('enabled'),
         'handoff_enabled' => $boolField('handoff_enabled'),
@@ -183,16 +201,8 @@ if ($action === 'save_config') {
         'min_open_interest_growth_score' => $floatField('min_open_interest_growth_score', 0.0, 1.0, 0.55),
         'missing_open_interest_mode' => $strField('missing_open_interest_mode', ['diagnostic_only', 'block'], 'diagnostic_only'),
         'current_acceleration_window_minutes' => $intField('current_acceleration_window_minutes', 1, 60, 10),
-        'filter_engine_enabled' => $selectedProfile === 'raw_no_filters'
-            ? true
-            : ($applyProfile && array_key_exists('filter_engine_enabled', $selectedProfileConfig)
-                ? (bool)$selectedProfileConfig['filter_engine_enabled']
-                : $boolField('filter_engine_enabled', true)),
-        'filter_enforcement_mode' => $selectedProfile === 'raw_no_filters'
-            ? 'diagnostic_only'
-            : ($applyProfile && isset($selectedProfileConfig['filter_enforcement_mode'])
-                ? $strField('filter_enforcement_mode', ['diagnostic_only', 'soft', 'strict'], (string)$selectedProfileConfig['filter_enforcement_mode'])
-                : $strField('filter_enforcement_mode', ['diagnostic_only', 'soft', 'strict'], 'diagnostic_only')),
+        'filter_engine_enabled' => $resolvedFilterEngineEnabled,
+        'filter_enforcement_mode' => $resolvedFilterEnforcementMode,
         'filter_profile' => $selectedProfile,
         'filter_profile_active' => $selectedProfile,
         'filter_config' => $filterConfig,

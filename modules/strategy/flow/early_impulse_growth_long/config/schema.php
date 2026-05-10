@@ -24,8 +24,10 @@ return [
     'prior_decline_lookback_minutes' => 'int',
     'min_prior_decline_pct' => 'float',
 
+    'recovery_score_mode' => 'string',
     'min_recovery_growth_pct' => 'float',
     'min_recovery_score' => 'float',
+    'min_combined_recovery_score' => 'float',
     'max_recovery_growth_pct' => 'float',
 
     'open_interest_enabled' => 'bool',
@@ -52,7 +54,9 @@ return [
     'bybit_oi_interval' => 'string',
     'bybit_oi_limit' => 'int',
 
+    'max_evaluated_store' => 'int',
     'max_candidates_store' => 'int',
+    'max_near_pass_store' => 'int',
     'max_rejects_store' => 'int',
     'max_signals_store' => 'int',
 ];

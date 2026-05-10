@@ -46,7 +46,11 @@ $statusColor = match ($status) {
 };
 
 $acceptedExamples = is_array($lastRun['accepted_examples'] ?? null) ? (array)$lastRun['accepted_examples'] : [];
+$nearPassExamples = is_array($lastRun['near_pass_examples'] ?? null) ? (array)$lastRun['near_pass_examples'] : [];
 $rejectedExamples = is_array($lastRun['rejected_examples'] ?? null) ? (array)$lastRun['rejected_examples'] : [];
+$bestRecoveryExamples = is_array($lastRun['best_recovery_examples'] ?? null) ? (array)$lastRun['best_recovery_examples'] : [];
+$openInterestExamples = is_array($lastRun['open_interest_growth_examples'] ?? null) ? (array)$lastRun['open_interest_growth_examples'] : [];
+$accelExamples = is_array($lastRun['current_acceleration_examples'] ?? null) ? (array)$lastRun['current_acceleration_examples'] : [];
 ?>
 <style>
 .eig-rt-page { max-width: 1220px; }
@@ -81,11 +85,15 @@ $rejectedExamples = is_array($lastRun['rejected_examples'] ?? null) ? (array)$la
       <div class="rt-box"><div class="rt-val" style="color:<?= $e($statusColor) ?>;font-size:16px;"><?= $e($status) ?></div><div class="rt-lbl">status</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($runState['registry_cursor'] ?? 0)) ?></div><div class="rt-lbl">current_batch_cursor</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['current_run_processed_total'] ?? 0)) ?></div><div class="rt-lbl">processed_symbols</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['current_run_evaluated_total'] ?? ($lastRun['current_run_processed_total'] ?? 0))) ?></div><div class="rt-lbl">current_run_evaluated_total</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($runState['universe_total'] ?? $lastRun['universe_total'] ?? 0)) ?></div><div class="rt-lbl">universe_total</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['current_run_candidates_total'] ?? 0)) ?></div><div class="rt-lbl">current_run_candidates_total</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['current_run_near_pass_total'] ?? 0)) ?></div><div class="rt-lbl">current_run_near_pass_total</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['current_run_signals_total'] ?? 0)) ?></div><div class="rt-lbl">current_run_signals_total</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['current_run_rejects_total'] ?? 0)) ?></div><div class="rt-lbl">current_run_rejects_total</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['stored_evaluated_total'] ?? 0)) ?></div><div class="rt-lbl">stored_evaluated_total</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['stored_candidates_total'] ?? 0)) ?></div><div class="rt-lbl">stored_candidates_total</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['stored_near_pass_total'] ?? 0)) ?></div><div class="rt-lbl">stored_near_pass_total</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['stored_signals_total'] ?? 0)) ?></div><div class="rt-lbl">stored_signals_total</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['stored_rejects_total'] ?? 0)) ?></div><div class="rt-lbl">stored_rejects_total</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['recovery_window_minutes'] ?? 0)) ?></div><div class="rt-lbl">selected_recovery_window</div></div>
@@ -153,6 +161,39 @@ $rejectedExamples = is_array($lastRun['rejected_examples'] ?? null) ? (array)$la
   </div>
 
   <div class="rt-section">
+    <h6>Near-pass examples (visual review)</h6>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border-color,#334155);">
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">symbol</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">entry_price</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">prior_decline_pct</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">recovery_growth_pct</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">open_interest_growth_pct</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">combined_recovery_score</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">raw_reject_reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($nearPassExamples as $row): ?>
+          <tr style="border-bottom:1px solid rgba(51,65,85,.5);">
+            <td style="padding:3px 8px;font-weight:600;"><?= $e($row['symbol'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['entry_price'] ?? null, 6)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['prior_decline_pct'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['recovery_growth_pct'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['open_interest_growth_pct'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['combined_recovery_score'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><code><?= $e($row['raw_reject_reason'] ?? $row['reject_reason'] ?? '—') ?></code></td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+      <?php if ($nearPassExamples === []): ?><div class="note" style="padding:8px 2px;">No near-pass examples in last_run.</div><?php endif; ?>
+    </div>
+  </div>
+
+  <div class="rt-section">
     <h6>Rejected examples</h6>
     <div style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -179,5 +220,14 @@ $rejectedExamples = is_array($lastRun['rejected_examples'] ?? null) ? (array)$la
       </table>
       <?php if ($rejectedExamples === []): ?><div class="note" style="padding:8px 2px;">No rejected examples in last_run yet.</div><?php endif; ?>
     </div>
+  </div>
+
+  <div class="rt-section">
+    <h6>Best recovery / OI / acceleration examples</h6>
+    <table class="rt-kv">
+      <tr><td style="color:#64748b">best_recovery_examples</td><td><code><?= $e(json_encode($bestRecoveryExamples, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+      <tr><td style="color:#64748b">open_interest_growth_examples</td><td><code><?= $e(json_encode($openInterestExamples, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+      <tr><td style="color:#64748b">current_acceleration_examples</td><td><code><?= $e(json_encode($accelExamples, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+    </table>
   </div>
 </div>

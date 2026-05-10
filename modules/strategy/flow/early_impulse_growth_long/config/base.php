@@ -27,8 +27,10 @@ return [
     'min_prior_decline_pct' => 2.0,
 
     // Recovery growth thresholds
+    'recovery_score_mode' => 'threshold',
     'min_recovery_growth_pct' => 3.0,
     'min_recovery_score' => 0.55,
+    'min_combined_recovery_score' => 0.50,
     'max_recovery_growth_pct' => 30.0,
 
     // Open interest growth over recovery window
@@ -60,7 +62,9 @@ return [
     'bybit_oi_limit' => 2,
 
     // Storage caps
+    'max_evaluated_store' => 4000,
     'max_candidates_store' => 2000,
+    'max_near_pass_store' => 2000,
     'max_rejects_store' => 2000,
     'max_signals_store' => 1000,
 ];

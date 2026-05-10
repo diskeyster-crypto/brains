@@ -194,14 +194,18 @@ final class EarlyImpulseGrowthLongService
         $batchSymbols = array_slice($symbols, $offsetBefore, $batchSize);
         $offsetAfter = min($selectedTotal, $offsetBefore + count($batchSymbols));
 
+        $allEvaluated = $this->readJson($this->storagePath('evaluated_contexts.json'), []);
         $allCandidates = $this->readJson($this->storagePath('candidates.json'), []);
+        $allNearPass = $this->readJson($this->storagePath('near_pass_candidates.json'), []);
         $allRejects = $this->readJson($this->storagePath('rejects.json'), []);
         $allSignals = $this->readJson($this->storagePath('signals.json'), []);
 
         $startedAt = date('c');
         $t0 = microtime(true);
 
+        $newEvaluated = [];
         $newCandidates = [];
+        $newNearPass = [];
         $newRejects = [];
         $newSignals = [];
 
@@ -228,26 +232,36 @@ final class EarlyImpulseGrowthLongService
         foreach ($batchSymbols as $symbol) {
             $res = $this->processSymbol((string)$symbol, $config);
 
-            $newCandidates[] = $res['candidate'];
-            if (!($res['candidate']['raw_strategy_passed'] ?? false)) {
+            $candidate = $res['candidate'];
+            $newEvaluated[] = $candidate;
+
+            if ($candidate['raw_strategy_passed'] ?? false) {
+                $newCandidates[] = $candidate;
+            } else {
                 $newRejects[] = [
                     'strategy_id' => self::STRATEGY_ID,
-                    'symbol' => $res['candidate']['symbol'],
+                    'symbol' => $candidate['symbol'],
                     'side' => self::SIDE,
-                    'reject_reason' => (string)($res['candidate']['raw_reject_reason'] ?? 'unknown'),
-                    'detected_at' => $res['candidate']['detected_at'],
+                    'raw_reject_reason' => (string)($candidate['raw_reject_reason'] ?? 'unknown'),
+                    'reject_reason' => (string)($candidate['raw_reject_reason'] ?? 'unknown'),
+                    'detected_at' => $candidate['detected_at'],
                 ];
             }
+
+            if ($res['near_pass']) {
+                $newNearPass[] = $candidate;
+            }
+
             if (!empty($res['signal'])) {
                 $newSignals[] = $res['signal'];
             }
 
-            $reason = (string)($res['candidate']['raw_reject_reason'] ?? '');
+            $reason = (string)($candidate['raw_reject_reason'] ?? '');
             if ($reason !== '') {
                 $diag['reject_reason_counts'][$reason] = (int)($diag['reject_reason_counts'][$reason] ?? 0) + 1;
             }
 
-            foreach ((array)($res['candidate']['filter_results'] ?? []) as $fid => $frow) {
+            foreach ((array)($candidate['filter_results'] ?? []) as $fid => $frow) {
                 if (!is_array($frow)) {
                     continue;
                 }
@@ -290,8 +304,8 @@ final class EarlyImpulseGrowthLongService
                 $diag['oi_missing_allowed_total']++;
                 if (count($diag['open_interest_missing_examples']) < 8) {
                     $diag['open_interest_missing_examples'][] = [
-                        'symbol' => $res['candidate']['symbol'],
-                        'detected_at' => $res['candidate']['detected_at'],
+                        'symbol' => $candidate['symbol'],
+                        'detected_at' => $candidate['detected_at'],
                     ];
                 }
             }
@@ -310,7 +324,7 @@ final class EarlyImpulseGrowthLongService
             if ($m['accel_computed'] ?? false) {
                 $diag['current_acceleration_diagnostic_total']++;
             }
-            if ($res['candidate']['raw_strategy_passed'] ?? false) {
+            if ($candidate['raw_strategy_passed'] ?? false) {
                 $diag['raw_strategy_passed_total']++;
             } else {
                 $diag['raw_strategy_rejected_total']++;
@@ -326,7 +340,9 @@ final class EarlyImpulseGrowthLongService
             }
         }
 
+        $allEvaluated = array_merge(is_array($allEvaluated) ? $allEvaluated : [], $newEvaluated);
         $allCandidates = array_merge(is_array($allCandidates) ? $allCandidates : [], $newCandidates);
+        $allNearPass = array_merge(is_array($allNearPass) ? $allNearPass : [], $newNearPass);
         $allRejects = array_merge(is_array($allRejects) ? $allRejects : [], $newRejects);
 
         $signalIndex = [];
@@ -349,11 +365,15 @@ final class EarlyImpulseGrowthLongService
         }
         $allSignals = array_values($signalIndex);
 
+        $allEvaluated = array_slice($allEvaluated, -max(100, (int)$config['max_evaluated_store']));
         $allCandidates = array_slice($allCandidates, -max(100, (int)$config['max_candidates_store']));
+        $allNearPass = array_slice($allNearPass, -max(100, (int)$config['max_near_pass_store']));
         $allRejects = array_slice($allRejects, -max(100, (int)$config['max_rejects_store']));
         $allSignals = array_slice($allSignals, -max(100, (int)$config['max_signals_store']));
 
+        $this->writeJson($this->storagePath('evaluated_contexts.json'), $allEvaluated);
         $this->writeJson($this->storagePath('candidates.json'), $allCandidates);
+        $this->writeJson($this->storagePath('near_pass_candidates.json'), $allNearPass);
         $this->writeJson($this->storagePath('rejects.json'), $allRejects);
         $this->writeJson($this->storagePath('signals.json'), $allSignals);
 
@@ -382,17 +402,32 @@ final class EarlyImpulseGrowthLongService
         $handoffReadyTotal = count(array_filter($allSignals, static fn(array $s): bool => (bool)($s['handoff_ready'] ?? false)));
         $enabledFilters = $this->computeEnabledFilters($config);
         $filterCatalog = $this->getFilterCatalog();
-        $acceptedExamples = array_values(array_filter($newCandidates, static fn(array $c): bool => (bool)($c['raw_strategy_passed'] ?? false)));
-        $rejectedExamples = array_values(array_filter($newCandidates, static fn(array $c): bool => !(bool)($c['raw_strategy_passed'] ?? false)));
+        $acceptedExamples = $newCandidates;
+        $rejectedExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => !(bool)($c['raw_strategy_passed'] ?? false)));
+        $nearPassExamples = $newNearPass;
 
         usort($acceptedExamples, static fn(array $a, array $b): int => ((float)($b['combined_recovery_score'] ?? 0.0) <=> (float)($a['combined_recovery_score'] ?? 0.0)));
         $bestRecoveryExamples = $acceptedExamples;
+        if ($bestRecoveryExamples === []) {
+            $bestRecoveryExamples = $nearPassExamples;
+            usort($bestRecoveryExamples, static fn(array $a, array $b): int => ((float)($b['combined_recovery_score'] ?? 0.0) <=> (float)($a['combined_recovery_score'] ?? 0.0)));
+        }
+        if ($bestRecoveryExamples === []) {
+            $bestRecoveryExamples = $newEvaluated;
+            usort($bestRecoveryExamples, static fn(array $a, array $b): int => ((float)($b['combined_recovery_score'] ?? 0.0) <=> (float)($a['combined_recovery_score'] ?? 0.0)));
+        }
         usort($bestRecoveryExamples, static fn(array $a, array $b): int => ((float)($b['recovery_growth_pct'] ?? 0.0) <=> (float)($a['recovery_growth_pct'] ?? 0.0)));
-        $openInterestExamples = $acceptedExamples;
+        $openInterestExamples = array_values(array_filter($acceptedExamples, static fn(array $c): bool => isset($c['open_interest_growth_pct']) && $c['open_interest_growth_pct'] !== null));
+        if ($openInterestExamples === []) {
+            $openInterestExamples = array_values(array_filter($nearPassExamples, static fn(array $c): bool => isset($c['open_interest_growth_pct']) && $c['open_interest_growth_pct'] !== null));
+        }
+        if ($openInterestExamples === []) {
+            $openInterestExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => isset($c['open_interest_growth_pct']) && $c['open_interest_growth_pct'] !== null));
+        }
         usort($openInterestExamples, static fn(array $a, array $b): int => ((float)($b['open_interest_growth_pct'] ?? -INF) <=> (float)($a['open_interest_growth_pct'] ?? -INF)));
-        $priorDeclineExamples = $newCandidates;
+        $priorDeclineExamples = $newEvaluated;
         usort($priorDeclineExamples, static fn(array $a, array $b): int => ((float)($b['prior_decline_pct'] ?? 0.0) <=> (float)($a['prior_decline_pct'] ?? 0.0)));
-        $accelExamples = $newCandidates;
+        $accelExamples = $newEvaluated;
         usort($accelExamples, static fn(array $a, array $b): int => ((float)($b['current_price_change_pct_10m'] ?? -INF) <=> (float)($a['current_price_change_pct_10m'] ?? -INF)));
 
         $acceptedExamples = array_slice(array_map(static function (array $c): array {
@@ -414,11 +449,25 @@ final class EarlyImpulseGrowthLongService
             return [
                 'symbol' => $c['symbol'] ?? null,
                 'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
+                'reject_reason' => $c['raw_reject_reason'] ?? null,
                 'prior_decline_pct' => $c['prior_decline_pct'] ?? null,
                 'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
                 'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
             ];
         }, $rejectedExamples), 0, 20);
+        $nearPassExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'entry_price' => $c['entry_price'] ?? null,
+                'prior_decline_pct' => $c['prior_decline_pct'] ?? null,
+                'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
+                'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
+                'combined_recovery_score' => $c['combined_recovery_score'] ?? null,
+                'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
+                'reject_reason' => $c['raw_reject_reason'] ?? null,
+            ];
+        }, $nearPassExamples), 0, 20);
         $bestRecoveryExamples = array_slice(array_map(static function (array $c): array {
             return [
                 'symbol' => $c['symbol'] ?? null,
@@ -464,13 +513,17 @@ final class EarlyImpulseGrowthLongService
 
             // Current run counters
             'current_run_processed_total' => count($batchSymbols),
+            'current_run_evaluated_total' => count($newEvaluated),
             'current_run_candidates_total' => count($newCandidates),
+            'current_run_near_pass_total' => count($newNearPass),
             'current_run_signals_total' => count($newSignals),
             'current_run_rejects_total' => count($newRejects),
             'batch_symbols_examples' => array_slice($batchSymbols, 0, 8),
 
             // Stored totals
+            'stored_evaluated_total' => count($allEvaluated),
             'stored_candidates_total' => count($allCandidates),
+            'stored_near_pass_total' => count($allNearPass),
             'stored_signals_total' => count($allSignals),
             'stored_rejects_total' => count($allRejects),
             'handoff_ready_total' => $handoffReadyTotal,
@@ -528,6 +581,7 @@ final class EarlyImpulseGrowthLongService
             'open_interest_missing_examples' => $diag['open_interest_missing_examples'],
             'reject_reason_counts' => $diag['reject_reason_counts'],
             'accepted_examples' => $acceptedExamples,
+            'near_pass_examples' => $nearPassExamples,
             'rejected_examples' => $rejectedExamples,
             'best_recovery_examples' => $bestRecoveryExamples,
             'prior_decline_examples' => $priorDeclineExamples,
@@ -550,7 +604,7 @@ final class EarlyImpulseGrowthLongService
     }
 
     /**
-     * @return array{candidate: array<string,mixed>, signal: array<string,mixed>|null, metrics: array<string,bool>}
+     * @return array{candidate: array<string,mixed>, signal: array<string,mixed>|null, metrics: array<string,bool>, near_pass: bool}
      */
     private function processSymbol(string $symbol, array $config): array
     {
@@ -686,6 +740,7 @@ final class EarlyImpulseGrowthLongService
         $recoveryDurationMin = 0;
         $recoveryScore = 0.0;
         $recoveryPhase = 'early';
+        $recoveryGrowthGate = false;
         $recoveryGrowthPass = false;
         $combinedRecoveryScore = 0.0;
 
@@ -693,14 +748,20 @@ final class EarlyImpulseGrowthLongService
             if ($latestPrice > 0.0 && $recoveryLowPrice > 0.0) {
                 $recoveryGrowthPct = (($latestPrice - $recoveryLowPrice) / $recoveryLowPrice) * 100.0;
                 $recoveryDurationMin = (int)round(($now - $recoveryLowTs) / 60);
-                $recoveryScore = $this->scoreRange(
-                    $recoveryGrowthPct,
-                    (float)$config['min_recovery_growth_pct'],
-                    (float)$config['max_recovery_growth_pct']
-                );
-
-                $recoveryGrowthPass = $recoveryGrowthPct >= (float)$config['min_recovery_growth_pct']
-                    && $recoveryScore >= (float)$config['min_recovery_score'];
+                $scoreMode = (string)($config['recovery_score_mode'] ?? 'threshold');
+                if ($scoreMode === 'range') {
+                    $recoveryScore = $this->scoreRange(
+                        $recoveryGrowthPct,
+                        (float)$config['min_recovery_growth_pct'],
+                        (float)$config['max_recovery_growth_pct']
+                    );
+                } else {
+                    $recoveryScore = $this->scoreThreshold(
+                        $recoveryGrowthPct,
+                        (float)$config['min_recovery_growth_pct']
+                    );
+                }
+                $recoveryGrowthGate = $recoveryGrowthPct >= (float)$config['min_recovery_growth_pct'];
 
                 // Recovery phase classification
                 if ($recoveryDurationMin >= $recoveryMaxWindowMin) {
@@ -712,10 +773,8 @@ final class EarlyImpulseGrowthLongService
                 }
             }
 
-            if (!$recoveryGrowthPass) {
+            if (!$recoveryGrowthGate) {
                 $rejectReason = 'insufficient_recovery_growth';
-            } else {
-                $metrics['recovery_growth_pass'] = true;
             }
         }
 
@@ -768,6 +827,17 @@ final class EarlyImpulseGrowthLongService
             4
         );
 
+        $recoveryGrowthPass = $recoveryGrowthGate
+            && (
+                $recoveryScore >= (float)$config['min_recovery_score']
+                || $combinedRecoveryScore >= (float)$config['min_combined_recovery_score']
+            );
+        if ($recoveryGrowthPass) {
+            $metrics['recovery_growth_pass'] = true;
+        } elseif ($rejectReason === null) {
+            $rejectReason = 'insufficient_recovery_growth';
+        }
+
         // --- 5. Current acceleration diagnostic (not a reject condition) ---
         $accelPriceChangePct = null;
         $accelOiGrowthPct = null;
@@ -809,6 +879,12 @@ final class EarlyImpulseGrowthLongService
             && $priorDeclineDetected
             && $recoveryGrowthPass
             && ($oiPass || $metrics['oi_missing_allowed']);
+
+        $nearPass = !$rawPassed
+            && $priorDeclineDetected
+            && $recoveryGrowthPct >= (float)$config['min_recovery_growth_pct']
+            && ($oiPass || $metrics['oi_missing_allowed'])
+            && $combinedRecoveryScore >= 0.45;
 
         $signalId = strtolower($symbol)
             . '_' . self::SIDE
@@ -854,6 +930,8 @@ final class EarlyImpulseGrowthLongService
             'combined_recovery_score' => $combinedRecoveryScore,
             'raw_strategy_passed' => $rawPassed,
             'raw_reject_reason' => $rawPassed ? null : ($rejectReason ?? 'insufficient_data'),
+            'reject_reason' => $rawPassed ? null : ($rejectReason ?? 'insufficient_data'),
+            'near_pass' => $nearPass,
 
             'data_source_used' => $source,
             'data_latest_ts_unix' => $latestTs,
@@ -927,6 +1005,7 @@ final class EarlyImpulseGrowthLongService
             'candidate' => $candidate,
             'signal' => $signal,
             'metrics' => $metrics,
+            'near_pass' => $nearPass,
         ];
     }
 
@@ -1393,7 +1472,10 @@ final class EarlyImpulseGrowthLongService
         // Recovery growth
         $cfg['min_recovery_growth_pct'] = max(0.0, (float)($cfg['min_recovery_growth_pct'] ?? 3.0));
         $cfg['min_recovery_score'] = max(0.0, min(1.0, (float)($cfg['min_recovery_score'] ?? 0.55)));
+        $cfg['min_combined_recovery_score'] = max(0.0, min(1.0, (float)($cfg['min_combined_recovery_score'] ?? 0.50)));
         $cfg['max_recovery_growth_pct'] = max((float)$cfg['min_recovery_growth_pct'], (float)($cfg['max_recovery_growth_pct'] ?? 30.0));
+        $recoveryScoreMode = (string)($cfg['recovery_score_mode'] ?? 'threshold');
+        $cfg['recovery_score_mode'] = in_array($recoveryScoreMode, ['threshold', 'range'], true) ? $recoveryScoreMode : 'threshold';
 
         // Open interest
         $cfg['open_interest_enabled'] = (bool)($cfg['open_interest_enabled'] ?? true);
@@ -1436,7 +1518,9 @@ final class EarlyImpulseGrowthLongService
         $cfg['bybit_oi_interval'] = (string)($cfg['bybit_oi_interval'] ?? '5min');
         $cfg['bybit_oi_limit'] = max(2, min(50, (int)($cfg['bybit_oi_limit'] ?? 2)));
 
+        $cfg['max_evaluated_store'] = max(100, (int)($cfg['max_evaluated_store'] ?? 4000));
         $cfg['max_candidates_store'] = max(100, (int)($cfg['max_candidates_store'] ?? 2000));
+        $cfg['max_near_pass_store'] = max(100, (int)($cfg['max_near_pass_store'] ?? 2000));
         $cfg['max_rejects_store'] = max(100, (int)($cfg['max_rejects_store'] ?? 2000));
         $cfg['max_signals_store'] = max(100, (int)($cfg['max_signals_store'] ?? 1000));
 

@@ -2816,6 +2816,7 @@ final class DoubleBottomLongService
             'filter_engine_diagnostic_only_passed_total' => $handoffStats['filter_engine_diagnostic_only_passed_total'] ?? 0,
             'filter_engine_results_by_filter'          => $handoffStats['filter_engine_results_by_filter'] ?? (object)[],
             'filter_engine_examples'                   => $handoffStats['filter_engine_examples'] ?? [],
+            'filter_engine_ready_examples'             => $handoffStats['filter_engine_ready_examples'] ?? [],
             'restored_normal_handoff_total'            => $handoffStats['restored_normal_handoff_total'] ?? 0,
             'restored_normal_handoff_examples'         => $handoffStats['restored_normal_handoff_examples'] ?? [],
             'diagnostic_only_nonfatal_pass_total'      => $handoffStats['diagnostic_only_nonfatal_pass_total'] ?? $handoffStats['restored_normal_handoff_total'] ?? 0,
@@ -9237,6 +9238,7 @@ final class DoubleBottomLongService
         $filterEngineDiagnosticOnlyPassedTotal       = 0;
         $filterEngineResultsByFilter                 = [];
         $filterEngineExamples                        = [];
+        $filterEngineReadyExamples                   = [];
         $restoredNormalHandoffTotal                  = 0;
         $restoredNormalHandoffExamples               = [];
 
@@ -10500,6 +10502,22 @@ final class DoubleBottomLongService
                     'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
                 ];
             }
+            if ((bool)($entry['handoff_ready'] ?? false) && (bool)($entry['executable'] ?? false)
+                && count($filterEngineReadyExamples) < 5
+            ) {
+                $filterEngineReadyExamples[] = [
+                    'symbol'                        => $entry['symbol'] ?? null,
+                    'handoff_ready'                 => true,
+                    'executable'                    => true,
+                    'filter_enforcement_mode'        => $entry['filter_enforcement_mode'] ?? null,
+                    'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+                    'fatal_filter_reasons'          => $entry['fatal_filter_reasons'] ?? [],
+                    'hard_block_filter_reasons'     => $entryHard,
+                    'soft_block_filter_reasons'     => $entrySoft,
+                    'warning_filter_reasons'        => $entryWarn,
+                    'filter_results'                => $entry['filter_results'] ?? [],
+                ];
+            }
 
             if ((bool)($entry['fatal_filter_hit'] ?? false)) {
                 $this->filterAuditHardBlockedTotal++;
@@ -10899,6 +10917,7 @@ final class DoubleBottomLongService
             'filter_engine_diagnostic_only_passed_total'=> $filterEngineDiagnosticOnlyPassedTotal,
             'filter_engine_results_by_filter'           => empty($filterEngineResultsByFilter) ? (object)[] : $filterEngineResultsByFilter,
             'filter_engine_examples'                    => $filterEngineExamples,
+            'filter_engine_ready_examples'              => $filterEngineReadyExamples,
             'restored_normal_handoff_total'             => $restoredNormalHandoffTotal,
             'restored_normal_handoff_examples'          => $restoredNormalHandoffExamples,
             'diagnostic_only_nonfatal_pass_total'       => $restoredNormalHandoffTotal,
@@ -11400,6 +11419,7 @@ final class DoubleBottomLongService
             'garbage_obc_quality_skip'                      => 'low_quality_without_obc_filter',
             'garbage_local_late_entry_after_recovery'       => 'late_local_entry_filter',
             'garbage_late_local_tiny_room_far_from_point3'  => 'late_local_entry_filter',
+            'garbage_late_local_tiny_room_without_reclaim'  => 'late_local_entry_filter',
             'garbage_late_daily_extension_long'             => 'daily_extension_filter',
             'garbage_whipsaw_weak_quality'                  => 'whipsaw_filter',
             'missing_reclaim_confirmation'                  => 'missing_reclaim_filter',
@@ -11407,6 +11427,7 @@ final class DoubleBottomLongService
             'late_local_tiny_room'                          => 'tiny_room_filter',
             'point3_broken'                                 => 'point3_terminal_break_filter',
             'terminal_point3_broken'                        => 'point3_terminal_break_filter',
+            'confirmation_ttl_expired'                      => 'confirmed_pattern_ttl_filter',
             'confirmed_pattern_ttl_expired'                 => 'confirmed_pattern_ttl_filter',
         ];
         $canonicalize = static function (array $reasons) use ($legacyToCanonical): array {
@@ -11795,6 +11816,7 @@ final class DoubleBottomLongService
             'garbage_obc_quality_skip'                      => 'low_quality_without_obc_filter',
             'garbage_local_late_entry_after_recovery'       => 'late_local_entry_filter',
             'garbage_late_local_tiny_room_far_from_point3'  => 'late_local_entry_filter',
+            'garbage_late_local_tiny_room_without_reclaim'  => 'late_local_entry_filter',
             'garbage_late_daily_extension_long'             => 'daily_extension_filter',
             'garbage_whipsaw_weak_quality'                  => 'whipsaw_filter',
             'missing_reclaim_confirmation'                  => 'missing_reclaim_filter',
@@ -11802,6 +11824,7 @@ final class DoubleBottomLongService
             'late_local_tiny_room'                          => 'tiny_room_filter',
             'point3_broken'                                 => 'point3_terminal_break_filter',
             'terminal_point3_broken'                        => 'point3_terminal_break_filter',
+            'confirmation_ttl_expired'                      => 'confirmed_pattern_ttl_filter',
             'confirmed_pattern_ttl_expired'                 => 'confirmed_pattern_ttl_filter',
         ];
 
@@ -12156,6 +12179,7 @@ final class DoubleBottomLongService
             'garbage_obc_quality_skip'                      => 'low_quality_without_obc_filter',
             'garbage_local_late_entry_after_recovery'       => 'late_local_entry_filter',
             'garbage_late_local_tiny_room_far_from_point3'  => 'late_local_entry_filter',
+            'garbage_late_local_tiny_room_without_reclaim'  => 'late_local_entry_filter',
             'garbage_late_daily_extension_long'             => 'daily_extension_filter',
             'garbage_whipsaw_weak_quality'                  => 'whipsaw_filter',
             'missing_reclaim_confirmation'                  => 'missing_reclaim_filter',
@@ -12163,6 +12187,7 @@ final class DoubleBottomLongService
             'late_local_tiny_room'                          => 'tiny_room_filter',
             'point3_broken'                                 => 'point3_terminal_break_filter',
             'terminal_point3_broken'                        => 'point3_terminal_break_filter',
+            'confirmation_ttl_expired'                      => 'confirmed_pattern_ttl_filter',
             'confirmed_pattern_ttl_expired'                 => 'confirmed_pattern_ttl_filter',
         ];
 

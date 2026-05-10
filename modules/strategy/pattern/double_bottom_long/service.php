@@ -1995,6 +1995,13 @@ final class DoubleBottomLongService
                 // Lifecycle consistency counters
                 'lifecycle_consistency_checked_total'  => $this->lifecycleConsistencyCheckedTotal,
                 'lifecycle_inconsistent_fixed_total'   => $this->lifecycleInconsistentFixedTotal,
+                // Accumulated filter-audit case-library learning stats (unique outcome based)
+                'filter_audit_cases_unique_outcomes_total'   => $handoffStats['filter_audit_cases_unique_outcomes_total'] ?? 0,
+                'filter_audit_cases_duplicate_outcomes_total'=> $handoffStats['filter_audit_cases_duplicate_outcomes_total'] ?? 0,
+                'filter_audit_cases_unknown_reason_total'    => $handoffStats['filter_audit_cases_unknown_reason_total'] ?? 0,
+                'dbl_case_stats_by_filter'                   => $handoffStats['dbl_case_stats_by_filter'] ?? (object)[],
+                'dbl_filters_likely_too_strict'              => $handoffStats['dbl_filters_likely_too_strict'] ?? [],
+                'dbl_filters_likely_validated'               => $handoffStats['dbl_filters_likely_validated'] ?? [],
             ])) . "\n";
             @file_put_contents(
                 $this->moduleDir . '/storage/cycle_history.ndjson',
@@ -2744,6 +2751,11 @@ final class DoubleBottomLongService
             'filter_audit_outcome_dedupe_checked_total'    => $filterAudit['filter_audit_outcome_dedupe_checked_total'] ?? ($handoffStats['filter_audit_outcome_dedupe_checked_total'] ?? 0),
             'filter_audit_outcome_duplicate_skipped_total' => $filterAudit['filter_audit_outcome_duplicate_skipped_total'] ?? ($handoffStats['filter_audit_outcome_duplicate_skipped_total'] ?? 0),
             'filter_audit_outcome_duplicate_examples'      => $filterAudit['filter_audit_outcome_duplicate_examples'] ?? ($handoffStats['filter_audit_outcome_duplicate_examples'] ?? []),
+            'filter_audit_cases_unique_outcomes_total'     => $filterAudit['filter_audit_cases_unique_outcomes_total'] ?? ($handoffStats['filter_audit_cases_unique_outcomes_total'] ?? 0),
+            'filter_audit_cases_duplicate_outcomes_total'  => $filterAudit['filter_audit_cases_duplicate_outcomes_total'] ?? ($handoffStats['filter_audit_cases_duplicate_outcomes_total'] ?? 0),
+            'filter_audit_cases_duplicate_outcomes_examples' => $filterAudit['filter_audit_cases_duplicate_outcomes_examples'] ?? ($handoffStats['filter_audit_cases_duplicate_outcomes_examples'] ?? []),
+            'filter_audit_cases_unknown_reason_total'      => $filterAudit['filter_audit_cases_unknown_reason_total'] ?? ($handoffStats['filter_audit_cases_unknown_reason_total'] ?? 0),
+            'filter_audit_cases_unknown_reason_examples'   => $filterAudit['filter_audit_cases_unknown_reason_examples'] ?? ($handoffStats['filter_audit_cases_unknown_reason_examples'] ?? []),
             'dbl_case_stats_by_filter'                 => $filterAudit['dbl_case_stats_by_filter'] ?? ($handoffStats['dbl_case_stats_by_filter'] ?? (object)[]),
             'dbl_positive_case_examples'               => $filterAudit['dbl_positive_case_examples'] ?? ($handoffStats['dbl_positive_case_examples'] ?? []),
             'dbl_negative_case_examples'               => $filterAudit['dbl_negative_case_examples'] ?? ($handoffStats['dbl_negative_case_examples'] ?? []),
@@ -10664,6 +10676,11 @@ final class DoubleBottomLongService
             'filter_audit_outcome_dedupe_checked_total'        => $filterAuditSummary['filter_audit_outcome_dedupe_checked_total'] ?? 0,
             'filter_audit_outcome_duplicate_skipped_total'     => $filterAuditSummary['filter_audit_outcome_duplicate_skipped_total'] ?? 0,
             'filter_audit_outcome_duplicate_examples'          => $filterAuditSummary['filter_audit_outcome_duplicate_examples'] ?? [],
+            'filter_audit_cases_unique_outcomes_total'         => $filterAuditSummary['filter_audit_cases_unique_outcomes_total'] ?? 0,
+            'filter_audit_cases_duplicate_outcomes_total'      => $filterAuditSummary['filter_audit_cases_duplicate_outcomes_total'] ?? 0,
+            'filter_audit_cases_duplicate_outcomes_examples'   => $filterAuditSummary['filter_audit_cases_duplicate_outcomes_examples'] ?? [],
+            'filter_audit_cases_unknown_reason_total'          => $filterAuditSummary['filter_audit_cases_unknown_reason_total'] ?? 0,
+            'filter_audit_cases_unknown_reason_examples'       => $filterAuditSummary['filter_audit_cases_unknown_reason_examples'] ?? [],
             'dbl_case_stats_by_filter'                         => $filterAuditSummary['dbl_case_stats_by_filter'] ?? (object)[],
             'dbl_positive_case_examples'                       => $filterAuditSummary['dbl_positive_case_examples'] ?? [],
             'dbl_negative_case_examples'                       => $filterAuditSummary['dbl_negative_case_examples'] ?? [],
@@ -11362,6 +11379,11 @@ final class DoubleBottomLongService
             'dbl_inconclusive_case_examples'           => [],
             'dbl_filters_likely_too_strict'            => [],
             'dbl_filters_likely_validated'             => [],
+            'filter_audit_cases_unique_outcomes_total' => 0,
+            'filter_audit_cases_duplicate_outcomes_total' => 0,
+            'filter_audit_cases_duplicate_outcomes_examples' => [],
+            'filter_audit_cases_unknown_reason_total'  => 0,
+            'filter_audit_cases_unknown_reason_examples' => [],
         ];
         if (empty($journal)) {
             return $summary;
@@ -11596,7 +11618,270 @@ final class DoubleBottomLongService
         $summary['dbl_filters_likely_too_strict'] = $likelyTooStrict;
         $summary['dbl_filters_likely_validated']  = $likelyValidated;
 
+        // Build accumulated learning stats from case library using global unique outcome_key
+        // canonicalization (not filter_audit_id + outcome_key).
+        $accumulatedCaseStats = $this->summarizeDblFilterAuditCasesForLearning($config);
+        foreach ($accumulatedCaseStats as $k => $v) {
+            $summary[$k] = $v;
+        }
+
         return $summary;
+    }
+
+    /**
+     * Compare two case records and decide which one should be canonical for a single outcome_key.
+     * Preference order:
+     *  1) non-empty would_have_blocked_by_filters
+     *  2) specific filters preferred over unknown_soft_block_reason
+     *  3) filter_audit_sent_to_bot=true
+     *  4) latest resolved_at timestamp
+     */
+    private function isPreferredDblFilterAuditCase(array $candidate, array $current): bool
+    {
+        $normalizeReasons = static function (array $case): array {
+            $reasons = [];
+            foreach ((array)($case['would_have_blocked_by_filters'] ?? []) as $r) {
+                $reason = trim((string)$r);
+                if ($reason !== '') {
+                    $reasons[] = $reason;
+                }
+            }
+            return array_values(array_unique($reasons));
+        };
+
+        $score = static function (array $case) use ($normalizeReasons): int {
+            $reasons = $normalizeReasons($case);
+            $specific = array_values(array_filter(
+                $reasons,
+                static fn(string $r): bool => $r !== 'unknown_soft_block_reason'
+            ));
+            $s = 0;
+            if (!empty($reasons)) {
+                $s += 100;
+            }
+            if (!empty($specific)) {
+                $s += 50;
+            }
+            if ((bool)($case['filter_audit_sent_to_bot'] ?? false)) {
+                $s += 10;
+            }
+            return $s;
+        };
+
+        $candScore = $score($candidate);
+        $currScore = $score($current);
+        if ($candScore !== $currScore) {
+            return $candScore > $currScore;
+        }
+
+        $candTs = isset($candidate['resolved_at']) ? strtotime((string)$candidate['resolved_at']) : false;
+        $currTs = isset($current['resolved_at']) ? strtotime((string)$current['resolved_at']) : false;
+        $candTs = ($candTs !== false && $candTs > 0) ? $candTs : 0;
+        $currTs = ($currTs !== false && $currTs > 0) ? $currTs : 0;
+        return $candTs > $currTs;
+    }
+
+    /**
+     * Canonicalize case library by global outcome_key and compute accumulated learning stats.
+     *
+     * @return array<string,mixed>
+     */
+    private function summarizeDblFilterAuditCasesForLearning(array $config): array
+    {
+        $positiveRoiThreshold = (float)($config['dbl_filter_audit_positive_roi_threshold'] ?? 2.0);
+        $negativeRoiThreshold = (float)($config['dbl_filter_audit_negative_roi_threshold'] ?? -2.0);
+
+        $rawCases = (array)$this->readJson('storage/filter_audit_cases.json', []);
+        $caseRows = [];
+        foreach ($rawCases as $caseId => $case) {
+            if (!is_array($case)) {
+                continue;
+            }
+            if (!isset($case['case_id']) || (string)$case['case_id'] === '') {
+                $case['case_id'] = (string)$caseId;
+            }
+            $caseRows[] = $case;
+        }
+
+        $canonicalByOutcome = [];
+        $duplicateOutcomesTotal = 0;
+        $duplicateExamples = [];
+
+        foreach ($caseRows as $case) {
+            $outcomeKey = trim((string)($case['outcome_key'] ?? ''));
+            if ($outcomeKey === '') {
+                $closeRoi = $case['close_roi'] ?? null;
+                $outcomeKey =
+                    strtolower((string)($case['symbol'] ?? ''))
+                    . '|' . (string)($case['side'] ?? 'long')
+                    . '|' . (string)($case['created_at'] ?? '')
+                    . '|' . (string)($case['resolved_at'] ?? '')
+                    . '|' . ($closeRoi !== null ? number_format((float)$closeRoi, 6, '.', '') : 'null');
+            }
+            $case['outcome_key'] = $outcomeKey;
+
+            if (!isset($canonicalByOutcome[$outcomeKey])) {
+                $case['related_filter_audit_ids'] = array_values(array_unique(array_filter([
+                    (string)($case['filter_audit_id'] ?? ''),
+                ])));
+                $canonicalByOutcome[$outcomeKey] = $case;
+                continue;
+            }
+
+            $duplicateOutcomesTotal++;
+            $existing = $canonicalByOutcome[$outcomeKey];
+            $relatedIds = array_values(array_unique(array_filter(array_merge(
+                (array)($existing['related_filter_audit_ids'] ?? []),
+                [(string)($existing['filter_audit_id'] ?? ''), (string)($case['filter_audit_id'] ?? '')]
+            ))));
+
+            $preferred = $this->isPreferredDblFilterAuditCase($case, $existing) ? $case : $existing;
+            $preferred['related_filter_audit_ids'] = $relatedIds;
+            $canonicalByOutcome[$outcomeKey] = $preferred;
+
+            if (count($duplicateExamples) < 10) {
+                $duplicateExamples[] = [
+                    'outcome_key' => $outcomeKey,
+                    'symbol' => $preferred['symbol'] ?? null,
+                    'close_roi' => $preferred['close_roi'] ?? null,
+                    'related_filter_audit_ids' => $relatedIds,
+                ];
+            }
+        }
+
+        // Rewrite cases.json with canonical unique outcomes only (ndjson remains raw history).
+        $canonicalMap = [];
+        foreach ($canonicalByOutcome as $outcomeKey => $case) {
+            $caseId = (string)($case['case_id'] ?? '');
+            if ($caseId === '') {
+                $caseId = 'case_' . md5($outcomeKey);
+                $case['case_id'] = $caseId;
+            }
+            $canonicalMap[$caseId] = $case;
+        }
+        $this->writeJson('storage/filter_audit_cases.json', $canonicalMap);
+
+        $caseStatsByFilter = [];
+        $positiveExamples = [];
+        $negativeExamples = [];
+        $inconclusiveExamples = [];
+        $unknownReasonTotal = 0;
+        $unknownReasonExamples = [];
+
+        foreach ($canonicalByOutcome as $case) {
+            $roi = isset($case['close_roi']) && $case['close_roi'] !== null ? (float)$case['close_roi'] : null;
+            if ($roi === null) {
+                continue;
+            }
+            $verdict = 'inconclusive_case';
+            if ($roi >= $positiveRoiThreshold) {
+                $verdict = 'positive_case';
+            } elseif ($roi <= $negativeRoiThreshold) {
+                $verdict = 'negative_case';
+            }
+
+            $filters = [];
+            foreach ((array)($case['would_have_blocked_by_filters'] ?? []) as $reason) {
+                $r = trim((string)$reason);
+                if ($r !== '') {
+                    $filters[] = $r;
+                }
+            }
+            $filters = array_values(array_unique($filters));
+            $specificFilters = array_values(array_filter(
+                $filters,
+                static fn(string $r): bool => $r !== 'unknown_soft_block_reason'
+            ));
+            $wouldHaveBlocked = (bool)($case['would_have_blocked'] ?? false);
+
+            // Ignore dirty/unknown filter reasons from per-filter learning and track separately.
+            if ($wouldHaveBlocked && empty($specificFilters)) {
+                $unknownReasonTotal++;
+                if (count($unknownReasonExamples) < 10) {
+                    $unknownReasonExamples[] = [
+                        'outcome_key' => $case['outcome_key'] ?? null,
+                        'symbol' => $case['symbol'] ?? null,
+                        'close_roi' => $roi,
+                        'filters' => $filters,
+                    ];
+                }
+            } else {
+                foreach ($specificFilters as $filterName) {
+                    $caseStatsByFilter[$filterName]['_roi_sum'] = (float)($caseStatsByFilter[$filterName]['_roi_sum'] ?? 0.0) + $roi;
+                    $caseStatsByFilter[$filterName]['_roi_count'] = (int)($caseStatsByFilter[$filterName]['_roi_count'] ?? 0) + 1;
+                    if ($verdict === 'positive_case') {
+                        $caseStatsByFilter[$filterName]['positive_cases_total'] = (int)($caseStatsByFilter[$filterName]['positive_cases_total'] ?? 0) + 1;
+                        $caseStatsByFilter[$filterName]['filter_too_strict_total'] = (int)($caseStatsByFilter[$filterName]['filter_too_strict_total'] ?? 0) + 1;
+                    } elseif ($verdict === 'negative_case') {
+                        $caseStatsByFilter[$filterName]['negative_cases_total'] = (int)($caseStatsByFilter[$filterName]['negative_cases_total'] ?? 0) + 1;
+                        $caseStatsByFilter[$filterName]['filter_validated_total'] = (int)($caseStatsByFilter[$filterName]['filter_validated_total'] ?? 0) + 1;
+                    } else {
+                        $caseStatsByFilter[$filterName]['inconclusive_cases_total'] = (int)($caseStatsByFilter[$filterName]['inconclusive_cases_total'] ?? 0) + 1;
+                        $caseStatsByFilter[$filterName]['filter_inconclusive_total'] = (int)($caseStatsByFilter[$filterName]['filter_inconclusive_total'] ?? 0) + 1;
+                    }
+                }
+            }
+
+            $example = [
+                'outcome_key' => $case['outcome_key'] ?? null,
+                'symbol' => $case['symbol'] ?? null,
+                'close_roi' => $roi,
+                'would_have_blocked_by_filters' => $specificFilters,
+            ];
+            if ($verdict === 'positive_case' && count($positiveExamples) < 5) {
+                $positiveExamples[] = $example;
+            } elseif ($verdict === 'negative_case' && count($negativeExamples) < 5) {
+                $negativeExamples[] = $example;
+            } elseif ($verdict === 'inconclusive_case' && count($inconclusiveExamples) < 5) {
+                $inconclusiveExamples[] = $example;
+            }
+        }
+
+        $cleanCaseStats = [];
+        $likelyTooStrict = [];
+        $likelyValidated = [];
+        foreach ($caseStatsByFilter as $filterName => $stats) {
+            if ($filterName === 'unknown_soft_block_reason') {
+                continue;
+            }
+            $pos = (int)($stats['positive_cases_total'] ?? 0);
+            $neg = (int)($stats['negative_cases_total'] ?? 0);
+            $inc = (int)($stats['inconclusive_cases_total'] ?? 0);
+            $roiCount = (int)($stats['_roi_count'] ?? 0);
+            $roiSum = (float)($stats['_roi_sum'] ?? 0.0);
+            $avgRoi = $roiCount > 0 ? round($roiSum / $roiCount, 4) : null;
+
+            $cleanCaseStats[$filterName] = [
+                'positive_cases_total' => $pos,
+                'negative_cases_total' => $neg,
+                'inconclusive_cases_total' => $inc,
+                'avg_close_roi' => $avgRoi,
+                'filter_too_strict_total' => (int)($stats['filter_too_strict_total'] ?? 0),
+                'filter_validated_total' => (int)($stats['filter_validated_total'] ?? 0),
+                'filter_inconclusive_total' => (int)($stats['filter_inconclusive_total'] ?? 0),
+            ];
+
+            if ($pos >= 2 && $pos > $neg) {
+                $likelyTooStrict[] = $filterName;
+            }
+            if ($neg >= 2 && $neg > $pos) {
+                $likelyValidated[] = $filterName;
+            }
+        }
+
+        return [
+            'filter_audit_cases_unique_outcomes_total' => count($canonicalByOutcome),
+            'filter_audit_cases_duplicate_outcomes_total' => $duplicateOutcomesTotal,
+            'filter_audit_cases_duplicate_outcomes_examples' => $duplicateExamples,
+            'filter_audit_cases_unknown_reason_total' => $unknownReasonTotal,
+            'filter_audit_cases_unknown_reason_examples' => $unknownReasonExamples,
+            'dbl_case_stats_by_filter' => empty($cleanCaseStats) ? (object)[] : $cleanCaseStats,
+            'dbl_positive_case_examples' => $positiveExamples,
+            'dbl_negative_case_examples' => $negativeExamples,
+            'dbl_inconclusive_case_examples' => $inconclusiveExamples,
+            'dbl_filters_likely_too_strict' => $likelyTooStrict,
+            'dbl_filters_likely_validated' => $likelyValidated,
+        ];
     }
 
     /**
@@ -11629,11 +11914,6 @@ final class DoubleBottomLongService
         $cases    = is_string($casesRaw) && $casesRaw !== '' ? @json_decode($casesRaw, true) : [];
         $cases    = is_array($cases) ? $cases : [];
 
-        // Dedupe by case_id
-        if (isset($cases[$caseId])) {
-            return;
-        }
-
         $roi         = $entry['close_roi'] ?? null;
         $ssc         = is_array($entry['strategy_signal_context'] ?? null) ? $entry['strategy_signal_context'] : [];
         $newCase = [
@@ -11655,6 +11935,7 @@ final class DoubleBottomLongService
             'filter_verdict'                => $entry['filter_verdict'] ?? 'pending',
             'would_have_blocked'            => $entry['would_have_blocked'] ?? false,
             'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+            'filter_audit_sent_to_bot'      => (bool)($entry['filter_audit_sent_to_bot'] ?? false),
             'fatal_filter_reasons'          => $entry['fatal_filter_reasons'] ?? [],
             'final_quality_soft_causes'     => $ssc['final_quality_soft_causes'] ?? $entry['final_quality_soft_causes'] ?? null,
             'final_quality_fatal_causes'    => $ssc['final_quality_fatal_causes'] ?? $entry['final_quality_fatal_causes'] ?? null,
@@ -11677,7 +11958,34 @@ final class DoubleBottomLongService
             'session_bucket'                => $ssc['session_bucket'] ?? null,
             'positive_threshold'            => $positiveThreshold,
             'negative_threshold'            => $negativeThreshold,
+            'related_filter_audit_ids'      => array_values(array_unique(array_filter([$auditId]))),
         ];
+
+        // Global outcome dedupe: one canonical case per outcome_key.
+        $existingCaseKey = null;
+        $existingCase = null;
+        foreach ($cases as $k => $c) {
+            if (!is_array($c)) {
+                continue;
+            }
+            if ((string)($c['outcome_key'] ?? '') === $outcomeKey) {
+                $existingCaseKey = (string)$k;
+                $existingCase = $c;
+                break;
+            }
+        }
+
+        if ($existingCase !== null && $existingCaseKey !== null) {
+            $related = array_values(array_unique(array_filter(array_merge(
+                (array)($existingCase['related_filter_audit_ids'] ?? []),
+                [(string)($existingCase['filter_audit_id'] ?? ''), $auditId]
+            ))));
+            $preferred = $this->isPreferredDblFilterAuditCase($newCase, $existingCase) ? $newCase : $existingCase;
+            $preferred['related_filter_audit_ids'] = $related;
+            $cases[$existingCaseKey] = $preferred;
+            $this->writeJson('storage/filter_audit_cases.json', $cases);
+            return;
+        }
 
         $cases[$caseId] = $newCase;
         $this->writeJson('storage/filter_audit_cases.json', $cases);

@@ -174,10 +174,15 @@ if ($action === 'save_config') {
         'dbl_filter_audit_send_to_bot'                   => ($p['dbl_filter_audit_send_to_bot'] ?? '1') === '1',
         'dbl_filter_audit_only_when_no_normal_ready'     => ($p['dbl_filter_audit_only_when_no_normal_ready'] ?? '1') === '1',
         'dbl_filter_audit_require_no_fatal_break'        => ($p['dbl_filter_audit_require_no_fatal_break'] ?? '1') === '1',
-        'dbl_filter_audit_max_signals_per_cycle'         => max(0, min(20, (int)($p['dbl_filter_audit_max_signals_per_cycle'] ?? 2))),
-        'dbl_filter_audit_max_signals_per_30m'           => max(0, min(100, (int)($p['dbl_filter_audit_max_signals_per_30m'] ?? 6))),
+        'dbl_filter_audit_max_signals_per_cycle'         => max(0, min(20,  (int)($p['dbl_filter_audit_max_signals_per_cycle'] ?? 5))),
+        'dbl_filter_audit_max_signals_per_30m'           => max(0, min(100, (int)($p['dbl_filter_audit_max_signals_per_30m'] ?? 15))),
         'dbl_filter_audit_max_signals_per_6h'            => max(0, min(999, (int)($p['dbl_filter_audit_max_signals_per_6h'] ?? 999))),
-        'dbl_filter_audit_min_quality_score'             => max(0.0, min(1.0, (float)($p['dbl_filter_audit_min_quality_score'] ?? 0.65))),
+        'dbl_filter_audit_min_quality_score'             => max(0.0, min(1.0,   (float)($p['dbl_filter_audit_min_quality_score'] ?? 0.65))),
+        'dbl_filter_audit_positive_roi_threshold'        => max(0.0, min(50.0,  (float)($p['dbl_filter_audit_positive_roi_threshold'] ?? 2.0))),
+        'dbl_filter_audit_negative_roi_threshold'        => max(-50.0, min(0.0, (float)($p['dbl_filter_audit_negative_roi_threshold'] ?? -2.0))),
+        'dbl_filter_audit_ready_ttl_minutes'             => max(1, min(120, (int)($p['dbl_filter_audit_ready_ttl_minutes'] ?? 20))),
+        'dbl_filter_audit_stale_ready_action'            => in_array($p['dbl_filter_audit_stale_ready_action'] ?? '', ['withdraw', 'keep'], true)
+                                                               ? (string)$p['dbl_filter_audit_stale_ready_action'] : 'withdraw',
     ];
 
     try {

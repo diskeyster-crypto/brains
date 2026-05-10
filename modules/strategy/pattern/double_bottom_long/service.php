@@ -102,12 +102,23 @@ final class DoubleBottomLongService
     private int $filterAuditSkippedTotal             = 0;
     private int $filterAudit30mCapSkipTotal          = 0;
     private int $filterAuditMissingBlockReasonTotal  = 0;
+    private int $filterAuditReadyTtlCheckedTotal     = 0;
+    private int $filterAuditReadyTtlExpiredTotal     = 0;
+    private int $filterAuditUnknownReasonTotal       = 0;
+    private int $filterAuditOutcomeDedupeCheckedTotal    = 0;
+    private int $filterAuditOutcomeDuplicateSkippedTotal = 0;
     /** @var array<string,int> */
     private array $filterAuditSkipReasons            = [];
     /** @var list<array<string,mixed>> */
     private array $filterAuditExamples               = [];
     /** @var list<array<string,mixed>> */
     private array $filterAuditMissingBlockReasonExamples = [];
+    /** @var list<array<string,mixed>> */
+    private array $filterAuditReadyTtlExpiredExamples    = [];
+    /** @var list<array<string,mixed>> */
+    private array $filterAuditUnknownReasonExamples      = [];
+    /** @var list<array<string,mixed>> */
+    private array $filterAuditOutcomeDuplicateExamples   = [];
     // ── DBL trend-shift confirmation gate counters (reset at start of each tickBatch) ──
     private int $dblTrendShiftCheckedTotal                       = 0;
     private int $dblTrendShiftConfirmedTotal                     = 0;
@@ -2709,12 +2720,18 @@ final class DoubleBottomLongService
             'filter_audit_skip_reasons'                => $handoffStats['filter_audit_skip_reasons'] ?? (object)[],
             'filter_audit_missing_block_reason_total'  => $handoffStats['filter_audit_missing_block_reason_total'] ?? 0,
             'filter_audit_missing_block_reason_examples' => $handoffStats['filter_audit_missing_block_reason_examples'] ?? [],
+            'filter_audit_ready_ttl_checked_total'     => $handoffStats['filter_audit_ready_ttl_checked_total'] ?? 0,
+            'filter_audit_ready_ttl_expired_total'     => $handoffStats['filter_audit_ready_ttl_expired_total'] ?? 0,
+            'filter_audit_ready_ttl_expired_examples'  => $handoffStats['filter_audit_ready_ttl_expired_examples'] ?? [],
+            'filter_audit_unknown_reason_total'        => $handoffStats['filter_audit_unknown_reason_total'] ?? 0,
+            'filter_audit_unknown_reason_examples'     => $handoffStats['filter_audit_unknown_reason_examples'] ?? [],
             'filter_audit_max_signals_per_cycle'       => $handoffStats['filter_audit_max_signals_per_cycle'] ?? 0,
             'filter_audit_max_signals_per_30m'         => $handoffStats['filter_audit_max_signals_per_30m'] ?? 0,
             'filter_audit_max_signals_per_6h'          => $handoffStats['filter_audit_max_signals_per_6h'] ?? 0,
             'filter_audit_min_quality_score'           => $handoffStats['filter_audit_min_quality_score'] ?? 0.0,
             'filter_audit_positive_roi_threshold'      => $handoffStats['filter_audit_positive_roi_threshold'] ?? 0.0,
             'filter_audit_negative_roi_threshold'      => $handoffStats['filter_audit_negative_roi_threshold'] ?? 0.0,
+            'filter_audit_ready_ttl_minutes'           => $handoffStats['filter_audit_ready_ttl_minutes'] ?? 20,
             'filter_audit_pending_outcomes_total'      => $filterAudit['filter_audit_pending_outcomes_total'] ?? ($handoffStats['filter_audit_pending_outcomes_total'] ?? 0),
             'filter_audit_matched_closed_total'        => $filterAudit['filter_audit_matched_closed_total'] ?? ($handoffStats['filter_audit_matched_closed_total'] ?? 0),
             'filter_audit_filter_too_strict_total'     => $filterAudit['filter_audit_filter_too_strict_total'] ?? ($handoffStats['filter_audit_filter_too_strict_total'] ?? 0),
@@ -2724,6 +2741,15 @@ final class DoubleBottomLongService
             'filter_audit_normal_pass_inconclusive_total' => $filterAudit['filter_audit_normal_pass_inconclusive_total'] ?? ($handoffStats['filter_audit_normal_pass_inconclusive_total'] ?? 0),
             'filter_audit_verdict_by_filter'           => $filterAudit['filter_audit_verdict_by_filter'] ?? ($handoffStats['filter_audit_verdict_by_filter'] ?? (object)[]),
             'filter_audit_examples'                    => $filterAudit['filter_audit_examples'] ?? ($handoffStats['filter_audit_examples'] ?? []),
+            'filter_audit_outcome_dedupe_checked_total'    => $filterAudit['filter_audit_outcome_dedupe_checked_total'] ?? ($handoffStats['filter_audit_outcome_dedupe_checked_total'] ?? 0),
+            'filter_audit_outcome_duplicate_skipped_total' => $filterAudit['filter_audit_outcome_duplicate_skipped_total'] ?? ($handoffStats['filter_audit_outcome_duplicate_skipped_total'] ?? 0),
+            'filter_audit_outcome_duplicate_examples'      => $filterAudit['filter_audit_outcome_duplicate_examples'] ?? ($handoffStats['filter_audit_outcome_duplicate_examples'] ?? []),
+            'dbl_case_stats_by_filter'                 => $filterAudit['dbl_case_stats_by_filter'] ?? ($handoffStats['dbl_case_stats_by_filter'] ?? (object)[]),
+            'dbl_positive_case_examples'               => $filterAudit['dbl_positive_case_examples'] ?? ($handoffStats['dbl_positive_case_examples'] ?? []),
+            'dbl_negative_case_examples'               => $filterAudit['dbl_negative_case_examples'] ?? ($handoffStats['dbl_negative_case_examples'] ?? []),
+            'dbl_inconclusive_case_examples'           => $filterAudit['dbl_inconclusive_case_examples'] ?? ($handoffStats['dbl_inconclusive_case_examples'] ?? []),
+            'dbl_filters_likely_too_strict'            => $filterAudit['dbl_filters_likely_too_strict'] ?? ($handoffStats['dbl_filters_likely_too_strict'] ?? []),
+            'dbl_filters_likely_validated'             => $filterAudit['dbl_filters_likely_validated'] ?? ($handoffStats['dbl_filters_likely_validated'] ?? []),
             'setup_allowed_quality_failed_examples'    => $setupAllowedQualityFailedExamples,
             'setup_allowed_pending_examples'           => $setupAllowedPendingExamples,
             'setup_allowed_final_gate_warning_examples' => $setupAllowedFinalGateWarnExamples,
@@ -10500,6 +10526,51 @@ final class DoubleBottomLongService
         $pendingCleanupHistoryWrittenTotal        = (int)($pendingCleanup['pending_cleanup_history_written_total'] ?? 0);
         $pendingCleanupExamples                   = (array)($pendingCleanup['pending_cleanup_examples'] ?? []);
 
+        // ── Audit-pass TTL sweep ─────────────────────────────────────────────────
+        // Expire filter-audit-sent records that are older than the configured TTL.
+        // This prevents stale audit-pass signals from remaining Bot-ready for hours.
+        $filterAuditReadyTtlMinutes  = max(1, (int)($config['dbl_filter_audit_ready_ttl_minutes'] ?? 20));
+        $filterAuditStaleReadyAction = (string)($config['dbl_filter_audit_stale_ready_action'] ?? 'withdraw');
+        foreach ($result as $id => &$entry) {
+            if (!(bool)($entry['filter_audit_sent_to_bot'] ?? false)) {
+                continue;
+            }
+            if (!(bool)($entry['executable'] ?? false)) {
+                continue;
+            }
+            $this->filterAuditReadyTtlCheckedTotal++;
+            // Use refreshed_at first, then detected_at as TTL anchor
+            $auditTs = isset($entry['refreshed_at']) ? strtotime((string)$entry['refreshed_at']) : false;
+            if ($auditTs === false || $auditTs <= 0) {
+                $auditTs = isset($entry['detected_at']) ? strtotime((string)$entry['detected_at']) : false;
+            }
+            if ($auditTs === false || $auditTs <= 0) {
+                continue;
+            }
+            $ageMinutes = ($nowTs - $auditTs) / 60.0;
+            if ($ageMinutes > $filterAuditReadyTtlMinutes) {
+                $this->filterAuditReadyTtlExpiredTotal++;
+                if ($filterAuditStaleReadyAction !== 'keep') {
+                    $entry['handoff_status'] = 'withdrawn';
+                    $entry['handoff_ready']  = false;
+                    $entry['executable']     = false;
+                    $entry['active_final']   = false;
+                    $entry['stale']          = true;
+                    $entry['stale_reason']   = 'filter_audit_ready_ttl_expired';
+                }
+                if (count($this->filterAuditReadyTtlExpiredExamples) < 5) {
+                    $this->filterAuditReadyTtlExpiredExamples[] = [
+                        'symbol'      => $entry['symbol']     ?? null,
+                        'signal_id'   => $entry['signal_id']  ?? null,
+                        'age_minutes' => round($ageMinutes, 1),
+                        'ttl_minutes' => $filterAuditReadyTtlMinutes,
+                        'action'      => $filterAuditStaleReadyAction,
+                    ];
+                }
+            }
+        }
+        unset($entry);
+
         $this->writeJson('storage/bot_handoff_queue.json', array_values($result));
         $filterAuditSummary = $this->persistDblFilterAuditJournal($result, $config);
 
@@ -10569,12 +10640,18 @@ final class DoubleBottomLongService
             'filter_audit_skip_reasons'                        => $this->filterAuditSkipReasons,
             'filter_audit_missing_block_reason_total'          => $this->filterAuditMissingBlockReasonTotal,
             'filter_audit_missing_block_reason_examples'       => $this->filterAuditMissingBlockReasonExamples,
+            'filter_audit_ready_ttl_checked_total'             => $this->filterAuditReadyTtlCheckedTotal,
+            'filter_audit_ready_ttl_expired_total'             => $this->filterAuditReadyTtlExpiredTotal,
+            'filter_audit_ready_ttl_expired_examples'          => $this->filterAuditReadyTtlExpiredExamples,
+            'filter_audit_unknown_reason_total'                => $this->filterAuditUnknownReasonTotal,
+            'filter_audit_unknown_reason_examples'             => $this->filterAuditUnknownReasonExamples,
             'filter_audit_max_signals_per_cycle'               => $filterAuditMaxSignalsPerCycle,
             'filter_audit_max_signals_per_30m'                 => $filterAuditMaxSignalsPer30m,
             'filter_audit_max_signals_per_6h'                  => $filterAuditMaxSignalsPer6h,
             'filter_audit_min_quality_score'                   => (float)($config['dbl_filter_audit_min_quality_score'] ?? 0.65),
             'filter_audit_positive_roi_threshold'              => (float)($config['dbl_filter_audit_positive_roi_threshold'] ?? 2.0),
             'filter_audit_negative_roi_threshold'              => (float)($config['dbl_filter_audit_negative_roi_threshold'] ?? -2.0),
+            'filter_audit_ready_ttl_minutes'                   => $filterAuditReadyTtlMinutes,
             'filter_audit_pending_outcomes_total'              => $filterAuditSummary['filter_audit_pending_outcomes_total'] ?? 0,
             'filter_audit_matched_closed_total'                => $filterAuditSummary['filter_audit_matched_closed_total'] ?? 0,
             'filter_audit_filter_too_strict_total'             => $filterAuditSummary['filter_audit_filter_too_strict_total'] ?? 0,
@@ -10584,6 +10661,15 @@ final class DoubleBottomLongService
             'filter_audit_normal_pass_inconclusive_total'      => $filterAuditSummary['filter_audit_normal_pass_inconclusive_total'] ?? 0,
             'filter_audit_verdict_by_filter'                   => $filterAuditSummary['filter_audit_verdict_by_filter'] ?? (object)[],
             'filter_audit_examples'                            => !empty($this->filterAuditExamples) ? $this->filterAuditExamples : ($filterAuditSummary['filter_audit_examples'] ?? []),
+            'filter_audit_outcome_dedupe_checked_total'        => $filterAuditSummary['filter_audit_outcome_dedupe_checked_total'] ?? 0,
+            'filter_audit_outcome_duplicate_skipped_total'     => $filterAuditSummary['filter_audit_outcome_duplicate_skipped_total'] ?? 0,
+            'filter_audit_outcome_duplicate_examples'          => $filterAuditSummary['filter_audit_outcome_duplicate_examples'] ?? [],
+            'dbl_case_stats_by_filter'                         => $filterAuditSummary['dbl_case_stats_by_filter'] ?? (object)[],
+            'dbl_positive_case_examples'                       => $filterAuditSummary['dbl_positive_case_examples'] ?? [],
+            'dbl_negative_case_examples'                       => $filterAuditSummary['dbl_negative_case_examples'] ?? [],
+            'dbl_inconclusive_case_examples'                   => $filterAuditSummary['dbl_inconclusive_case_examples'] ?? [],
+            'dbl_filters_likely_too_strict'                    => $filterAuditSummary['dbl_filters_likely_too_strict'] ?? [],
+            'dbl_filters_likely_validated'                     => $filterAuditSummary['dbl_filters_likely_validated'] ?? [],
             // OBC soft_demote handoff-block counters
             'soft_demote_blocked_handoff_total' => $softDemoteBlockedTotal,
             'soft_demote_allowed_handoff_total' => $softDemoteAllowedTotal,
@@ -11084,10 +11170,12 @@ final class DoubleBottomLongService
                 $ssc['final_quality_soft_causes'] ?? $record['final_quality_soft_causes'] ?? [],
                 $ssc['final_low_quality_causes'] ?? $record['final_low_quality_causes'] ?? [],
                 $ssc['final_quality_primary_cause'] ?? $record['final_quality_primary_cause'] ?? '',
-                $ssc['garbage_veto_reason'] ?? $record['garbage_veto_reason'] ?? '',
+                $ssc['local_late_tiny_room_reason'] ?? $record['local_late_tiny_room_reason'] ?? '',
                 $blockReason ?? ($record['block_reason'] ?? $ssc['block_reason'] ?? ''),
+                $ssc['garbage_veto_reason'] ?? $record['garbage_veto_reason'] ?? '',
                 $ssc['dbl_pattern_invalid_reason'] ?? $record['dbl_pattern_invalid_reason'] ?? ($ssc['confirmed_pattern_invalid_reason'] ?? $record['confirmed_pattern_invalid_reason'] ?? ''),
                 $ssc['handoff_blocked_reason'] ?? $record['handoff_blocked_reason'] ?? '',
+                (string)($ssc['point3_break_final_state'] ?? '') === 'pending_recovery' ? 'waiting_point3_recovery_confirmation' : '',
                 'unknown_soft_block_reason',
             ];
 
@@ -11100,6 +11188,18 @@ final class DoubleBottomLongService
                 }
             }
             $softReasons = array_values(array_unique($resolvedReasons));
+            // Track when the last-resort unknown fallback was used
+            if ($softReasons === ['unknown_soft_block_reason']) {
+                $this->filterAuditUnknownReasonTotal++;
+                if (count($this->filterAuditUnknownReasonExamples) < 10) {
+                    $this->filterAuditUnknownReasonExamples[] = [
+                        'symbol'    => $record['symbol']    ?? null,
+                        'signal_id' => $record['signal_id'] ?? null,
+                        'normal_handoff_allowed' => $normalAllowed,
+                        'block_reason' => $blockReason ?? ($record['block_reason'] ?? $ssc['block_reason'] ?? null),
+                    ];
+                }
+            }
             $this->filterAuditMissingBlockReasonTotal++;
             if (count($this->filterAuditMissingBlockReasonExamples) < 10) {
                 $this->filterAuditMissingBlockReasonExamples[] = [
@@ -11253,6 +11353,15 @@ final class DoubleBottomLongService
             'filter_audit_normal_pass_inconclusive_total' => 0,
             'filter_audit_verdict_by_filter'           => (object)[],
             'filter_audit_examples'                    => [],
+            'filter_audit_outcome_dedupe_checked_total'    => 0,
+            'filter_audit_outcome_duplicate_skipped_total' => 0,
+            'filter_audit_outcome_duplicate_examples'      => [],
+            'dbl_case_stats_by_filter'                 => (object)[],
+            'dbl_positive_case_examples'               => [],
+            'dbl_negative_case_examples'               => [],
+            'dbl_inconclusive_case_examples'           => [],
+            'dbl_filters_likely_too_strict'            => [],
+            'dbl_filters_likely_validated'             => [],
         ];
         if (empty($journal)) {
             return $summary;
@@ -11267,15 +11376,16 @@ final class DoubleBottomLongService
         $closed     = is_string($closedRaw) && $closedRaw !== '' ? @json_decode($closedRaw, true) : [];
         $closed     = is_array($closed) ? $closed : [];
 
-        $closedByAuditId = [];
-        $closedBySignalId = [];
+        // Build lookup maps from closed trades
+        $closedByAuditId   = [];
+        $closedBySignalId  = [];
         $closedBySymbolSide = [];
         foreach ($closed as $trade) {
             if ((string)($trade['strategy_id'] ?? $trade['owner_strategy'] ?? '') !== 'double_bottom_long') {
                 continue;
             }
-            $ctx = is_array($trade['strategy_signal_context'] ?? null) ? $trade['strategy_signal_context'] : [];
-            $auditId = (string)($trade['filter_audit_id'] ?? $ctx['filter_audit_id'] ?? '');
+            $ctx      = is_array($trade['strategy_signal_context'] ?? null) ? $trade['strategy_signal_context'] : [];
+            $auditId  = (string)($trade['filter_audit_id'] ?? $ctx['filter_audit_id'] ?? '');
             $signalId = (string)($trade['signal_id'] ?? '');
             $symbolSide = strtolower((string)($trade['symbol'] ?? '')) . '|' . (string)($trade['side'] ?? 'long');
             if ($auditId !== '') {
@@ -11289,27 +11399,62 @@ final class DoubleBottomLongService
             }
         }
 
-        $verdictByFilter = [];
+        $verdictByFilter      = [];
+        $caseStatsByFilter    = [];
         $positiveRoiThreshold = (float)($config['dbl_filter_audit_positive_roi_threshold'] ?? 2.0);
         $negativeRoiThreshold = (float)($config['dbl_filter_audit_negative_roi_threshold'] ?? -2.0);
+
+        // Dedupe tracking: auditId → outcomeKey (only count each unique trade outcome once)
+        $resolvedOutcomeKeys = [];
+
         $changed = false;
         foreach ($journal as &$entry) {
             if (!is_array($entry)) {
                 continue;
             }
-            $auditId = (string)($entry['filter_audit_id'] ?? '');
-            $signalId = (string)($entry['signal_id'] ?? '');
+            $auditId   = (string)($entry['filter_audit_id'] ?? '');
+            $signalId  = (string)($entry['signal_id'] ?? '');
             $symbolSide = strtolower((string)($entry['symbol'] ?? '')) . '|' . (string)($entry['side'] ?? 'long');
-            $matched = $closedByAuditId[$auditId]
+            $matched   = $closedByAuditId[$auditId]
                 ?? ($signalId !== '' ? ($closedBySignalId[$signalId] ?? null) : null)
                 ?? ($closedBySymbolSide[$symbolSide] ?? null);
 
             if (is_array($matched)) {
+                // Compute stable outcome key for dedupe
+                $outcomeKey = (string)($matched['closed_trade_id'] ?? $matched['trade_id'] ?? '');
+                if ($outcomeKey === '') {
+                    $outcomeKey = (string)($matched['position_id'] ?? '');
+                }
+                if ($outcomeKey === '') {
+                    $roi        = $matched['roi'] ?? $matched['roi_pct'] ?? null;
+                    $outcomeKey = strtolower((string)($matched['symbol'] ?? ''))
+                        . '|' . (string)($matched['side'] ?? 'long')
+                        . '|' . (string)($matched['entry_time'] ?? $matched['created_at'] ?? '')
+                        . '|' . (string)($matched['close_time'] ?? $matched['closed_at'] ?? '')
+                        . '|' . ($roi !== null ? number_format((float)$roi, 6, '.', '') : 'null');
+                }
+                $dedupeKey = $auditId . '|' . $outcomeKey;
+                $summary['filter_audit_outcome_dedupe_checked_total']++;
+
+                // Skip if same (auditId, outcomeKey) was already counted
+                if (isset($resolvedOutcomeKeys[$dedupeKey])) {
+                    $summary['filter_audit_outcome_duplicate_skipped_total']++;
+                    if (count($summary['filter_audit_outcome_duplicate_examples']) < 5) {
+                        $summary['filter_audit_outcome_duplicate_examples'][] = [
+                            'symbol'      => $entry['symbol'] ?? null,
+                            'audit_id'    => $auditId,
+                            'outcome_key' => $outcomeKey,
+                        ];
+                    }
+                    continue;
+                }
+                $resolvedOutcomeKeys[$dedupeKey] = true;
+
                 $summary['filter_audit_matched_closed_total']++;
                 $roi = $matched['roi'] ?? $matched['roi_pct'] ?? null;
                 $roi = $roi !== null ? (float)$roi : null;
                 $entry['eventual_close_status'] = 'closed';
-                $entry['close_roi'] = $roi;
+                $entry['close_roi']   = $roi;
                 $entry['close_reason'] = $matched['close_reason'] ?? null;
 
                 if (($entry['would_have_blocked'] ?? false) && $roi !== null && $roi >= $positiveRoiThreshold) {
@@ -11320,6 +11465,10 @@ final class DoubleBottomLongService
                         $reason = (string)$reason;
                         if ($reason === '') { continue; }
                         $verdictByFilter[$reason]['filter_too_strict'] = (int)($verdictByFilter[$reason]['filter_too_strict'] ?? 0) + 1;
+                        $caseStatsByFilter[$reason]['positive_cases_total'] = (int)($caseStatsByFilter[$reason]['positive_cases_total'] ?? 0) + 1;
+                        $caseStatsByFilter[$reason]['filter_too_strict_total'] = (int)($caseStatsByFilter[$reason]['filter_too_strict_total'] ?? 0) + 1;
+                        $caseStatsByFilter[$reason]['_roi_sum'] = (float)($caseStatsByFilter[$reason]['_roi_sum'] ?? 0.0) + $roi;
+                        $caseStatsByFilter[$reason]['_roi_count'] = (int)($caseStatsByFilter[$reason]['_roi_count'] ?? 0) + 1;
                     }
                 } elseif (($entry['would_have_blocked'] ?? false) && $roi !== null && $roi <= $negativeRoiThreshold) {
                     $entry['filter_verdict'] = 'filter_validated';
@@ -11329,6 +11478,10 @@ final class DoubleBottomLongService
                         $reason = (string)$reason;
                         if ($reason === '') { continue; }
                         $verdictByFilter[$reason]['filter_validated'] = (int)($verdictByFilter[$reason]['filter_validated'] ?? 0) + 1;
+                        $caseStatsByFilter[$reason]['negative_cases_total'] = (int)($caseStatsByFilter[$reason]['negative_cases_total'] ?? 0) + 1;
+                        $caseStatsByFilter[$reason]['filter_validated_total'] = (int)($caseStatsByFilter[$reason]['filter_validated_total'] ?? 0) + 1;
+                        $caseStatsByFilter[$reason]['_roi_sum'] = (float)($caseStatsByFilter[$reason]['_roi_sum'] ?? 0.0) + $roi;
+                        $caseStatsByFilter[$reason]['_roi_count'] = (int)($caseStatsByFilter[$reason]['_roi_count'] ?? 0) + 1;
                     }
                 } elseif (($entry['would_have_blocked'] ?? false) && $roi !== null) {
                     $entry['filter_verdict'] = 'filter_inconclusive';
@@ -11338,6 +11491,10 @@ final class DoubleBottomLongService
                         $reason = (string)$reason;
                         if ($reason === '') { continue; }
                         $verdictByFilter[$reason]['filter_inconclusive'] = (int)($verdictByFilter[$reason]['filter_inconclusive'] ?? 0) + 1;
+                        $caseStatsByFilter[$reason]['inconclusive_cases_total'] = (int)($caseStatsByFilter[$reason]['inconclusive_cases_total'] ?? 0) + 1;
+                        $caseStatsByFilter[$reason]['filter_inconclusive_total'] = (int)($caseStatsByFilter[$reason]['filter_inconclusive_total'] ?? 0) + 1;
+                        $caseStatsByFilter[$reason]['_roi_sum'] = (float)($caseStatsByFilter[$reason]['_roi_sum'] ?? 0.0) + $roi;
+                        $caseStatsByFilter[$reason]['_roi_count'] = (int)($caseStatsByFilter[$reason]['_roi_count'] ?? 0) + 1;
                     }
                 } elseif ($roi !== null && $roi >= $positiveRoiThreshold) {
                     $entry['filter_verdict'] = 'normal_pass_ok';
@@ -11351,6 +11508,32 @@ final class DoubleBottomLongService
                     $entry['verdict_reason'] = 'normal_pass_roi_between_thresholds';
                     $summary['filter_audit_normal_pass_inconclusive_total']++;
                 }
+
+                // Accumulate case examples
+                $caseVerdict = $entry['filter_verdict'] ?? 'pending';
+                $caseLabel   = 'inconclusive_case';
+                if ($roi !== null && $roi >= $positiveRoiThreshold) {
+                    $caseLabel = 'positive_case';
+                } elseif ($roi !== null && $roi <= $negativeRoiThreshold) {
+                    $caseLabel = 'negative_case';
+                }
+                $caseSnippet = [
+                    'symbol'         => $entry['symbol'] ?? null,
+                    'filter_verdict' => $caseVerdict,
+                    'close_roi'      => $roi,
+                    'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+                ];
+                if ($caseLabel === 'positive_case' && count($summary['dbl_positive_case_examples']) < 5) {
+                    $summary['dbl_positive_case_examples'][] = $caseSnippet;
+                } elseif ($caseLabel === 'negative_case' && count($summary['dbl_negative_case_examples']) < 5) {
+                    $summary['dbl_negative_case_examples'][] = $caseSnippet;
+                } elseif ($caseLabel === 'inconclusive_case' && count($summary['dbl_inconclusive_case_examples']) < 5) {
+                    $summary['dbl_inconclusive_case_examples'][] = $caseSnippet;
+                }
+
+                // Write to case library (dedupe on filter_audit_id + outcome_key)
+                $this->upsertDblFilterAuditCase($entry, $matched, $outcomeKey, $caseLabel, $positiveRoiThreshold, $negativeRoiThreshold);
+
                 $changed = true;
             } else {
                 $entry['filter_verdict'] = $entry['filter_verdict'] ?? 'pending';
@@ -11382,7 +11565,123 @@ final class DoubleBottomLongService
         }
         $summary['filter_audit_verdict_by_filter'] = empty($verdictByFilter) ? (object)[] : $verdictByFilter;
 
+        // Compute per-filter case stats: avg_roi, likely_too_strict, likely_validated
+        $likelyTooStrict  = [];
+        $likelyValidated  = [];
+        $cleanCaseStats   = [];
+        foreach ($caseStatsByFilter as $filterName => $stats) {
+            $posTotal  = (int)($stats['positive_cases_total']    ?? 0);
+            $negTotal  = (int)($stats['negative_cases_total']    ?? 0);
+            $incTotal  = (int)($stats['inconclusive_cases_total'] ?? 0);
+            $roiCount  = (int)($stats['_roi_count']              ?? 0);
+            $roiSum    = (float)($stats['_roi_sum']              ?? 0.0);
+            $avgRoi    = $roiCount > 0 ? round($roiSum / $roiCount, 4) : null;
+            $cleanCaseStats[$filterName] = [
+                'positive_cases_total'    => $posTotal,
+                'negative_cases_total'    => $negTotal,
+                'inconclusive_cases_total'=> $incTotal,
+                'avg_close_roi'           => $avgRoi,
+                'filter_too_strict_total' => (int)($stats['filter_too_strict_total']  ?? 0),
+                'filter_validated_total'  => (int)($stats['filter_validated_total']   ?? 0),
+                'filter_inconclusive_total' => (int)($stats['filter_inconclusive_total'] ?? 0),
+            ];
+            if ($posTotal >= 2 && $posTotal > $negTotal) {
+                $likelyTooStrict[] = $filterName;
+            }
+            if ($negTotal >= 2 && $negTotal > $posTotal) {
+                $likelyValidated[] = $filterName;
+            }
+        }
+        $summary['dbl_case_stats_by_filter']    = empty($cleanCaseStats) ? (object)[] : $cleanCaseStats;
+        $summary['dbl_filters_likely_too_strict'] = $likelyTooStrict;
+        $summary['dbl_filters_likely_validated']  = $likelyValidated;
+
         return $summary;
+    }
+
+    /**
+     * Upsert a resolved case into the filter audit case library (cases.json + cases.ndjson).
+     * Dedupes on filter_audit_id + outcome_key.
+     */
+    private function upsertDblFilterAuditCase(
+        array $entry,
+        array $trade,
+        string $outcomeKey,
+        string $caseLabel,
+        float $positiveThreshold,
+        float $negativeThreshold
+    ): void {
+        $auditId  = (string)($entry['filter_audit_id'] ?? '');
+        if ($auditId === '') {
+            return;
+        }
+        $caseId   = md5($auditId . '|' . $outcomeKey);
+        $casePath = $this->moduleDir . '/storage/filter_audit_cases.json';
+        $ndPath   = $this->moduleDir . '/storage/filter_audit_cases.ndjson';
+
+        $storageDir = $this->moduleDir . '/storage';
+        if (!is_dir($storageDir)) {
+            @mkdir($storageDir, 0755, true);
+        }
+
+        // Load existing cases
+        $casesRaw = @file_get_contents($casePath);
+        $cases    = is_string($casesRaw) && $casesRaw !== '' ? @json_decode($casesRaw, true) : [];
+        $cases    = is_array($cases) ? $cases : [];
+
+        // Dedupe by case_id
+        if (isset($cases[$caseId])) {
+            return;
+        }
+
+        $roi         = $entry['close_roi'] ?? null;
+        $ssc         = is_array($entry['strategy_signal_context'] ?? null) ? $entry['strategy_signal_context'] : [];
+        $newCase = [
+            'case_id'                       => $caseId,
+            'created_at'                    => $entry['created_at'] ?? date('c'),
+            'resolved_at'                   => date('c'),
+            'outcome_key'                   => $outcomeKey,
+            'symbol'                        => $entry['symbol'] ?? null,
+            'side'                          => $entry['side'] ?? 'long',
+            'signal_id'                     => $entry['signal_id'] ?? null,
+            'strategy_signal_key'           => $entry['strategy_signal_key'] ?? null,
+            'filter_audit_id'               => $auditId,
+            'entry_price'                   => $trade['entry_price'] ?? $entry['entry_price'] ?? null,
+            'close_price'                   => $trade['close_price'] ?? $trade['exit_price'] ?? null,
+            'close_roi'                     => $roi,
+            'close_reason'                  => $entry['close_reason'] ?? null,
+            'duration_sec'                  => $trade['duration_sec'] ?? null,
+            'verdict'                       => $caseLabel,
+            'filter_verdict'                => $entry['filter_verdict'] ?? 'pending',
+            'would_have_blocked'            => $entry['would_have_blocked'] ?? false,
+            'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+            'fatal_filter_reasons'          => $entry['fatal_filter_reasons'] ?? [],
+            'final_quality_soft_causes'     => $ssc['final_quality_soft_causes'] ?? $entry['final_quality_soft_causes'] ?? null,
+            'final_quality_fatal_causes'    => $ssc['final_quality_fatal_causes'] ?? $entry['final_quality_fatal_causes'] ?? null,
+            'candidate_quality_score'       => $entry['candidate_quality_score'] ?? null,
+            'dbl_pattern_status'            => $ssc['dbl_pattern_status'] ?? null,
+            'dbl_pattern_invalid_reason'    => $ssc['dbl_pattern_invalid_reason'] ?? null,
+            'point3_break_final_state'      => $ssc['point3_break_final_state'] ?? null,
+            'reclaim_confirmed'             => $ssc['reclaim_confirmed'] ?? null,
+            'neckline_reclaim_confirmed'    => $ssc['neckline_reclaim_confirmed'] ?? null,
+            'reclaim_retest_held'           => $ssc['reclaim_retest_held'] ?? null,
+            'entry_distance_from_point3_pct'=> $ssc['entry_distance_from_point3_pct'] ?? null,
+            'room_to_recent_swing_high_roi' => $ssc['room_to_recent_swing_high_roi'] ?? null,
+            'room_to_24h_high_roi'          => $ssc['room_to_24h_high_roi'] ?? null,
+            'position_in_24h_range_pct'     => $ssc['position_in_24h_range_pct'] ?? null,
+            'ob_skip_reason'                => $ssc['ob_skip_reason'] ?? null,
+            'ob_wall_checked'               => $ssc['ob_wall_checked'] ?? null,
+            'ob_ask_wall_risk'              => $ssc['ob_ask_wall_risk'] ?? null,
+            'local_late_tiny_room_detected' => $ssc['local_late_tiny_room_detected'] ?? null,
+            'local_late_tiny_room_reason'   => $ssc['local_late_tiny_room_reason'] ?? null,
+            'session_bucket'                => $ssc['session_bucket'] ?? null,
+            'positive_threshold'            => $positiveThreshold,
+            'negative_threshold'            => $negativeThreshold,
+        ];
+
+        $cases[$caseId] = $newCase;
+        $this->writeJson('storage/filter_audit_cases.json', $cases);
+        @file_put_contents($ndPath, json_encode($newCase, JSON_UNESCAPED_UNICODE) . PHP_EOL, FILE_APPEND | LOCK_EX);
     }
 
     /**
@@ -11421,6 +11720,62 @@ final class DoubleBottomLongService
             if ($auditId === '') {
                 continue;
             }
+
+            $ssc                  = is_array($record['strategy_signal_context'] ?? null) ? $record['strategy_signal_context'] : [];
+            $sentToBot            = (bool)($record['filter_audit_sent_to_bot'] ?? false);
+            $normalAllowed        = (bool)($record['normal_handoff_allowed'] ?? false);
+            $wouldHaveBlocked     = (bool)($record['would_have_blocked'] ?? false);
+            $blockedByFilters     = (array)($record['would_have_blocked_by_filters'] ?? []);
+
+            // Enforce non-empty would_have_blocked_by_filters for relevant records
+            if (($sentToBot || !$normalAllowed || $wouldHaveBlocked) && empty($blockedByFilters)) {
+                $resolveReasons = static function ($value): array {
+                    if (is_array($value)) {
+                        $out = [];
+                        foreach ($value as $item) {
+                            $reason = trim((string)$item);
+                            if ($reason !== '') {
+                                $out[] = $reason;
+                            }
+                        }
+                        return array_values(array_unique($out));
+                    }
+                    $reason = trim((string)$value);
+                    return $reason !== '' ? [$reason] : [];
+                };
+                $blockReason = (string)($record['block_reason'] ?? $ssc['block_reason'] ?? '');
+                $fallbackSources = [
+                    $ssc['final_quality_soft_causes'] ?? $record['final_quality_soft_causes'] ?? [],
+                    $ssc['final_low_quality_causes'] ?? $record['final_low_quality_causes'] ?? [],
+                    $ssc['final_quality_primary_cause'] ?? $record['final_quality_primary_cause'] ?? '',
+                    $ssc['local_late_tiny_room_reason'] ?? $record['local_late_tiny_room_reason'] ?? '',
+                    $blockReason !== '' ? $blockReason : ($record['block_reason'] ?? ''),
+                    $ssc['garbage_veto_reason'] ?? $record['garbage_veto_reason'] ?? '',
+                    $ssc['dbl_pattern_invalid_reason'] ?? $record['dbl_pattern_invalid_reason'] ?? ($ssc['confirmed_pattern_invalid_reason'] ?? $record['confirmed_pattern_invalid_reason'] ?? ''),
+                    $ssc['handoff_blocked_reason'] ?? $record['handoff_blocked_reason'] ?? '',
+                    (string)($ssc['point3_break_final_state'] ?? '') === 'pending_recovery' ? 'waiting_point3_recovery_confirmation' : '',
+                    'unknown_soft_block_reason',
+                ];
+                foreach ($fallbackSources as $source) {
+                    $candidates = $resolveReasons($source);
+                    if (!empty($candidates)) {
+                        $blockedByFilters = $candidates;
+                        break;
+                    }
+                }
+                if ($blockedByFilters === ['unknown_soft_block_reason']) {
+                    $this->filterAuditUnknownReasonTotal++;
+                    if (count($this->filterAuditUnknownReasonExamples) < 10) {
+                        $this->filterAuditUnknownReasonExamples[] = [
+                            'symbol'    => $record['symbol']    ?? null,
+                            'signal_id' => $record['signal_id'] ?? null,
+                            'normal_handoff_allowed' => $normalAllowed,
+                            'filter_audit_sent_to_bot' => $sentToBot,
+                        ];
+                    }
+                }
+            }
+
             $entry = array_merge($map[$auditId] ?? [], [
                 'created_at'                 => $map[$auditId]['created_at'] ?? date('c'),
                 'symbol'                     => $record['symbol'] ?? null,
@@ -11428,10 +11783,10 @@ final class DoubleBottomLongService
                 'strategy_signal_key'        => $record['strategy_signal_key'] ?? ($record['strategy_signal_context']['strategy_signal_key'] ?? null),
                 'filter_audit_id'            => $auditId,
                 'filter_audit_run_id'        => $record['filter_audit_run_id'] ?? ($record['strategy_signal_context']['filter_audit_run_id'] ?? null),
-                'filter_audit_sent_to_bot'   => (bool)($record['filter_audit_sent_to_bot'] ?? false),
-                'normal_handoff_allowed'     => (bool)($record['normal_handoff_allowed'] ?? false),
-                'would_have_blocked'         => (bool)($record['would_have_blocked'] ?? false),
-                'would_have_blocked_by_filters' => $record['would_have_blocked_by_filters'] ?? [],
+                'filter_audit_sent_to_bot'   => $sentToBot,
+                'normal_handoff_allowed'     => $normalAllowed,
+                'would_have_blocked'         => $wouldHaveBlocked,
+                'would_have_blocked_by_filters' => $blockedByFilters,
                 'fatal_filter_reasons'       => $record['fatal_filter_reasons'] ?? [],
                 'candidate_quality_score'    => $record['candidate_quality_score'] ?? null,
                 'entry_price'                => $record['entry_price'] ?? null,

@@ -487,13 +487,15 @@ return [
     'dbl_filter_audit_mode_demo_only'                          => true,
     'dbl_filter_audit_send_to_bot'                             => true,
     'dbl_filter_audit_only_when_no_normal_ready'               => true,
-    'dbl_filter_audit_max_signals_per_cycle'                   => 2,
-    'dbl_filter_audit_max_signals_per_30m'                     => 6,
+    'dbl_filter_audit_max_signals_per_cycle'                   => 5,
+    'dbl_filter_audit_max_signals_per_30m'                     => 15,
     'dbl_filter_audit_max_signals_per_6h'                      => 999,
     'dbl_filter_audit_min_quality_score'                       => 0.65,
     'dbl_filter_audit_positive_roi_threshold'                  => 2.0,
     'dbl_filter_audit_negative_roi_threshold'                  => -2.0,
     'dbl_filter_audit_require_no_fatal_break'                  => true,
+    'dbl_filter_audit_ready_ttl_minutes'                       => 20,
+    'dbl_filter_audit_stale_ready_action'                      => 'withdraw',
     // ── DBL confirmed-pattern freshness override ──────────────────────────────
     // For signals with dbl_pattern_status=confirmed, bypass the generic current-run
     // freshness window (300 s) and use confirmed-pattern TTL + validity check instead.

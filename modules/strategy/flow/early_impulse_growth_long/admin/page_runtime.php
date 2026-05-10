@@ -2,42 +2,27 @@
 
 declare(strict_types=1);
 
-/**
- * Early Impulse Growth Long — Admin Runtime Page
- */
-
+use Core\Auth\Auth;
 use Core\System\System;
 use Core\System\SystemPaths;
-use Core\Auth\Auth;
 
 if (!Auth::check()) {
     header('Location: ' . System::adminUrl('login'));
     exit;
 }
 
-$moduleDir  = SystemPaths::instance()->get('strategy.early_impulse_growth_long');
+$moduleDir = SystemPaths::instance()->get('strategy.early_impulse_growth_long');
 $storageDir = $moduleDir . '/storage';
-$eigUrl     = rtrim(System::web('admin/strategy/early_impulse_growth_long'), '/');
-$ajaxUrl    = $eigUrl . '/ajax';
-
-// Load config (base + active override)
-$config = [];
-foreach ([$moduleDir . '/config/base.php', $moduleDir . '/config/active.php'] as $_cfgFile) {
-    if (is_file($_cfgFile)) {
-        $_cfgData = @include $_cfgFile;
-        if (is_array($_cfgData)) {
-            $config = array_merge($config, $_cfgData);
-        }
-    }
-}
+$eigUrl = rtrim(System::web('admin/strategy/early_impulse_growth_long'), '/');
+$ajaxUrl = $eigUrl . '/ajax';
 
 $readJson = static function (string $file, mixed $default = []) use ($storageDir): mixed {
     $path = $storageDir . '/' . $file;
-    if (!file_exists($path)) {
+    if (!is_file($path)) {
         return $default;
     }
     $raw = @file_get_contents($path);
-    if ($raw === false || trim($raw) === '') {
+    if (!is_string($raw) || trim($raw) === '') {
         return $default;
     }
     $decoded = json_decode($raw, true);
@@ -45,76 +30,37 @@ $readJson = static function (string $file, mixed $default = []) use ($storageDir
 };
 
 $runState = $readJson('run_state.json', []);
-$lastRun  = $readJson('last_run.json', []);
+$lastRun = $readJson('last_run.json', []);
+$storageExists = is_dir($storageDir);
 
 $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+$fmtNum = static fn(mixed $v, int $p = 3): string => is_numeric($v) ? number_format((float)$v, $p) : '—';
+$fmtBool = static fn(mixed $v): string => $v ? '<span style="color:#22c55e">true</span>' : '<span style="color:#94a3b8">false</span>';
 
-$fmtBool = static function (mixed $v): string {
-    if ($v === true || $v === 1) {
-        return '<span style="color:#22c55e">true</span>';
-    }
-    if ($v === false || $v === 0) {
-        return '<span style="color:#94a3b8">false</span>';
-    }
-    return '<span style="color:#94a3b8">—</span>';
-};
-
-$runStatus   = (string)($runState['status'] ?? 'idle');
-$batchOffset = (int)($runState['batch_offset'] ?? 0);
-$selTotal    = (int)($runState['selected_window_total'] ?? 0);
-$unvTotal    = (int)($runState['universe_total'] ?? 0);
-$batchSize   = (int)($runState['batch_size'] ?? $config['batch_size'] ?? 100);
-$regCursor   = (int)($runState['registry_cursor'] ?? 0);
-$nextCursor  = (int)($runState['next_registry_cursor'] ?? 0);
-$prevCursor  = (int)($runState['previous_registry_cursor'] ?? 0);
-$winStart    = (int)($runState['registry_window_start'] ?? 0);
-$winEnd      = (int)($runState['registry_window_end'] ?? 0);
-$winWrapped  = (bool)($runState['registry_window_wrapped'] ?? false);
-$updatedAt   = (string)($runState['updated_at'] ?? '—');
-$queuedAt    = (string)($runState['queued_at'] ?? '—');
-
-$lrCandidates   = (int)($lastRun['candidates_total'] ?? 0);
-$lrSignals      = (int)($lastRun['signals_total'] ?? 0);
-$lrHandoff      = (int)($lastRun['handoff_ready_total'] ?? 0);
-$lrRejects      = (int)($lastRun['rejects_total'] ?? 0);
-$lrDurationMs   = (int)($lastRun['duration_ms'] ?? 0);
-$lrBatchTotal   = (int)($lastRun['batch_symbols_total'] ?? 0);
-$lrFinishedAt   = (string)($lastRun['finished_at'] ?? '—');
-$lrStartedAt    = (string)($lastRun['started_at'] ?? '—');
-$lrFilterEn     = (bool)($lastRun['filter_engine_enabled'] ?? false);
-$lrFiltersCount = (int)($lastRun['enabled_filters_count'] ?? 0);
-$lrEnforcement  = (string)($lastRun['filter_enforcement_mode'] ?? 'diagnostic_only');
-$lrRejectCounts = (array)($lastRun['reject_reason_counts'] ?? []);
-$lrOiMissingAllow = (int)($lastRun['oi_missing_allowed_total'] ?? 0);
-$lrPricePass    = (int)($lastRun['price_impulse_pass_total'] ?? 0);
-$lrOiGrowthPass = (int)($lastRun['oi_growth_pass_total'] ?? 0);
-$lrInsuffData   = (int)($lastRun['insufficient_data_total'] ?? 0);
-$lrStaleData    = (int)($lastRun['stale_data_total'] ?? 0);
-$lrSrcError     = (int)($lastRun['data_source_error_total'] ?? 0);
-
-$statusColor = match ($runStatus) {
+$status = (string)($runState['status'] ?? 'idle');
+$statusColor = match ($status) {
     'running' => '#22c55e',
-    'queued'  => '#f59e0b',
-    'done'    => '#3b82f6',
-    'idle'    => '#64748b',
-    default   => '#64748b',
+    'queued' => '#f59e0b',
+    'done' => '#3b82f6',
+    default => '#64748b',
 };
 
-$storageExists = is_dir($storageDir);
+$acceptedExamples = is_array($lastRun['accepted_examples'] ?? null) ? (array)$lastRun['accepted_examples'] : [];
+$rejectedExamples = is_array($lastRun['rejected_examples'] ?? null) ? (array)$lastRun['rejected_examples'] : [];
 ?>
 <style>
-.eig-rt-page { max-width: 860px; }
-.rt-section { background: var(--card-bg,#1e293b); border: 1px solid var(--border-color,#334155); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
-.rt-section h6 { color: #94a3b8; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; margin-bottom: 14px; }
-.rt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); gap: 10px; margin-bottom: 14px; }
-.rt-box  { background: rgba(255,255,255,.03); border: 1px solid var(--border-color,#334155); border-radius: 6px; padding: 10px 14px; }
-.rt-val  { font-size: 20px; font-weight: 700; color: #e2e8f0; word-break: break-all; }
-.rt-lbl  { font-size: 11px; color: #64748b; margin-top: 2px; }
+.eig-rt-page { max-width: 1220px; }
+.rt-section { background: var(--card-bg,#1e293b); border: 1px solid var(--border-color,#334155); border-radius: 8px; padding: 20px; margin-bottom: 18px; }
+.rt-section h6 { color: #94a3b8; text-transform: uppercase; font-size: 11px; letter-spacing: .06em; margin-bottom: 12px; }
+.rt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.rt-box { background: rgba(255,255,255,.03); border: 1px solid var(--border-color,#334155); border-radius: 6px; padding: 10px 12px; }
+.rt-val { font-size: 20px; font-weight: 700; color: #e2e8f0; }
+.rt-lbl { font-size: 11px; color: #64748b; margin-top: 2px; }
 .rt-kv td { font-size: 12px; padding: 4px 8px; }
 </style>
 
 <div class="eig-rt-page">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:8px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
     <h4 style="margin:0;font-size:18px;">Early Impulse Growth Long — Runtime</h4>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <a href="<?= $e($eigUrl) ?>/config" class="btn btn-sm" style="background:rgba(88,166,255,.10);color:#58a6ff;border:1px solid #58a6ff44;">Config</a>
@@ -125,136 +71,113 @@ $storageExists = is_dir($storageDir);
 
   <?php if (!$storageExists): ?>
   <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#f59e0b;">
-    Storage directory does not exist yet. Run the first tick to initialise.
+    Storage directory does not exist yet. Run the first tick to initialise runtime files.
   </div>
   <?php endif; ?>
 
-  <!-- Run state -->
   <div class="rt-section">
-    <h6>Run State</h6>
+    <h6>Runtime summary (visual review)</h6>
     <div class="rt-grid">
-      <div class="rt-box">
-        <div class="rt-val" style="color:<?= $e($statusColor) ?>;font-size:16px;"><?= $e($runStatus) ?></div>
-        <div class="rt-lbl">status</div>
-      </div>
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($unvTotal) ?></div>
-        <div class="rt-lbl">universe_total</div>
-      </div>
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($selTotal) ?></div>
-        <div class="rt-lbl">selected_window</div>
-      </div>
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($batchSize) ?></div>
-        <div class="rt-lbl">batch_size</div>
-      </div>
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($batchOffset) ?></div>
-        <div class="rt-lbl">batch_offset</div>
-      </div>
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($regCursor) ?></div>
-        <div class="rt-lbl">registry_cursor</div>
-      </div>
+      <div class="rt-box"><div class="rt-val" style="color:<?= $e($statusColor) ?>;font-size:16px;"><?= $e($status) ?></div><div class="rt-lbl">status</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($runState['registry_cursor'] ?? 0)) ?></div><div class="rt-lbl">current_batch_cursor</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['current_run_processed_total'] ?? 0)) ?></div><div class="rt-lbl">processed_symbols</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($runState['universe_total'] ?? $lastRun['universe_total'] ?? 0)) ?></div><div class="rt-lbl">universe_total</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['current_run_candidates_total'] ?? 0)) ?></div><div class="rt-lbl">current_run_candidates_total</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['current_run_signals_total'] ?? 0)) ?></div><div class="rt-lbl">current_run_signals_total</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['current_run_rejects_total'] ?? 0)) ?></div><div class="rt-lbl">current_run_rejects_total</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['stored_candidates_total'] ?? 0)) ?></div><div class="rt-lbl">stored_candidates_total</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['stored_signals_total'] ?? 0)) ?></div><div class="rt-lbl">stored_signals_total</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['stored_rejects_total'] ?? 0)) ?></div><div class="rt-lbl">stored_rejects_total</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['recovery_window_minutes'] ?? 0)) ?></div><div class="rt-lbl">selected_recovery_window</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['prior_decline_passed_total'] ?? 0)) ?></div><div class="rt-lbl">prior_decline_pass_count</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['recovery_growth_passed_total'] ?? 0)) ?></div><div class="rt-lbl">recovery_growth_pass_count</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['open_interest_growth_passed_total'] ?? 0)) ?></div><div class="rt-lbl">oi_growth_pass_count</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['raw_strategy_passed_total'] ?? 0)) ?></div><div class="rt-lbl">raw_strategy_pass_count</div></div>
     </div>
     <table class="rt-kv">
-      <tr><td style="color:#64748b">next_registry_cursor</td><td><?= $e($nextCursor) ?></td>
-          <td style="color:#64748b;padding-left:16px">previous_registry_cursor</td><td><?= $e($prevCursor) ?></td></tr>
-      <tr><td style="color:#64748b">registry_window_start</td><td><?= $e($winStart) ?></td>
-          <td style="color:#64748b;padding-left:16px">registry_window_end</td><td><?= $e($winEnd) ?></td></tr>
-      <tr><td style="color:#64748b">registry_window_wrapped</td><td><?= $fmtBool($winWrapped) ?></td>
-          <td style="color:#64748b;padding-left:16px">queued_at</td><td><?= $e($queuedAt) ?></td></tr>
-      <tr><td style="color:#64748b">updated_at</td><td><?= $e($updatedAt) ?></td></tr>
+      <tr><td style="color:#64748b">filter_engine_available_filters_total</td><td><?= $e((int)($lastRun['filter_engine_available_filters_total'] ?? 0)) ?></td><td style="color:#64748b;padding-left:16px;">filter_engine_enabled_filters_total</td><td><?= $e((int)($lastRun['filter_engine_enabled_filters_total'] ?? 0)) ?></td></tr>
+      <tr><td style="color:#64748b">filter_engine_enabled_filter_ids</td><td colspan="3"><code><?= $e(json_encode((array)($lastRun['filter_engine_enabled_filter_ids'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+      <tr><td style="color:#64748b">filter_engine_results_by_filter</td><td colspan="3"><code><?= $e(json_encode((array)($lastRun['filter_engine_results_by_filter'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
     </table>
-
-    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
       <form method="post" action="<?= $e($ajaxUrl) ?>" style="margin:0;">
         <input type="hidden" name="action" value="queue_run">
-        <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;">
-          Запуск цикла
-        </button>
+        <button type="submit" class="btn btn-sm" style="background:rgba(63,185,80,.12);color:#3fb950;border:1px solid #3fb95055;">Запуск цикла</button>
       </form>
       <form method="post" action="<?= $e($ajaxUrl) ?>" style="margin:0;">
         <input type="hidden" name="action" value="tick_batch">
-        <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.12);color:#58a6ff;border:1px solid #58a6ff55;">
-          Тик батча
-        </button>
+        <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.12);color:#58a6ff;border:1px solid #58a6ff55;">Тик батча</button>
       </form>
     </div>
   </div>
 
-  <!-- Last Run -->
   <div class="rt-section">
-    <h6>Last Run</h6>
-    <div class="rt-grid">
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($lrCandidates) ?></div>
-        <div class="rt-lbl">candidates_total</div>
-      </div>
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($lrSignals) ?></div>
-        <div class="rt-lbl">signals_total</div>
-      </div>
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($lrHandoff) ?></div>
-        <div class="rt-lbl">handoff_ready</div>
-      </div>
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($lrRejects) ?></div>
-        <div class="rt-lbl">rejects_total</div>
-      </div>
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($lrBatchTotal) ?></div>
-        <div class="rt-lbl">batch_symbols</div>
-      </div>
-      <div class="rt-box">
-        <div class="rt-val"><?= $e($lrDurationMs) ?>ms</div>
-        <div class="rt-lbl">duration</div>
-      </div>
-    </div>
-    <table class="rt-kv">
-      <tr><td style="color:#64748b">started_at</td><td><?= $e($lrStartedAt) ?></td>
-          <td style="color:#64748b;padding-left:16px">finished_at</td><td><?= $e($lrFinishedAt) ?></td></tr>
-      <tr><td style="color:#64748b">price_impulse_pass_total</td><td><?= $e($lrPricePass) ?></td>
-          <td style="color:#64748b;padding-left:16px">oi_growth_pass_total</td><td><?= $e($lrOiGrowthPass) ?></td></tr>
-      <tr><td style="color:#64748b">oi_missing_allowed_total</td><td><?= $e($lrOiMissingAllow) ?></td>
-          <td style="color:#64748b;padding-left:16px">insufficient_data_total</td><td><?= $e($lrInsuffData) ?></td></tr>
-      <tr><td style="color:#64748b">stale_data_total</td><td><?= $e($lrStaleData) ?></td>
-          <td style="color:#64748b;padding-left:16px">data_source_error_total</td><td><?= $e($lrSrcError) ?></td></tr>
-      <tr><td style="color:#64748b">filter_engine_enabled</td><td><?= $fmtBool($lrFilterEn) ?></td>
-          <td style="color:#64748b;padding-left:16px">enabled_filters_count</td><td><?= $e($lrFiltersCount) ?></td></tr>
-      <tr><td style="color:#64748b">filter_enforcement_mode</td><td><code><?= $e($lrEnforcement) ?></code></td></tr>
-    </table>
-
-    <?php if (!empty($lrRejectCounts)): ?>
-    <div style="margin-top:12px;">
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Reject Reason Counts</div>
-      <table class="rt-kv">
-        <?php foreach ($lrRejectCounts as $reason => $cnt): ?>
-        <tr><td style="color:#64748b"><?= $e($reason) ?></td><td><?= $e($cnt) ?></td></tr>
-        <?php endforeach; ?>
+    <h6>Accepted examples</h6>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border-color,#334155);">
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">symbol</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">entry_price</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">prior_decline_pct</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">recovery_growth_pct</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">recovery_duration_minutes</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">recovery_score</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">open_interest_growth_pct</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">combined_recovery_score</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">current_price_change_pct_10m</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">raw_strategy_passed</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">handoff_ready</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($acceptedExamples as $row): ?>
+          <tr style="border-bottom:1px solid rgba(51,65,85,.5);">
+            <td style="padding:3px 8px;font-weight:600;"><?= $e($row['symbol'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['entry_price'] ?? null, 6)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['prior_decline_pct'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['recovery_growth_pct'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e((string)($row['recovery_duration_minutes'] ?? '—')) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['recovery_score'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['open_interest_growth_pct'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['combined_recovery_score'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['current_price_change_pct_10m'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $fmtBool((bool)($row['raw_strategy_passed'] ?? false)) ?></td>
+            <td style="padding:3px 8px;"><?= $fmtBool((bool)($row['handoff_ready'] ?? false)) ?></td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
       </table>
+      <?php if ($acceptedExamples === []): ?><div class="note" style="padding:8px 2px;">No accepted examples in last_run yet.</div><?php endif; ?>
     </div>
-    <?php endif; ?>
   </div>
 
-  <!-- Active config summary -->
   <div class="rt-section">
-    <h6>Active Config</h6>
-    <table class="rt-kv">
-      <tr><td style="color:#64748b">enabled</td><td><?= $fmtBool($config['enabled'] ?? false) ?></td>
-          <td style="color:#64748b;padding-left:16px">handoff_enabled</td><td><?= $fmtBool($config['handoff_enabled'] ?? false) ?></td></tr>
-      <tr><td style="color:#64748b">recovery_window_minutes</td><td><code><?= $e($config['recovery_window_minutes'] ?? 180) ?></code></td>
-          <td style="color:#64748b;padding-left:16px">batch_size</td><td><code><?= $e($config['batch_size'] ?? 100) ?></code></td></tr>
-      <tr><td style="color:#64748b">prior_decline_lookback_minutes</td><td><code><?= $e($config['prior_decline_lookback_minutes'] ?? 240) ?></code></td>
-          <td style="color:#64748b;padding-left:16px">min_prior_decline_pct</td><td><code><?= $e($config['min_prior_decline_pct'] ?? 2.0) ?></code></td></tr>
-      <tr><td style="color:#64748b">min_recovery_growth_pct</td><td><code><?= $e($config['min_recovery_growth_pct'] ?? 3.0) ?></code></td>
-          <td style="color:#64748b;padding-left:16px">min_recovery_score</td><td><code><?= $e($config['min_recovery_score'] ?? 0.55) ?></code></td></tr>
-      <tr><td style="color:#64748b">open_interest_enabled</td><td><?= $fmtBool($config['open_interest_enabled'] ?? true) ?></td>
-          <td style="color:#64748b;padding-left:16px">allow_missing_open_interest</td><td><?= $fmtBool($config['allow_missing_open_interest'] ?? true) ?></td></tr>
-      <tr><td style="color:#64748b">filter_engine_enabled</td><td><?= $fmtBool($config['filter_engine_enabled'] ?? true) ?></td>
-          <td style="color:#64748b;padding-left:16px">filter_enforcement_mode</td><td><code><?= $e($config['filter_enforcement_mode'] ?? 'diagnostic_only') ?></code></td></tr>
-    </table>
+    <h6>Rejected examples</h6>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border-color,#334155);">
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">symbol</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">raw_reject_reason</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">prior_decline_pct</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">recovery_growth_pct</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">open_interest_growth_pct</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($rejectedExamples as $row): ?>
+          <tr style="border-bottom:1px solid rgba(51,65,85,.5);">
+            <td style="padding:3px 8px;font-weight:600;"><?= $e($row['symbol'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><code><?= $e($row['raw_reject_reason'] ?? '—') ?></code></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['prior_decline_pct'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['recovery_growth_pct'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($row['open_interest_growth_pct'] ?? null, 4)) ?></td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+      <?php if ($rejectedExamples === []): ?><div class="note" style="padding:8px 2px;">No rejected examples in last_run yet.</div><?php endif; ?>
+    </div>
   </div>
 </div>

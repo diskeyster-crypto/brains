@@ -6,6 +6,9 @@ return [
     'strategy_id' => 'string',
     'enabled' => 'bool',
     'handoff_enabled' => 'bool',
+    'emit_bot_handoff' => 'bool',
+    'max_handoff_signals_per_tick' => 'int',
+    'bot_ready_ttl_minutes' => 'int',
     'mode' => 'string',
     'side' => 'string',
 

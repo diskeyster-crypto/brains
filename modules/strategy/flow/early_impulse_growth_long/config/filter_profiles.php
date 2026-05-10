@@ -6,6 +6,8 @@ return [
     'raw_no_filters' => [
         'title' => 'Raw / no filters',
         'description' => 'Reference raw-strategy preset. All discovered filters are copied into active config in disabled state.',
+        'filter_engine_enabled' => true,
+        'filter_enforcement_mode' => 'diagnostic_only',
         'filter_config' => [],
     ],
     'diagnostic_defaults' => [

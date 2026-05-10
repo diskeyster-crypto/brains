@@ -222,6 +222,7 @@ final class EarlyImpulseGrowthLongService
             'filter_engine_diagnostic_only_total' => 0,
             'open_interest_missing_examples' => [],
             'reject_reason_counts' => [],
+            'filter_engine_results_by_filter' => [],
         ];
 
         foreach ($batchSymbols as $symbol) {
@@ -244,6 +245,35 @@ final class EarlyImpulseGrowthLongService
             $reason = (string)($res['candidate']['raw_reject_reason'] ?? '');
             if ($reason !== '') {
                 $diag['reject_reason_counts'][$reason] = (int)($diag['reject_reason_counts'][$reason] ?? 0) + 1;
+            }
+
+            foreach ((array)($res['candidate']['filter_results'] ?? []) as $fid => $frow) {
+                if (!is_array($frow)) {
+                    continue;
+                }
+                $bucket = &$diag['filter_engine_results_by_filter'][$fid];
+                if (!is_array($bucket)) {
+                    $bucket = [
+                        'seen_total' => 0,
+                        'enabled_total' => 0,
+                        'passed_total' => 0,
+                        'blocked_total' => 0,
+                        'warning_total' => 0,
+                    ];
+                }
+                $bucket['seen_total']++;
+                if (!empty($frow['enabled'])) {
+                    $bucket['enabled_total']++;
+                }
+                if ((bool)($frow['passed'] ?? false)) {
+                    $bucket['passed_total']++;
+                } else {
+                    $bucket['blocked_total']++;
+                }
+                if ((string)($frow['severity'] ?? '') === 'warning') {
+                    $bucket['warning_total']++;
+                }
+                unset($bucket);
             }
 
             $m = $res['metrics'];
@@ -351,6 +381,79 @@ final class EarlyImpulseGrowthLongService
 
         $handoffReadyTotal = count(array_filter($allSignals, static fn(array $s): bool => (bool)($s['handoff_ready'] ?? false)));
         $enabledFilters = $this->computeEnabledFilters($config);
+        $filterCatalog = $this->getFilterCatalog();
+        $acceptedExamples = array_values(array_filter($newCandidates, static fn(array $c): bool => (bool)($c['raw_strategy_passed'] ?? false)));
+        $rejectedExamples = array_values(array_filter($newCandidates, static fn(array $c): bool => !(bool)($c['raw_strategy_passed'] ?? false)));
+
+        usort($acceptedExamples, static fn(array $a, array $b): int => ((float)($b['combined_recovery_score'] ?? 0.0) <=> (float)($a['combined_recovery_score'] ?? 0.0)));
+        $bestRecoveryExamples = $acceptedExamples;
+        usort($bestRecoveryExamples, static fn(array $a, array $b): int => ((float)($b['recovery_growth_pct'] ?? 0.0) <=> (float)($a['recovery_growth_pct'] ?? 0.0)));
+        $openInterestExamples = $acceptedExamples;
+        usort($openInterestExamples, static fn(array $a, array $b): int => ((float)($b['open_interest_growth_pct'] ?? -INF) <=> (float)($a['open_interest_growth_pct'] ?? -INF)));
+        $priorDeclineExamples = $newCandidates;
+        usort($priorDeclineExamples, static fn(array $a, array $b): int => ((float)($b['prior_decline_pct'] ?? 0.0) <=> (float)($a['prior_decline_pct'] ?? 0.0)));
+        $accelExamples = $newCandidates;
+        usort($accelExamples, static fn(array $a, array $b): int => ((float)($b['current_price_change_pct_10m'] ?? -INF) <=> (float)($a['current_price_change_pct_10m'] ?? -INF)));
+
+        $acceptedExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'entry_price' => $c['entry_price'] ?? null,
+                'prior_decline_pct' => $c['prior_decline_pct'] ?? null,
+                'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
+                'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'recovery_score' => $c['recovery_score'] ?? null,
+                'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
+                'current_price_change_pct_10m' => $c['current_price_change_pct_10m'] ?? null,
+                'combined_recovery_score' => $c['combined_recovery_score'] ?? null,
+                'raw_strategy_passed' => (bool)($c['raw_strategy_passed'] ?? false),
+                'handoff_ready' => (bool)($c['handoff_ready'] ?? false),
+            ];
+        }, $acceptedExamples), 0, 20);
+        $rejectedExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
+                'prior_decline_pct' => $c['prior_decline_pct'] ?? null,
+                'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
+                'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
+            ];
+        }, $rejectedExamples), 0, 20);
+        $bestRecoveryExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
+                'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
+                'combined_recovery_score' => $c['combined_recovery_score'] ?? null,
+            ];
+        }, $bestRecoveryExamples), 0, 20);
+        $priorDeclineExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'prior_decline_pct' => $c['prior_decline_pct'] ?? null,
+                'prior_decline_high_price' => $c['prior_decline_high_price'] ?? null,
+                'recovery_low_price' => $c['recovery_low_price'] ?? null,
+                'combined_recovery_score' => $c['combined_recovery_score'] ?? null,
+            ];
+        }, $priorDeclineExamples), 0, 20);
+        $openInterestExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
+                'open_interest_growth_score' => $c['open_interest_growth_score'] ?? null,
+                'combined_recovery_score' => $c['combined_recovery_score'] ?? null,
+            ];
+        }, $openInterestExamples), 0, 20);
+        $accelExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'current_price_change_pct_10m' => $c['current_price_change_pct_10m'] ?? null,
+                'current_oi_growth_pct_10m' => $c['current_oi_growth_pct_10m'] ?? null,
+                'current_acceleration_score' => $c['current_acceleration_score'] ?? null,
+                'combined_recovery_score' => $c['combined_recovery_score'] ?? null,
+            ];
+        }, $accelExamples), 0, 20);
 
         $lastRun = [
             'strategy_id' => self::STRATEGY_ID,
@@ -381,6 +484,7 @@ final class EarlyImpulseGrowthLongService
             'selected_window_total' => (int)($state['selected_window_total'] ?? 0),
             'batch_size' => (int)($state['batch_size'] ?? $batchSize),
             'max_symbols_per_run' => (int)($state['max_symbols_per_run'] ?? $config['max_symbols_per_run']),
+            'recovery_window_minutes' => (int)$config['recovery_window_minutes'],
             'registry_cursor' => (int)($state['registry_cursor'] ?? 0),
             'previous_registry_cursor' => (int)($state['previous_registry_cursor'] ?? 0),
             'next_registry_cursor' => (int)($state['next_registry_cursor'] ?? 0),
@@ -396,6 +500,10 @@ final class EarlyImpulseGrowthLongService
             'enabled_filters_count' => count($enabledFilters),
             'enabled_filters' => $enabledFilters,
             'filter_enforcement_mode' => (string)$config['filter_enforcement_mode'],
+            'filter_engine_available_filters_total' => count($filterCatalog),
+            'filter_engine_enabled_filters_total' => count($enabledFilters),
+            'filter_engine_enabled_filter_ids' => $enabledFilters,
+            'filter_engine_results_by_filter' => $diag['filter_engine_results_by_filter'],
 
             // Recovery / decline diagnostics
             'prior_decline_passed_total' => $diag['prior_decline_passed_total'],
@@ -419,6 +527,12 @@ final class EarlyImpulseGrowthLongService
 
             'open_interest_missing_examples' => $diag['open_interest_missing_examples'],
             'reject_reason_counts' => $diag['reject_reason_counts'],
+            'accepted_examples' => $acceptedExamples,
+            'rejected_examples' => $rejectedExamples,
+            'best_recovery_examples' => $bestRecoveryExamples,
+            'prior_decline_examples' => $priorDeclineExamples,
+            'open_interest_growth_examples' => $openInterestExamples,
+            'current_acceleration_examples' => $accelExamples,
         ];
 
         $this->writeJson($this->storagePath('last_run.json'), $lastRun);
@@ -1256,6 +1370,9 @@ final class EarlyImpulseGrowthLongService
         $cfg['strategy_id'] = (string)($cfg['strategy_id'] ?? self::STRATEGY_ID);
         $cfg['enabled'] = (bool)($cfg['enabled'] ?? false);
         $cfg['handoff_enabled'] = (bool)($cfg['handoff_enabled'] ?? false);
+        $cfg['emit_bot_handoff'] = (bool)($cfg['emit_bot_handoff'] ?? false);
+        $cfg['max_handoff_signals_per_tick'] = max(1, min(100, (int)($cfg['max_handoff_signals_per_tick'] ?? 5)));
+        $cfg['bot_ready_ttl_minutes'] = max(1, min(240, (int)($cfg['bot_ready_ttl_minutes'] ?? 10)));
         $cfg['mode'] = (string)($cfg['mode'] ?? 'passive');
         $cfg['side'] = self::SIDE;
 
@@ -1265,13 +1382,13 @@ final class EarlyImpulseGrowthLongService
         $cfg['auto_requeue_when_done'] = (bool)($cfg['auto_requeue_when_done'] ?? true);
 
         // Recovery window config
-        $cfg['recovery_window_minutes'] = max(10, (int)($cfg['recovery_window_minutes'] ?? 180));
-        $cfg['recovery_min_window_minutes'] = max(10, (int)($cfg['recovery_min_window_minutes'] ?? 120));
-        $cfg['recovery_max_window_minutes'] = max((int)$cfg['recovery_min_window_minutes'], (int)($cfg['recovery_max_window_minutes'] ?? 240));
+        $cfg['recovery_window_minutes'] = max(60, min(360, (int)($cfg['recovery_window_minutes'] ?? 180)));
+        $cfg['recovery_min_window_minutes'] = max(30, min(240, (int)($cfg['recovery_min_window_minutes'] ?? 120)));
+        $cfg['recovery_max_window_minutes'] = max((int)$cfg['recovery_min_window_minutes'], min(360, (int)($cfg['recovery_max_window_minutes'] ?? 240)));
 
         // Prior decline
-        $cfg['prior_decline_lookback_minutes'] = max(30, (int)($cfg['prior_decline_lookback_minutes'] ?? 240));
-        $cfg['min_prior_decline_pct'] = max(0.0, (float)($cfg['min_prior_decline_pct'] ?? 2.0));
+        $cfg['prior_decline_lookback_minutes'] = max(60, min(720, (int)($cfg['prior_decline_lookback_minutes'] ?? 240)));
+        $cfg['min_prior_decline_pct'] = max(0.0, min(50.0, (float)($cfg['min_prior_decline_pct'] ?? 2.0)));
 
         // Recovery growth
         $cfg['min_recovery_growth_pct'] = max(0.0, (float)($cfg['min_recovery_growth_pct'] ?? 3.0));
@@ -1280,7 +1397,7 @@ final class EarlyImpulseGrowthLongService
 
         // Open interest
         $cfg['open_interest_enabled'] = (bool)($cfg['open_interest_enabled'] ?? true);
-        $cfg['min_open_interest_growth_pct'] = (float)($cfg['min_open_interest_growth_pct'] ?? 1.0);
+        $cfg['min_open_interest_growth_pct'] = max(-100.0, min(100.0, (float)($cfg['min_open_interest_growth_pct'] ?? 1.0)));
         $cfg['min_open_interest_growth_score'] = max(0.0, min(1.0, (float)($cfg['min_open_interest_growth_score'] ?? 0.55)));
         $cfg['allow_missing_open_interest'] = (bool)($cfg['allow_missing_open_interest'] ?? true);
         $cfg['missing_open_interest_mode'] = (string)($cfg['missing_open_interest_mode'] ?? 'diagnostic_only');

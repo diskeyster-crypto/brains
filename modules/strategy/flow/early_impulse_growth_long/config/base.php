@@ -6,6 +6,9 @@ return [
     'strategy_id' => 'early_impulse_growth_long',
     'enabled' => false,
     'handoff_enabled' => false,
+    'emit_bot_handoff' => false,
+    'max_handoff_signals_per_tick' => 5,
+    'bot_ready_ttl_minutes' => 10,
     'mode' => 'passive',
     'side' => 'long',
 

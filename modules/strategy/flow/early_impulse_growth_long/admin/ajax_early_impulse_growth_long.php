@@ -120,6 +120,7 @@ if ($action === 'save_config') {
         $selectedProfile = isset($profiles['raw_no_filters']) ? 'raw_no_filters' : (array_key_first($profiles) ?? 'raw_no_filters');
     }
     $applyProfile = isset($_POST['apply_filter_profile']);
+    $selectedProfileConfig = is_array($profiles[$selectedProfile] ?? null) ? (array)$profiles[$selectedProfile] : [];
 
     $filterConfig = [];
     foreach ($catalog as $filterId => $meta) {
@@ -140,6 +141,14 @@ if ($action === 'save_config') {
         }
     }
 
+    if ($selectedProfile === 'raw_no_filters') {
+        foreach ($catalog as $filterId => $meta) {
+            $row = FilterEngine::normalizeConfigRow($meta, (array)($filterConfig[$filterId] ?? []));
+            $row['enabled'] = false;
+            $filterConfig[$filterId] = $row;
+        }
+    }
+
     $enabledFilters = [];
     $disabledFilters = [];
     foreach ($filterConfig as $filterId => $row) {
@@ -153,26 +162,37 @@ if ($action === 'save_config') {
     $overrides = array_merge($existing, [
         'enabled' => $boolField('enabled'),
         'handoff_enabled' => $boolField('handoff_enabled'),
+        'emit_bot_handoff' => $boolField('emit_bot_handoff'),
+        'max_handoff_signals_per_tick' => $intField('max_handoff_signals_per_tick', 1, 100, 5),
+        'bot_ready_ttl_minutes' => $intField('bot_ready_ttl_minutes', 1, 240, 10),
         'batch_size' => $intField('batch_size', 1, 1000, 100),
         'max_symbols_per_run' => $intField('max_symbols_per_run', 1, 1000, 100),
         'continuous_scan_enabled' => $boolField('continuous_scan_enabled', true),
         'auto_requeue_when_done' => $boolField('auto_requeue_when_done', true),
-        'recovery_window_minutes' => $intField('recovery_window_minutes', 10, 480, 180),
-        'recovery_min_window_minutes' => $intField('recovery_min_window_minutes', 10, 480, 120),
-        'recovery_max_window_minutes' => $intField('recovery_max_window_minutes', 10, 480, 240),
-        'prior_decline_lookback_minutes' => $intField('prior_decline_lookback_minutes', 30, 1440, 240),
-        'min_prior_decline_pct' => $floatField('min_prior_decline_pct', 0.0, 100.0, 2.0),
+        'recovery_window_minutes' => $intField('recovery_window_minutes', 60, 360, 180),
+        'recovery_min_window_minutes' => $intField('recovery_min_window_minutes', 30, 240, 120),
+        'recovery_max_window_minutes' => $intField('recovery_max_window_minutes', 60, 360, 240),
+        'prior_decline_lookback_minutes' => $intField('prior_decline_lookback_minutes', 60, 720, 240),
+        'min_prior_decline_pct' => $floatField('min_prior_decline_pct', 0.0, 50.0, 2.0),
         'min_recovery_growth_pct' => $floatField('min_recovery_growth_pct', 0.0, 100.0, 3.0),
         'min_recovery_score' => $floatField('min_recovery_score', 0.0, 1.0, 0.55),
         'max_recovery_growth_pct' => $floatField('max_recovery_growth_pct', 0.0, 200.0, 30.0),
         'open_interest_enabled' => $boolField('open_interest_enabled', true),
         'allow_missing_open_interest' => $boolField('allow_missing_open_interest', true),
-        'min_open_interest_growth_pct' => $floatField('min_open_interest_growth_pct', 0.0, 100.0, 1.0),
+        'min_open_interest_growth_pct' => $floatField('min_open_interest_growth_pct', -100.0, 100.0, 1.0),
         'min_open_interest_growth_score' => $floatField('min_open_interest_growth_score', 0.0, 1.0, 0.55),
         'missing_open_interest_mode' => $strField('missing_open_interest_mode', ['diagnostic_only', 'block'], 'diagnostic_only'),
         'current_acceleration_window_minutes' => $intField('current_acceleration_window_minutes', 1, 60, 10),
-        'filter_engine_enabled' => $boolField('filter_engine_enabled', true),
-        'filter_enforcement_mode' => $strField('filter_enforcement_mode', ['diagnostic_only', 'soft', 'strict'], 'diagnostic_only'),
+        'filter_engine_enabled' => $selectedProfile === 'raw_no_filters'
+            ? true
+            : ($applyProfile && array_key_exists('filter_engine_enabled', $selectedProfileConfig)
+                ? (bool)$selectedProfileConfig['filter_engine_enabled']
+                : $boolField('filter_engine_enabled', true)),
+        'filter_enforcement_mode' => $selectedProfile === 'raw_no_filters'
+            ? 'diagnostic_only'
+            : ($applyProfile && isset($selectedProfileConfig['filter_enforcement_mode'])
+                ? $strField('filter_enforcement_mode', ['diagnostic_only', 'soft', 'strict'], (string)$selectedProfileConfig['filter_enforcement_mode'])
+                : $strField('filter_enforcement_mode', ['diagnostic_only', 'soft', 'strict'], 'diagnostic_only')),
         'filter_profile' => $selectedProfile,
         'filter_profile_active' => $selectedProfile,
         'filter_config' => $filterConfig,

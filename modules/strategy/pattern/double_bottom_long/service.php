@@ -2818,6 +2818,8 @@ final class DoubleBottomLongService
             'filter_engine_examples'                   => $handoffStats['filter_engine_examples'] ?? [],
             'restored_normal_handoff_total'            => $handoffStats['restored_normal_handoff_total'] ?? 0,
             'restored_normal_handoff_examples'         => $handoffStats['restored_normal_handoff_examples'] ?? [],
+            'diagnostic_only_nonfatal_pass_total'      => $handoffStats['diagnostic_only_nonfatal_pass_total'] ?? $handoffStats['restored_normal_handoff_total'] ?? 0,
+            'diagnostic_only_nonfatal_pass_examples'   => $handoffStats['diagnostic_only_nonfatal_pass_examples'] ?? $handoffStats['restored_normal_handoff_examples'] ?? [],
             'setup_allowed_quality_failed_examples'    => $setupAllowedQualityFailedExamples,
             'setup_allowed_pending_examples'           => $setupAllowedPendingExamples,
             'setup_allowed_final_gate_warning_examples' => $setupAllowedFinalGateWarnExamples,
@@ -10457,14 +10459,17 @@ final class DoubleBottomLongService
             ) {
                 $filterEngineDiagnosticOnlyPassedTotal++;
             }
-            if ((bool)($entry['restored_normal_handoff'] ?? false)) {
+            if ((bool)($entry['diagnostic_only_nonfatal_pass'] ?? $entry['restored_normal_handoff'] ?? false)) {
                 $restoredNormalHandoffTotal++;
-                if (count($restoredNormalHandoffExamples) < 5) {
+                if (count($restoredNormalHandoffExamples) < 5
+                    && (bool)($entry['handoff_ready'] ?? false)
+                    && (bool)($entry['executable'] ?? false)
+                ) {
                     $restoredNormalHandoffExamples[] = [
                         'symbol' => $entry['symbol'] ?? null,
                         'quality' => $entry['candidate_quality_score'] ?? null,
-                        'handoff_ready' => (bool)($entry['handoff_ready'] ?? false),
-                        'executable' => (bool)($entry['executable'] ?? false),
+                        'handoff_ready' => true,
+                        'executable' => true,
                         'enforcement_mode' => $entry['filter_enforcement_mode'] ?? null,
                         'fatal_filter_reasons' => $entry['fatal_filter_reasons'] ?? [],
                         'hard_block_filter_reasons' => $entryHard,
@@ -10562,13 +10567,13 @@ final class DoubleBottomLongService
                         $this->dblAuditFromFinalLowQualityTotal++;
                     } elseif ($causeRaw === 'ob_quality_below_threshold') {
                         $this->dblAuditFromObQualityBelowTotal++;
-                    } elseif ($causeRaw === 'missing_reclaim_confirmation') {
+                    } elseif ($causeRaw === 'missing_reclaim_confirmation' || $causeRaw === 'missing_reclaim_filter') {
                         $this->dblAuditFromMissingReclaimTotal++;
                     } elseif ($causeRaw === 'entry_far_from_point3') {
                         $this->dblAuditFromEntryFarPoint3Total++;
-                    } elseif ($causeRaw === 'insufficient_room_to_recent_swing_high') {
+                    } elseif ($causeRaw === 'insufficient_room_to_recent_swing_high' || $causeRaw === 'tiny_room_filter') {
                         $this->dblAuditFromInsufficientRoomTotal++;
-                    } elseif ($causeRaw === 'garbage_low_quality_without_obc_confirmation') {
+                    } elseif ($causeRaw === 'garbage_low_quality_without_obc_confirmation' || $causeRaw === 'low_quality_without_obc_filter') {
                         $this->dblAuditFromGarbageLowQualityWithoutObcTotal++;
                     }
                 }
@@ -10896,6 +10901,8 @@ final class DoubleBottomLongService
             'filter_engine_examples'                    => $filterEngineExamples,
             'restored_normal_handoff_total'             => $restoredNormalHandoffTotal,
             'restored_normal_handoff_examples'          => $restoredNormalHandoffExamples,
+            'diagnostic_only_nonfatal_pass_total'       => $restoredNormalHandoffTotal,
+            'diagnostic_only_nonfatal_pass_examples'    => $restoredNormalHandoffExamples,
             // OBC soft_demote handoff-block counters
             'soft_demote_blocked_handoff_total' => $softDemoteBlockedTotal,
             'soft_demote_allowed_handoff_total' => $softDemoteAllowedTotal,
@@ -11386,20 +11393,35 @@ final class DoubleBottomLongService
             $softReasons[] = 'final_stop_too_wide';
         }
 
-        // Compatibility mapping for legacy veto reasons -> reusable filter IDs.
-        $legacyToFilterId = [
-            'garbage_low_quality_without_obc_confirmation' => 'low_quality_without_obc_filter',
-            'garbage_obc_quality_skip' => 'low_quality_without_obc_filter',
-            'garbage_local_late_entry_after_recovery' => 'late_local_entry_filter',
-            'garbage_late_daily_extension_long' => 'daily_extension_filter',
-            'garbage_whipsaw_weak_quality' => 'whipsaw_filter',
+        // Canonicalize: replace ALL legacy garbage-veto reason strings with canonical filter IDs.
+        // This prevents double-counting when both old reason and new filter ID appear together.
+        $legacyToCanonical = [
+            'garbage_low_quality_without_obc_confirmation'  => 'low_quality_without_obc_filter',
+            'garbage_obc_quality_skip'                      => 'low_quality_without_obc_filter',
+            'garbage_local_late_entry_after_recovery'       => 'late_local_entry_filter',
+            'garbage_late_local_tiny_room_far_from_point3'  => 'late_local_entry_filter',
+            'garbage_late_daily_extension_long'             => 'daily_extension_filter',
+            'garbage_whipsaw_weak_quality'                  => 'whipsaw_filter',
+            'missing_reclaim_confirmation'                  => 'missing_reclaim_filter',
+            'insufficient_room_to_recent_swing_high'        => 'tiny_room_filter',
+            'late_local_tiny_room'                          => 'tiny_room_filter',
+            'point3_broken'                                 => 'point3_terminal_break_filter',
+            'terminal_point3_broken'                        => 'point3_terminal_break_filter',
+            'confirmed_pattern_ttl_expired'                 => 'confirmed_pattern_ttl_filter',
         ];
-        foreach (array_merge($softReasons, $hardBlockReasons, $warningReasons) as $legacyReason) {
-            $legacyReason = (string)$legacyReason;
-            if ($legacyReason !== '' && isset($legacyToFilterId[$legacyReason])) {
-                $softReasons[] = $legacyToFilterId[$legacyReason];
+        $canonicalize = static function (array $reasons) use ($legacyToCanonical): array {
+            $out = [];
+            foreach ($reasons as $r) {
+                $r = (string)$r;
+                if ($r !== '') {
+                    $out[] = $legacyToCanonical[$r] ?? $r;
+                }
             }
-        }
+            return array_values(array_unique($out));
+        };
+        $hardBlockReasons = $canonicalize($hardBlockReasons);
+        $softReasons      = $canonicalize($softReasons);
+        $warningReasons   = $canonicalize($warningReasons);
 
         $fatalReasons = array_values(array_unique(array_filter(array_map('strval', $fatalReasons), static fn(string $v): bool => $v !== '')));
         $hardBlockReasons = array_values(array_unique(array_filter(array_map('strval', $hardBlockReasons), static fn(string $v): bool => $v !== '')));
@@ -11412,7 +11434,7 @@ final class DoubleBottomLongService
         }
         $normalAllowed = (bool)$normalAllowedLegacy;
         $nonFatalWouldBlock = !empty($hardBlockReasons) || !empty($softReasons);
-        $restoredNormalHandoff = false;
+        $diagnosticOnlyNonfatalPass = false;
 
         // Enforce by mode; in diagnostic_only, only fatals block.
         if (!empty($fatalReasons)) {
@@ -11423,10 +11445,15 @@ final class DoubleBottomLongService
             $normalAllowed = false;
         } elseif ($enforcementMode === 'diagnostic_only' && $normalAllowedLegacy && $nonFatalWouldBlock) {
             $normalAllowed = true;
-            $restoredNormalHandoff = true;
+            $diagnosticOnlyNonfatalPass = true;
         }
 
         $wouldHaveBlockedByFilters = array_values(array_unique(array_merge($hardBlockReasons, $softReasons)));
+        // If would_have_blocked_by_filters is still empty but the signal is blocked by fatal reasons,
+        // populate it from canonicalized fatal reasons so it is never empty for blocked signals.
+        if (empty($wouldHaveBlockedByFilters) && !$normalAllowed && !empty($fatalReasons)) {
+            $wouldHaveBlockedByFilters = $canonicalize($fatalReasons);
+        }
         $wouldHaveBlocked = !$normalAllowed || !empty($wouldHaveBlockedByFilters);
         if (($wouldHaveBlocked || !$normalAllowed) && empty($wouldHaveBlockedByFilters)) {
             $resolveReasons = static function ($value): array {
@@ -11465,7 +11492,7 @@ final class DoubleBottomLongService
                     break;
                 }
             }
-            $softReasons = array_values(array_unique($resolvedReasons));
+            $softReasons = $canonicalize(array_values(array_unique($resolvedReasons)));
             // Track when the last-resort unknown fallback was used
             if ($softReasons === ['unknown_soft_block_reason']) {
                 $this->filterAuditUnknownReasonTotal++;
@@ -11562,7 +11589,8 @@ final class DoubleBottomLongService
             'would_have_blocked_primary_reason' => $wouldHaveBlockedByFilters[0] ?? null,
             'filter_audit_soft_reasons'       => $wouldHaveBlockedByFilters,
             'non_fatal_filter_warnings'       => $warningReasons,
-            'restored_normal_handoff'         => $restoredNormalHandoff,
+            'restored_normal_handoff'         => $diagnosticOnlyNonfatalPass,
+            'diagnostic_only_nonfatal_pass'   => $diagnosticOnlyNonfatalPass,
             'filter_audit_score_before_penalty' => $quality,
             'filter_audit_penalty_score'      => round($penaltyScore, 4),
             'filter_audit_score_after_penalty'=> $scoreAfterPenalty,
@@ -11584,15 +11612,15 @@ final class DoubleBottomLongService
      */
     private function evaluateDblFilterEngine(array $record, array $ssc, array $config, float $quality): array
     {
-        require_once $this->repoRoot . '/modules/strategy/filter_engine/filter_result.php';
-        require_once $this->repoRoot . '/modules/strategy/filter_engine/filter_engine.php';
-        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/late_local_entry_filter.php';
-        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/low_quality_without_obc_filter.php';
-        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/missing_reclaim_filter.php';
-        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/tiny_room_filter.php';
-        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/point3_terminal_break_filter.php';
-        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/daily_extension_filter.php';
-        require_once $this->repoRoot . '/modules/strategy/filter_engine/filters/whipsaw_filter.php';
+        require_once $this->repoRoot . '/modules/filter_engine/filter_result.php';
+        require_once $this->repoRoot . '/modules/filter_engine/filter_engine.php';
+        require_once $this->repoRoot . '/modules/filter_engine/filters/late_local_entry_filter.php';
+        require_once $this->repoRoot . '/modules/filter_engine/filters/low_quality_without_obc_filter.php';
+        require_once $this->repoRoot . '/modules/filter_engine/filters/missing_reclaim_filter.php';
+        require_once $this->repoRoot . '/modules/filter_engine/filters/tiny_room_filter.php';
+        require_once $this->repoRoot . '/modules/filter_engine/filters/point3_terminal_break_filter.php';
+        require_once $this->repoRoot . '/modules/filter_engine/filters/daily_extension_filter.php';
+        require_once $this->repoRoot . '/modules/filter_engine/filters/whipsaw_filter.php';
 
         $engineConfig = [
             'point3_terminal_break_filter' => [
@@ -11640,7 +11668,7 @@ final class DoubleBottomLongService
         $ctx['final_low_quality_causes'] = $ssc['final_low_quality_causes'] ?? ($record['final_low_quality_causes'] ?? []);
         $ctx['final_low_quality_primary_cause'] = $ssc['final_low_quality_primary_cause'] ?? ($record['final_low_quality_primary_cause'] ?? null);
 
-        $engine = new \Modules\Strategy\FilterEngine\FilterEngine();
+        $engine = new \Modules\FilterEngine\FilterEngine();
         return $engine->evaluate($ctx, $engineConfig);
     }
 
@@ -11761,6 +11789,22 @@ final class DoubleBottomLongService
         $positiveRoiThreshold = (float)($config['dbl_filter_audit_positive_roi_threshold'] ?? 2.0);
         $negativeRoiThreshold = (float)($config['dbl_filter_audit_negative_roi_threshold'] ?? -2.0);
 
+        // Canonical map for legacy reason strings that may appear in historical journal entries.
+        $reconcileCanonical = [
+            'garbage_low_quality_without_obc_confirmation'  => 'low_quality_without_obc_filter',
+            'garbage_obc_quality_skip'                      => 'low_quality_without_obc_filter',
+            'garbage_local_late_entry_after_recovery'       => 'late_local_entry_filter',
+            'garbage_late_local_tiny_room_far_from_point3'  => 'late_local_entry_filter',
+            'garbage_late_daily_extension_long'             => 'daily_extension_filter',
+            'garbage_whipsaw_weak_quality'                  => 'whipsaw_filter',
+            'missing_reclaim_confirmation'                  => 'missing_reclaim_filter',
+            'insufficient_room_to_recent_swing_high'        => 'tiny_room_filter',
+            'late_local_tiny_room'                          => 'tiny_room_filter',
+            'point3_broken'                                 => 'point3_terminal_break_filter',
+            'terminal_point3_broken'                        => 'point3_terminal_break_filter',
+            'confirmed_pattern_ttl_expired'                 => 'confirmed_pattern_ttl_filter',
+        ];
+
         // Dedupe tracking: auditId → outcomeKey (only count each unique trade outcome once)
         $resolvedOutcomeKeys = [];
 
@@ -11821,6 +11865,7 @@ final class DoubleBottomLongService
                     foreach ((array)($entry['would_have_blocked_by_filters'] ?? []) as $reason) {
                         $reason = (string)$reason;
                         if ($reason === '') { continue; }
+                        $reason = $reconcileCanonical[$reason] ?? $reason;
                         $verdictByFilter[$reason]['filter_too_strict'] = (int)($verdictByFilter[$reason]['filter_too_strict'] ?? 0) + 1;
                         $caseStatsByFilter[$reason]['positive_cases_total'] = (int)($caseStatsByFilter[$reason]['positive_cases_total'] ?? 0) + 1;
                         $caseStatsByFilter[$reason]['filter_too_strict_total'] = (int)($caseStatsByFilter[$reason]['filter_too_strict_total'] ?? 0) + 1;
@@ -11834,6 +11879,7 @@ final class DoubleBottomLongService
                     foreach ((array)($entry['would_have_blocked_by_filters'] ?? []) as $reason) {
                         $reason = (string)$reason;
                         if ($reason === '') { continue; }
+                        $reason = $reconcileCanonical[$reason] ?? $reason;
                         $verdictByFilter[$reason]['filter_validated'] = (int)($verdictByFilter[$reason]['filter_validated'] ?? 0) + 1;
                         $caseStatsByFilter[$reason]['negative_cases_total'] = (int)($caseStatsByFilter[$reason]['negative_cases_total'] ?? 0) + 1;
                         $caseStatsByFilter[$reason]['filter_validated_total'] = (int)($caseStatsByFilter[$reason]['filter_validated_total'] ?? 0) + 1;
@@ -11847,6 +11893,7 @@ final class DoubleBottomLongService
                     foreach ((array)($entry['would_have_blocked_by_filters'] ?? []) as $reason) {
                         $reason = (string)$reason;
                         if ($reason === '') { continue; }
+                        $reason = $reconcileCanonical[$reason] ?? $reason;
                         $verdictByFilter[$reason]['filter_inconclusive'] = (int)($verdictByFilter[$reason]['filter_inconclusive'] ?? 0) + 1;
                         $caseStatsByFilter[$reason]['inconclusive_cases_total'] = (int)($caseStatsByFilter[$reason]['inconclusive_cases_total'] ?? 0) + 1;
                         $caseStatsByFilter[$reason]['filter_inconclusive_total'] = (int)($caseStatsByFilter[$reason]['filter_inconclusive_total'] ?? 0) + 1;
@@ -12103,6 +12150,22 @@ final class DoubleBottomLongService
         $unknownReasonTotal = 0;
         $unknownReasonExamples = [];
 
+        // Canonical map for legacy reason strings in case records (e.g. historical journal entries).
+        $caseCanonical = [
+            'garbage_low_quality_without_obc_confirmation'  => 'low_quality_without_obc_filter',
+            'garbage_obc_quality_skip'                      => 'low_quality_without_obc_filter',
+            'garbage_local_late_entry_after_recovery'       => 'late_local_entry_filter',
+            'garbage_late_local_tiny_room_far_from_point3'  => 'late_local_entry_filter',
+            'garbage_late_daily_extension_long'             => 'daily_extension_filter',
+            'garbage_whipsaw_weak_quality'                  => 'whipsaw_filter',
+            'missing_reclaim_confirmation'                  => 'missing_reclaim_filter',
+            'insufficient_room_to_recent_swing_high'        => 'tiny_room_filter',
+            'late_local_tiny_room'                          => 'tiny_room_filter',
+            'point3_broken'                                 => 'point3_terminal_break_filter',
+            'terminal_point3_broken'                        => 'point3_terminal_break_filter',
+            'confirmed_pattern_ttl_expired'                 => 'confirmed_pattern_ttl_filter',
+        ];
+
         foreach ($canonicalByOutcome as $case) {
             $roi = isset($case['close_roi']) && $case['close_roi'] !== null ? (float)$case['close_roi'] : null;
             if ($roi === null) {
@@ -12119,7 +12182,7 @@ final class DoubleBottomLongService
             foreach ((array)($case['would_have_blocked_by_filters'] ?? []) as $reason) {
                 $r = trim((string)$reason);
                 if ($r !== '') {
-                    $filters[] = $r;
+                    $filters[] = $caseCanonical[$r] ?? $r;
                 }
             }
             $filters = array_values(array_unique($filters));

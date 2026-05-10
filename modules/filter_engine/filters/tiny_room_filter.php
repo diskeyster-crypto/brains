@@ -10,6 +10,27 @@ final class TinyRoomFilter
 {
     public function id(): string { return 'tiny_room_filter'; }
 
+    public function metadata(): array
+    {
+        return [
+            'filter_id' => $this->id(),
+            'title' => 'Tiny room to recent high',
+            'description' => 'Warns when the remaining room to the recent swing high is too small.',
+            'default_severity' => 'warning',
+            'configurable_fields' => [
+                [
+                    'key' => 'min_room_roi',
+                    'label' => 'Min room ROI',
+                    'type' => 'float',
+                    'default' => 2.0,
+                    'min' => 0.0,
+                    'max' => 100.0,
+                    'help' => 'Signals with less available room than this value will trigger the filter.',
+                ],
+            ],
+        ];
+    }
+
     public function evaluate(array $signalContext, array $filterConfig): FilterResult
     {
         $enabled = (bool)($filterConfig['enabled'] ?? true);
@@ -29,7 +50,6 @@ final class TinyRoomFilter
             true,
             false,
             $severity,
-            // reason is kept for human-readable diagnostics; filter_engine.php uses filter_id in aggregated lists
             'insufficient_room_to_recent_swing_high',
             ['room_to_recent_swing_high_roi' => $room],
             in_array($severity, ['soft_block', 'hard_block', 'fatal'], true),

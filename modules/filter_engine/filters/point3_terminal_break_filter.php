@@ -10,6 +10,17 @@ final class Point3TerminalBreakFilter
 {
     public function id(): string { return 'point3_terminal_break_filter'; }
 
+    public function metadata(): array
+    {
+        return [
+            'filter_id' => $this->id(),
+            'title' => 'Point3 terminal break',
+            'description' => 'Blocks structurally broken patterns such as terminal point3 breaks, reclaim loss, TTL expiry, or hard ask-wall invalidation.',
+            'default_severity' => 'fatal',
+            'configurable_fields' => [],
+        ];
+    }
+
     public function evaluate(array $signalContext, array $filterConfig): FilterResult
     {
         $enabled = (bool)($filterConfig['enabled'] ?? true);

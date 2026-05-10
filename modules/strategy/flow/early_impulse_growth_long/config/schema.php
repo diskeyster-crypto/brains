@@ -31,16 +31,10 @@ return [
     'filter_engine_enabled' => 'bool',
     'filter_enforcement_mode' => 'string',
     'filter_profile' => 'string',
+    'filter_profile_active' => 'string',
     'enabled_filters' => 'array',
     'disabled_filters' => 'array',
-
-    'eig_filter_point3_terminal_break_filter_enabled' => 'bool',
-    'eig_filter_low_quality_without_obc_filter_enabled' => 'bool',
-    'eig_filter_missing_reclaim_filter_enabled' => 'bool',
-    'eig_filter_late_local_entry_filter_enabled' => 'bool',
-    'eig_filter_tiny_room_filter_enabled' => 'bool',
-    'eig_filter_daily_extension_filter_enabled' => 'bool',
-    'eig_filter_whipsaw_filter_enabled' => 'bool',
+    'filter_config' => 'array',
 
     'parser2_history_lookback_minutes' => 'int',
     'max_data_staleness_seconds' => 'int',

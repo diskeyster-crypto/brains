@@ -9,17 +9,6 @@ final class EarlyImpulseGrowthLongService
     private const STRATEGY_ID = 'early_impulse_growth_long';
     private const SIDE = 'long';
 
-    /** @var list<string> */
-    private const FILTER_IDS = [
-        'point3_terminal_break_filter',
-        'low_quality_without_obc_filter',
-        'missing_reclaim_filter',
-        'late_local_entry_filter',
-        'tiny_room_filter',
-        'daily_extension_filter',
-        'whipsaw_filter',
-    ];
-
     private static ?self $instance = null;
     private string $moduleDir;
     private string $repoRoot;
@@ -28,6 +17,10 @@ final class EarlyImpulseGrowthLongService
     private int $universeTotal = 0;
     /** @var list<string> */
     private array $universeExamples = [];
+    /** @var array<string,array<string,mixed>>|null */
+    private ?array $cachedFilterCatalog = null;
+    /** @var array<string,array<string,mixed>>|null */
+    private ?array $cachedFilterProfiles = null;
 
     public function __construct(?string $moduleDir = null)
     {
@@ -49,6 +42,38 @@ final class EarlyImpulseGrowthLongService
             self::$instance = new self($moduleDir);
         }
         return self::$instance;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function getConfig(): array
+    {
+        return $this->loadConfig();
+    }
+
+    /**
+     * @return array<string,array<string,mixed>>
+     */
+    public function getFilterCatalog(): array
+    {
+        if ($this->cachedFilterCatalog === null) {
+            require_once $this->repoRoot . '/modules/filter_engine/filter_engine.php';
+            $this->cachedFilterCatalog = \Modules\FilterEngine\FilterEngine::discoverFilterMetadata();
+        }
+        return $this->cachedFilterCatalog;
+    }
+
+    /**
+     * @return array<string,array<string,mixed>>
+     */
+    public function getFilterProfiles(): array
+    {
+        if ($this->cachedFilterProfiles === null) {
+            $profiles = $this->readPhpArray($this->moduleDir . '/config/filter_profiles.php');
+            $this->cachedFilterProfiles = is_array($profiles) ? $profiles : [];
+        }
+        return $this->cachedFilterProfiles;
     }
 
     /**
@@ -900,26 +925,7 @@ final class EarlyImpulseGrowthLongService
      */
     private function buildFilterEngineConfig(array $config): array
     {
-        $enabled = $this->computeEnabledFilters($config);
-        $enabledSet = array_fill_keys($enabled, true);
-
-        $rows = [];
-        foreach (self::FILTER_IDS as $id) {
-            $rows[$id] = [
-                'enabled' => isset($enabledSet[$id]),
-                'severity' => 'soft_block',
-            ];
-        }
-
-        $rows['point3_terminal_break_filter']['severity'] = 'fatal';
-        $rows['daily_extension_filter']['severity'] = 'hard_block';
-        $rows['whipsaw_filter']['severity'] = 'hard_block';
-        $rows['tiny_room_filter']['severity'] = 'warning';
-        $rows['missing_reclaim_filter']['severity'] = 'warning';
-        $rows['low_quality_without_obc_filter']['severity'] = 'soft_block';
-        $rows['late_local_entry_filter']['severity'] = 'soft_block';
-
-        return $rows;
+        return $this->normalizeFilterConfig($config)['rows'];
     }
 
     /**
@@ -927,32 +933,64 @@ final class EarlyImpulseGrowthLongService
      */
     private function computeEnabledFilters(array $config): array
     {
-        $enabled = [];
-        foreach ((array)$config['enabled_filters'] as $id) {
+        return $this->normalizeFilterConfig($config)['enabled'];
+    }
+
+    /**
+     * @param array<string,mixed> $config
+     * @return array{rows: array<string,array<string,mixed>>, enabled: list<string>, metadata: array<string,array<string,mixed>>}
+     */
+    private function normalizeFilterConfig(array $config): array
+    {
+        require_once $this->repoRoot . '/modules/filter_engine/filter_engine.php';
+        $metadata = $this->getFilterCatalog();
+        $storedRows = is_array($config['filter_config'] ?? null) ? (array)$config['filter_config'] : [];
+
+        $enabledLegacy = [];
+        foreach ((array)($config['enabled_filters'] ?? []) as $id) {
             $id = trim((string)$id);
-            if ($id === '') {
-                continue;
+            if ($id !== '') {
+                $enabledLegacy[$id] = true;
             }
-            $enabled[] = $id;
         }
 
-        foreach (self::FILTER_IDS as $id) {
-            $cfgKey = 'eig_filter_' . $id . '_enabled';
-            if (!empty($config[$cfgKey])) {
+        $disabledLegacy = [];
+        foreach ((array)($config['disabled_filters'] ?? []) as $id) {
+            $id = trim((string)$id);
+            if ($id !== '') {
+                $disabledLegacy[$id] = true;
+            }
+        }
+
+        $rows = [];
+        foreach ($metadata as $id => $meta) {
+            $row = is_array($storedRows[$id] ?? null) ? (array)$storedRows[$id] : [];
+            if (!array_key_exists('enabled', $row)) {
+                $legacyKey = 'eig_filter_' . $id . '_enabled';
+                if (array_key_exists($legacyKey, $config)) {
+                    $row['enabled'] = (bool)$config[$legacyKey];
+                } elseif (isset($enabledLegacy[$id])) {
+                    $row['enabled'] = true;
+                }
+            }
+            if (isset($disabledLegacy[$id])) {
+                $row['enabled'] = false;
+            }
+            $rows[$id] = \Modules\FilterEngine\FilterEngine::normalizeConfigRow($meta, $row);
+        }
+
+        $enabled = [];
+        foreach ($rows as $id => $row) {
+            if (!empty($row['enabled'])) {
                 $enabled[] = $id;
             }
         }
 
-        $enabled = array_values(array_unique($enabled));
-        $disabledSet = [];
-        foreach ((array)$config['disabled_filters'] as $id) {
-            $id = trim((string)$id);
-            if ($id !== '') {
-                $disabledSet[$id] = true;
-            }
-        }
-
-        return array_values(array_filter($enabled, static fn(string $id): bool => !isset($disabledSet[$id])));
+        return [
+            'rows' => $rows,
+            'enabled' => $enabled,
+            'metadata' => $metadata,
+        ];
     }
 
     /**
@@ -1065,13 +1103,18 @@ final class EarlyImpulseGrowthLongService
         $cfg['filter_enforcement_mode'] = in_array($mode, ['diagnostic_only', 'soft', 'strict'], true)
             ? $mode
             : 'diagnostic_only';
-        $cfg['filter_profile'] = (string)($cfg['filter_profile'] ?? 'early_impulse_growth_long_default');
+        $cfg['filter_profile'] = (string)($cfg['filter_profile'] ?? 'raw_no_filters');
+        $cfg['filter_profile_active'] = (string)($cfg['filter_profile_active'] ?? $cfg['filter_profile']);
         $cfg['enabled_filters'] = array_values(array_filter((array)($cfg['enabled_filters'] ?? []), static fn($v): bool => trim((string)$v) !== ''));
         $cfg['disabled_filters'] = array_values(array_filter((array)($cfg['disabled_filters'] ?? []), static fn($v): bool => trim((string)$v) !== ''));
+        $cfg['filter_config'] = is_array($cfg['filter_config'] ?? null) ? (array)$cfg['filter_config'] : [];
 
-        foreach (self::FILTER_IDS as $id) {
-            $key = 'eig_filter_' . $id . '_enabled';
-            $cfg[$key] = (bool)($cfg[$key] ?? false);
+        $normalizedFilters = $this->normalizeFilterConfig($cfg);
+        $cfg['filter_config'] = $normalizedFilters['rows'];
+        $cfg['enabled_filters'] = $normalizedFilters['enabled'];
+        $cfg['disabled_filters'] = array_values(array_diff(array_keys($normalizedFilters['rows']), $normalizedFilters['enabled']));
+        foreach ($normalizedFilters['rows'] as $id => $row) {
+            $cfg['eig_filter_' . $id . '_enabled'] = (bool)($row['enabled'] ?? false);
         }
 
         $cfg['parser2_history_lookback_minutes'] = max(30, (int)($cfg['parser2_history_lookback_minutes'] ?? 180));

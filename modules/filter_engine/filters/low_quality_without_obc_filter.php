@@ -10,6 +10,34 @@ final class LowQualityWithoutObcFilter
 {
     public function id(): string { return 'low_quality_without_obc_filter'; }
 
+    public function metadata(): array
+    {
+        return [
+            'filter_id' => $this->id(),
+            'title' => 'Low quality without OBC',
+            'description' => 'Flags weak candidates when quality is low and there is no order-book confirmation support.',
+            'default_severity' => 'soft_block',
+            'configurable_fields' => [
+                [
+                    'key' => 'max_score',
+                    'label' => 'Max quality score',
+                    'type' => 'float',
+                    'default' => 0.70,
+                    'min' => 0.0,
+                    'max' => 1.0,
+                    'help' => 'Candidates at or below this score can be blocked when OBC confirmation is missing.',
+                ],
+                [
+                    'key' => 'require_generic_warning',
+                    'label' => 'Require generic low-quality warning',
+                    'type' => 'bool',
+                    'default' => true,
+                    'help' => 'When enabled, the filter only triggers if the generic low-quality warning is also present in context.',
+                ],
+            ],
+        ];
+    }
+
     public function evaluate(array $signalContext, array $filterConfig): FilterResult
     {
         $enabled = (bool)($filterConfig['enabled'] ?? true);
@@ -37,7 +65,6 @@ final class LowQualityWithoutObcFilter
             true,
             false,
             $severity,
-            // reason is kept for human-readable diagnostics; filter_engine.php uses filter_id in aggregated lists
             'garbage_low_quality_without_obc_confirmation',
             ['candidate_quality_score' => $quality, 'obc_quality_confirmed' => $obConfirmed],
             in_array($severity, ['soft_block', 'hard_block', 'fatal'], true),

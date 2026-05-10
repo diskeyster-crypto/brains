@@ -9,13 +9,11 @@ return [
     'mode' => 'passive',
     'side' => 'long',
 
-    // rotating universe scan
     'batch_size' => 100,
     'max_symbols_per_run' => 100,
     'continuous_scan_enabled' => true,
     'auto_requeue_when_done' => true,
 
-    // core raw-impulse logic (only 3 strategy conditions)
     'impulse_window_minutes' => 10,
     'impulse_min_window_minutes' => 5,
     'impulse_max_window_minutes' => 10,
@@ -30,23 +28,14 @@ return [
     'allow_missing_open_interest' => true,
     'missing_open_interest_mode' => 'diagnostic_only',
 
-    // filter engine integration (strategy-owned profile)
     'filter_engine_enabled' => true,
-    'filter_enforcement_mode' => 'diagnostic_only', // diagnostic_only | soft | strict
-    'filter_profile' => 'early_impulse_growth_long_default',
+    'filter_enforcement_mode' => 'diagnostic_only',
+    'filter_profile' => 'raw_no_filters',
+    'filter_profile_active' => 'raw_no_filters',
     'enabled_filters' => [],
     'disabled_filters' => [],
+    'filter_config' => [],
 
-    // optional strategy-local filter defaults (all disabled by default)
-    'eig_filter_point3_terminal_break_filter_enabled' => false,
-    'eig_filter_low_quality_without_obc_filter_enabled' => false,
-    'eig_filter_missing_reclaim_filter_enabled' => false,
-    'eig_filter_late_local_entry_filter_enabled' => false,
-    'eig_filter_tiny_room_filter_enabled' => false,
-    'eig_filter_daily_extension_filter_enabled' => false,
-    'eig_filter_whipsaw_filter_enabled' => false,
-
-    // data source / safety knobs
     'parser2_history_lookback_minutes' => 180,
     'max_data_staleness_seconds' => 180,
     'bybit_base_url' => 'https://api.bybit.com',
@@ -55,7 +44,6 @@ return [
     'bybit_oi_interval' => '5min',
     'bybit_oi_limit' => 2,
 
-    // storage caps
     'max_candidates_store' => 2000,
     'max_rejects_store' => 2000,
     'max_signals_store' => 1000,

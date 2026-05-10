@@ -10,6 +10,17 @@ final class MissingReclaimFilter
 {
     public function id(): string { return 'missing_reclaim_filter'; }
 
+    public function metadata(): array
+    {
+        return [
+            'filter_id' => $this->id(),
+            'title' => 'Missing reclaim confirmation',
+            'description' => 'Warns or blocks when the setup has not reclaimed its key level yet.',
+            'default_severity' => 'warning',
+            'configurable_fields' => [],
+        ];
+    }
+
     public function evaluate(array $signalContext, array $filterConfig): FilterResult
     {
         $enabled = (bool)($filterConfig['enabled'] ?? true);
@@ -31,7 +42,6 @@ final class MissingReclaimFilter
             true,
             false,
             $severity,
-            // reason is kept for human-readable diagnostics; filter_engine.php uses filter_id in aggregated lists
             'missing_reclaim_confirmation',
             ['reclaim_confirmed' => false],
             in_array($severity, ['soft_block', 'hard_block', 'fatal'], true),

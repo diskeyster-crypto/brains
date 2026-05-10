@@ -10,6 +10,36 @@ final class DailyExtensionFilter
 {
     public function id(): string { return 'daily_extension_filter'; }
 
+    public function metadata(): array
+    {
+        return [
+            'filter_id' => $this->id(),
+            'title' => 'Daily extension',
+            'description' => 'Blocks overly extended entries that are already hot versus the daily range.',
+            'default_severity' => 'hard_block',
+            'configurable_fields' => [
+                [
+                    'key' => 'hot_pct',
+                    'label' => 'Daily extension hot threshold (%)',
+                    'type' => 'float',
+                    'default' => 35.0,
+                    'min' => 0.0,
+                    'max' => 1000.0,
+                    'help' => 'Extension above this percentage is considered hot.',
+                ],
+                [
+                    'key' => 'position_in_range_max_pct',
+                    'label' => 'Max position in day range (%)',
+                    'type' => 'float',
+                    'default' => 80.0,
+                    'min' => 0.0,
+                    'max' => 100.0,
+                    'help' => 'Triggers once price is already this high inside the daily range.',
+                ],
+            ],
+        ];
+    }
+
     public function evaluate(array $signalContext, array $filterConfig): FilterResult
     {
         $enabled = (bool)($filterConfig['enabled'] ?? true);
@@ -38,7 +68,6 @@ final class DailyExtensionFilter
             true,
             false,
             $severity,
-            // reason is kept for human-readable diagnostics; filter_engine.php uses filter_id in aggregated lists
             'garbage_late_daily_extension_long',
             ['daily_extension_pct' => $dailyExt, 'position_in_range_pct' => $rangePos],
             in_array($severity, ['soft_block', 'hard_block', 'fatal'], true),

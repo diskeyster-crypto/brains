@@ -130,14 +130,30 @@ $severityOptions = ['warning', 'soft_block', 'hard_block', 'fatal'];
     </div>
 
     <div class="cfg-section">
-      <h6>Raw strategy core</h6>
+      <h6>Recovery window — primary signal (2–4 hours post-dump)</h6>
+      <p class="note" style="margin:0 0 12px;">Finds sustained recovery/growth after a prior decline. Not 5–10 min pump spikes.</p>
       <div class="cfg-grid">
-        <div><label class="cfg-label">impulse_window_minutes</label><input type="number" name="impulse_window_minutes" min="1" max="60" value="<?= $e((int)$cfg('impulse_window_minutes', 10)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
-        <div><label class="cfg-label">impulse_min_window_minutes</label><input type="number" name="impulse_min_window_minutes" min="1" max="60" value="<?= $e((int)$cfg('impulse_min_window_minutes', 5)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
-        <div><label class="cfg-label">impulse_max_window_minutes</label><input type="number" name="impulse_max_window_minutes" min="1" max="60" value="<?= $e((int)$cfg('impulse_max_window_minutes', 10)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
-        <div><label class="cfg-label">min_price_impulse_pct</label><input type="number" name="min_price_impulse_pct" step="0.01" min="0" max="100" value="<?= $e((float)$cfg('min_price_impulse_pct', 0.4)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
-        <div><label class="cfg-label">max_price_impulse_pct</label><input type="number" name="max_price_impulse_pct" step="0.01" min="0" max="100" value="<?= $e((float)$cfg('max_price_impulse_pct', 4.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
-        <div><label class="cfg-label">min_price_impulse_score</label><input type="number" name="min_price_impulse_score" step="0.01" min="0" max="1" value="<?= $e((float)$cfg('min_price_impulse_score', 0.55)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">recovery_window_minutes <span class="note">(primary scan window)</span></label><input type="number" name="recovery_window_minutes" min="10" max="480" value="<?= $e((int)$cfg('recovery_window_minutes', 180)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">recovery_min_window_minutes</label><input type="number" name="recovery_min_window_minutes" min="10" max="480" value="<?= $e((int)$cfg('recovery_min_window_minutes', 120)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">recovery_max_window_minutes</label><input type="number" name="recovery_max_window_minutes" min="10" max="480" value="<?= $e((int)$cfg('recovery_max_window_minutes', 240)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">min_recovery_growth_pct</label><input type="number" name="min_recovery_growth_pct" step="0.01" min="0" max="100" value="<?= $e((float)$cfg('min_recovery_growth_pct', 3.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">min_recovery_score <span class="note">(0–1)</span></label><input type="number" name="min_recovery_score" step="0.01" min="0" max="1" value="<?= $e((float)$cfg('min_recovery_score', 0.55)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">max_recovery_growth_pct <span class="note">(diagnostic only)</span></label><input type="number" name="max_recovery_growth_pct" step="0.1" min="0" max="200" value="<?= $e((float)$cfg('max_recovery_growth_pct', 30.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <h6>Prior decline detection — required before recovery</h6>
+      <p class="note" style="margin:0 0 12px;">Recovery must happen after a real dump. Both thresholds must pass.</p>
+      <div class="cfg-grid">
+        <div><label class="cfg-label">prior_decline_lookback_minutes</label><input type="number" name="prior_decline_lookback_minutes" min="30" max="1440" value="<?= $e((int)$cfg('prior_decline_lookback_minutes', 240)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">min_prior_decline_pct</label><input type="number" name="min_prior_decline_pct" step="0.1" min="0" max="100" value="<?= $e((float)$cfg('min_prior_decline_pct', 2.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
+      <h6>Open interest growth over recovery window</h6>
+      <div class="cfg-grid">
         <div>
           <label class="cfg-label">open_interest_enabled</label>
           <select name="open_interest_enabled" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
@@ -162,6 +178,7 @@ $severityOptions = ['warning', 'soft_block', 'hard_block', 'fatal'];
             <?php endforeach; ?>
           </select>
         </div>
+        <div><label class="cfg-label">current_acceleration_window_minutes <span class="note">(diagnostic only)</span></label><input type="number" name="current_acceleration_window_minutes" min="1" max="60" value="<?= $e((int)$cfg('current_acceleration_window_minutes', 10)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
       </div>
     </div>
 

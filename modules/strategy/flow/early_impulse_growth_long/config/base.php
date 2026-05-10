@@ -14,20 +14,31 @@ return [
     'continuous_scan_enabled' => true,
     'auto_requeue_when_done' => true,
 
-    'impulse_window_minutes' => 10,
-    'impulse_min_window_minutes' => 5,
-    'impulse_max_window_minutes' => 10,
+    // Recovery window — primary signal window (2–4 hours)
+    'recovery_window_minutes' => 180,
+    'recovery_min_window_minutes' => 120,
+    'recovery_max_window_minutes' => 240,
 
-    'min_price_impulse_pct' => 0.4,
-    'max_price_impulse_pct' => 4.0,
-    'min_price_impulse_score' => 0.55,
+    // Prior decline detection
+    'prior_decline_lookback_minutes' => 240,
+    'min_prior_decline_pct' => 2.0,
 
+    // Recovery growth thresholds
+    'min_recovery_growth_pct' => 3.0,
+    'min_recovery_score' => 0.55,
+    'max_recovery_growth_pct' => 30.0,
+
+    // Open interest growth over recovery window
     'open_interest_enabled' => true,
     'min_open_interest_growth_pct' => 1.0,
     'min_open_interest_growth_score' => 0.55,
     'allow_missing_open_interest' => true,
     'missing_open_interest_mode' => 'diagnostic_only',
 
+    // Current acceleration (diagnostic only — not a reject condition)
+    'current_acceleration_window_minutes' => 10,
+
+    // FilterEngine
     'filter_engine_enabled' => true,
     'filter_enforcement_mode' => 'diagnostic_only',
     'filter_profile' => 'raw_no_filters',
@@ -36,14 +47,16 @@ return [
     'disabled_filters' => [],
     'filter_config' => [],
 
-    'parser2_history_lookback_minutes' => 180,
-    'max_data_staleness_seconds' => 180,
+    // Data sources
+    'parser2_history_lookback_minutes' => 500,
+    'max_data_staleness_seconds' => 300,
     'bybit_base_url' => 'https://api.bybit.com',
     'bybit_timeout_sec' => 6,
-    'bybit_kline_limit' => 120,
+    'bybit_kline_limit' => 500,
     'bybit_oi_interval' => '5min',
     'bybit_oi_limit' => 2,
 
+    // Storage caps
     'max_candidates_store' => 2000,
     'max_rejects_store' => 2000,
     'max_signals_store' => 1000,

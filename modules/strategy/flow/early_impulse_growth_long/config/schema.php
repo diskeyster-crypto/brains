@@ -14,19 +14,24 @@ return [
     'continuous_scan_enabled' => 'bool',
     'auto_requeue_when_done' => 'bool',
 
-    'impulse_window_minutes' => 'int',
-    'impulse_min_window_minutes' => 'int',
-    'impulse_max_window_minutes' => 'int',
+    'recovery_window_minutes' => 'int',
+    'recovery_min_window_minutes' => 'int',
+    'recovery_max_window_minutes' => 'int',
 
-    'min_price_impulse_pct' => 'float',
-    'max_price_impulse_pct' => 'float',
-    'min_price_impulse_score' => 'float',
+    'prior_decline_lookback_minutes' => 'int',
+    'min_prior_decline_pct' => 'float',
+
+    'min_recovery_growth_pct' => 'float',
+    'min_recovery_score' => 'float',
+    'max_recovery_growth_pct' => 'float',
 
     'open_interest_enabled' => 'bool',
     'min_open_interest_growth_pct' => 'float',
     'min_open_interest_growth_score' => 'float',
     'allow_missing_open_interest' => 'bool',
     'missing_open_interest_mode' => 'string',
+
+    'current_acceleration_window_minutes' => 'int',
 
     'filter_engine_enabled' => 'bool',
     'filter_enforcement_mode' => 'string',

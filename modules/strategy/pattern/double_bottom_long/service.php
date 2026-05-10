@@ -119,6 +119,23 @@ final class DoubleBottomLongService
     private array $filterAuditUnknownReasonExamples      = [];
     /** @var list<array<string,mixed>> */
     private array $filterAuditOutcomeDuplicateExamples   = [];
+    // ── DBL audit reach diagnostics (reset per tick) ──────────────────────────
+    private int $dblAuditIneligibleCandidatesTotal       = 0;
+    /** @var array<string,int> */
+    private array $dblAuditIneligibleByReason            = [];
+    private int $dblAuditFromFinalLowQualityTotal        = 0;
+    private int $dblAuditFromObQualityBelowTotal         = 0;
+    private int $dblAuditFromMissingReclaimTotal         = 0;
+    private int $dblAuditFromEntryFarPoint3Total         = 0;
+    private int $dblAuditFromInsufficientRoomTotal       = 0;
+    private int $dblAuditFromGarbageLowQualityWithoutObcTotal = 0;
+    private int $dblSoftBlockCandidatesTotal             = 0;
+    /** @var list<array<string,mixed>> */
+    private array $dblAuditEligibleExamples              = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblAuditIneligibleExamples            = [];
+    /** @var list<array<string,mixed>> */
+    private array $dblSoftBlockExamples                  = [];
     // ── DBL trend-shift confirmation gate counters (reset at start of each tickBatch) ──
     private int $dblTrendShiftCheckedTotal                       = 0;
     private int $dblTrendShiftConfirmedTotal                     = 0;
@@ -628,6 +645,19 @@ final class DoubleBottomLongService
         $this->filterAuditSkipReasons              = [];
         $this->filterAuditExamples                 = [];
         $this->filterAuditMissingBlockReasonExamples = [];
+        // Reset per-tick audit reach diagnostics.
+        $this->dblAuditIneligibleCandidatesTotal       = 0;
+        $this->dblAuditIneligibleByReason              = [];
+        $this->dblAuditFromFinalLowQualityTotal        = 0;
+        $this->dblAuditFromObQualityBelowTotal         = 0;
+        $this->dblAuditFromMissingReclaimTotal         = 0;
+        $this->dblAuditFromEntryFarPoint3Total         = 0;
+        $this->dblAuditFromInsufficientRoomTotal       = 0;
+        $this->dblAuditFromGarbageLowQualityWithoutObcTotal = 0;
+        $this->dblSoftBlockCandidatesTotal             = 0;
+        $this->dblAuditEligibleExamples                = [];
+        $this->dblAuditIneligibleExamples              = [];
+        $this->dblSoftBlockExamples                    = [];
         // Reset per-tick trace completeness counters.
         $this->dblTraceCheckedTotal                        = 0;
         $this->dblTraceCompleteTotal                       = 0;
@@ -2738,7 +2768,23 @@ final class DoubleBottomLongService
             'filter_audit_min_quality_score'           => $handoffStats['filter_audit_min_quality_score'] ?? 0.0,
             'filter_audit_positive_roi_threshold'      => $handoffStats['filter_audit_positive_roi_threshold'] ?? 0.0,
             'filter_audit_negative_roi_threshold'      => $handoffStats['filter_audit_negative_roi_threshold'] ?? 0.0,
-            'filter_audit_ready_ttl_minutes'           => $handoffStats['filter_audit_ready_ttl_minutes'] ?? 20,
+            'filter_audit_ready_ttl_minutes'           => $handoffStats['filter_audit_ready_ttl_minutes'] ?? 60,
+            // ── Audit reach diagnostics ──────────────────────────────────────────
+            'dbl_audit_eligible_candidates_total'      => $handoffStats['dbl_audit_eligible_candidates_total'] ?? 0,
+            'dbl_audit_ineligible_candidates_total'    => $handoffStats['dbl_audit_ineligible_candidates_total'] ?? 0,
+            'dbl_audit_ineligible_by_reason'           => $handoffStats['dbl_audit_ineligible_by_reason'] ?? (object)[],
+            'dbl_audit_candidates_from_final_low_quality_total'          => $handoffStats['dbl_audit_candidates_from_final_low_quality_total'] ?? 0,
+            'dbl_audit_candidates_from_ob_quality_below_total'           => $handoffStats['dbl_audit_candidates_from_ob_quality_below_total'] ?? 0,
+            'dbl_audit_candidates_from_missing_reclaim_total'            => $handoffStats['dbl_audit_candidates_from_missing_reclaim_total'] ?? 0,
+            'dbl_audit_candidates_from_entry_far_point3_total'           => $handoffStats['dbl_audit_candidates_from_entry_far_point3_total'] ?? 0,
+            'dbl_audit_candidates_from_insufficient_room_total'          => $handoffStats['dbl_audit_candidates_from_insufficient_room_total'] ?? 0,
+            'dbl_audit_candidates_from_garbage_low_quality_without_obc_total' => $handoffStats['dbl_audit_candidates_from_garbage_low_quality_without_obc_total'] ?? 0,
+            'dbl_fatal_block_candidates_total'         => $handoffStats['dbl_fatal_block_candidates_total'] ?? 0,
+            'dbl_soft_block_candidates_total'          => $handoffStats['dbl_soft_block_candidates_total'] ?? 0,
+            'dbl_audit_eligible_examples'              => $handoffStats['dbl_audit_eligible_examples'] ?? [],
+            'dbl_audit_ineligible_examples'            => $handoffStats['dbl_audit_ineligible_examples'] ?? [],
+            'dbl_fatal_block_examples'                 => $handoffStats['dbl_fatal_block_examples'] ?? [],
+            'dbl_soft_block_examples'                  => $handoffStats['dbl_soft_block_examples'] ?? [],
             'filter_audit_pending_outcomes_total'      => $filterAudit['filter_audit_pending_outcomes_total'] ?? ($handoffStats['filter_audit_pending_outcomes_total'] ?? 0),
             'filter_audit_matched_closed_total'        => $filterAudit['filter_audit_matched_closed_total'] ?? ($handoffStats['filter_audit_matched_closed_total'] ?? 0),
             'filter_audit_filter_too_strict_total'     => $filterAudit['filter_audit_filter_too_strict_total'] ?? ($handoffStats['filter_audit_filter_too_strict_total'] ?? 0),
@@ -4806,6 +4852,12 @@ final class DoubleBottomLongService
                     'final_low_quality_causes' => $sscFilter['final_low_quality_causes'] ?? [],
                     'final_low_quality_primary_cause' => $sscFilter['final_low_quality_primary_cause'] ?? null,
                 ]);
+                // Carry to filter-audit if quality meets minimum threshold (soft block, no fatal).
+                if ($filterAuditModeEnabled && (float)($s['candidate_quality_score'] ?? 0.0) >= $filterAuditMinQuality) {
+                    $s['final_reject_reason'] = 'final_low_quality';
+                    $s = $this->stampDblFilterAuditContext($s, $config, 'final_low_quality', false);
+                    $auditCarrySignals[] = $s;
+                }
                 continue;
             }
 
@@ -10370,6 +10422,20 @@ final class DoubleBottomLongService
 
             if ((bool)($entry['fatal_filter_hit'] ?? false)) {
                 $this->filterAuditHardBlockedTotal++;
+                $this->dblAuditIneligibleCandidatesTotal++;
+                foreach ((array)($entry['fatal_filter_reasons'] ?? []) as $fr) {
+                    $fr = (string)$fr;
+                    if ($fr !== '') {
+                        $this->dblAuditIneligibleByReason[$fr] = ($this->dblAuditIneligibleByReason[$fr] ?? 0) + 1;
+                    }
+                }
+                if (count($this->dblAuditIneligibleExamples) < 5) {
+                    $this->dblAuditIneligibleExamples[] = [
+                        'symbol'               => $entry['symbol']    ?? null,
+                        'signal_id'            => $entry['signal_id'] ?? null,
+                        'fatal_filter_reasons' => $entry['fatal_filter_reasons'] ?? [],
+                    ];
+                }
             }
 
             if ((bool)($entry['normal_handoff_allowed'] ?? false)
@@ -10380,6 +10446,16 @@ final class DoubleBottomLongService
             }
 
             if (!(bool)($entry['normal_handoff_allowed'] ?? true) && !(bool)($entry['fatal_filter_hit'] ?? false)) {
+                $this->dblSoftBlockCandidatesTotal++;
+                if (count($this->dblSoftBlockExamples) < 5) {
+                    $this->dblSoftBlockExamples[] = [
+                        'symbol'                    => $entry['symbol']    ?? null,
+                        'signal_id'                 => $entry['signal_id'] ?? null,
+                        'block_reason'              => $entry['block_reason'] ?? null,
+                        'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+                        'filter_audit_candidate'    => (bool)($entry['filter_audit_candidate'] ?? false),
+                    ];
+                }
                 $entry['handoff_ready'] = false;
                 $entry['executable'] = false;
                 $entry['active_final'] = false;
@@ -10398,6 +10474,36 @@ final class DoubleBottomLongService
 
             if ((bool)($entry['filter_audit_candidate'] ?? false)) {
                 $filterAuditCandidates[$id] = $entry;
+                // Track per-cause audit candidate counters.
+                $auditCauseSeen = [];
+                foreach ((array)($entry['would_have_blocked_by_filters'] ?? []) as $causeRaw) {
+                    $causeRaw = (string)$causeRaw;
+                    if ($causeRaw === '' || isset($auditCauseSeen[$causeRaw])) {
+                        continue;
+                    }
+                    $auditCauseSeen[$causeRaw] = true;
+                    if ($causeRaw === 'final_low_quality' || $causeRaw === 'generic_entry_context_score_low') {
+                        $this->dblAuditFromFinalLowQualityTotal++;
+                    } elseif ($causeRaw === 'ob_quality_below_threshold') {
+                        $this->dblAuditFromObQualityBelowTotal++;
+                    } elseif ($causeRaw === 'missing_reclaim_confirmation') {
+                        $this->dblAuditFromMissingReclaimTotal++;
+                    } elseif ($causeRaw === 'entry_far_from_point3') {
+                        $this->dblAuditFromEntryFarPoint3Total++;
+                    } elseif ($causeRaw === 'insufficient_room_to_recent_swing_high') {
+                        $this->dblAuditFromInsufficientRoomTotal++;
+                    } elseif ($causeRaw === 'garbage_low_quality_without_obc_confirmation') {
+                        $this->dblAuditFromGarbageLowQualityWithoutObcTotal++;
+                    }
+                }
+                if (count($this->dblAuditEligibleExamples) < 5) {
+                    $this->dblAuditEligibleExamples[] = [
+                        'symbol'                    => $entry['symbol']    ?? null,
+                        'signal_id'                 => $entry['signal_id'] ?? null,
+                        'would_have_blocked_by_filters' => $entry['would_have_blocked_by_filters'] ?? [],
+                        'quality'                   => $entry['candidate_quality_score'] ?? null,
+                    ];
+                }
             }
         }
         unset($entry);
@@ -10664,6 +10770,22 @@ final class DoubleBottomLongService
             'filter_audit_positive_roi_threshold'              => (float)($config['dbl_filter_audit_positive_roi_threshold'] ?? 2.0),
             'filter_audit_negative_roi_threshold'              => (float)($config['dbl_filter_audit_negative_roi_threshold'] ?? -2.0),
             'filter_audit_ready_ttl_minutes'                   => $filterAuditReadyTtlMinutes,
+            // ── Audit reach diagnostics ──────────────────────────────────────────
+            'dbl_audit_eligible_candidates_total'              => $this->filterAuditCandidatesTotal,
+            'dbl_audit_ineligible_candidates_total'            => $this->dblAuditIneligibleCandidatesTotal,
+            'dbl_audit_ineligible_by_reason'                   => empty($this->dblAuditIneligibleByReason) ? (object)[] : $this->dblAuditIneligibleByReason,
+            'dbl_audit_candidates_from_final_low_quality_total'          => $this->dblAuditFromFinalLowQualityTotal,
+            'dbl_audit_candidates_from_ob_quality_below_total'           => $this->dblAuditFromObQualityBelowTotal,
+            'dbl_audit_candidates_from_missing_reclaim_total'            => $this->dblAuditFromMissingReclaimTotal,
+            'dbl_audit_candidates_from_entry_far_point3_total'           => $this->dblAuditFromEntryFarPoint3Total,
+            'dbl_audit_candidates_from_insufficient_room_total'          => $this->dblAuditFromInsufficientRoomTotal,
+            'dbl_audit_candidates_from_garbage_low_quality_without_obc_total' => $this->dblAuditFromGarbageLowQualityWithoutObcTotal,
+            'dbl_fatal_block_candidates_total'                 => $this->filterAuditHardBlockedTotal,
+            'dbl_soft_block_candidates_total'                  => $this->dblSoftBlockCandidatesTotal,
+            'dbl_audit_eligible_examples'                      => $this->dblAuditEligibleExamples,
+            'dbl_audit_ineligible_examples'                    => $this->dblAuditIneligibleExamples,
+            'dbl_fatal_block_examples'                         => $this->dblAuditIneligibleExamples,
+            'dbl_soft_block_examples'                          => $this->dblSoftBlockExamples,
             'filter_audit_pending_outcomes_total'              => $filterAuditSummary['filter_audit_pending_outcomes_total'] ?? 0,
             'filter_audit_matched_closed_total'                => $filterAuditSummary['filter_audit_matched_closed_total'] ?? 0,
             'filter_audit_filter_too_strict_total'             => $filterAuditSummary['filter_audit_filter_too_strict_total'] ?? 0,

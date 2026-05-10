@@ -494,7 +494,7 @@ return [
     'dbl_filter_audit_positive_roi_threshold'                  => 2.0,
     'dbl_filter_audit_negative_roi_threshold'                  => -2.0,
     'dbl_filter_audit_require_no_fatal_break'                  => true,
-    'dbl_filter_audit_ready_ttl_minutes'                       => 20,
+    'dbl_filter_audit_ready_ttl_minutes'                       => 60,
     'dbl_filter_audit_stale_ready_action'                      => 'withdraw',
     // ── DBL confirmed-pattern freshness override ──────────────────────────────
     // For signals with dbl_pattern_status=confirmed, bypass the generic current-run

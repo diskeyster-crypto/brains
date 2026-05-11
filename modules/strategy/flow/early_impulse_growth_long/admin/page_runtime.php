@@ -61,6 +61,10 @@ $stabilizingExamples = is_array($lastRun['stabilizing_examples'] ?? null) ? (arr
 $confirmedLaterExamples = is_array($lastRun['confirmed_later_examples'] ?? null) ? (array)$lastRun['confirmed_later_examples'] : [];
 $lateSpikeExamples = is_array($lastRun['late_spike_examples'] ?? null) ? (array)$lastRun['late_spike_examples'] : [];
 $extendedExamples = is_array($lastRun['extended_examples'] ?? null) ? (array)$lastRun['extended_examples'] : [];
+$coinContextExamples = is_array($lastRun['coin_context_examples'] ?? null) ? (array)$lastRun['coin_context_examples'] : [];
+$coinContextPhaseCounts = is_array($lastRun['coin_context_phase_counts'] ?? null) ? (array)$lastRun['coin_context_phase_counts'] : [];
+$coinContextTrendCounts = is_array($lastRun['coin_context_trend_1h_counts'] ?? null) ? (array)$lastRun['coin_context_trend_1h_counts'] : [];
+$coinContextQualityCounts = is_array($lastRun['coin_context_quality_counts'] ?? null) ? (array)$lastRun['coin_context_quality_counts'] : [];
 ?>
 <style>
 .eig-rt-page { max-width: 1220px; }
@@ -111,6 +115,10 @@ $extendedExamples = is_array($lastRun['extended_examples'] ?? null) ? (array)$la
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['recovery_growth_passed_total'] ?? 0)) ?></div><div class="rt-lbl">recovery_growth_pass_count</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['open_interest_growth_passed_total'] ?? 0)) ?></div><div class="rt-lbl">oi_growth_pass_count</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['raw_strategy_passed_total'] ?? 0)) ?></div><div class="rt-lbl">raw_strategy_pass_count</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $fmtBool((bool)($lastRun['coin_context_enabled'] ?? false)) ?></div><div class="rt-lbl">coin_context_enabled</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['coin_context_checked_total'] ?? 0)) ?></div><div class="rt-lbl">coin_context_checked</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['coin_context_available_total'] ?? 0)) ?></div><div class="rt-lbl">coin_context_available</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['coin_context_missing_total'] ?? 0)) ?></div><div class="rt-lbl">coin_context_missing</div></div>
     </div>
 
     <div style="margin-top:12px;margin-bottom:12px;padding:12px;border:1px solid rgba(56,189,248,.3);border-radius:6px;background:rgba(56,189,248,.04);">
@@ -192,6 +200,10 @@ $extendedExamples = is_array($lastRun['extended_examples'] ?? null) ? (array)$la
       <tr><td style="color:#64748b">filter_engine_available_filters_total</td><td><?= $e((int)($lastRun['filter_engine_available_filters_total'] ?? 0)) ?></td><td style="color:#64748b;padding-left:16px;">filter_engine_enabled_filters_total</td><td><?= $e((int)($lastRun['filter_engine_enabled_filters_total'] ?? 0)) ?></td></tr>
       <tr><td style="color:#64748b">filter_engine_enabled_filter_ids</td><td colspan="3"><code><?= $e(json_encode((array)($lastRun['filter_engine_enabled_filter_ids'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
       <tr><td style="color:#64748b">filter_engine_results_by_filter</td><td colspan="3"><code><?= $e(json_encode((array)($lastRun['filter_engine_results_by_filter'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+      <tr><td style="color:#64748b">coin_context_error_counts</td><td colspan="3"><code><?= $e(json_encode((array)($lastRun['coin_context_error_counts'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+      <tr><td style="color:#64748b">coin_context_phase_counts</td><td colspan="3"><code><?= $e(json_encode($coinContextPhaseCounts, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+      <tr><td style="color:#64748b">coin_context_trend_1h_counts</td><td colspan="3"><code><?= $e(json_encode($coinContextTrendCounts, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+      <tr><td style="color:#64748b">coin_context_quality_counts</td><td colspan="3"><code><?= $e(json_encode($coinContextQualityCounts, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
     </table>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
       <form method="post" action="<?= $e($ajaxUrl) ?>" style="margin:0;">
@@ -314,6 +326,7 @@ $extendedExamples = is_array($lastRun['extended_examples'] ?? null) ? (array)$la
       <tr><td style="color:#64748b">best_recovery_examples</td><td><code><?= $e(json_encode($bestRecoveryExamples, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
       <tr><td style="color:#64748b">open_interest_growth_examples</td><td><code><?= $e(json_encode($openInterestExamples, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
       <tr><td style="color:#64748b">current_acceleration_examples</td><td><code><?= $e(json_encode($accelExamples, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+      <tr><td style="color:#64748b">coin_context_examples</td><td><code><?= $e(json_encode($coinContextExamples, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
     </table>
   </div>
 
@@ -338,6 +351,12 @@ $phaseTableRow = static function (array $row) use ($e, $fmtNum, $fmtBool): strin
         . '<td style="padding:3px 8px;">' . $e($fmtNum($row['smooth_growth_pct'] ?? null, 3)) . '</td>'
         . '<td style="padding:3px 8px;">' . $e((string)($row['smooth_growth_duration_minutes'] ?? '—')) . '</td>'
         . '<td style="padding:3px 8px;">' . $e($fmtNum($row['open_interest_growth_pct'] ?? null, 3)) . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($row['trend_1h_direction'] ?? '—') . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['price_change_1h_pct'] ?? null, 3)) . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['corridor_position_pct'] ?? null, 2)) . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['room_to_recent_high_pct'] ?? null, 3)) . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($row['context_phase'] ?? '—') . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($row['context_quality'] ?? '—') . '</td>'
         . '<td style="padding:3px 8px;">' . $fmtBool((bool)($row['handoff_ready'] ?? false)) . '</td>'
         . '<td style="padding:3px 8px;"><code style="font-size:11px;">' . $e($row['handoff_block_reason'] ?? '') . '</code></td>'
         . '</tr>';
@@ -352,6 +371,12 @@ $phaseTableHead = '<thead><tr style="border-bottom:1px solid var(--border-color,
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">growth_pct</th>'
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">growth_min</th>'
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">oi_growth%</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">trend_1h</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">price_1h%</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">corridor_pos%</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">room_high%</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">context_phase</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">context_quality</th>'
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">handoff_ready</th>'
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">block_reason</th>'
     . '</tr></thead>';

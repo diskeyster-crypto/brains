@@ -90,6 +90,12 @@ return [
     'disabled_filters' => [],
     'filter_config' => [],
 
+    // Coin context (diagnostic-only enrichment)
+    'coin_context_enabled' => true,
+    'coin_context_attach_to_candidates' => true,
+    'coin_context_attach_to_signals' => true,
+    'coin_context_fail_open' => true,
+
     // Data sources
     'parser2_history_lookback_minutes' => 500,
     'max_data_staleness_seconds' => 300,

@@ -80,6 +80,11 @@ return [
     'disabled_filters' => 'array',
     'filter_config' => 'array',
 
+    'coin_context_enabled' => 'bool',
+    'coin_context_attach_to_candidates' => 'bool',
+    'coin_context_attach_to_signals' => 'bool',
+    'coin_context_fail_open' => 'bool',
+
     'parser2_history_lookback_minutes' => 'int',
     'max_data_staleness_seconds' => 'int',
     'bybit_base_url' => 'string',

@@ -21,6 +21,7 @@ final class EarlyImpulseGrowthLongService
     private ?array $cachedFilterCatalog = null;
     /** @var array<string,array<string,mixed>>|null */
     private ?array $cachedFilterProfiles = null;
+    private mixed $coinContextService = null;
 
     public function __construct(?string $moduleDir = null)
     {
@@ -244,6 +245,14 @@ final class EarlyImpulseGrowthLongService
             'filter_engine_checked_total' => 0,
             'filter_engine_blocked_total' => 0,
             'filter_engine_diagnostic_only_total' => 0,
+            'coin_context_checked_total' => 0,
+            'coin_context_available_total' => 0,
+            'coin_context_missing_total' => 0,
+            'coin_context_error_counts' => [],
+            'coin_context_phase_counts' => [],
+            'coin_context_trend_1h_counts' => [],
+            'coin_context_quality_counts' => [],
+            'coin_context_examples' => [],
             'open_interest_missing_examples' => [],
             'reject_reason_counts' => [],
             'filter_engine_results_by_filter' => [],
@@ -338,6 +347,41 @@ final class EarlyImpulseGrowthLongService
             }
 
             $m = $res['metrics'];
+            if ($m['coin_context_checked'] ?? false) {
+                $diag['coin_context_checked_total']++;
+                $coinContext = is_array($candidate['coin_context'] ?? null) ? (array)$candidate['coin_context'] : [];
+                $contextAvailable = (bool)($coinContext['context_available'] ?? false);
+                if ($contextAvailable) {
+                    $diag['coin_context_available_total']++;
+                } else {
+                    $diag['coin_context_missing_total']++;
+                    $ctxErr = (string)($coinContext['context_error'] ?? 'unknown');
+                    $diag['coin_context_error_counts'][$ctxErr] = (int)($diag['coin_context_error_counts'][$ctxErr] ?? 0) + 1;
+                }
+
+                $ctxPhase = (string)($coinContext['context_phase'] ?? 'unknown');
+                $diag['coin_context_phase_counts'][$ctxPhase] = (int)($diag['coin_context_phase_counts'][$ctxPhase] ?? 0) + 1;
+                $ctxTrend1h = (string)($coinContext['trend_1h_direction'] ?? 'unknown');
+                $diag['coin_context_trend_1h_counts'][$ctxTrend1h] = (int)($diag['coin_context_trend_1h_counts'][$ctxTrend1h] ?? 0) + 1;
+                $ctxQuality = (string)($coinContext['context_quality'] ?? 'unknown');
+                $diag['coin_context_quality_counts'][$ctxQuality] = (int)($diag['coin_context_quality_counts'][$ctxQuality] ?? 0) + 1;
+
+                if (count($diag['coin_context_examples']) < 20) {
+                    $diag['coin_context_examples'][] = [
+                        'symbol' => $candidate['symbol'] ?? null,
+                        'context_available' => $contextAvailable,
+                        'trend_1h_direction' => $coinContext['trend_1h_direction'] ?? null,
+                        'trend_2h_direction' => $coinContext['trend_2h_direction'] ?? null,
+                        'price_change_1h_pct' => $coinContext['price_change_1h_pct'] ?? null,
+                        'corridor_position_pct' => $coinContext['corridor_position_pct'] ?? null,
+                        'room_to_recent_high_pct' => $coinContext['room_to_recent_high_pct'] ?? null,
+                        'distance_from_recent_low_pct' => $coinContext['distance_from_recent_low_pct'] ?? null,
+                        'context_phase' => $coinContext['context_phase'] ?? null,
+                        'context_quality' => $coinContext['context_quality'] ?? null,
+                        'context_reasons' => $coinContext['context_reasons'] ?? [],
+                    ];
+                }
+            }
             if ((bool)($candidate['dump_detected'] ?? false)) {
                 $diag['dump_detected_total']++;
             }
@@ -667,6 +711,7 @@ final class EarlyImpulseGrowthLongService
         usort($recoveryStructureTooWeakExamples, static fn(array $a, array $b): int => ((float)($b['recovery_structure_score'] ?? -INF) <=> (float)($a['recovery_structure_score'] ?? -INF)));
 
         $acceptedExamples = array_slice(array_map(static function (array $c): array {
+            $coinContext = is_array($c['coin_context'] ?? null) ? (array)$c['coin_context'] : [];
             return [
                 'symbol' => $c['symbol'] ?? null,
                 'entry_price' => $c['entry_price'] ?? null,
@@ -683,6 +728,15 @@ final class EarlyImpulseGrowthLongService
                 'combined_recovery_score' => $c['combined_recovery_score'] ?? null,
                 'raw_strategy_passed' => (bool)($c['raw_strategy_passed'] ?? false),
                 'handoff_ready' => (bool)($c['handoff_ready'] ?? false),
+                'context_available' => (bool)($coinContext['context_available'] ?? false),
+                'trend_1h_direction' => $coinContext['trend_1h_direction'] ?? null,
+                'trend_2h_direction' => $coinContext['trend_2h_direction'] ?? null,
+                'price_change_1h_pct' => $coinContext['price_change_1h_pct'] ?? null,
+                'corridor_position_pct' => $coinContext['corridor_position_pct'] ?? null,
+                'room_to_recent_high_pct' => $coinContext['room_to_recent_high_pct'] ?? null,
+                'distance_from_recent_low_pct' => $coinContext['distance_from_recent_low_pct'] ?? null,
+                'context_phase' => $coinContext['context_phase'] ?? null,
+                'context_quality' => $coinContext['context_quality'] ?? null,
             ];
         }, $acceptedExamples), 0, 20);
         $rejectedExamples = array_slice(array_map(static function (array $c): array {
@@ -806,6 +860,7 @@ final class EarlyImpulseGrowthLongService
         }, $recoveryStructureTooWeakExamples), 0, 20);
 
         $phaseExampleRow = static function (array $c): array {
+            $coinContext = is_array($c['coin_context'] ?? null) ? (array)$c['coin_context'] : [];
             return [
                 'symbol' => $c['symbol'] ?? null,
                 'dump_pct' => $c['dump_pct'] ?? null,
@@ -820,6 +875,16 @@ final class EarlyImpulseGrowthLongService
                 'executable' => (bool)($c['executable'] ?? false),
                 'early_entry_triggered' => (bool)($c['early_entry_triggered'] ?? false),
                 'handoff_block_reason' => $c['handoff_block_reason'] ?? null,
+                'context_available' => (bool)($coinContext['context_available'] ?? false),
+                'trend_1h_direction' => $coinContext['trend_1h_direction'] ?? null,
+                'trend_2h_direction' => $coinContext['trend_2h_direction'] ?? null,
+                'price_change_1h_pct' => $coinContext['price_change_1h_pct'] ?? null,
+                'corridor_position_pct' => $coinContext['corridor_position_pct'] ?? null,
+                'room_to_recent_high_pct' => $coinContext['room_to_recent_high_pct'] ?? null,
+                'distance_from_recent_low_pct' => $coinContext['distance_from_recent_low_pct'] ?? null,
+                'context_phase' => $coinContext['context_phase'] ?? null,
+                'context_quality' => $coinContext['context_quality'] ?? null,
+                'context_reasons' => $coinContext['context_reasons'] ?? [],
             ];
         };
         $dumpExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (bool)($c['dump_detected'] ?? false)))), 0, 20);
@@ -940,6 +1005,15 @@ final class EarlyImpulseGrowthLongService
             'filter_engine_checked_total' => $diag['filter_engine_checked_total'],
             'filter_engine_blocked_total' => $diag['filter_engine_blocked_total'],
             'filter_engine_diagnostic_only_total' => $diag['filter_engine_diagnostic_only_total'],
+            'coin_context_enabled' => (bool)$config['coin_context_enabled'],
+            'coin_context_checked_total' => $diag['coin_context_checked_total'],
+            'coin_context_available_total' => $diag['coin_context_available_total'],
+            'coin_context_missing_total' => $diag['coin_context_missing_total'],
+            'coin_context_error_counts' => $diag['coin_context_error_counts'],
+            'coin_context_phase_counts' => $diag['coin_context_phase_counts'],
+            'coin_context_trend_1h_counts' => $diag['coin_context_trend_1h_counts'],
+            'coin_context_quality_counts' => $diag['coin_context_quality_counts'],
+            'coin_context_examples' => $diag['coin_context_examples'],
 
             'open_interest_missing_examples' => $diag['open_interest_missing_examples'],
             'reject_reason_counts' => $diag['reject_reason_counts'],
@@ -1017,6 +1091,7 @@ final class EarlyImpulseGrowthLongService
             'filter_blocked' => false,
             'filter_diagnostic_only' => false,
             'late_spike_detected' => false,
+            'coin_context_checked' => false,
         ];
 
         // --- 1. Load candle and row data ---
@@ -1434,6 +1509,15 @@ final class EarlyImpulseGrowthLongService
             'diagnostic_handoff_ready' => false,
             'active_final' => false,
             'handoff_block_reason' => null,
+            'coin_context' => null,
+            'coin_context_available' => null,
+            'coin_context_phase' => null,
+            'coin_context_quality' => null,
+            'coin_context_trend_1h_direction' => null,
+            'coin_context_price_change_1h_pct' => null,
+            'coin_context_corridor_position_pct' => null,
+            'coin_context_room_to_recent_high_pct' => null,
+            'coin_context_distance_from_recent_low_pct' => null,
         ];
 
         $filterEval = [
@@ -1520,6 +1604,7 @@ final class EarlyImpulseGrowthLongService
                 'entry_timing' => $candidate['entry_timing'] ?? null,
                 'early_entry_triggered' => (bool)($candidate['early_entry_triggered'] ?? false),
                 'handoff_block_reason' => $candidate['handoff_block_reason'] ?? null,
+                'coin_context' => $candidate['coin_context'] ?? null,
                 'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],
                 'filter_engine_enabled_filters_total' => count($enabledFilters),
                 'filter_results' => $candidate['filter_results'] ?? [],
@@ -1543,6 +1628,38 @@ final class EarlyImpulseGrowthLongService
                 'strategy_signal_key' => self::STRATEGY_ID . '|' . strtolower($symbol) . '|' . self::SIDE,
                 'strategy_signal_context' => $strategySignalContext,
             ]);
+        }
+
+        $shouldAttachCoinContext = (bool)$config['coin_context_enabled']
+            && (
+                ((bool)$config['coin_context_attach_to_candidates'] && ($rawPassed || $nearPass))
+                || ((bool)$config['coin_context_attach_to_signals'] && is_array($signal))
+            );
+        if ($shouldAttachCoinContext) {
+            $metrics['coin_context_checked'] = true;
+            $coinContext = $this->buildCoinContextForSymbol($symbol, $config, $allRows, $now, $latestPrice);
+            $candidate['coin_context'] = $coinContext;
+            $candidate['coin_context_available'] = (bool)($coinContext['context_available'] ?? false);
+            $candidate['coin_context_phase'] = $coinContext['context_phase'] ?? null;
+            $candidate['coin_context_quality'] = $coinContext['context_quality'] ?? null;
+            $candidate['coin_context_trend_1h_direction'] = $coinContext['trend_1h_direction'] ?? null;
+            $candidate['coin_context_price_change_1h_pct'] = $coinContext['price_change_1h_pct'] ?? null;
+            $candidate['coin_context_corridor_position_pct'] = $coinContext['corridor_position_pct'] ?? null;
+            $candidate['coin_context_room_to_recent_high_pct'] = $coinContext['room_to_recent_high_pct'] ?? null;
+            $candidate['coin_context_distance_from_recent_low_pct'] = $coinContext['distance_from_recent_low_pct'] ?? null;
+
+            if (is_array($signal) && (bool)$config['coin_context_attach_to_signals']) {
+                $signal['coin_context'] = $coinContext;
+                $signal['coin_context_available'] = $candidate['coin_context_available'];
+                $signal['coin_context_phase'] = $candidate['coin_context_phase'];
+                $signal['coin_context_quality'] = $candidate['coin_context_quality'];
+                $signal['coin_context_trend_1h_direction'] = $candidate['coin_context_trend_1h_direction'];
+                $signal['coin_context_price_change_1h_pct'] = $candidate['coin_context_price_change_1h_pct'];
+                $signal['coin_context_corridor_position_pct'] = $candidate['coin_context_corridor_position_pct'];
+                $signal['coin_context_room_to_recent_high_pct'] = $candidate['coin_context_room_to_recent_high_pct'];
+                $signal['coin_context_distance_from_recent_low_pct'] = $candidate['coin_context_distance_from_recent_low_pct'];
+                $signal['strategy_signal_context']['coin_context'] = $coinContext;
+            }
         }
 
         return [
@@ -2522,6 +2639,10 @@ final class EarlyImpulseGrowthLongService
         $cfg['enabled_filters'] = array_values(array_filter((array)($cfg['enabled_filters'] ?? []), static fn($v): bool => trim((string)$v) !== ''));
         $cfg['disabled_filters'] = array_values(array_filter((array)($cfg['disabled_filters'] ?? []), static fn($v): bool => trim((string)$v) !== ''));
         $cfg['filter_config'] = is_array($cfg['filter_config'] ?? null) ? (array)$cfg['filter_config'] : [];
+        $cfg['coin_context_enabled'] = (bool)($cfg['coin_context_enabled'] ?? true);
+        $cfg['coin_context_attach_to_candidates'] = (bool)($cfg['coin_context_attach_to_candidates'] ?? true);
+        $cfg['coin_context_attach_to_signals'] = (bool)($cfg['coin_context_attach_to_signals'] ?? true);
+        $cfg['coin_context_fail_open'] = (bool)($cfg['coin_context_fail_open'] ?? true);
 
         $normalizedFilters = $this->normalizeFilterConfig($cfg);
         $cfg['filter_config'] = $normalizedFilters['rows'];
@@ -2647,6 +2768,7 @@ final class EarlyImpulseGrowthLongService
             'entry_timing' => $signal['entry_timing'] ?? null,
             'early_entry_triggered' => (bool)($signal['early_entry_triggered'] ?? false),
             'handoff_block_reason' => $signal['handoff_block_reason'] ?? null,
+            'coin_context' => is_array($signal['coin_context'] ?? null) ? (array)$signal['coin_context'] : null,
             'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],
             'filter_engine_enabled_filters_total' => count($enabledFilters),
             'filter_results' => $filterResults,
@@ -2809,6 +2931,103 @@ final class EarlyImpulseGrowthLongService
         $signal['stale'] = $stale;
         $signal['stale_reason'] = $reason;
         return $signal;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $historyRows
+     * @return array<string,mixed>
+     */
+    private function buildCoinContextForSymbol(string $symbol, array $config, array $historyRows, int $now, float $latestPrice): array
+    {
+        $fallback = [
+            'context_available' => false,
+            'context_generated_at' => date('c', $now),
+            'context_source' => 'coin_context_module',
+            'symbol' => strtoupper(trim($symbol)),
+            'context_error' => 'context_service_unavailable',
+            'trend_1h_direction' => 'unknown',
+            'trend_2h_direction' => 'unknown',
+            'trend_4h_direction' => 'unknown',
+            'price_change_1h_pct' => null,
+            'price_change_2h_pct' => null,
+            'price_change_4h_pct' => null,
+            'corridor_window_minutes' => 240,
+            'corridor_low_price' => null,
+            'corridor_high_price' => null,
+            'corridor_low_ts' => null,
+            'corridor_high_ts' => null,
+            'corridor_range_pct' => null,
+            'corridor_position_pct' => null,
+            'room_to_corridor_high_pct' => null,
+            'distance_from_corridor_low_pct' => null,
+            'recent_high_price' => null,
+            'recent_high_ts' => null,
+            'recent_low_price' => null,
+            'recent_low_ts' => null,
+            'room_to_recent_high_pct' => null,
+            'distance_from_recent_low_pct' => null,
+            'context_phase' => 'unknown',
+            'context_quality' => 'unknown',
+            'context_reasons' => ['coin_context_unavailable'],
+        ];
+
+        if (!(bool)($config['coin_context_enabled'] ?? true)) {
+            $fallback['context_error'] = 'coin_context_disabled';
+            $fallback['context_reasons'] = ['coin_context_disabled'];
+            return $fallback;
+        }
+
+        try {
+            $service = $this->getCoinContextService();
+            if ($service === null || !is_callable([$service, 'buildContext'])) {
+                return $fallback;
+            }
+            $context = $service->buildContext($symbol, [
+                'history_rows' => $historyRows,
+                'latest_price' => $latestPrice,
+                'now' => $now,
+            ]);
+            if (!is_array($context)) {
+                return $fallback;
+            }
+            return array_merge($fallback, $context);
+        } catch (\Throwable) {
+            $fallback['context_error'] = (bool)($config['coin_context_fail_open'] ?? true)
+                ? 'context_error_fail_open'
+                : 'context_error';
+            $fallback['context_reasons'] = [(bool)($config['coin_context_fail_open'] ?? true) ? 'context_fail_open' : 'context_error'];
+            return $fallback;
+        }
+    }
+
+    private function getCoinContextService(): mixed
+    {
+        if ($this->coinContextService === false) {
+            return null;
+        }
+        if ($this->coinContextService !== null) {
+            return $this->coinContextService;
+        }
+
+        $coinContextModuleDir = $this->repoRoot . '/modules/context/coin_context';
+        $servicePath = $coinContextModuleDir . '/service.php';
+        if (!is_file($servicePath)) {
+            $this->coinContextService = false;
+            return null;
+        }
+
+        try {
+            require_once $servicePath;
+            if (!class_exists(\Modules\Context\CoinContext\CoinContextService::class)) {
+                $this->coinContextService = false;
+                return null;
+            }
+            $this->coinContextService = \Modules\Context\CoinContext\CoinContextService::instance($coinContextModuleDir);
+            return $this->coinContextService;
+        } catch (\Throwable) {
+            $this->coinContextService = false;
+            return null;
+        }
     }
 
     private function scoreRange(float $value, float $min, float $max): float

@@ -276,6 +276,17 @@ foreach ($filterConfig as $row) {
     </div>
 
     <div class="cfg-section">
+      <h6>C0) Coin Context (diagnostic only)</h6>
+      <p class="note" style="margin:0 0 10px;">Attach reusable per-coin environment context (trend/corridor/phase) to candidates/signals without blocking strategy execution.</p>
+      <div class="cfg-grid">
+        <div><label class="cfg-label">coin_context_enabled</label><select name="coin_context_enabled" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"><option value="1" <?= (bool)$cfg('coin_context_enabled', true) ? 'selected' : '' ?>>true</option><option value="0" <?= !(bool)$cfg('coin_context_enabled', true) ? 'selected' : '' ?>>false</option></select></div>
+        <div><label class="cfg-label">coin_context_attach_to_candidates</label><select name="coin_context_attach_to_candidates" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"><option value="1" <?= (bool)$cfg('coin_context_attach_to_candidates', true) ? 'selected' : '' ?>>true</option><option value="0" <?= !(bool)$cfg('coin_context_attach_to_candidates', true) ? 'selected' : '' ?>>false</option></select></div>
+        <div><label class="cfg-label">coin_context_attach_to_signals</label><select name="coin_context_attach_to_signals" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"><option value="1" <?= (bool)$cfg('coin_context_attach_to_signals', true) ? 'selected' : '' ?>>true</option><option value="0" <?= !(bool)$cfg('coin_context_attach_to_signals', true) ? 'selected' : '' ?>>false</option></select></div>
+        <div><label class="cfg-label">coin_context_fail_open</label><select name="coin_context_fail_open" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"><option value="1" <?= (bool)$cfg('coin_context_fail_open', true) ? 'selected' : '' ?>>true</option><option value="0" <?= !(bool)$cfg('coin_context_fail_open', true) ? 'selected' : '' ?>>false</option></select></div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
       <h6>D) Handoff</h6>
       <div class="cfg-grid">
         <div><label class="cfg-label">handoff_enabled</label><select name="handoff_enabled" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"><option value="1" <?= (bool)$cfg('handoff_enabled', false) ? 'selected' : '' ?>>true</option><option value="0" <?= !(bool)$cfg('handoff_enabled', false) ? 'selected' : '' ?>>false</option></select></div>

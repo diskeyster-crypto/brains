@@ -383,25 +383,132 @@ final class EarlyImpulseGrowthLongService
         $allRejects = array_slice($allRejects, -max(100, (int)$config['max_rejects_store']));
         $allSignals = array_slice($allSignals, -max(100, (int)$config['max_signals_store']));
 
+        $canEmitBotHandoff = (bool)$config['handoff_enabled'] && (bool)$config['emit_bot_handoff'];
+        $queueMode = $this->resolveHandoffMode($config);
+        $botReadyTtlMinutes = max(1, (int)$config['bot_ready_ttl_minutes']);
+        $queueNowIso = date('c');
+        $queueNowTs = time();
+
+        $currentRunSignalIds = [];
+        foreach ($newSignals as $signal) {
+            if (!is_array($signal)) {
+                continue;
+            }
+            $sid = trim((string)($signal['signal_id'] ?? ''));
+            if ($sid !== '') {
+                $currentRunSignalIds[$sid] = true;
+            }
+        }
+
+        $botQueueCandidatesConsideredTotal = 0;
+        $botQueueStaleSkippedTotal = 0;
+        $botQueueDuplicateSkippedTotal = 0;
+        $botQueueMissingRequiredFieldsTotal = 0;
+        $botQueueMissingRequiredFieldsExamples = [];
+
+        $handoffQueue = [];
+        if ($canEmitBotHandoff) {
+            $queueCandidates = [];
+            foreach ($allSignals as $idx => $sig) {
+                if (!is_array($sig)) {
+                    continue;
+                }
+                if (($sig['handoff_ready'] ?? false) !== true
+                    || ($sig['executable'] ?? false) !== true
+                    || ($sig['active_final'] ?? false) !== true
+                ) {
+                    continue;
+                }
+                $botQueueCandidatesConsideredTotal++;
+
+                $record = $this->buildBotQueueRecordFromSignal($sig, $config, $queueMode, $queueNowIso);
+                $detectedTs = $this->parseIsoToTs((string)($record['detected_at'] ?? ''));
+                $isFresh = $detectedTs !== null && (($queueNowTs - $detectedTs) <= ($botReadyTtlMinutes * 60));
+                if (!$isFresh) {
+                    $botQueueStaleSkippedTotal++;
+                    $allSignals[$idx] = $this->markSignalWithdrawn($sig, true, 'bot_ready_ttl_expired', $queueNowIso);
+                    continue;
+                }
+
+                $validation = $this->validateBotQueueRecord($record, $queueMode);
+                if (!($validation['valid'] ?? false)) {
+                    $botQueueMissingRequiredFieldsTotal++;
+                    if (count($botQueueMissingRequiredFieldsExamples) < 8) {
+                        $botQueueMissingRequiredFieldsExamples[] = [
+                            'signal_id' => (string)($record['signal_id'] ?? ''),
+                            'symbol' => (string)($record['symbol'] ?? ''),
+                            'missing_fields' => array_values(array_map('strval', (array)($validation['missing_fields'] ?? []))),
+                        ];
+                    }
+                    $allSignals[$idx] = $this->markSignalWithdrawn($sig, false, 'missing_required_fields', $queueNowIso);
+                    continue;
+                }
+
+                $allSignals[$idx] = array_merge(
+                    $sig,
+                    $record,
+                    [
+                        'handoff_ready' => true,
+                        'executable' => true,
+                        'active_final' => true,
+                        'stale' => false,
+                        'stale_reason' => null,
+                    ]
+                );
+                $queueCandidates[] = [
+                    'record' => $record,
+                    'signal_index' => $idx,
+                    'is_current_run' => isset($currentRunSignalIds[(string)($record['signal_id'] ?? '')]),
+                    'detected_ts' => $detectedTs ?? 0,
+                    'refreshed_ts' => $this->parseIsoToTs((string)($record['refreshed_at'] ?? '')) ?? 0,
+                ];
+            }
+
+            usort($queueCandidates, static function (array $a, array $b): int {
+                $aCurrent = !empty($a['is_current_run']);
+                $bCurrent = !empty($b['is_current_run']);
+                if ($aCurrent !== $bCurrent) {
+                    return $aCurrent ? -1 : 1;
+                }
+                $detCmp = ((int)($b['detected_ts'] ?? 0)) <=> ((int)($a['detected_ts'] ?? 0));
+                if ($detCmp !== 0) {
+                    return $detCmp;
+                }
+                return ((int)($b['refreshed_ts'] ?? 0)) <=> ((int)($a['refreshed_ts'] ?? 0));
+            });
+
+            $dedupeSeen = [];
+            foreach ($queueCandidates as $candidate) {
+                $record = (array)($candidate['record'] ?? []);
+                $signalIndex = (int)($candidate['signal_index'] ?? -1);
+                $dedupeKey = (string)($record['strategy_id'] ?? self::STRATEGY_ID)
+                    . '|' . strtolower((string)($record['symbol'] ?? ''))
+                    . '|' . strtolower((string)($record['side'] ?? ''));
+                if ($dedupeKey === self::STRATEGY_ID . '||') {
+                    continue;
+                }
+                if (isset($dedupeSeen[$dedupeKey])) {
+                    $botQueueDuplicateSkippedTotal++;
+                    if (isset($allSignals[$signalIndex]) && is_array($allSignals[$signalIndex])) {
+                        $allSignals[$signalIndex] = $this->markSignalWithdrawn(
+                            (array)$allSignals[$signalIndex],
+                            false,
+                            'duplicate_ready_same_symbol_side',
+                            $queueNowIso
+                        );
+                    }
+                    continue;
+                }
+                $dedupeSeen[$dedupeKey] = true;
+                $handoffQueue[] = $record;
+            }
+        }
+
         $this->writeJson($this->storagePath('evaluated_contexts.json'), $allEvaluated);
         $this->writeJson($this->storagePath('candidates.json'), $allCandidates);
         $this->writeJson($this->storagePath('near_pass_candidates.json'), $allNearPass);
         $this->writeJson($this->storagePath('rejects.json'), $allRejects);
         $this->writeJson($this->storagePath('signals.json'), $allSignals);
-
-        $canEmitBotHandoff = (bool)$config['handoff_enabled'] && (bool)$config['emit_bot_handoff'];
-        $handoffQueue = [];
-        if ($canEmitBotHandoff) {
-            foreach ($allSignals as $sig) {
-                if (!is_array($sig)) {
-                    continue;
-                }
-                if (($sig['handoff_ready'] ?? false) !== true || ($sig['executable'] ?? false) !== true) {
-                    continue;
-                }
-                $handoffQueue[] = $sig;
-            }
-        }
         $this->writeJson($this->storagePath('bot_handoff_queue.json'), $handoffQueue);
 
         $statusDone = $offsetAfter >= $selectedTotal;
@@ -415,9 +522,16 @@ final class EarlyImpulseGrowthLongService
         $this->writeJson($this->storagePath('run_state.json'), $state);
 
         $currentRunHandoffReadyTotal = count(array_filter($newSignals, static fn(array $s): bool => is_array($s) && (bool)($s['handoff_ready'] ?? false)));
-        $handoffReadyTotal = count(array_filter($allSignals, static fn(array $s): bool => (bool)($s['handoff_ready'] ?? false)));
-        $currentRunBotQueueWrittenTotal = $canEmitBotHandoff ? $currentRunHandoffReadyTotal : 0;
+        $handoffReadyTotal = count(array_filter($allSignals, static fn(array $s): bool => is_array($s) && (bool)($s['handoff_ready'] ?? false)));
+        $currentRunBotQueueWrittenTotal = 0;
+        foreach ($handoffQueue as $queued) {
+            $sid = is_array($queued) ? (string)($queued['signal_id'] ?? '') : '';
+            if ($sid !== '' && isset($currentRunSignalIds[$sid])) {
+                $currentRunBotQueueWrittenTotal++;
+            }
+        }
         $storedBotQueueWrittenTotal = count($handoffQueue);
+        $actualBotHandoffQueueRecordsTotal = count($handoffQueue);
         $handoffEnabled = (bool)$config['handoff_enabled'];
         $emitBotHandoff = (bool)$config['emit_bot_handoff'];
         $effectiveBotHandoffEnabled = $handoffEnabled && $emitBotHandoff;
@@ -559,6 +673,7 @@ final class EarlyImpulseGrowthLongService
             'stored_rejects_total' => count($allRejects),
             'stored_handoff_ready_total' => $handoffReadyTotal,
             'stored_bot_queue_written_total' => $storedBotQueueWrittenTotal,
+            'actual_bot_handoff_queue_records_total' => $actualBotHandoffQueueRecordsTotal,
             'handoff_ready_total' => $handoffReadyTotal,
 
             // Universe info
@@ -586,6 +701,12 @@ final class EarlyImpulseGrowthLongService
             'emit_bot_handoff' => $emitBotHandoff,
             'effective_bot_handoff_enabled' => $effectiveBotHandoffEnabled,
             'bot_handoff_block_reason' => $botHandoffBlockReason,
+            'bot_queue_candidates_considered_total' => $botQueueCandidatesConsideredTotal,
+            'bot_queue_written_total' => $storedBotQueueWrittenTotal,
+            'bot_queue_stale_skipped_total' => $botQueueStaleSkippedTotal,
+            'bot_queue_duplicate_skipped_total' => $botQueueDuplicateSkippedTotal,
+            'bot_queue_missing_required_fields_total' => $botQueueMissingRequiredFieldsTotal,
+            'bot_queue_missing_required_fields_examples' => $botQueueMissingRequiredFieldsExamples,
 
             // Filter engine
             'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],
@@ -1039,6 +1160,23 @@ final class EarlyImpulseGrowthLongService
 
         $signal = null;
         if ($canBeActive) {
+            $handoffMode = $this->resolveHandoffMode($config);
+            $enabledFilters = $this->computeEnabledFilters($config);
+            $strategySignalContext = [
+                'recovery_window_minutes' => $candidate['recovery_window_minutes'] ?? null,
+                'prior_decline_pct' => $candidate['prior_decline_pct'] ?? null,
+                'recovery_growth_pct' => $candidate['recovery_growth_pct'] ?? null,
+                'recovery_duration_minutes' => $candidate['recovery_duration_minutes'] ?? null,
+                'recovery_score' => $candidate['recovery_score'] ?? null,
+                'open_interest_growth_pct' => $candidate['open_interest_growth_pct'] ?? null,
+                'open_interest_growth_score' => $candidate['open_interest_growth_score'] ?? null,
+                'combined_recovery_score' => $candidate['combined_recovery_score'] ?? null,
+                'current_price_change_pct_10m' => $candidate['current_price_change_pct_10m'] ?? null,
+                'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],
+                'filter_engine_enabled_filters_total' => count($enabledFilters),
+                'filter_results' => $candidate['filter_results'] ?? [],
+                'raw_strategy_passed' => true,
+            ];
             $signal = array_merge($candidate, [
                 'raw_strategy_passed' => true,
                 'raw_reject_reason' => null,
@@ -1046,7 +1184,16 @@ final class EarlyImpulseGrowthLongService
                 'executable' => $canHandoff,
                 'diagnostic_handoff_ready' => $canBeActive,
                 'active_final' => true,
+                'handoff_status' => $canHandoff ? 'new' : null,
+                'created_at' => $detectedAt,
+                'refreshed_at' => $detectedAt,
+                'mode' => $handoffMode,
+                'entry_mode' => 'limit',
+                'entry_type' => 'flow_recovery',
+                'timeframe' => 'recovery_window',
                 'signal_source_mode' => 'direct_strategy_handoff',
+                'strategy_signal_key' => self::STRATEGY_ID . '|' . strtolower($symbol) . '|' . self::SIDE,
+                'strategy_signal_context' => $strategySignalContext,
             ]);
         }
 
@@ -1633,6 +1780,202 @@ final class EarlyImpulseGrowthLongService
             return false;
         }
         return @file_put_contents($path, $json . PHP_EOL, FILE_APPEND | LOCK_EX) !== false;
+    }
+
+    private function resolveHandoffMode(array $config): string
+    {
+        $mode = strtolower(trim((string)($config['mode'] ?? 'demo')));
+        return $mode === 'paper' ? 'paper' : 'demo';
+    }
+
+    private function parseIsoToTs(string $value): ?int
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+        $ts = strtotime($value);
+        return $ts === false ? null : (int)$ts;
+    }
+
+    /**
+     * @param array<string,mixed> $signal
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
+    private function buildEiglStrategySignalContext(array $signal, array $config): array
+    {
+        $filterResults = is_array($signal['filter_results'] ?? null) ? (array)$signal['filter_results'] : [];
+        $enabledFilters = $this->computeEnabledFilters($config);
+        return [
+            'recovery_window_minutes' => $signal['recovery_window_minutes'] ?? null,
+            'prior_decline_pct' => $signal['prior_decline_pct'] ?? null,
+            'recovery_growth_pct' => $signal['recovery_growth_pct'] ?? null,
+            'recovery_duration_minutes' => $signal['recovery_duration_minutes'] ?? null,
+            'recovery_score' => $signal['recovery_score'] ?? null,
+            'open_interest_growth_pct' => $signal['open_interest_growth_pct'] ?? null,
+            'open_interest_growth_score' => $signal['open_interest_growth_score'] ?? null,
+            'combined_recovery_score' => $signal['combined_recovery_score'] ?? null,
+            'current_price_change_pct_10m' => $signal['current_price_change_pct_10m'] ?? null,
+            'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],
+            'filter_engine_enabled_filters_total' => count($enabledFilters),
+            'filter_results' => $filterResults,
+            'raw_strategy_passed' => true,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $signal
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
+    private function buildBotQueueRecordFromSignal(array $signal, array $config, string $mode, string $nowIso): array
+    {
+        $signalId = trim((string)($signal['signal_id'] ?? ''));
+        $symbol = strtoupper(trim((string)($signal['symbol'] ?? '')));
+        $side = strtolower(trim((string)($signal['side'] ?? self::SIDE)));
+
+        $detectedAt = trim((string)($signal['detected_at'] ?? ''));
+        $createdAt = trim((string)($signal['created_at'] ?? ''));
+        if ($createdAt === '') {
+            $createdAt = $detectedAt !== '' ? $detectedAt : $nowIso;
+        }
+        $refreshedAt = trim((string)($signal['refreshed_at'] ?? ''));
+        if ($refreshedAt === '') {
+            $refreshedAt = $nowIso;
+        }
+        $existingStatus = strtolower(trim((string)($signal['handoff_status'] ?? '')));
+        $handoffStatus = in_array($existingStatus, ['new', 'refreshed'], true)
+            ? $existingStatus
+            : (($createdAt !== '' && $createdAt !== $refreshedAt) ? 'refreshed' : 'new');
+
+        $strategySignalContext = is_array($signal['strategy_signal_context'] ?? null)
+            ? (array)$signal['strategy_signal_context']
+            : [];
+        $strategySignalContext = array_merge(
+            $this->buildEiglStrategySignalContext($signal, $config),
+            $strategySignalContext
+        );
+        $strategySignalContext['raw_strategy_passed'] = true;
+
+        $entryMode = strtolower(trim((string)($signal['entry_mode'] ?? 'limit')));
+        if (!in_array($entryMode, ['limit', 'market'], true)) {
+            $entryMode = 'limit';
+        }
+
+        return [
+            'strategy_id' => self::STRATEGY_ID,
+            'signal_id' => $signalId,
+            'strategy_signal_key' => trim((string)($signal['strategy_signal_key'] ?? (self::STRATEGY_ID . '|' . strtolower($symbol) . '|' . $side))),
+            'symbol' => $symbol,
+            'side' => $side,
+            'mode' => $mode,
+            'entry_price' => (float)($signal['entry_price'] ?? 0.0),
+            'entry_mode' => $entryMode,
+            'entry_type' => 'flow_recovery',
+            'timeframe' => 'recovery_window',
+            'signal_source_mode' => 'direct_strategy_handoff',
+            'strategy_signal_context' => $strategySignalContext,
+            'handoff_status' => $handoffStatus,
+            'handoff_ready' => true,
+            'executable' => true,
+            'active_final' => true,
+            'detected_at' => $detectedAt,
+            'created_at' => $createdAt,
+            'refreshed_at' => $refreshedAt,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $record
+     * @return array{valid:bool,missing_fields:list<string>}
+     */
+    private function validateBotQueueRecord(array $record, string $expectedMode): array
+    {
+        $missing = [];
+
+        if (trim((string)($record['symbol'] ?? '')) === '') {
+            $missing[] = 'symbol';
+        }
+        if (strtolower(trim((string)($record['side'] ?? ''))) !== self::SIDE) {
+            $missing[] = 'side';
+        }
+        if (!is_numeric($record['entry_price'] ?? null) || (float)$record['entry_price'] <= 0.0) {
+            $missing[] = 'entry_price';
+        }
+        if (trim((string)($record['signal_id'] ?? '')) === '') {
+            $missing[] = 'signal_id';
+        }
+        if (!in_array((string)($record['handoff_status'] ?? ''), ['new', 'refreshed'], true)) {
+            $missing[] = 'handoff_status';
+        }
+        if (($record['handoff_ready'] ?? null) !== true) {
+            $missing[] = 'handoff_ready';
+        }
+        if (($record['executable'] ?? null) !== true) {
+            $missing[] = 'executable';
+        }
+        if (($record['active_final'] ?? null) !== true) {
+            $missing[] = 'active_final';
+        }
+        if ((string)($record['mode'] ?? '') !== $expectedMode) {
+            $missing[] = 'mode';
+        }
+
+        foreach (['created_at', 'refreshed_at', 'detected_at', 'strategy_signal_key', 'strategy_id', 'entry_type', 'entry_mode', 'timeframe', 'signal_source_mode'] as $requiredField) {
+            if (trim((string)($record[$requiredField] ?? '')) === '') {
+                $missing[] = $requiredField;
+            }
+        }
+
+        $ctx = is_array($record['strategy_signal_context'] ?? null) ? (array)$record['strategy_signal_context'] : null;
+        if ($ctx === null) {
+            $missing[] = 'strategy_signal_context';
+        } else {
+            $requiredCtxKeys = [
+                'recovery_window_minutes',
+                'prior_decline_pct',
+                'recovery_growth_pct',
+                'recovery_duration_minutes',
+                'recovery_score',
+                'open_interest_growth_pct',
+                'open_interest_growth_score',
+                'combined_recovery_score',
+                'current_price_change_pct_10m',
+                'filter_engine_enabled',
+                'filter_engine_enabled_filters_total',
+                'filter_results',
+                'raw_strategy_passed',
+            ];
+            foreach ($requiredCtxKeys as $ctxKey) {
+                if (!array_key_exists($ctxKey, $ctx)) {
+                    $missing[] = 'strategy_signal_context.' . $ctxKey;
+                }
+            }
+        }
+
+        return ['valid' => $missing === [], 'missing_fields' => array_values(array_unique($missing))];
+    }
+
+    /**
+     * @param array<string,mixed> $signal
+     * @return array<string,mixed>
+     */
+    private function markSignalWithdrawn(array $signal, bool $stale, string $reason, string $nowIso): array
+    {
+        if (trim((string)($signal['created_at'] ?? '')) === '') {
+            $signal['created_at'] = trim((string)($signal['detected_at'] ?? '')) !== ''
+                ? (string)$signal['detected_at']
+                : $nowIso;
+        }
+        $signal['refreshed_at'] = $nowIso;
+        $signal['handoff_status'] = 'withdrawn';
+        $signal['handoff_ready'] = false;
+        $signal['executable'] = false;
+        $signal['active_final'] = false;
+        $signal['stale'] = $stale;
+        $signal['stale_reason'] = $reason;
+        return $signal;
     }
 
     private function scoreRange(float $value, float $min, float $max): float

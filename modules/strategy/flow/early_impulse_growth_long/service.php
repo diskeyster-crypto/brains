@@ -276,6 +276,11 @@ final class EarlyImpulseGrowthLongService
             'open_interest_missing_examples' => [],
             'reject_reason_counts' => [],
             'filter_engine_results_by_filter' => [],
+            'handoff_blocked_by_quality_guard_total' => 0,
+            'handoff_blocked_by_quality_guard_examples' => [],
+            'quality_guard_existing_ready_checked_total' => 0,
+            'quality_guard_existing_ready_withdrawn_total' => 0,
+            'quality_guard_existing_ready_withdrawn_examples' => [],
         ];
 
         foreach ($batchSymbols as $symbol) {
@@ -335,14 +340,18 @@ final class EarlyImpulseGrowthLongService
                 $diag['reject_reason_counts'][$reason] = (int)($diag['reject_reason_counts'][$reason] ?? 0) + 1;
             }
 
-            foreach ((array)($candidate['filter_results'] ?? []) as $fid => $frow) {
+            foreach ((array)($candidate['filter_results'] ?? []) as $frow) {
                 if (!is_array($frow)) {
+                    continue;
+                }
+                $fid = trim((string)($frow['filter_id'] ?? ''));
+                if ($fid === '') {
                     continue;
                 }
                 $bucket = &$diag['filter_engine_results_by_filter'][$fid];
                 if (!is_array($bucket)) {
                     $bucket = [
-                        'filter_id' => (string)$fid,
+                        'filter_id' => $fid,
                         'seen_total' => 0,
                         'enabled_total' => 0,
                         'passed_total' => 0,
@@ -350,7 +359,7 @@ final class EarlyImpulseGrowthLongService
                         'warning_total' => 0,
                     ];
                 }
-                $bucket['filter_id'] = (string)$fid;
+                $bucket['filter_id'] = $fid;
                 $bucket['seen_total']++;
                 if (!empty($frow['enabled'])) {
                     $bucket['enabled_total']++;
@@ -619,6 +628,39 @@ final class EarlyImpulseGrowthLongService
             if ($m['filter_diagnostic_only'] ?? false) {
                 $diag['filter_engine_diagnostic_only_total']++;
             }
+
+            // Track quality guard blocks for current-batch candidates
+            if (($candidate['raw_strategy_passed'] ?? false)) {
+                $qualityGuardFilterIds = ['wave_quality_filter', 'orderbook_wall_filter'];
+                $wouldHaveBlocked = is_array($candidate['would_have_blocked_by_filters'] ?? null)
+                    ? (array)$candidate['would_have_blocked_by_filters']
+                    : [];
+                $qualityGuardBlockers = array_values(array_intersect($qualityGuardFilterIds, $wouldHaveBlocked));
+                if ($qualityGuardBlockers !== []) {
+                    $diag['handoff_blocked_by_quality_guard_total']++;
+                    if (count($diag['handoff_blocked_by_quality_guard_examples']) < 20) {
+                        $coinCtx = is_array($candidate['coin_context'] ?? null) ? (array)$candidate['coin_context'] : [];
+                        $obCtx = is_array($candidate['orderbook_context'] ?? null) ? (array)$candidate['orderbook_context'] : [];
+                        $diag['handoff_blocked_by_quality_guard_examples'][] = [
+                            'symbol' => $candidate['symbol'] ?? null,
+                            'recovery_phase' => $candidate['recovery_phase'] ?? null,
+                            'entry_timing' => $candidate['entry_timing'] ?? null,
+                            'context_phase' => $coinCtx['context_phase'] ?? null,
+                            'context_quality' => $coinCtx['context_quality'] ?? null,
+                            'context_reasons' => $coinCtx['context_reasons'] ?? [],
+                            'trend_1h_direction' => $coinCtx['trend_1h_direction'] ?? null,
+                            'trend_2h_direction' => $coinCtx['trend_2h_direction'] ?? null,
+                            'ask_wall_risk' => $obCtx['ask_wall_risk'] ?? null,
+                            'nearest_ask_wall_distance_pct' => $obCtx['nearest_ask_wall_distance_pct'] ?? null,
+                            'nearest_ask_wall_notional' => $obCtx['nearest_ask_wall_notional'] ?? null,
+                            'bid_support_quality' => $obCtx['bid_support_quality'] ?? null,
+                            'handoff_ready' => (bool)($candidate['handoff_ready'] ?? false),
+                            'handoff_block_reason' => $candidate['handoff_block_reason'] ?? null,
+                            'would_have_blocked_by_filters' => $qualityGuardBlockers,
+                        ];
+                    }
+                }
+            }
         }
 
         $allEvaluated = array_merge(is_array($allEvaluated) ? $allEvaluated : [], $newEvaluated);
@@ -666,6 +708,53 @@ final class EarlyImpulseGrowthLongService
             $sid = trim((string)($signal['signal_id'] ?? ''));
             if ($sid !== '') {
                 $currentRunSignalIds[$sid] = true;
+            }
+        }
+
+        // Re-evaluate existing handoff-ready signals (not from the current batch) against
+        // quality guard hard-block filters and withdraw those that now fail.
+        $qualityGuardFilterIds = ['wave_quality_filter', 'orderbook_wall_filter'];
+        $qualityGuardsActive = (bool)$config['filter_engine_enabled']
+            && in_array((string)$config['filter_enforcement_mode'], ['soft', 'strict'], true);
+        if ($qualityGuardsActive) {
+            foreach ($allSignals as $idx => $sig) {
+                if (!is_array($sig)) {
+                    continue;
+                }
+                // Skip signals processed in the current batch (already evaluated)
+                $sid = trim((string)($sig['signal_id'] ?? ''));
+                if ($sid !== '' && isset($currentRunSignalIds[$sid])) {
+                    continue;
+                }
+                if (!($sig['handoff_ready'] ?? false) || !($sig['executable'] ?? false)) {
+                    continue;
+                }
+                $diag['quality_guard_existing_ready_checked_total']++;
+                $existingFilterEval = $this->evaluateFilterEngine($sig, $config);
+                $blockingReasons = array_merge(
+                    array_values(array_filter(array_map('strval', (array)($existingFilterEval['fatal_filter_reasons'] ?? [])), static fn(string $v): bool => $v !== '')),
+                    array_values(array_filter(array_map('strval', (array)($existingFilterEval['hard_block_filter_reasons'] ?? [])), static fn(string $v): bool => $v !== ''))
+                );
+                $qualityGuardBlockers = array_values(array_intersect($qualityGuardFilterIds, $blockingReasons));
+                if ($qualityGuardBlockers !== []) {
+                    $diag['quality_guard_existing_ready_withdrawn_total']++;
+                    $blockReason = implode(',', $qualityGuardBlockers);
+                    $allSignals[$idx] = $this->markSignalWithdrawn($sig, false, $blockReason, $queueNowIso);
+                    if (count($diag['quality_guard_existing_ready_withdrawn_examples']) < 8) {
+                        $coinCtx = is_array($sig['coin_context'] ?? null) ? (array)$sig['coin_context'] : [];
+                        $obCtx = is_array($sig['orderbook_context'] ?? null) ? (array)$sig['orderbook_context'] : [];
+                        $diag['quality_guard_existing_ready_withdrawn_examples'][] = [
+                            'symbol' => $sig['symbol'] ?? null,
+                            'recovery_phase' => $sig['recovery_phase'] ?? null,
+                            'entry_timing' => $sig['entry_timing'] ?? null,
+                            'context_phase' => $coinCtx['context_phase'] ?? ($sig['coin_context_phase'] ?? null),
+                            'context_quality' => $coinCtx['context_quality'] ?? ($sig['coin_context_quality'] ?? null),
+                            'ask_wall_risk' => $obCtx['ask_wall_risk'] ?? ($sig['ask_wall_risk'] ?? null),
+                            'nearest_ask_wall_distance_pct' => $obCtx['nearest_ask_wall_distance_pct'] ?? ($sig['nearest_ask_wall_distance_pct'] ?? null),
+                            'block_reasons' => $qualityGuardBlockers,
+                        ];
+                    }
+                }
             }
         }
 
@@ -1189,7 +1278,7 @@ final class EarlyImpulseGrowthLongService
             'wave_quality_filter_blocked_total' => $diag['wave_quality_filter_blocked_total'],
             'wave_quality_filter_passed_total' => $diag['wave_quality_filter_passed_total'],
             'wave_quality_filter_examples' => $diag['wave_quality_filter_examples'],
-            'orderbook_context_enabled' => (bool)($config['eig_filter_orderbook_wall_filter_enabled'] ?? true),
+            'orderbook_context_enabled' => $diag['orderbook_context_checked_total'] > 0,
             'orderbook_context_checked_total' => $diag['orderbook_context_checked_total'],
             'orderbook_context_available_total' => $diag['orderbook_context_available_total'],
             'orderbook_context_missing_total' => $diag['orderbook_context_missing_total'],
@@ -1208,6 +1297,15 @@ final class EarlyImpulseGrowthLongService
 
             'open_interest_missing_examples' => $diag['open_interest_missing_examples'],
             'reject_reason_counts' => $diag['reject_reason_counts'],
+
+            // Quality guard summary
+            'quality_guards_enabled' => $qualityGuardsActive,
+            'quality_guard_filter_ids' => $qualityGuardsActive ? array_values(array_intersect($qualityGuardFilterIds, $enabledFilters)) : [],
+            'handoff_blocked_by_quality_guard_total' => $diag['handoff_blocked_by_quality_guard_total'],
+            'handoff_blocked_by_quality_guard_examples' => $diag['handoff_blocked_by_quality_guard_examples'],
+            'quality_guard_existing_ready_checked_total' => $diag['quality_guard_existing_ready_checked_total'],
+            'quality_guard_existing_ready_withdrawn_total' => $diag['quality_guard_existing_ready_withdrawn_total'],
+            'quality_guard_existing_ready_withdrawn_examples' => $diag['quality_guard_existing_ready_withdrawn_examples'],
             'accepted_examples' => $acceptedExamples,
             'near_pass_examples' => $watchExamples,
             'watch_candidates_examples' => $watchExamples,

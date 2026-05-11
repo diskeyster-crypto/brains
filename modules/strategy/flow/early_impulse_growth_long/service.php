@@ -276,6 +276,19 @@ final class EarlyImpulseGrowthLongService
             'open_interest_missing_examples' => [],
             'reject_reason_counts' => [],
             'filter_engine_results_by_filter' => [],
+            'phase_evaluated_total' => 0,
+            'phase_failed_total' => 0,
+            'phase_dump_only_total' => 0,
+            'phase_stabilizing_total' => 0,
+            'phase_early_entry_total' => 0,
+            'phase_confirmed_later_total' => 0,
+            'phase_late_spike_total' => 0,
+            'phase_extended_total' => 0,
+            'handoff_candidates_before_filters_total' => 0,
+            'handoff_blocked_by_phase_total' => 0,
+            'handoff_blocked_by_filter_total' => 0,
+            'handoff_blocked_by_filter_reason_counts' => [],
+            'handoff_blocked_by_phase_reason_counts' => [],
             'handoff_blocked_by_quality_guard_total' => 0,
             'handoff_blocked_by_quality_guard_examples' => [],
             'quality_guard_existing_ready_checked_total' => 0,
@@ -541,7 +554,24 @@ final class EarlyImpulseGrowthLongService
             if ((bool)($candidate['smooth_growth_detected'] ?? false)) {
                 $diag['smooth_growth_detected_total']++;
             }
+            $diag['phase_evaluated_total']++;
             $entryTiming = (string)($candidate['entry_timing'] ?? '');
+            $phaseKey = (string)($candidate['recovery_phase'] ?? 'failed');
+            if ($phaseKey === 'early_entry') {
+                $diag['phase_early_entry_total']++;
+            } elseif ($phaseKey === 'stabilizing') {
+                $diag['phase_stabilizing_total']++;
+            } elseif ($phaseKey === 'dump_only') {
+                $diag['phase_dump_only_total']++;
+            } elseif ($phaseKey === 'confirmed_later') {
+                $diag['phase_confirmed_later_total']++;
+            } elseif ($phaseKey === 'late_spike') {
+                $diag['phase_late_spike_total']++;
+            } elseif ($phaseKey === 'extended') {
+                $diag['phase_extended_total']++;
+            } else {
+                $diag['phase_failed_total']++;
+            }
             if ($entryTiming === 'early') {
                 $diag['early_entry_candidates_total']++;
             } elseif ($entryTiming === 'stabilizing') {
@@ -555,6 +585,37 @@ final class EarlyImpulseGrowthLongService
             }
             if ((bool)($candidate['handoff_ready'] ?? false) && $entryTiming === 'early') {
                 $diag['early_entry_handoff_ready_total']++;
+            }
+            if ($phaseKey === 'early_entry') {
+                $diag['handoff_candidates_before_filters_total']++;
+            }
+            $phaseBlockReason = trim((string)($candidate['phase_block_reason'] ?? ''));
+            if ($phaseKey !== 'early_entry') {
+                $diag['handoff_blocked_by_phase_total']++;
+                if ($phaseBlockReason !== '') {
+                    $diag['handoff_blocked_by_phase_reason_counts'][$phaseBlockReason] = (int)($diag['handoff_blocked_by_phase_reason_counts'][$phaseBlockReason] ?? 0) + 1;
+                }
+            }
+            $filterBlockReasons = [];
+            foreach ((array)($candidate['filter_results'] ?? []) as $filterRow) {
+                if (!is_array($filterRow) || (bool)($filterRow['passed'] ?? false)) {
+                    continue;
+                }
+                $severity = (string)($filterRow['severity'] ?? '');
+                if (!in_array($severity, ['fatal', 'hard_block'], true)) {
+                    continue;
+                }
+                $filterId = trim((string)($filterRow['filter_id'] ?? ''));
+                if ($filterId !== '') {
+                    $filterBlockReasons[] = $filterId;
+                }
+            }
+            $filterBlockReasons = array_values(array_unique($filterBlockReasons));
+            if ($phaseKey === 'early_entry' && $filterBlockReasons !== []) {
+                $diag['handoff_blocked_by_filter_total']++;
+                foreach ($filterBlockReasons as $filterBlockReason) {
+                    $diag['handoff_blocked_by_filter_reason_counts'][$filterBlockReason] = (int)($diag['handoff_blocked_by_filter_reason_counts'][$filterBlockReason] ?? 0) + 1;
+                }
             }
             if ($entryTiming !== 'early' && !empty($candidate['handoff_block_reason'])) {
                 $diag['non_early_handoff_blocked_total']++;
@@ -1128,6 +1189,7 @@ final class EarlyImpulseGrowthLongService
                 'executable' => (bool)($c['executable'] ?? false),
                 'early_entry_triggered' => (bool)($c['early_entry_triggered'] ?? false),
                 'handoff_block_reason' => $c['handoff_block_reason'] ?? null,
+                'phase_block_reason' => $c['phase_block_reason'] ?? null,
                 'context_available' => (bool)($coinContext['context_available'] ?? false),
                 'trend_1h_direction' => $coinContext['trend_1h_direction'] ?? null,
                 'trend_2h_direction' => $coinContext['trend_2h_direction'] ?? null,
@@ -1228,6 +1290,19 @@ final class EarlyImpulseGrowthLongService
             'filter_engine_enabled_filters_total' => count($enabledFilters),
             'filter_engine_enabled_filter_ids' => $enabledFilters,
             'filter_engine_results_by_filter' => $diag['filter_engine_results_by_filter'],
+            'phase_evaluated_total' => $diag['phase_evaluated_total'],
+            'phase_failed_total' => $diag['phase_failed_total'],
+            'phase_dump_only_total' => $diag['phase_dump_only_total'],
+            'phase_stabilizing_total' => $diag['phase_stabilizing_total'],
+            'phase_early_entry_total' => $diag['phase_early_entry_total'],
+            'phase_confirmed_later_total' => $diag['phase_confirmed_later_total'],
+            'phase_late_spike_total' => $diag['phase_late_spike_total'],
+            'phase_extended_total' => $diag['phase_extended_total'],
+            'handoff_candidates_before_filters_total' => $diag['handoff_candidates_before_filters_total'],
+            'handoff_blocked_by_phase_total' => $diag['handoff_blocked_by_phase_total'],
+            'handoff_blocked_by_filter_total' => $diag['handoff_blocked_by_filter_total'],
+            'handoff_blocked_by_filter_reason_counts' => $diag['handoff_blocked_by_filter_reason_counts'],
+            'handoff_blocked_by_phase_reason_counts' => $diag['handoff_blocked_by_phase_reason_counts'],
 
             // Recovery / decline diagnostics
             'prior_decline_passed_total' => $diag['prior_decline_passed_total'],
@@ -1691,6 +1766,7 @@ final class EarlyImpulseGrowthLongService
 
         $rawPassed = $recoveryPhase === 'early_entry';
         $nearPass = in_array($entryTiming, ['dump_only', 'stabilizing', 'confirmed_later', 'late_spike', 'extended'], true);
+        $phaseBlockReason = $this->resolvePhaseBlockReason($entryTiming, $rejectReason);
 
         $signalId = strtolower($symbol)
             . '_' . self::SIDE
@@ -1794,6 +1870,7 @@ final class EarlyImpulseGrowthLongService
             'filter_results' => [],
             'fatal_filter_hit' => false,
             'would_have_blocked_by_filters' => [],
+            'phase_block_reason' => $phaseBlockReason,
             'handoff_ready' => false,
             'executable' => false,
             'diagnostic_handoff_ready' => false,
@@ -1878,8 +1955,11 @@ final class EarlyImpulseGrowthLongService
             'warning_filter_reasons' => [],
             'would_have_blocked_by_filters' => [],
         ];
+        $isEarlyEntryPhase = $rawPassed
+            && $entryTiming === 'early'
+            && $recoveryPhase === 'early_entry';
 
-        if ((bool)$config['filter_engine_enabled']) {
+        if ((bool)$config['filter_engine_enabled'] && $isEarlyEntryPhase) {
             $metrics['filter_checked'] = true;
             $filterEval = $this->evaluateFilterEngine($candidate, $config);
         }
@@ -1893,7 +1973,8 @@ final class EarlyImpulseGrowthLongService
         $hasSoft = !empty($filterEval['soft_block_filter_reasons']);
         $fatalFilterReasons = array_values(array_filter(array_map('strval', (array)($filterEval['fatal_filter_reasons'] ?? [])), static fn(string $v): bool => $v !== ''));
         $hardFilterReasons = array_values(array_filter(array_map('strval', (array)($filterEval['hard_block_filter_reasons'] ?? [])), static fn(string $v): bool => $v !== ''));
-        $blockingFilterReason = $fatalFilterReasons[0] ?? ($hardFilterReasons[0] ?? null);
+        $blockingFilterReasons = array_values(array_unique(array_merge($fatalFilterReasons, $hardFilterReasons)));
+        $blockingFilterReason = $blockingFilterReasons !== [] ? implode(',', $blockingFilterReasons) : null;
         $mode = (string)$config['filter_enforcement_mode'];
 
         $enforcementBlocked = false;
@@ -1909,25 +1990,19 @@ final class EarlyImpulseGrowthLongService
             $metrics['filter_blocked'] = true;
         }
 
-        $canBeActive = $rawPassed && !$enforcementBlocked;
+        $canBeActive = $isEarlyEntryPhase && !$enforcementBlocked;
         $canHandoff = $canBeActive
             && (bool)$config['handoff_enabled']
             && (bool)$config['emit_bot_handoff'];
 
         $handoffBlockReason = null;
-        if (!$canBeActive) {
+        if (!$isEarlyEntryPhase) {
+            $handoffBlockReason = 'not_early_entry_phase';
+        } elseif (!$canBeActive) {
             if ($blockingFilterReason !== null) {
                 $handoffBlockReason = $blockingFilterReason;
-            } elseif ($entryTiming === 'late_spike') {
-                $handoffBlockReason = 'late_spike_detected';
-            } elseif ($entryTiming === 'extended') {
-                $handoffBlockReason = 'extended_recovery_late';
-            } elseif ($entryTiming === 'stabilizing' || $entryTiming === 'dump_only') {
-                $handoffBlockReason = $entryTiming === 'dump_only' ? 'stabilization_not_ready' : 'smooth_growth_not_ready';
-            } elseif ($entryTiming === 'confirmed_later') {
-                $handoffBlockReason = 'not_early_entry_phase';
             } else {
-                $handoffBlockReason = (string)($candidate['raw_reject_reason'] ?? 'not_early_entry_phase');
+                $handoffBlockReason = 'not_early_entry_phase';
             }
         } elseif (!(bool)$config['handoff_enabled']) {
             $handoffBlockReason = 'handoff_disabled';
@@ -1959,6 +2034,7 @@ final class EarlyImpulseGrowthLongService
                 'entry_timing' => $candidate['entry_timing'] ?? null,
                 'early_entry_triggered' => (bool)($candidate['early_entry_triggered'] ?? false),
                 'handoff_block_reason' => $candidate['handoff_block_reason'] ?? null,
+                'phase_block_reason' => $candidate['phase_block_reason'] ?? null,
                 'coin_context' => $candidate['coin_context'] ?? null,
                 'coin_context_available' => $candidate['coin_context_available'] ?? null,
                 'coin_context_phase' => $candidate['coin_context_phase'] ?? null,
@@ -2021,6 +2097,23 @@ final class EarlyImpulseGrowthLongService
             'metrics' => $metrics,
             'near_pass' => $nearPass,
         ];
+    }
+
+    private function resolvePhaseBlockReason(string $entryTiming, ?string $rejectReason): ?string
+    {
+        if ($entryTiming === 'early') {
+            return null;
+        }
+
+        $rejectReason = trim((string)$rejectReason);
+        return match ($entryTiming) {
+            'dump_only' => $rejectReason === 'open_interest_growth_too_low' ? 'oi_not_ready' : 'dump_only',
+            'stabilizing' => $rejectReason === 'open_interest_growth_too_low' ? 'oi_not_ready' : 'smooth_growth_not_ready',
+            'confirmed_later' => 'oi_not_ready',
+            'late_spike' => 'late_spike',
+            'extended' => 'extended',
+            default => $rejectReason !== '' ? $rejectReason : 'not_early_entry_phase',
+        };
     }
 
     /**

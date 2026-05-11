@@ -51,6 +51,16 @@ $rejectedExamples = is_array($lastRun['rejected_examples'] ?? null) ? (array)$la
 $bestRecoveryExamples = is_array($lastRun['best_recovery_examples'] ?? null) ? (array)$lastRun['best_recovery_examples'] : [];
 $openInterestExamples = is_array($lastRun['open_interest_growth_examples'] ?? null) ? (array)$lastRun['open_interest_growth_examples'] : [];
 $accelExamples = is_array($lastRun['current_acceleration_examples'] ?? null) ? (array)$lastRun['current_acceleration_examples'] : [];
+
+// Phase-based examples (new)
+$dumpExamples = is_array($lastRun['dump_examples'] ?? null) ? (array)$lastRun['dump_examples'] : [];
+$stabilizationExamples = is_array($lastRun['stabilization_examples'] ?? null) ? (array)$lastRun['stabilization_examples'] : [];
+$smoothGrowthExamples = is_array($lastRun['smooth_growth_examples'] ?? null) ? (array)$lastRun['smooth_growth_examples'] : [];
+$earlyEntryExamples = is_array($lastRun['early_entry_examples'] ?? null) ? (array)$lastRun['early_entry_examples'] : [];
+$stabilizingExamples = is_array($lastRun['stabilizing_examples'] ?? null) ? (array)$lastRun['stabilizing_examples'] : [];
+$confirmedLaterExamples = is_array($lastRun['confirmed_later_examples'] ?? null) ? (array)$lastRun['confirmed_later_examples'] : [];
+$lateSpikeExamples = is_array($lastRun['late_spike_examples'] ?? null) ? (array)$lastRun['late_spike_examples'] : [];
+$extendedExamples = is_array($lastRun['extended_examples'] ?? null) ? (array)$lastRun['extended_examples'] : [];
 ?>
 <style>
 .eig-rt-page { max-width: 1220px; }
@@ -101,6 +111,60 @@ $accelExamples = is_array($lastRun['current_acceleration_examples'] ?? null) ? (
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['recovery_growth_passed_total'] ?? 0)) ?></div><div class="rt-lbl">recovery_growth_pass_count</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['open_interest_growth_passed_total'] ?? 0)) ?></div><div class="rt-lbl">oi_growth_pass_count</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['raw_strategy_passed_total'] ?? 0)) ?></div><div class="rt-lbl">raw_strategy_pass_count</div></div>
+    </div>
+
+    <div style="margin-top:12px;margin-bottom:12px;padding:12px;border:1px solid rgba(56,189,248,.3);border-radius:6px;background:rgba(56,189,248,.04);">
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Phase breakdown (dump → stabilization → smooth growth)</div>
+      <div class="rt-grid">
+        <div class="rt-box" style="border-color:rgba(100,116,139,.5);">
+          <div class="rt-val" style="color:#94a3b8;"><?= $e((int)($lastRun['dump_detected_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">dump_detected</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(100,116,139,.5);">
+          <div class="rt-val" style="color:#94a3b8;"><?= $e((int)($lastRun['stabilization_detected_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">stabilization_detected</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(100,116,139,.5);">
+          <div class="rt-val" style="color:#94a3b8;"><?= $e((int)($lastRun['smooth_growth_detected_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">smooth_growth_detected</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(34,197,94,.4);">
+          <div class="rt-val" style="color:#22c55e;"><?= $e((int)($lastRun['early_entry_candidates_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">early_entry</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(56,189,248,.4);">
+          <div class="rt-val" style="color:#38bdf8;"><?= $e((int)($lastRun['stabilizing_candidates_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">stabilizing (watch)</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(167,139,250,.4);">
+          <div class="rt-val" style="color:#a78bfa;"><?= $e((int)($lastRun['confirmed_later_candidates_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">confirmed_later (visual)</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(251,146,60,.4);">
+          <div class="rt-val" style="color:#fb923c;"><?= $e((int)($lastRun['late_spike_candidates_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">late_spike (blocked)</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(248,81,73,.4);">
+          <div class="rt-val" style="color:#f85149;"><?= $e((int)($lastRun['extended_candidates_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">extended (blocked)</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(34,197,94,.5);">
+          <div class="rt-val" style="color:#22c55e;"><?= $e((int)($lastRun['early_entry_handoff_ready_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">early_entry handoff_ready</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(248,81,73,.3);">
+          <div class="rt-val" style="color:#f85149;"><?= $e((int)($lastRun['non_early_handoff_blocked_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">non_early blocked</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(248,81,73,.3);">
+          <div class="rt-val" style="color:#f85149;"><?= $e((int)($lastRun['late_spike_handoff_blocked_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">late_spike blocked</div>
+        </div>
+        <div class="rt-box" style="border-color:rgba(248,81,73,.3);">
+          <div class="rt-val" style="color:#f85149;"><?= $e((int)($lastRun['extended_handoff_blocked_total'] ?? 0)) ?></div>
+          <div class="rt-lbl">extended blocked</div>
+        </div>
+      </div>
     </div>
     <?php
         $handoffEnabled = (bool)($lastRun['handoff_enabled'] ?? false);
@@ -251,5 +315,87 @@ $accelExamples = is_array($lastRun['current_acceleration_examples'] ?? null) ? (
       <tr><td style="color:#64748b">open_interest_growth_examples</td><td><code><?= $e(json_encode($openInterestExamples, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
       <tr><td style="color:#64748b">current_acceleration_examples</td><td><code><?= $e(json_encode($accelExamples, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
     </table>
+  </div>
+
+<?php
+$phaseTableRow = static function (array $row) use ($e, $fmtNum, $fmtBool): string {
+    $phaseColor = match ((string)($row['entry_timing'] ?? '')) {
+        'early' => '#22c55e',
+        'stabilizing' => '#38bdf8',
+        'dump_only' => '#94a3b8',
+        'confirmed_later' => '#a78bfa',
+        'late_spike' => '#fb923c',
+        'extended' => '#f85149',
+        default => '#64748b',
+    };
+    return '<tr style="border-bottom:1px solid rgba(51,65,85,.5);">'
+        . '<td style="padding:3px 8px;font-weight:600;">' . $e($row['symbol'] ?? '—') . '</td>'
+        . '<td style="padding:3px 8px;color:' . $phaseColor . ';font-weight:600;">' . $e($row['entry_timing'] ?? '—') . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($row['recovery_phase'] ?? '—') . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['dump_pct'] ?? null, 2)) . '</td>'
+        . '<td style="padding:3px 8px;">' . $e((string)($row['stabilization_duration_minutes'] ?? '—')) . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['stabilization_range_pct'] ?? null, 3)) . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['smooth_growth_pct'] ?? null, 3)) . '</td>'
+        . '<td style="padding:3px 8px;">' . $e((string)($row['smooth_growth_duration_minutes'] ?? '—')) . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['open_interest_growth_pct'] ?? null, 3)) . '</td>'
+        . '<td style="padding:3px 8px;">' . $fmtBool((bool)($row['handoff_ready'] ?? false)) . '</td>'
+        . '<td style="padding:3px 8px;"><code style="font-size:11px;">' . $e($row['handoff_block_reason'] ?? '') . '</code></td>'
+        . '</tr>';
+};
+$phaseTableHead = '<thead><tr style="border-bottom:1px solid var(--border-color,#334155);">'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">symbol</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">entry_timing</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">recovery_phase</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">dump_pct</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">stab_min</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">stab_range%</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">growth_pct</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">growth_min</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">oi_growth%</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">handoff_ready</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">block_reason</th>'
+    . '</tr></thead>';
+?>
+
+  <div class="rt-section">
+    <h6>Early entry examples <span style="font-size:11px;font-weight:400;color:#22c55e;">(executable candidates)</span></h6>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><?= $phaseTableHead ?><tbody>
+    <?php foreach ($earlyEntryExamples as $row): ?><?= $phaseTableRow((array)$row) ?><?php endforeach; ?>
+    </tbody></table><?php if ($earlyEntryExamples === []): ?><div class="note" style="padding:8px 2px;">No early_entry examples yet.</div><?php endif; ?></div>
+  </div>
+
+  <div class="rt-section">
+    <h6>Stabilizing examples <span style="font-size:11px;font-weight:400;color:#38bdf8;">(watch candidates — dump detected, stabilization forming)</span></h6>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><?= $phaseTableHead ?><tbody>
+    <?php foreach ($stabilizingExamples as $row): ?><?= $phaseTableRow((array)$row) ?><?php endforeach; ?>
+    </tbody></table><?php if ($stabilizingExamples === []): ?><div class="note" style="padding:8px 2px;">No stabilizing examples yet.</div><?php endif; ?></div>
+  </div>
+
+  <div class="rt-section">
+    <h6>Confirmed later examples <span style="font-size:11px;font-weight:400;color:#a78bfa;">(visual only — structural phases passed but OI failed or past window)</span></h6>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><?= $phaseTableHead ?><tbody>
+    <?php foreach ($confirmedLaterExamples as $row): ?><?= $phaseTableRow((array)$row) ?><?php endforeach; ?>
+    </tbody></table><?php if ($confirmedLaterExamples === []): ?><div class="note" style="padding:8px 2px;">No confirmed_later examples yet.</div><?php endif; ?></div>
+  </div>
+
+  <div class="rt-section">
+    <h6>Late spike examples <span style="font-size:11px;font-weight:400;color:#fb923c;">(blocked — 10m move too fast)</span></h6>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><?= $phaseTableHead ?><tbody>
+    <?php foreach ($lateSpikeExamples as $row): ?><?= $phaseTableRow((array)$row) ?><?php endforeach; ?>
+    </tbody></table><?php if ($lateSpikeExamples === []): ?><div class="note" style="padding:8px 2px;">No late_spike examples yet.</div><?php endif; ?></div>
+  </div>
+
+  <div class="rt-section">
+    <h6>Extended recovery examples <span style="font-size:11px;font-weight:400;color:#f85149;">(blocked — already recovered too far from dump low)</span></h6>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><?= $phaseTableHead ?><tbody>
+    <?php foreach ($extendedExamples as $row): ?><?= $phaseTableRow((array)$row) ?><?php endforeach; ?>
+    </tbody></table><?php if ($extendedExamples === []): ?><div class="note" style="padding:8px 2px;">No extended examples yet.</div><?php endif; ?></div>
+  </div>
+
+  <div class="rt-section">
+    <h6>Dump detected examples <span style="font-size:11px;font-weight:400;color:#94a3b8;">(all symbols where a prior dump was found)</span></h6>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><?= $phaseTableHead ?><tbody>
+    <?php foreach ($dumpExamples as $row): ?><?= $phaseTableRow((array)$row) ?><?php endforeach; ?>
+    </tbody></table><?php if ($dumpExamples === []): ?><div class="note" style="padding:8px 2px;">No dump examples yet.</div><?php endif; ?></div>
   </div>
 </div>

@@ -79,6 +79,48 @@ foreach ($filterConfig as $row) {
     <input type="hidden" name="action" value="save_config">
 
     <div class="cfg-section">
+      <h6>A0) Phase-based entry: dump → stabilization → smooth growth</h6>
+      <p class="note" style="margin:0 0 10px;">Core entry logic. A setup must show a prior dump, then a period of price stabilization, then a short controlled growth phase. Only <strong>early_entry</strong> phase symbols can become executable signals.</p>
+
+      <div style="margin-bottom:10px;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">Dump detection</div>
+      <div class="cfg-grid" style="margin-bottom:14px;">
+        <div><label class="cfg-label">dump_lookback_minutes <span class="note">(how far back to look for dump start)</span></label><input type="number" name="dump_lookback_minutes" min="30" max="720" value="<?= $e((int)$cfg('dump_lookback_minutes', 120)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">min_dump_pct <span class="note">(min % decline to qualify as dump)</span></label><input type="number" name="min_dump_pct" step="0.1" min="0.1" max="50" value="<?= $e((float)$cfg('min_dump_pct', 2.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">max_dump_age_minutes <span class="note">(reject if dump low is older than this)</span></label><input type="number" name="max_dump_age_minutes" min="30" max="1440" value="<?= $e((int)$cfg('max_dump_age_minutes', 240)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+      </div>
+
+      <div style="margin-bottom:10px;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">Stabilization</div>
+      <div class="cfg-grid" style="margin-bottom:14px;">
+        <div><label class="cfg-label">stabilization_min_minutes <span class="note">(min flat/drift period after dump)</span></label><input type="number" name="stabilization_min_minutes" min="1" max="120" value="<?= $e((int)$cfg('stabilization_min_minutes', 10)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">stabilization_max_minutes <span class="note">(search window limit for stabilization)</span></label><input type="number" name="stabilization_max_minutes" min="1" max="180" value="<?= $e((int)$cfg('stabilization_max_minutes', 45)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">stabilization_max_range_pct <span class="note">(max price range % during stabilization)</span></label><input type="number" name="stabilization_max_range_pct" step="0.1" min="0.1" max="20" value="<?= $e((float)$cfg('stabilization_max_range_pct', 1.5)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">stabilization_allow_slight_growth_pct <span class="note">(max upward drift allowed)</span></label><input type="number" name="stabilization_allow_slight_growth_pct" step="0.1" min="0" max="10" value="<?= $e((float)$cfg('stabilization_allow_slight_growth_pct', 1.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">stabilization_max_new_low_break_pct <span class="note">(max new-low breach % below dump low)</span></label><input type="number" name="stabilization_max_new_low_break_pct" step="0.1" min="0" max="5" value="<?= $e((float)$cfg('stabilization_max_new_low_break_pct', 0.3)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+      </div>
+
+      <div style="margin-bottom:10px;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">Smooth growth</div>
+      <div class="cfg-grid" style="margin-bottom:14px;">
+        <div><label class="cfg-label">smooth_growth_window_minutes <span class="note">(search window after stabilization)</span></label><input type="number" name="smooth_growth_window_minutes" min="3" max="60" value="<?= $e((int)$cfg('smooth_growth_window_minutes', 10)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">smooth_growth_min_minutes <span class="note">(min duration of growth phase)</span></label><input type="number" name="smooth_growth_min_minutes" min="1" max="60" value="<?= $e((int)$cfg('smooth_growth_min_minutes', 5)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">smooth_growth_min_pct <span class="note">(min % price growth)</span></label><input type="number" name="smooth_growth_min_pct" step="0.1" min="0" max="20" value="<?= $e((float)$cfg('smooth_growth_min_pct', 0.5)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">smooth_growth_max_pct <span class="note">(max % growth — too fast = spike)</span></label><input type="number" name="smooth_growth_max_pct" step="0.1" min="0" max="50" value="<?= $e((float)$cfg('smooth_growth_max_pct', 2.5)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">smooth_growth_min_higher_close_count <span class="note">(min candles with higher close)</span></label><input type="number" name="smooth_growth_min_higher_close_count" min="1" max="20" value="<?= $e((int)$cfg('smooth_growth_min_higher_close_count', 2)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">smooth_growth_min_higher_low_count <span class="note">(min candles with higher low)</span></label><input type="number" name="smooth_growth_min_higher_low_count" min="1" max="20" value="<?= $e((int)$cfg('smooth_growth_min_higher_low_count', 1)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">smooth_growth_max_single_candle_dominance_pct <span class="note">(max % of gain from one candle)</span></label><input type="number" name="smooth_growth_max_single_candle_dominance_pct" step="1" min="10" max="100" value="<?= $e((float)$cfg('smooth_growth_max_single_candle_dominance_pct', 65.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+      </div>
+
+      <div style="margin-bottom:10px;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.05em;">Late spike / extended recovery guard</div>
+      <div class="cfg-grid">
+        <div><label class="cfg-label">late_spike_price_change_10m_pct <span class="note">(10m move that triggers late_spike)</span></label><input type="number" name="late_spike_price_change_10m_pct" step="0.1" min="0" max="50" value="<?= $e((float)$cfg('late_spike_price_change_10m_pct', 2.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">late_spike_roi_equivalent_leverage <span class="note">(leverage for ROI calc)</span></label><input type="number" name="late_spike_roi_equivalent_leverage" step="0.1" min="1" max="200" value="<?= $e((float)$cfg('late_spike_roi_equivalent_leverage', 5.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">late_spike_roi_equivalent_threshold <span class="note">(ROI% equivalent threshold)</span></label><input type="number" name="late_spike_roi_equivalent_threshold" step="0.1" min="0" max="1000" value="<?= $e((float)$cfg('late_spike_roi_equivalent_threshold', 10.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">block_late_spike_handoff</label><select name="block_late_spike_handoff" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"><option value="1" <?= (bool)$cfg('block_late_spike_handoff', true) ? 'selected' : '' ?>>true</option><option value="0" <?= !(bool)$cfg('block_late_spike_handoff', true) ? 'selected' : '' ?>>false</option></select></div>
+        <div><label class="cfg-label">extended_recovery_growth_pct <span class="note">(recovery from low ≥ this → extended)</span></label><input type="number" name="extended_recovery_growth_pct" step="0.1" min="0" max="200" value="<?= $e((float)$cfg('extended_recovery_growth_pct', 8.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">block_extended_recovery_handoff</label><select name="block_extended_recovery_handoff" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"><option value="1" <?= (bool)$cfg('block_extended_recovery_handoff', true) ? 'selected' : '' ?>>true</option><option value="0" <?= !(bool)$cfg('block_extended_recovery_handoff', true) ? 'selected' : '' ?>>false</option></select></div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
       <h6>A) Strategy core: sustained recovery after decline</h6>
       <div class="cfg-grid">
         <div><label class="cfg-label">enabled</label><select name="enabled" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"><option value="1" <?= (bool)$cfg('enabled') ? 'selected' : '' ?>>true</option><option value="0" <?= !(bool)$cfg('enabled') ? 'selected' : '' ?>>false</option></select></div>

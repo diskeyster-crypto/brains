@@ -1277,38 +1277,51 @@ final class EarlyImpulseGrowthLongService
         }
 
         // --- 6. Final phase and entry timing ---
-        if ($rejectReason !== null) {
-            $recoveryPhase = 'failed';
-            $entryTiming = 'failed';
-        } elseif ($lateSpikeDet) {
+        // Structural phases take priority; OI failure alone must not force 'failed' for
+        // symbols that passed dump → stabilization → smooth_growth (they become confirmed_later).
+        if ($lateSpikeDet && $dumpDetected) {
             $recoveryPhase = 'late_spike';
             $entryTiming = 'late_spike';
-            $rejectReason = 'late_spike_detected';
-        } elseif ($extendedDetected) {
+            if ($rejectReason === null) {
+                $rejectReason = 'late_spike_detected';
+            }
+        } elseif ($extendedDetected && $dumpDetected) {
             $recoveryPhase = 'extended';
             $entryTiming = 'extended';
-            $rejectReason = 'extended_recovery_late';
+            if ($rejectReason === null) {
+                $rejectReason = 'extended_recovery_late';
+            }
         } elseif ($dumpDetected && $stabilizationPassed && $smoothGrowthPassed && ($oiPass || $metrics['oi_missing_allowed'])) {
             $recoveryPhase = 'early_entry';
             $entryTiming = 'early';
             $earlyEntryTriggered = true;
             $earlyEntryReason = 'dump_stabilization_smooth_growth';
+            $rejectReason = null;
         } elseif ($dumpDetected && $stabilizationPassed && $smoothGrowthPassed) {
+            // Structural phases all passed but OI failed: visual confirmed_later candidate
             $recoveryPhase = 'confirmed_later';
             $entryTiming = 'confirmed_later';
-            $rejectReason = 'open_interest_growth_too_low';
+            if ($rejectReason === null) {
+                $rejectReason = 'open_interest_growth_too_low';
+            }
         } elseif ($dumpDetected && $stabilizationDetected) {
             $recoveryPhase = 'stabilizing';
             $entryTiming = 'stabilizing';
-            $rejectReason = 'smooth_growth_missing';
+            if ($rejectReason === null) {
+                $rejectReason = 'smooth_growth_missing';
+            }
         } elseif ($dumpDetected) {
             $recoveryPhase = 'dump_only';
             $entryTiming = 'dump_only';
-            $rejectReason = 'stabilization_missing';
+            if ($rejectReason === null) {
+                $rejectReason = 'stabilization_missing';
+            }
         } else {
             $recoveryPhase = 'failed';
             $entryTiming = 'failed';
-            $rejectReason = 'no_prior_dump';
+            if ($rejectReason === null) {
+                $rejectReason = 'no_prior_dump';
+            }
         }
 
         $rawPassed = $recoveryPhase === 'early_entry';

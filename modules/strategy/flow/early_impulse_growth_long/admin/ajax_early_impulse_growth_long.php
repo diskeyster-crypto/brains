@@ -229,6 +229,28 @@ if ($action === 'save_config') {
         'parser2_history_lookback_minutes' => $intField('parser2_history_lookback_minutes', 30, 1440, 500),
         'bybit_kline_limit' => $intField('bybit_kline_limit', 20, 1000, 500),
         'bybit_timeout_sec' => $intField('bybit_timeout_sec', 3, 30, 6),
+        // Phase-based entry config
+        'dump_lookback_minutes' => $intField('dump_lookback_minutes', 30, 720, 120),
+        'min_dump_pct' => $floatField('min_dump_pct', 0.1, 50.0, 2.0),
+        'max_dump_age_minutes' => $intField('max_dump_age_minutes', 30, 1440, 240),
+        'stabilization_min_minutes' => $intField('stabilization_min_minutes', 1, 120, 10),
+        'stabilization_max_minutes' => $intField('stabilization_max_minutes', 1, 180, 45),
+        'stabilization_max_range_pct' => $floatField('stabilization_max_range_pct', 0.1, 20.0, 1.5),
+        'stabilization_allow_slight_growth_pct' => $floatField('stabilization_allow_slight_growth_pct', 0.0, 10.0, 1.0),
+        'stabilization_max_new_low_break_pct' => $floatField('stabilization_max_new_low_break_pct', 0.0, 5.0, 0.3),
+        'smooth_growth_window_minutes' => $intField('smooth_growth_window_minutes', 3, 60, 10),
+        'smooth_growth_min_minutes' => $intField('smooth_growth_min_minutes', 1, 60, 5),
+        'smooth_growth_min_pct' => $floatField('smooth_growth_min_pct', 0.0, 20.0, 0.5),
+        'smooth_growth_max_pct' => $floatField('smooth_growth_max_pct', 0.0, 50.0, 2.5),
+        'smooth_growth_min_higher_close_count' => $intField('smooth_growth_min_higher_close_count', 1, 20, 2),
+        'smooth_growth_min_higher_low_count' => $intField('smooth_growth_min_higher_low_count', 1, 20, 1),
+        'smooth_growth_max_single_candle_dominance_pct' => $floatField('smooth_growth_max_single_candle_dominance_pct', 10.0, 100.0, 65.0),
+        'late_spike_price_change_10m_pct' => $floatField('late_spike_price_change_10m_pct', 0.0, 50.0, 2.0),
+        'late_spike_roi_equivalent_leverage' => $floatField('late_spike_roi_equivalent_leverage', 1.0, 200.0, 5.0),
+        'late_spike_roi_equivalent_threshold' => $floatField('late_spike_roi_equivalent_threshold', 0.0, 1000.0, 10.0),
+        'block_late_spike_handoff' => $boolField('block_late_spike_handoff', true),
+        'extended_recovery_growth_pct' => $floatField('extended_recovery_growth_pct', 0.0, 200.0, 8.0),
+        'block_extended_recovery_handoff' => $boolField('block_extended_recovery_handoff', true),
     ]);
 
     foreach ($catalog as $filterId => $_meta) {

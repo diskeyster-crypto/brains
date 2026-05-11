@@ -21,6 +21,7 @@ return [
     'recovery_min_window_minutes' => 'int',
     'recovery_max_window_minutes' => 'int',
     'recovery_min_duration_minutes' => 'int',
+    'recovery_duration_rule_mode' => 'string',
 
     'prior_decline_lookback_minutes' => 'int',
     'min_prior_decline_pct' => 'float',
@@ -32,6 +33,24 @@ return [
     'recovery_score_target_pct' => 'float',
     'max_recovery_growth_pct' => 'float',
 
+    'dump_lookback_minutes' => 'int',
+    'min_dump_pct' => 'float',
+    'max_dump_age_minutes' => 'int',
+
+    'stabilization_min_minutes' => 'int',
+    'stabilization_max_minutes' => 'int',
+    'stabilization_max_range_pct' => 'float',
+    'stabilization_allow_slight_growth_pct' => 'float',
+    'stabilization_max_new_low_break_pct' => 'float',
+
+    'smooth_growth_window_minutes' => 'int',
+    'smooth_growth_min_minutes' => 'int',
+    'smooth_growth_min_pct' => 'float',
+    'smooth_growth_max_pct' => 'float',
+    'smooth_growth_min_higher_close_count' => 'int',
+    'smooth_growth_min_higher_low_count' => 'int',
+    'smooth_growth_max_single_candle_dominance_pct' => 'float',
+
     'open_interest_enabled' => 'bool',
     'min_open_interest_growth_pct' => 'float',
     'min_open_interest_growth_score' => 'float',
@@ -39,13 +58,12 @@ return [
     'allow_missing_open_interest' => 'bool',
     'missing_open_interest_mode' => 'string',
 
-    'recovery_structure_enabled' => 'bool',
-    'recovery_min_candles_after_low' => 'int',
-    'recovery_min_higher_lows' => 'int',
-    'recovery_min_higher_closes' => 'int',
-    'recovery_max_single_candle_dominance_pct' => 'float',
-    'recovery_max_speed_pct_per_min' => 'float',
-    'recovery_min_structure_score' => 'float',
+    'late_spike_price_change_10m_pct' => 'float',
+    'late_spike_roi_equivalent_leverage' => 'float',
+    'late_spike_roi_equivalent_threshold' => 'float',
+    'block_late_spike_handoff' => 'bool',
+    'extended_recovery_growth_pct' => 'float',
+    'block_extended_recovery_handoff' => 'bool',
 
     'current_acceleration_window_minutes' => 'int',
     'fast_spike_diagnostic_enabled' => 'bool',

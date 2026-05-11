@@ -196,7 +196,10 @@ final class EarlyImpulseGrowthLongService
 
         $allEvaluated = $this->readJson($this->storagePath('evaluated_contexts.json'), []);
         $allCandidates = $this->readJson($this->storagePath('candidates.json'), []);
-        $allNearPass = $this->readJson($this->storagePath('near_pass_candidates.json'), []);
+        $allWatchCandidates = $this->readJson($this->storagePath('watch_candidates.json'), []);
+        if (!is_array($allWatchCandidates)) {
+            $allWatchCandidates = $this->readJson($this->storagePath('near_pass_candidates.json'), []);
+        }
         $allRejects = $this->readJson($this->storagePath('rejects.json'), []);
         $allSignals = $this->readJson($this->storagePath('signals.json'), []);
 
@@ -205,7 +208,7 @@ final class EarlyImpulseGrowthLongService
 
         $newEvaluated = [];
         $newCandidates = [];
-        $newNearPass = [];
+        $newWatchCandidates = [];
         $newRejects = [];
         $newSignals = [];
 
@@ -213,6 +216,18 @@ final class EarlyImpulseGrowthLongService
             'insufficient_data_total' => 0,
             'stale_data_total' => 0,
             'data_source_error_total' => 0,
+            'dump_detected_total' => 0,
+            'stabilization_detected_total' => 0,
+            'smooth_growth_detected_total' => 0,
+            'early_entry_candidates_total' => 0,
+            'stabilizing_candidates_total' => 0,
+            'confirmed_later_candidates_total' => 0,
+            'late_spike_candidates_total' => 0,
+            'extended_candidates_total' => 0,
+            'early_entry_handoff_ready_total' => 0,
+            'non_early_handoff_blocked_total' => 0,
+            'late_spike_handoff_blocked_total' => 0,
+            'extended_handoff_blocked_total' => 0,
             'prior_decline_passed_total' => 0,
             'recovery_growth_passed_total' => 0,
             'open_interest_growth_passed_total' => 0,
@@ -240,9 +255,17 @@ final class EarlyImpulseGrowthLongService
             $candidate = $res['candidate'];
             $newEvaluated[] = $candidate;
 
-            if ($candidate['raw_strategy_passed'] ?? false) {
+            $entryTiming = (string)($candidate['entry_timing'] ?? 'failed');
+            $isVisualCandidate = in_array($entryTiming, ['stabilizing', 'confirmed_later', 'late_spike', 'extended'], true);
+            $isWatchCandidate = in_array($entryTiming, ['dump_only', 'stabilizing'], true);
+
+            if (($candidate['raw_strategy_passed'] ?? false) || $isVisualCandidate) {
                 $newCandidates[] = $candidate;
-            } else {
+            }
+            if ($isWatchCandidate) {
+                $newWatchCandidates[] = $candidate;
+            }
+            if (!(($candidate['raw_strategy_passed'] ?? false) || $isVisualCandidate || $isWatchCandidate)) {
                 $newRejects[] = [
                     'strategy_id' => self::STRATEGY_ID,
                     'symbol' => $candidate['symbol'],
@@ -272,10 +295,6 @@ final class EarlyImpulseGrowthLongService
                     'controlled_speed' => $candidate['controlled_speed'] ?? null,
                     'data_source_used' => $candidate['data_source_used'] ?? null,
                 ];
-            }
-
-            if ($res['near_pass']) {
-                $newNearPass[] = $candidate;
             }
 
             if (!empty($res['signal'])) {
@@ -319,10 +338,44 @@ final class EarlyImpulseGrowthLongService
             }
 
             $m = $res['metrics'];
-            if ($m['prior_decline_pass'] ?? false) {
+            if ((bool)($candidate['dump_detected'] ?? false)) {
+                $diag['dump_detected_total']++;
+            }
+            if ((bool)($candidate['stabilization_detected'] ?? false)) {
+                $diag['stabilization_detected_total']++;
+            }
+            if ((bool)($candidate['smooth_growth_detected'] ?? false)) {
+                $diag['smooth_growth_detected_total']++;
+            }
+            $entryTiming = (string)($candidate['entry_timing'] ?? '');
+            if ($entryTiming === 'early') {
+                $diag['early_entry_candidates_total']++;
+            } elseif ($entryTiming === 'stabilizing') {
+                $diag['stabilizing_candidates_total']++;
+            } elseif ($entryTiming === 'confirmed_later') {
+                $diag['confirmed_later_candidates_total']++;
+            } elseif ($entryTiming === 'late_spike') {
+                $diag['late_spike_candidates_total']++;
+            } elseif ($entryTiming === 'extended') {
+                $diag['extended_candidates_total']++;
+            }
+            if ((bool)($candidate['handoff_ready'] ?? false) && $entryTiming === 'early') {
+                $diag['early_entry_handoff_ready_total']++;
+            }
+            if ($entryTiming !== 'early' && !empty($candidate['handoff_block_reason'])) {
+                $diag['non_early_handoff_blocked_total']++;
+            }
+            if ((string)($candidate['handoff_block_reason'] ?? '') === 'late_spike_detected') {
+                $diag['late_spike_handoff_blocked_total']++;
+            }
+            if ((string)($candidate['handoff_block_reason'] ?? '') === 'extended_recovery_late') {
+                $diag['extended_handoff_blocked_total']++;
+            }
+
+            if ($m['dump_pass'] ?? false) {
                 $diag['prior_decline_passed_total']++;
             }
-            if ($m['recovery_growth_pass'] ?? false) {
+            if ($m['smooth_growth_pass'] ?? false) {
                 $diag['recovery_growth_passed_total']++;
             }
             if ($m['oi_pass'] ?? false) {
@@ -361,10 +414,10 @@ final class EarlyImpulseGrowthLongService
             if ((bool)($candidate['late_spike_detected'] ?? false)) {
                 $diag['late_spike_detected_total']++;
             }
-            if ((string)($candidate['recovery_phase'] ?? '') === 'valid_recovery') {
+            if ((string)($candidate['recovery_phase'] ?? '') === 'early_entry') {
                 $diag['recovery_phase_valid_recovery_total']++;
             }
-            if ($m['fast_spike_detected'] ?? false) {
+            if ($m['late_spike_detected'] ?? false) {
                 $diag['fast_spike_detected_total']++;
             }
             if ($candidate['raw_strategy_passed'] ?? false) {
@@ -385,7 +438,7 @@ final class EarlyImpulseGrowthLongService
 
         $allEvaluated = array_merge(is_array($allEvaluated) ? $allEvaluated : [], $newEvaluated);
         $allCandidates = array_merge(is_array($allCandidates) ? $allCandidates : [], $newCandidates);
-        $allNearPass = array_merge(is_array($allNearPass) ? $allNearPass : [], $newNearPass);
+        $allWatchCandidates = array_merge(is_array($allWatchCandidates) ? $allWatchCandidates : [], $newWatchCandidates);
         $allRejects = array_merge(is_array($allRejects) ? $allRejects : [], $newRejects);
 
         $signalIndex = [];
@@ -410,7 +463,7 @@ final class EarlyImpulseGrowthLongService
 
         $allEvaluated = array_slice($allEvaluated, -max(100, (int)$config['max_evaluated_store']));
         $allCandidates = array_slice($allCandidates, -max(100, (int)$config['max_candidates_store']));
-        $allNearPass = array_slice($allNearPass, -max(100, (int)$config['max_near_pass_store']));
+        $allWatchCandidates = array_slice($allWatchCandidates, -max(100, (int)$config['max_near_pass_store']));
         $allRejects = array_slice($allRejects, -max(100, (int)$config['max_rejects_store']));
         $allSignals = array_slice($allSignals, -max(100, (int)$config['max_signals_store']));
 
@@ -537,7 +590,8 @@ final class EarlyImpulseGrowthLongService
 
         $this->writeJson($this->storagePath('evaluated_contexts.json'), $allEvaluated);
         $this->writeJson($this->storagePath('candidates.json'), $allCandidates);
-        $this->writeJson($this->storagePath('near_pass_candidates.json'), $allNearPass);
+        $this->writeJson($this->storagePath('watch_candidates.json'), $allWatchCandidates);
+        $this->writeJson($this->storagePath('near_pass_candidates.json'), $allWatchCandidates);
         $this->writeJson($this->storagePath('rejects.json'), $allRejects);
         $this->writeJson($this->storagePath('signals.json'), $allSignals);
         $this->writeJson($this->storagePath('bot_handoff_queue.json'), $handoffQueue);
@@ -578,12 +632,12 @@ final class EarlyImpulseGrowthLongService
         $filterCatalog = $this->getFilterCatalog();
         $acceptedExamples = $newCandidates;
         $rejectedExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => !(bool)($c['raw_strategy_passed'] ?? false)));
-        $nearPassExamples = $newNearPass;
+        $watchExamples = $newWatchCandidates;
 
         usort($acceptedExamples, static fn(array $a, array $b): int => ((float)($b['combined_recovery_score'] ?? 0.0) <=> (float)($a['combined_recovery_score'] ?? 0.0)));
         $bestRecoveryExamples = $acceptedExamples;
         if ($bestRecoveryExamples === []) {
-            $bestRecoveryExamples = $nearPassExamples;
+            $bestRecoveryExamples = $watchExamples;
             usort($bestRecoveryExamples, static fn(array $a, array $b): int => ((float)($b['combined_recovery_score'] ?? 0.0) <=> (float)($a['combined_recovery_score'] ?? 0.0)));
         }
         if ($bestRecoveryExamples === []) {
@@ -593,7 +647,7 @@ final class EarlyImpulseGrowthLongService
         usort($bestRecoveryExamples, static fn(array $a, array $b): int => ((float)($b['recovery_growth_pct'] ?? 0.0) <=> (float)($a['recovery_growth_pct'] ?? 0.0)));
         $openInterestExamples = array_values(array_filter($acceptedExamples, static fn(array $c): bool => isset($c['open_interest_growth_pct']) && $c['open_interest_growth_pct'] !== null));
         if ($openInterestExamples === []) {
-            $openInterestExamples = array_values(array_filter($nearPassExamples, static fn(array $c): bool => isset($c['open_interest_growth_pct']) && $c['open_interest_growth_pct'] !== null));
+            $openInterestExamples = array_values(array_filter($watchExamples, static fn(array $c): bool => isset($c['open_interest_growth_pct']) && $c['open_interest_growth_pct'] !== null));
         }
         if ($openInterestExamples === []) {
             $openInterestExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => isset($c['open_interest_growth_pct']) && $c['open_interest_growth_pct'] !== null));
@@ -642,7 +696,7 @@ final class EarlyImpulseGrowthLongService
                 'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
             ];
         }, $rejectedExamples), 0, 20);
-        $nearPassExamples = array_slice(array_map(static function (array $c): array {
+        $watchExamples = array_slice(array_map(static function (array $c): array {
             return [
                 'symbol' => $c['symbol'] ?? null,
                 'entry_price' => $c['entry_price'] ?? null,
@@ -655,7 +709,7 @@ final class EarlyImpulseGrowthLongService
                 'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
                 'reject_reason' => $c['raw_reject_reason'] ?? null,
             ];
-        }, $nearPassExamples), 0, 20);
+        }, $watchExamples), 0, 20);
         $bestRecoveryExamples = array_slice(array_map(static function (array $c): array {
             return [
                 'symbol' => $c['symbol'] ?? null,
@@ -751,6 +805,32 @@ final class EarlyImpulseGrowthLongService
             ];
         }, $recoveryStructureTooWeakExamples), 0, 20);
 
+        $phaseExampleRow = static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'dump_pct' => $c['dump_pct'] ?? null,
+                'stabilization_duration_minutes' => $c['stabilization_duration_minutes'] ?? null,
+                'stabilization_range_pct' => $c['stabilization_range_pct'] ?? null,
+                'smooth_growth_pct' => $c['smooth_growth_pct'] ?? null,
+                'smooth_growth_duration_minutes' => $c['smooth_growth_duration_minutes'] ?? null,
+                'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
+                'recovery_phase' => $c['recovery_phase'] ?? null,
+                'entry_timing' => $c['entry_timing'] ?? null,
+                'handoff_ready' => (bool)($c['handoff_ready'] ?? false),
+                'executable' => (bool)($c['executable'] ?? false),
+                'early_entry_triggered' => (bool)($c['early_entry_triggered'] ?? false),
+                'handoff_block_reason' => $c['handoff_block_reason'] ?? null,
+            ];
+        };
+        $dumpExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (bool)($c['dump_detected'] ?? false)))), 0, 20);
+        $stabilizationExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (bool)($c['stabilization_detected'] ?? false)))), 0, 20);
+        $smoothGrowthExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (bool)($c['smooth_growth_detected'] ?? false)))), 0, 20);
+        $earlyEntryExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['entry_timing'] ?? '') === 'early'))), 0, 20);
+        $stabilizingExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['entry_timing'] ?? '') === 'stabilizing'))), 0, 20);
+        $confirmedLaterExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['entry_timing'] ?? '') === 'confirmed_later'))), 0, 20);
+        $lateSpikePhaseExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['entry_timing'] ?? '') === 'late_spike'))), 0, 20);
+        $extendedExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['entry_timing'] ?? '') === 'extended'))), 0, 20);
+
         $lastRun = [
             'strategy_id' => self::STRATEGY_ID,
             'status' => $statusDone ? 'done' : 'running',
@@ -762,7 +842,8 @@ final class EarlyImpulseGrowthLongService
             'current_run_processed_total' => count($batchSymbols),
             'current_run_evaluated_total' => count($newEvaluated),
             'current_run_candidates_total' => count($newCandidates),
-            'current_run_near_pass_total' => count($newNearPass),
+            'current_run_near_pass_total' => count($newWatchCandidates),
+            'current_run_watch_candidates_total' => count($newWatchCandidates),
             'current_run_signals_total' => count($newSignals),
             'current_run_rejects_total' => count($newRejects),
             'current_run_handoff_ready_total' => $currentRunHandoffReadyTotal,
@@ -772,7 +853,8 @@ final class EarlyImpulseGrowthLongService
             // Stored totals
             'stored_evaluated_total' => count($allEvaluated),
             'stored_candidates_total' => count($allCandidates),
-            'stored_near_pass_total' => count($allNearPass),
+            'stored_near_pass_total' => count($allWatchCandidates),
+            'stored_watch_candidates_total' => count($allWatchCandidates),
             'stored_signals_total' => count($allSignals),
             'stored_rejects_total' => count($allRejects),
             'stored_handoff_ready_total' => $handoffReadyTotal,
@@ -836,6 +918,18 @@ final class EarlyImpulseGrowthLongService
             'fast_spike_detected_total' => $diag['fast_spike_detected_total'],
             'raw_strategy_passed_total' => $diag['raw_strategy_passed_total'],
             'raw_strategy_rejected_total' => $diag['raw_strategy_rejected_total'],
+            'dump_detected_total' => $diag['dump_detected_total'],
+            'stabilization_detected_total' => $diag['stabilization_detected_total'],
+            'smooth_growth_detected_total' => $diag['smooth_growth_detected_total'],
+            'early_entry_candidates_total' => $diag['early_entry_candidates_total'],
+            'stabilizing_candidates_total' => $diag['stabilizing_candidates_total'],
+            'confirmed_later_candidates_total' => $diag['confirmed_later_candidates_total'],
+            'late_spike_candidates_total' => $diag['late_spike_candidates_total'],
+            'extended_candidates_total' => $diag['extended_candidates_total'],
+            'early_entry_handoff_ready_total' => $diag['early_entry_handoff_ready_total'],
+            'non_early_handoff_blocked_total' => $diag['non_early_handoff_blocked_total'],
+            'late_spike_handoff_blocked_total' => $diag['late_spike_handoff_blocked_total'],
+            'extended_handoff_blocked_total' => $diag['extended_handoff_blocked_total'],
 
             // Data quality
             'insufficient_data_total' => $diag['insufficient_data_total'],
@@ -850,14 +944,23 @@ final class EarlyImpulseGrowthLongService
             'open_interest_missing_examples' => $diag['open_interest_missing_examples'],
             'reject_reason_counts' => $diag['reject_reason_counts'],
             'accepted_examples' => $acceptedExamples,
-            'near_pass_examples' => $nearPassExamples,
+            'near_pass_examples' => $watchExamples,
+            'watch_candidates_examples' => $watchExamples,
+            'dump_examples' => $dumpExamples,
+            'stabilization_examples' => $stabilizationExamples,
+            'smooth_growth_examples' => $smoothGrowthExamples,
+            'early_entry_examples' => $earlyEntryExamples,
+            'stabilizing_examples' => $stabilizingExamples,
+            'confirmed_later_examples' => $confirmedLaterExamples,
+            'late_spike_examples' => $lateSpikePhaseExamples,
+            'extended_examples' => $extendedExamples,
             'rejected_examples' => $rejectedExamples,
             'best_recovery_examples' => $bestRecoveryExamples,
             'prior_decline_examples' => $priorDeclineExamples,
             'open_interest_growth_examples' => $openInterestExamples,
             'current_acceleration_examples' => $accelExamples,
             'fast_spike_examples' => $fastSpikeExamples,
-            'late_spike_examples' => $lateSpikeExamples,
+            'late_spike_recovery_examples' => $lateSpikeExamples,
             'too_early_examples' => $tooEarlyExamples,
             'recovery_structure_too_weak_examples' => $recoveryStructureTooWeakExamples,
         ];
@@ -883,29 +986,26 @@ final class EarlyImpulseGrowthLongService
     {
         $now = time();
         $detectedAt = gmdate('c', $now);
+        $dumpLookbackMin = (int)$config['dump_lookback_minutes'];
+        $maxDumpAgeMin = (int)$config['max_dump_age_minutes'];
+        $stabilizationMaxMin = (int)$config['stabilization_max_minutes'];
+        $smoothGrowthWindowMin = (int)$config['smooth_growth_window_minutes'];
+        $currentAccelWindowMin = (int)$config['current_acceleration_window_minutes'];
+        $lateSpikePrice10mPct = (float)$config['late_spike_price_change_10m_pct'];
+        $lateSpikeRoiLev = (float)$config['late_spike_roi_equivalent_leverage'];
+        $lateSpikeRoiThreshold = (float)$config['late_spike_roi_equivalent_threshold'];
+        $extendedRecoveryGrowthPct = (float)$config['extended_recovery_growth_pct'];
 
-        $recoveryWindowMin = (int)$config['recovery_window_minutes'];
-        $recoveryMinWindowMin = (int)$config['recovery_min_window_minutes'];
-        $recoveryMinDurationMin = (int)$config['recovery_min_duration_minutes'];
-        $recoveryMaxWindowMin = (int)$config['recovery_max_window_minutes'];
-        $priorDeclineLookbackMin = (int)$config['prior_decline_lookback_minutes'];
-        $accelWindowMin = (int)$config['current_acceleration_window_minutes'];
-        $fastSpikeDiagnosticEnabled = (bool)$config['fast_spike_diagnostic_enabled'];
-        $fastSpikeWindowMin = (int)$config['fast_spike_window_minutes'];
-        $fastSpikePriceChangeThreshold = (float)$config['fast_spike_price_change_pct'];
-        $fastSpikeRoiEquivalentLeverage = (float)$config['fast_spike_roi_equivalent_leverage'];
-        $fastSpikeRoiEquivalentThreshold = (float)$config['fast_spike_roi_equivalent_threshold'];
-
-        // Total candle history needed: prior decline window + recovery window + buffer
-        $totalLookbackMin = $priorDeclineLookbackMin + $recoveryMaxWindowMin + 30;
-        $lookbackMinutes = max(
-            $totalLookbackMin,
-            (int)$config['parser2_history_lookback_minutes']
+        $totalLookbackMin = max(
+            $dumpLookbackMin + $maxDumpAgeMin + $stabilizationMaxMin + $smoothGrowthWindowMin + 30,
+            $currentAccelWindowMin + 30
         );
+        $lookbackMinutes = max($totalLookbackMin, (int)$config['parser2_history_lookback_minutes']);
 
         $metrics = [
-            'prior_decline_pass' => false,
-            'recovery_growth_pass' => false,
+            'dump_pass' => false,
+            'stabilization_pass' => false,
+            'smooth_growth_pass' => false,
             'oi_pass' => false,
             'oi_missing_allowed' => false,
             'oi_missing_blocked' => false,
@@ -916,7 +1016,7 @@ final class EarlyImpulseGrowthLongService
             'filter_checked' => false,
             'filter_blocked' => false,
             'filter_diagnostic_only' => false,
-            'fast_spike_detected' => false,
+            'late_spike_detected' => false,
         ];
 
         // --- 1. Load candle and row data ---
@@ -950,145 +1050,106 @@ final class EarlyImpulseGrowthLongService
             $metrics['stale_data'] = true;
         }
 
-        // --- 2. Detect prior decline ---
-        $priorDeclineDetected = false;
-        $priorDeclinePct = 0.0;
-        $priorDeclineHighPrice = null;
-        $priorDeclineHighTs = null;
-        $recoveryLowPrice = null;
-        $recoveryLowTs = null;
-        $recoveryStartedAfterDecline = false;
+        // --- 2. Detect dump -> stabilization -> smooth growth phases ---
+        $dumpDetected = false;
+        $dumpPct = 0.0;
+        $dumpStartPrice = null;
+        $dumpStartTs = null;
+        $dumpLowPrice = null;
+        $dumpLowTs = null;
+        $dumpAgeMinutes = null;
 
-        if ($rejectReason === null) {
-            $recoveryWindowStart = $now - ($recoveryWindowMin * 60);
-            $recoveryCandles = array_values(array_filter(
-                $allCandles,
-                static fn(array $c): bool => (int)($c['ts'] ?? 0) >= $recoveryWindowStart
-            ));
+        $stabilizationDetected = false;
+        $stabilizationPassed = false;
+        $stabilizationStartTs = null;
+        $stabilizationEndTs = null;
+        $stabilizationDurationMinutes = 0;
+        $stabilizationRangePct = null;
+        $stabilizationPriceChangePct = null;
+        $stabilizationNewLowBreakPct = null;
+        $stabilizationScore = 0.0;
 
-            // Ensure we have enough candles in recovery window
-            if (count($recoveryCandles) < 3 && count($allCandles) >= 3) {
-                $recoveryCandles = array_slice($allCandles, -max(3, $recoveryWindowMin));
-            }
+        $smoothGrowthDetected = false;
+        $smoothGrowthPassed = false;
+        $smoothGrowthStartTs = null;
+        $smoothGrowthEndTs = null;
+        $smoothGrowthDurationMinutes = 0;
+        $smoothGrowthPct = 0.0;
+        $smoothGrowthHigherCloseCount = 0;
+        $smoothGrowthHigherLowCount = 0;
+        $smoothGrowthSingleCandleDominancePct = null;
+        $smoothGrowthScore = 0.0;
 
-            // Find local minimum in recovery window (recovery low)
-            $minClose = PHP_FLOAT_MAX;
-            $minCandle = null;
-            foreach ($recoveryCandles as $c) {
-                $close = (float)($c['close'] ?? 0.0);
-                if ($close > 0.0 && $close < $minClose) {
-                    $minClose = $close;
-                    $minCandle = $c;
-                }
-            }
-
-            if ($minCandle !== null) {
-                $recoveryLowPrice = $minClose;
-                $recoveryLowTs = (int)($minCandle['ts'] ?? 0);
-
-                // Find prior high before recovery low (within prior_decline_lookback_minutes)
-                $priorLookbackStart = $recoveryLowTs - ($priorDeclineLookbackMin * 60);
-                $maxHighPrice = 0.0;
-                $maxHighTs = 0;
-                foreach ($allCandles as $c) {
-                    $ts = (int)($c['ts'] ?? 0);
-                    $close = (float)($c['close'] ?? 0.0);
-                    if ($ts >= $priorLookbackStart && $ts < $recoveryLowTs && $close > $maxHighPrice) {
-                        $maxHighPrice = $close;
-                        $maxHighTs = $ts;
-                    }
-                }
-
-                if ($maxHighPrice > 0.0 && $recoveryLowPrice > 0.0 && $maxHighPrice > $recoveryLowPrice) {
-                    $priorDeclinePct = (($maxHighPrice - $recoveryLowPrice) / $maxHighPrice) * 100.0;
-                    $priorDeclineHighPrice = $maxHighPrice;
-                    $priorDeclineHighTs = $maxHighTs > 0 ? gmdate('c', $maxHighTs) : null;
-                    $priorDeclineDetected = $priorDeclinePct >= (float)$config['min_prior_decline_pct'];
-                    $recoveryStartedAfterDecline = $priorDeclineDetected;
-                }
-            }
-
-            if (!$priorDeclineDetected) {
-                $rejectReason = 'no_prior_decline_before_recovery';
-            } else {
-                $metrics['prior_decline_pass'] = true;
-            }
-        }
-
-        // --- 3. Measure recovery growth ---
-        $recoveryGrowthPct = 0.0;
-        $recoveryDurationMin = 0;
-        $recoveryScore = 0.0;
         $recoveryPhase = 'failed';
-        $recoveryGrowthGate = false;
-        $recoveryGrowthPass = false;
-        $combinedRecoveryScore = 0.0;
-        // Structure state — always defined even if the recovery block is skipped
+        $entryTiming = 'failed';
+        $earlyEntryTriggered = false;
+        $earlyEntryReason = null;
+        $lateSpikeDet = false;
+        $extendedDetected = false;
+        $impulseSpeedPctPerMin = null;
         $recoveryStructureScore = 0.0;
         $multiStepRecovery = false;
         $higherLowCount = 0;
         $higherCloseCount = 0;
         $singleCandleDominancePct = null;
-        $impulseSpeedPctPerMin = null;
         $controlledSpeed = false;
-        $lateSpikeDet = false;
 
-        if ($rejectReason === null && $recoveryLowPrice !== null && $recoveryLowTs !== null) {
-            if ($latestPrice > 0.0 && $recoveryLowPrice > 0.0) {
-                $recoveryGrowthPct = (($latestPrice - $recoveryLowPrice) / $recoveryLowPrice) * 100.0;
-                $recoveryDurationMin = (int)round(($now - $recoveryLowTs) / 60);
-                $scoreMode = (string)($config['recovery_score_mode'] ?? 'threshold');
-                $recoveryMinGrowthPct = (float)$config['min_recovery_growth_pct'];
-                $recoveryMinScore = (float)$config['min_recovery_score'];
-                $recoveryTargetPct = (float)($config['recovery_score_target_pct'] ?? 8.0);
-                if ($scoreMode === 'range') {
-                    $recoveryScore = $this->scoreRange(
-                        $recoveryGrowthPct,
-                        $recoveryMinGrowthPct,
-                        (float)$config['max_recovery_growth_pct']
-                    );
-                } else {
-                    $recoveryScore = $this->scoreGradientTarget(
-                        $recoveryGrowthPct,
-                        $recoveryMinGrowthPct,
-                        $recoveryMinScore,
-                        $recoveryTargetPct
-                    );
-                }
-                $recoveryGrowthGate = $recoveryGrowthPct >= $recoveryMinGrowthPct;
+        if ($rejectReason === null) {
+            $phase = $this->computePhaseFlow($allCandles, $now, $config, $latestPrice);
+
+            $dumpDetected = (bool)($phase['dump_detected'] ?? false);
+            $dumpPct = (float)($phase['dump_pct'] ?? 0.0);
+            $dumpStartPrice = $phase['dump_start_price'] ?? null;
+            $dumpStartTs = $phase['dump_start_ts'] ?? null;
+            $dumpLowPrice = $phase['dump_low_price'] ?? null;
+            $dumpLowTs = $phase['dump_low_ts'] ?? null;
+            $dumpAgeMinutes = $phase['dump_age_minutes'] ?? null;
+
+            $stabilizationDetected = (bool)($phase['stabilization_detected'] ?? false);
+            $stabilizationPassed = (bool)($phase['stabilization_passed'] ?? false);
+            $stabilizationStartTs = $phase['stabilization_start_ts'] ?? null;
+            $stabilizationEndTs = $phase['stabilization_end_ts'] ?? null;
+            $stabilizationDurationMinutes = (int)($phase['stabilization_duration_minutes'] ?? 0);
+            $stabilizationRangePct = $phase['stabilization_range_pct'] ?? null;
+            $stabilizationPriceChangePct = $phase['stabilization_price_change_pct'] ?? null;
+            $stabilizationNewLowBreakPct = $phase['stabilization_new_low_break_pct'] ?? null;
+            $stabilizationScore = (float)($phase['stabilization_score'] ?? 0.0);
+
+            $smoothGrowthDetected = (bool)($phase['smooth_growth_detected'] ?? false);
+            $smoothGrowthPassed = (bool)($phase['smooth_growth_passed'] ?? false);
+            $smoothGrowthStartTs = $phase['smooth_growth_start_ts'] ?? null;
+            $smoothGrowthEndTs = $phase['smooth_growth_end_ts'] ?? null;
+            $smoothGrowthDurationMinutes = (int)($phase['smooth_growth_duration_minutes'] ?? 0);
+            $smoothGrowthPct = (float)($phase['smooth_growth_pct'] ?? 0.0);
+            $smoothGrowthHigherCloseCount = (int)($phase['smooth_growth_higher_close_count'] ?? 0);
+            $smoothGrowthHigherLowCount = (int)($phase['smooth_growth_higher_low_count'] ?? 0);
+            $smoothGrowthSingleCandleDominancePct = $phase['smooth_growth_single_candle_dominance_pct'] ?? null;
+            $smoothGrowthScore = (float)($phase['smooth_growth_score'] ?? 0.0);
+
+            $recoveryStructureScore = $smoothGrowthScore;
+            $higherLowCount = $smoothGrowthHigherLowCount;
+            $higherCloseCount = $smoothGrowthHigherCloseCount;
+            $singleCandleDominancePct = $smoothGrowthSingleCandleDominancePct;
+            $multiStepRecovery = $smoothGrowthHigherLowCount > 0 && $smoothGrowthHigherCloseCount > 0;
+            $impulseSpeedPctPerMin = $smoothGrowthDurationMinutes > 0
+                ? round($smoothGrowthPct / max(1, $smoothGrowthDurationMinutes), 6)
+                : null;
+            $controlledSpeed = $impulseSpeedPctPerMin !== null
+                ? $impulseSpeedPctPerMin <= max(0.01, ((float)$config['smooth_growth_max_pct'] / max(1, (int)$config['smooth_growth_min_minutes'])))
+                : false;
+
+            if ($dumpDetected) {
+                $metrics['dump_pass'] = true;
+            }
+            if ($stabilizationPassed) {
+                $metrics['stabilization_pass'] = true;
+            }
+            if ($smoothGrowthPassed) {
+                $metrics['smooth_growth_pass'] = true;
             }
 
-            // --- 3b. Recovery structure / phase analysis ---
-            if (!$recoveryGrowthGate) {
-                $rejectReason = 'insufficient_recovery_growth';
-            } else {
-                $candlesAfterLow = array_values(array_filter(
-                    $allCandles,
-                    static fn(array $c): bool => (int)($c['ts'] ?? 0) >= (int)($recoveryLowTs ?? 0)
-                ));
-                $structResult = $this->computeRecoveryStructure(
-                    $candlesAfterLow,
-                    $recoveryGrowthPct,
-                    $recoveryDurationMin,
-                    $config
-                );
-                $recoveryPhase          = $structResult['recovery_phase'];
-                $recoveryStructureScore = (float)($structResult['recovery_structure_score'] ?? 0.0);
-                $multiStepRecovery      = (bool)($structResult['multi_step_recovery'] ?? false);
-                $higherLowCount         = (int)($structResult['higher_low_count'] ?? 0);
-                $higherCloseCount       = (int)($structResult['higher_close_count'] ?? 0);
-                $singleCandleDominancePct = $structResult['single_candle_dominance_pct'] ?? null;
-                $impulseSpeedPctPerMin  = $structResult['impulse_speed_pct_per_min'] ?? null;
-                $controlledSpeed        = (bool)($structResult['controlled_speed'] ?? false);
-                $lateSpikeDet           = (bool)($structResult['late_spike_detected'] ?? false);
-                if ($structResult['reject_reason'] !== null) {
-                    $rejectReason = $structResult['reject_reason'];
-                }
-            }
-            // Fallback speed for diagnostics when structure was not computed
-            if ($impulseSpeedPctPerMin === null && $recoveryDurationMin > 0) {
-                $impulseSpeedPctPerMin = round($recoveryGrowthPct / max(1, $recoveryDurationMin), 6);
-            }
+            $rejectReason = (string)($phase['reject_reason'] ?? '') ?: null;
+            $entryTiming = (string)($phase['entry_timing'] ?? 'failed');
         }
 
         // --- 4. Open interest growth over recovery window ---
@@ -1099,8 +1160,12 @@ final class EarlyImpulseGrowthLongService
         $oiPass = false;
 
         if ((bool)$config['open_interest_enabled']) {
-            $oiFromTs = $recoveryLowTs ?? ($now - ($recoveryWindowMin * 60));
-            $oiSeries = $this->buildOpenInterestSeriesFromTs($allRows, $oiFromTs, $now);
+            $oiFromTs = (int)($stabilizationStartTs ?? $dumpLowTs ?? ($now - ($dumpLookbackMin * 60)));
+            $oiToTs = (int)($smoothGrowthEndTs ?? $latestTs ?? $now);
+            if ($oiToTs <= $oiFromTs) {
+                $oiToTs = $now;
+            }
+            $oiSeries = $this->buildOpenInterestSeriesFromTs($allRows, $oiFromTs, $oiToTs);
 
             if (count($oiSeries) >= 2) {
                 $oiStart = (float)$oiSeries[0]['oi'];
@@ -1121,12 +1186,12 @@ final class EarlyImpulseGrowthLongService
                 $metrics['oi_pass'] = true;
             }
 
-            if ($rejectReason === null && !$oiPass) {
+            if (!$oiPass) {
                 if ($oiGrowthPct === null) {
                     if ((bool)$config['allow_missing_open_interest']) {
                         $metrics['oi_missing_allowed'] = true;
                     } else {
-                        $rejectReason = 'open_interest_missing';
+                        $rejectReason = 'open_interest_growth_too_low';
                         $metrics['oi_missing_blocked'] = true;
                     }
                 } else {
@@ -1140,26 +1205,14 @@ final class EarlyImpulseGrowthLongService
 
         // OI growth confirmed flag (true=passed, false=failed, null=missing data)
         $oiGrowthConfirmed = $oiPass ? true : ($oiGrowthPct === null ? null : false);
-
-        // Combined recovery score (diagnostic)
-        $combinedRecoveryScore = round(
-            (($recoveryScore ?: 0.0) + (($oiScore ?? $recoveryScore) ?: 0.0)) / 2,
-            4
-        );
-
-        $recoveryGrowthPass = $recoveryGrowthGate;
-        if ($recoveryGrowthPass) {
-            $metrics['recovery_growth_pass'] = true;
-        } elseif ($rejectReason === null) {
-            $rejectReason = 'insufficient_recovery_growth';
-        }
+        $combinedRecoveryScore = round((($smoothGrowthScore ?: 0.0) + (($oiScore ?? $smoothGrowthScore) ?: 0.0)) / 2, 4);
 
         // --- 5. Current acceleration diagnostic (not a reject condition) ---
         $accelPriceChangePct = null;
         $accelOiGrowthPct = null;
         $accelScore = null;
 
-        $accelWindowStart = $now - ($accelWindowMin * 60);
+        $accelWindowStart = $now - ($currentAccelWindowMin * 60);
         $accelCandles = array_values(array_filter(
             $allCandles,
             static fn(array $c): bool => (int)($c['ts'] ?? 0) >= $accelWindowStart
@@ -1196,7 +1249,7 @@ final class EarlyImpulseGrowthLongService
         $fastSpikeDetected = false;
         $fastSpikeReason = null;
 
-        $fastSpikeWindowStart = $now - ($fastSpikeWindowMin * 60);
+        $fastSpikeWindowStart = $now - (10 * 60);
         $fastSpikeCandles = array_values(array_filter(
             $allCandles,
             static fn(array $c): bool => (int)($c['ts'] ?? 0) >= $fastSpikeWindowStart
@@ -1205,28 +1258,61 @@ final class EarlyImpulseGrowthLongService
             $fastSpikePriceStart = (float)($fastSpikeCandles[0]['close'] ?? 0.0);
             if ($fastSpikePriceStart > 0.0 && $latestPrice > 0.0) {
                 $priceChangePct10m = round((($latestPrice - $fastSpikePriceStart) / $fastSpikePriceStart) * 100.0, 6);
-                $roiEquivalent10m = round($priceChangePct10m * $fastSpikeRoiEquivalentLeverage, 6);
-                if ($fastSpikeDiagnosticEnabled
-                    && ($priceChangePct10m >= $fastSpikePriceChangeThreshold || $roiEquivalent10m >= $fastSpikeRoiEquivalentThreshold)
-                ) {
+                $roiEquivalent10m = round($priceChangePct10m * $lateSpikeRoiLev, 6);
+                if ($priceChangePct10m >= $lateSpikePrice10mPct || $roiEquivalent10m >= $lateSpikeRoiThreshold) {
                     $fastSpikeDetected = true;
-                    $fastSpikeReason = 'fast_impulse_already_gave_roi';
-                    $metrics['fast_spike_detected'] = true;
+                    $fastSpikeReason = 'late_spike_detected';
+                    $metrics['late_spike_detected'] = true;
                 }
             }
         }
+        if ($dumpLowPrice !== null && $dumpLowPrice > 0.0 && $latestPrice > 0.0) {
+            $fullRecoveryGrowthPct = (($latestPrice - $dumpLowPrice) / $dumpLowPrice) * 100.0;
+            if ($fullRecoveryGrowthPct >= $extendedRecoveryGrowthPct) {
+                $extendedDetected = true;
+            }
+        }
+        if ($fastSpikeDetected) {
+            $lateSpikeDet = true;
+        }
 
-        // --- 6. Raw pass condition ---
-        $rawPassed = $rejectReason === null
-            && $priorDeclineDetected
-            && $recoveryGrowthPass
-            && ($oiPass || $metrics['oi_missing_allowed']);
+        // --- 6. Final phase and entry timing ---
+        if ($rejectReason !== null) {
+            $recoveryPhase = 'failed';
+            $entryTiming = 'failed';
+        } elseif ($lateSpikeDet) {
+            $recoveryPhase = 'late_spike';
+            $entryTiming = 'late_spike';
+            $rejectReason = 'late_spike_detected';
+        } elseif ($extendedDetected) {
+            $recoveryPhase = 'extended';
+            $entryTiming = 'extended';
+            $rejectReason = 'extended_recovery_late';
+        } elseif ($dumpDetected && $stabilizationPassed && $smoothGrowthPassed && ($oiPass || $metrics['oi_missing_allowed'])) {
+            $recoveryPhase = 'early_entry';
+            $entryTiming = 'early';
+            $earlyEntryTriggered = true;
+            $earlyEntryReason = 'dump_stabilization_smooth_growth';
+        } elseif ($dumpDetected && $stabilizationPassed && $smoothGrowthPassed) {
+            $recoveryPhase = 'confirmed_later';
+            $entryTiming = 'confirmed_later';
+            $rejectReason = 'open_interest_growth_too_low';
+        } elseif ($dumpDetected && $stabilizationDetected) {
+            $recoveryPhase = 'stabilizing';
+            $entryTiming = 'stabilizing';
+            $rejectReason = 'smooth_growth_missing';
+        } elseif ($dumpDetected) {
+            $recoveryPhase = 'dump_only';
+            $entryTiming = 'dump_only';
+            $rejectReason = 'stabilization_missing';
+        } else {
+            $recoveryPhase = 'failed';
+            $entryTiming = 'failed';
+            $rejectReason = 'no_prior_dump';
+        }
 
-        $nearPass = !$rawPassed
-            && $priorDeclineDetected
-            && $recoveryGrowthPct >= (float)$config['min_recovery_growth_pct']
-            && ($oiPass || $metrics['oi_missing_allowed'])
-            && ($recoveryStructureScore >= 0.35 || $combinedRecoveryScore >= 0.45);
+        $rawPassed = $recoveryPhase === 'early_entry';
+        $nearPass = in_array($entryTiming, ['dump_only', 'stabilizing', 'confirmed_later', 'late_spike', 'extended'], true);
 
         $signalId = strtolower($symbol)
             . '_' . self::SIDE
@@ -1242,21 +1328,48 @@ final class EarlyImpulseGrowthLongService
             'detected_at' => $detectedAt,
             'entry_price' => $latestPrice,
 
-            'recovery_window_minutes' => $recoveryWindowMin,
-            'prior_decline_lookback_minutes' => $priorDeclineLookbackMin,
+            'recovery_window_minutes' => (int)$config['recovery_window_minutes'],
+            'prior_decline_lookback_minutes' => (int)$config['prior_decline_lookback_minutes'],
 
-            'prior_decline_detected' => $priorDeclineDetected,
-            'prior_decline_pct' => $priorDeclinePct > 0.0 ? round($priorDeclinePct, 6) : null,
-            'prior_decline_high_price' => $priorDeclineHighPrice,
-            'prior_decline_high_ts' => $priorDeclineHighTs,
-            'recovery_low_price' => $recoveryLowPrice,
-            'recovery_low_ts' => $recoveryLowTs !== null && $recoveryLowTs > 0 ? gmdate('c', $recoveryLowTs) : null,
-            'recovery_started_after_decline' => $recoveryStartedAfterDecline,
+            'dump_detected' => $dumpDetected,
+            'dump_pct' => $dumpDetected ? round($dumpPct, 6) : null,
+            'dump_start_price' => $dumpStartPrice,
+            'dump_start_ts' => $dumpStartTs !== null ? gmdate('c', (int)$dumpStartTs) : null,
+            'dump_low_price' => $dumpLowPrice,
+            'dump_low_ts' => $dumpLowTs !== null ? gmdate('c', (int)$dumpLowTs) : null,
+            'dump_age_minutes' => $dumpAgeMinutes,
 
-            'recovery_growth_pct' => round($recoveryGrowthPct, 6),
-            'recovery_duration_minutes' => $recoveryDurationMin,
-            'recovery_min_duration_minutes' => $recoveryMinDurationMin,
-            'recovery_score' => round($recoveryScore, 6),
+            'stabilization_detected' => $stabilizationDetected,
+            'stabilization_start_ts' => $stabilizationStartTs !== null ? gmdate('c', (int)$stabilizationStartTs) : null,
+            'stabilization_end_ts' => $stabilizationEndTs !== null ? gmdate('c', (int)$stabilizationEndTs) : null,
+            'stabilization_duration_minutes' => $stabilizationDurationMinutes,
+            'stabilization_range_pct' => $stabilizationRangePct,
+            'stabilization_price_change_pct' => $stabilizationPriceChangePct,
+            'stabilization_new_low_break_pct' => $stabilizationNewLowBreakPct,
+            'stabilization_score' => round($stabilizationScore, 4),
+
+            'smooth_growth_detected' => $smoothGrowthDetected,
+            'smooth_growth_start_ts' => $smoothGrowthStartTs !== null ? gmdate('c', (int)$smoothGrowthStartTs) : null,
+            'smooth_growth_end_ts' => $smoothGrowthEndTs !== null ? gmdate('c', (int)$smoothGrowthEndTs) : null,
+            'smooth_growth_duration_minutes' => $smoothGrowthDurationMinutes,
+            'smooth_growth_pct' => round($smoothGrowthPct, 6),
+            'smooth_growth_higher_close_count' => $smoothGrowthHigherCloseCount,
+            'smooth_growth_higher_low_count' => $smoothGrowthHigherLowCount,
+            'smooth_growth_single_candle_dominance_pct' => $smoothGrowthSingleCandleDominancePct,
+            'smooth_growth_score' => round($smoothGrowthScore, 4),
+
+            'prior_decline_detected' => $dumpDetected,
+            'prior_decline_pct' => $dumpDetected ? round($dumpPct, 6) : null,
+            'prior_decline_high_price' => $dumpStartPrice,
+            'prior_decline_high_ts' => $dumpStartTs !== null ? gmdate('c', (int)$dumpStartTs) : null,
+            'recovery_low_price' => $dumpLowPrice,
+            'recovery_low_ts' => $dumpLowTs !== null ? gmdate('c', (int)$dumpLowTs) : null,
+            'recovery_started_after_decline' => $dumpDetected,
+
+            'recovery_growth_pct' => round($smoothGrowthPct, 6),
+            'recovery_duration_minutes' => $smoothGrowthDurationMinutes,
+            'recovery_min_duration_minutes' => (int)$config['recovery_min_duration_minutes'],
+            'recovery_score' => round($smoothGrowthScore, 6),
             'recovery_phase' => $recoveryPhase,
             'recovery_structure_score' => round($recoveryStructureScore, 4),
             'multi_step_recovery' => $multiStepRecovery,
@@ -1265,24 +1378,29 @@ final class EarlyImpulseGrowthLongService
             'single_candle_dominance_pct' => $singleCandleDominancePct,
             'controlled_speed' => $controlledSpeed,
             'late_spike_detected' => $lateSpikeDet,
-            'recovery_passed' => $recoveryGrowthPass,
+            'extended_detected' => $extendedDetected,
+            'entry_timing' => $entryTiming,
+            'early_entry_triggered' => $earlyEntryTriggered,
+            'early_entry_reason' => $earlyEntryReason,
+            'recovery_passed' => $smoothGrowthPassed,
 
             'open_interest_start' => $oiStart,
             'open_interest_end' => $oiEnd,
             'open_interest_growth_pct' => $oiGrowthPct !== null ? round($oiGrowthPct, 6) : null,
             'open_interest_growth_score' => $oiScore !== null ? round($oiScore, 6) : null,
             'oi_growth_confirmed' => $oiGrowthConfirmed,
+            'open_interest_missing_diagnostic' => $metrics['oi_missing_allowed'],
 
-            'current_acceleration_window_minutes' => $accelWindowMin,
+            'current_acceleration_window_minutes' => $currentAccelWindowMin,
             'current_price_change_pct_10m' => $priceChangePct10m,
             'current_oi_growth_pct_10m' => $accelOiGrowthPct,
             'current_acceleration_score' => $accelScore,
             'impulse_speed_pct_per_min' => $impulseSpeedPctPerMin,
             'roi_equivalent_10m' => $roiEquivalent10m,
-            'fast_spike_detected' => $fastSpikeDetected,
+            'fast_spike_detected' => $lateSpikeDet,
             'fast_spike_reason' => $fastSpikeReason,
-            'fast_spike_window_minutes' => $fastSpikeWindowMin,
-            'fast_spike_diagnostic_enabled' => $fastSpikeDiagnosticEnabled,
+            'fast_spike_window_minutes' => 10,
+            'fast_spike_diagnostic_enabled' => true,
 
             'combined_recovery_score' => $combinedRecoveryScore,
             'raw_strategy_passed' => $rawPassed,
@@ -1302,6 +1420,7 @@ final class EarlyImpulseGrowthLongService
             'executable' => false,
             'diagnostic_handoff_ready' => false,
             'active_final' => false,
+            'handoff_block_reason' => null,
         ];
 
         $filterEval = [
@@ -1345,29 +1464,49 @@ final class EarlyImpulseGrowthLongService
             && (bool)$config['handoff_enabled']
             && (bool)$config['emit_bot_handoff'];
 
+        $handoffBlockReason = null;
+        if (!$canBeActive) {
+            if ($entryTiming === 'late_spike') {
+                $handoffBlockReason = 'late_spike_detected';
+            } elseif ($entryTiming === 'extended') {
+                $handoffBlockReason = 'extended_recovery_late';
+            } elseif ($entryTiming === 'stabilizing' || $entryTiming === 'dump_only') {
+                $handoffBlockReason = $entryTiming === 'dump_only' ? 'stabilization_not_ready' : 'smooth_growth_not_ready';
+            } elseif ($entryTiming === 'confirmed_later') {
+                $handoffBlockReason = 'not_early_entry_phase';
+            } else {
+                $handoffBlockReason = (string)($candidate['raw_reject_reason'] ?? 'not_early_entry_phase');
+            }
+        } elseif (!(bool)$config['handoff_enabled']) {
+            $handoffBlockReason = 'handoff_disabled';
+        } elseif (!(bool)$config['emit_bot_handoff']) {
+            $handoffBlockReason = 'emit_bot_handoff_disabled';
+        }
+
         $candidate['active_final'] = $canBeActive;
         $candidate['handoff_ready'] = $canHandoff;
         $candidate['executable'] = $canHandoff;
         $candidate['diagnostic_handoff_ready'] = $canBeActive;
+        $candidate['handoff_block_reason'] = $handoffBlockReason;
 
         $signal = null;
         if ($canBeActive) {
             $handoffMode = $this->resolveHandoffMode($config);
             $enabledFilters = $this->computeEnabledFilters($config);
             $strategySignalContext = [
-                'recovery_window_minutes' => $candidate['recovery_window_minutes'] ?? null,
-                'prior_decline_pct' => $candidate['prior_decline_pct'] ?? null,
-                'recovery_growth_pct' => $candidate['recovery_growth_pct'] ?? null,
-                'recovery_duration_minutes' => $candidate['recovery_duration_minutes'] ?? null,
-                'recovery_score' => $candidate['recovery_score'] ?? null,
+                'dump_pct' => $candidate['dump_pct'] ?? null,
+                'stabilization_duration_minutes' => $candidate['stabilization_duration_minutes'] ?? null,
+                'stabilization_range_pct' => $candidate['stabilization_range_pct'] ?? null,
+                'smooth_growth_pct' => $candidate['smooth_growth_pct'] ?? null,
+                'smooth_growth_duration_minutes' => $candidate['smooth_growth_duration_minutes'] ?? null,
+                'smooth_growth_higher_close_count' => $candidate['smooth_growth_higher_close_count'] ?? null,
+                'smooth_growth_higher_low_count' => $candidate['smooth_growth_higher_low_count'] ?? null,
+                'smooth_growth_single_candle_dominance_pct' => $candidate['smooth_growth_single_candle_dominance_pct'] ?? null,
                 'open_interest_growth_pct' => $candidate['open_interest_growth_pct'] ?? null,
-                'open_interest_growth_score' => $candidate['open_interest_growth_score'] ?? null,
-                'combined_recovery_score' => $candidate['combined_recovery_score'] ?? null,
-                'current_price_change_pct_10m' => $candidate['current_price_change_pct_10m'] ?? null,
-                'impulse_speed_pct_per_min' => $candidate['impulse_speed_pct_per_min'] ?? null,
-                'roi_equivalent_10m' => $candidate['roi_equivalent_10m'] ?? null,
-                'fast_spike_detected' => (bool)($candidate['fast_spike_detected'] ?? false),
-                'fast_spike_reason' => $candidate['fast_spike_reason'] ?? null,
+                'recovery_phase' => $candidate['recovery_phase'] ?? null,
+                'entry_timing' => $candidate['entry_timing'] ?? null,
+                'early_entry_triggered' => (bool)($candidate['early_entry_triggered'] ?? false),
+                'handoff_block_reason' => $candidate['handoff_block_reason'] ?? null,
                 'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],
                 'filter_engine_enabled_filters_total' => count($enabledFilters),
                 'filter_results' => $candidate['filter_results'] ?? [],
@@ -1385,8 +1524,8 @@ final class EarlyImpulseGrowthLongService
                 'refreshed_at' => $detectedAt,
                 'mode' => $handoffMode,
                 'entry_mode' => 'limit',
-                'entry_type' => 'flow_recovery',
-                'timeframe' => 'recovery_window',
+                'entry_type' => 'early_impulse_growth',
+                'timeframe' => 'phase_based',
                 'signal_source_mode' => 'direct_strategy_handoff',
                 'strategy_signal_key' => self::STRATEGY_ID . '|' . strtolower($symbol) . '|' . self::SIDE,
                 'strategy_signal_context' => $strategySignalContext,
@@ -1440,6 +1579,285 @@ final class EarlyImpulseGrowthLongService
             'source' => $source,
             'error' => $error,
         ];
+    }
+
+    /**
+     * @param list<array<string,mixed>> $candles
+     * @return array<string,mixed>
+     */
+    private function computePhaseFlow(array $candles, int $now, array $config, float $latestPrice): array
+    {
+        $dumpLookbackMinutes = max(30, (int)($config['dump_lookback_minutes'] ?? 120));
+        $minDumpPct = max(0.1, (float)($config['min_dump_pct'] ?? 2.0));
+        $maxDumpAgeMinutes = max(1, (int)($config['max_dump_age_minutes'] ?? 240));
+        $stabilizationMinMinutes = max(1, (int)($config['stabilization_min_minutes'] ?? 10));
+        $stabilizationMaxMinutes = max($stabilizationMinMinutes, (int)($config['stabilization_max_minutes'] ?? 45));
+        $stabilizationMaxRangePct = max(0.1, (float)($config['stabilization_max_range_pct'] ?? 1.5));
+        $stabilizationAllowSlightGrowthPct = max(0.0, (float)($config['stabilization_allow_slight_growth_pct'] ?? 1.0));
+        $stabilizationMaxNewLowBreakPct = max(0.0, (float)($config['stabilization_max_new_low_break_pct'] ?? 0.3));
+        $smoothGrowthWindowMinutes = max(3, (int)($config['smooth_growth_window_minutes'] ?? 10));
+        $smoothGrowthMinMinutes = max(1, (int)($config['smooth_growth_min_minutes'] ?? 5));
+        $smoothGrowthMinPct = (float)($config['smooth_growth_min_pct'] ?? 0.5);
+        $smoothGrowthMaxPct = max($smoothGrowthMinPct, (float)($config['smooth_growth_max_pct'] ?? 2.5));
+        $smoothGrowthMinHigherCloseCount = max(1, (int)($config['smooth_growth_min_higher_close_count'] ?? 2));
+        $smoothGrowthMinHigherLowCount = max(1, (int)($config['smooth_growth_min_higher_low_count'] ?? 1));
+        $smoothGrowthMaxSingleCandleDominancePct = max(10.0, min(100.0, (float)($config['smooth_growth_max_single_candle_dominance_pct'] ?? 65.0)));
+
+        $out = [
+            'dump_detected' => false,
+            'dump_pct' => 0.0,
+            'dump_start_price' => null,
+            'dump_start_ts' => null,
+            'dump_low_price' => null,
+            'dump_low_ts' => null,
+            'dump_age_minutes' => null,
+            'stabilization_detected' => false,
+            'stabilization_passed' => false,
+            'stabilization_start_ts' => null,
+            'stabilization_end_ts' => null,
+            'stabilization_duration_minutes' => 0,
+            'stabilization_range_pct' => null,
+            'stabilization_price_change_pct' => null,
+            'stabilization_new_low_break_pct' => null,
+            'stabilization_score' => 0.0,
+            'smooth_growth_detected' => false,
+            'smooth_growth_passed' => false,
+            'smooth_growth_start_ts' => null,
+            'smooth_growth_end_ts' => null,
+            'smooth_growth_duration_minutes' => 0,
+            'smooth_growth_pct' => 0.0,
+            'smooth_growth_higher_close_count' => 0,
+            'smooth_growth_higher_low_count' => 0,
+            'smooth_growth_single_candle_dominance_pct' => null,
+            'smooth_growth_score' => 0.0,
+            'entry_timing' => 'failed',
+            'reject_reason' => 'insufficient_data',
+        ];
+
+        if (count($candles) < 8) {
+            return $out;
+        }
+
+        $lookbackStartTs = $now - ($dumpLookbackMinutes * 60);
+        $lookbackCandles = array_values(array_filter(
+            $candles,
+            static fn(array $c): bool => (int)($c['ts'] ?? 0) >= $lookbackStartTs
+        ));
+        if (count($lookbackCandles) < 6) {
+            return $out;
+        }
+
+        $bestDumpPct = 0.0;
+        $bestStart = null;
+        $bestLow = null;
+        $n = count($lookbackCandles);
+        for ($i = 0; $i < $n - 1; $i++) {
+            $startClose = (float)($lookbackCandles[$i]['close'] ?? 0.0);
+            if ($startClose <= 0.0) {
+                continue;
+            }
+            $minClose = $startClose;
+            $minIndex = $i;
+            for ($j = $i + 1; $j < $n; $j++) {
+                $c = (float)($lookbackCandles[$j]['close'] ?? 0.0);
+                if ($c > 0.0 && $c < $minClose) {
+                    $minClose = $c;
+                    $minIndex = $j;
+                }
+            }
+            if ($minClose <= 0.0 || $minClose >= $startClose) {
+                continue;
+            }
+            $dumpPct = (($startClose - $minClose) / $startClose) * 100.0;
+            if ($dumpPct > $bestDumpPct) {
+                $bestDumpPct = $dumpPct;
+                $bestStart = $lookbackCandles[$i];
+                $bestLow = $lookbackCandles[$minIndex];
+            }
+        }
+
+        if ($bestStart === null || $bestLow === null || $bestDumpPct < $minDumpPct) {
+            $out['reject_reason'] = 'no_prior_dump';
+            return $out;
+        }
+
+        $dumpLowTs = (int)($bestLow['ts'] ?? 0);
+        $dumpAgeMinutes = (int)round(($now - $dumpLowTs) / 60);
+        if ($dumpLowTs <= 0 || $dumpAgeMinutes > $maxDumpAgeMinutes) {
+            $out['reject_reason'] = 'no_prior_dump';
+            return $out;
+        }
+
+        $dumpStartPrice = (float)($bestStart['close'] ?? 0.0);
+        $dumpLowPrice = (float)($bestLow['close'] ?? 0.0);
+        $out['dump_detected'] = true;
+        $out['dump_pct'] = round($bestDumpPct, 6);
+        $out['dump_start_price'] = $dumpStartPrice > 0 ? $dumpStartPrice : null;
+        $out['dump_start_ts'] = (int)($bestStart['ts'] ?? 0);
+        $out['dump_low_price'] = $dumpLowPrice > 0 ? $dumpLowPrice : null;
+        $out['dump_low_ts'] = $dumpLowTs;
+        $out['dump_age_minutes'] = $dumpAgeMinutes;
+        $out['entry_timing'] = 'dump_only';
+
+        $stabilizationEndLimitTs = $dumpLowTs + ($stabilizationMaxMinutes * 60);
+        $stabilizationCandles = array_values(array_filter(
+            $candles,
+            static fn(array $c): bool => (int)($c['ts'] ?? 0) >= $dumpLowTs && (int)($c['ts'] ?? 0) <= $stabilizationEndLimitTs
+        ));
+        if (count($stabilizationCandles) < 2) {
+            $out['reject_reason'] = 'stabilization_missing';
+            return $out;
+        }
+        $out['stabilization_detected'] = true;
+        $out['stabilization_start_ts'] = (int)($stabilizationCandles[0]['ts'] ?? 0);
+
+        $stableRequiredTs = $dumpLowTs + ($stabilizationMinMinutes * 60);
+        $stabilizationCore = array_values(array_filter(
+            $stabilizationCandles,
+            static fn(array $c): bool => (int)($c['ts'] ?? 0) <= $stableRequiredTs
+        ));
+        if (count($stabilizationCore) < 2) {
+            $out['reject_reason'] = 'stabilization_too_short';
+            return $out;
+        }
+        $stStartClose = (float)($stabilizationCore[0]['close'] ?? 0.0);
+        $stEndClose = (float)($stabilizationCore[count($stabilizationCore) - 1]['close'] ?? 0.0);
+        $stMin = PHP_FLOAT_MAX;
+        $stMax = 0.0;
+        foreach ($stabilizationCore as $c) {
+            $low = (float)($c['low'] ?? $c['close'] ?? 0.0);
+            $high = (float)($c['high'] ?? $c['close'] ?? 0.0);
+            if ($low > 0.0) {
+                $stMin = min($stMin, $low);
+            }
+            if ($high > 0.0) {
+                $stMax = max($stMax, $high);
+            }
+        }
+        if ($stStartClose <= 0.0 || $dumpLowPrice <= 0.0 || $stMin === PHP_FLOAT_MAX || $stMax <= 0.0) {
+            $out['reject_reason'] = 'stabilization_missing';
+            return $out;
+        }
+        $stRangePct = (($stMax - $stMin) / max($dumpLowPrice, 0.0000001)) * 100.0;
+        $stPriceChangePct = (($stEndClose - $stStartClose) / $stStartClose) * 100.0;
+        $newLowBreakPct = max(0.0, (($dumpLowPrice - $stMin) / $dumpLowPrice) * 100.0);
+        $stDurationMinutes = max(0, (int)round((((int)($stabilizationCore[count($stabilizationCore) - 1]['ts'] ?? 0)) - $dumpLowTs) / 60));
+
+        $out['stabilization_end_ts'] = (int)($stabilizationCore[count($stabilizationCore) - 1]['ts'] ?? 0);
+        $out['stabilization_duration_minutes'] = $stDurationMinutes;
+        $out['stabilization_range_pct'] = round($stRangePct, 6);
+        $out['stabilization_price_change_pct'] = round($stPriceChangePct, 6);
+        $out['stabilization_new_low_break_pct'] = round($newLowBreakPct, 6);
+
+        if ($stDurationMinutes < $stabilizationMinMinutes) {
+            $out['reject_reason'] = 'stabilization_too_short';
+            return $out;
+        }
+        if ($stRangePct > $stabilizationMaxRangePct) {
+            $out['reject_reason'] = 'stabilization_range_too_wide';
+            return $out;
+        }
+        if ($newLowBreakPct > $stabilizationMaxNewLowBreakPct) {
+            $out['reject_reason'] = 'stabilization_new_low_broken';
+            return $out;
+        }
+        if ($stPriceChangePct > $stabilizationAllowSlightGrowthPct) {
+            $out['reject_reason'] = 'stabilization_range_too_wide';
+            return $out;
+        }
+
+        $out['stabilization_passed'] = true;
+        $out['stabilization_score'] = round(
+            (min(1.0, max(0.0, 1.0 - ($stRangePct / max(0.000001, $stabilizationMaxRangePct))))
+            + min(1.0, max(0.0, 1.0 - ($newLowBreakPct / max(0.000001, $stabilizationMaxNewLowBreakPct))))
+            + min(1.0, max(0.0, 1.0 - (abs($stPriceChangePct) / max(0.000001, $stabilizationAllowSlightGrowthPct + 0.000001)))))
+            / 3.0,
+            4
+        );
+        $out['entry_timing'] = 'stabilizing';
+
+        $smoothStartTs = (int)$out['stabilization_end_ts'];
+        $smoothEndLimitTs = $smoothStartTs + ($smoothGrowthWindowMinutes * 60);
+        $smoothCandles = array_values(array_filter(
+            $candles,
+            static fn(array $c): bool => (int)($c['ts'] ?? 0) >= $smoothStartTs && (int)($c['ts'] ?? 0) <= $smoothEndLimitTs
+        ));
+        if (count($smoothCandles) < 2) {
+            $out['reject_reason'] = 'smooth_growth_missing';
+            return $out;
+        }
+        $out['smooth_growth_detected'] = true;
+        $out['smooth_growth_start_ts'] = (int)($smoothCandles[0]['ts'] ?? 0);
+        $out['smooth_growth_end_ts'] = (int)($smoothCandles[count($smoothCandles) - 1]['ts'] ?? 0);
+        $smoothDuration = max(0, (int)round(($out['smooth_growth_end_ts'] - $out['smooth_growth_start_ts']) / 60));
+        $out['smooth_growth_duration_minutes'] = $smoothDuration;
+        if ($smoothDuration < $smoothGrowthMinMinutes) {
+            $out['reject_reason'] = 'smooth_growth_missing';
+            return $out;
+        }
+
+        $smoothStartPrice = (float)($smoothCandles[0]['close'] ?? 0.0);
+        $smoothEndPrice = $latestPrice > 0.0 ? $latestPrice : (float)($smoothCandles[count($smoothCandles) - 1]['close'] ?? 0.0);
+        if ($smoothStartPrice <= 0.0 || $smoothEndPrice <= 0.0) {
+            $out['reject_reason'] = 'smooth_growth_missing';
+            return $out;
+        }
+        $smoothGrowthPct = (($smoothEndPrice - $smoothStartPrice) / $smoothStartPrice) * 100.0;
+        $out['smooth_growth_pct'] = round($smoothGrowthPct, 6);
+        if ($smoothGrowthPct < $smoothGrowthMinPct) {
+            $out['reject_reason'] = 'smooth_growth_too_weak';
+            return $out;
+        }
+        if ($smoothGrowthPct > $smoothGrowthMaxPct) {
+            $out['reject_reason'] = 'smooth_growth_too_fast';
+            return $out;
+        }
+
+        $higherCloseCount = 0;
+        $higherLowCount = 0;
+        $maxGain = 0.0;
+        for ($i = 1; $i < count($smoothCandles); $i++) {
+            $prevClose = (float)($smoothCandles[$i - 1]['close'] ?? 0.0);
+            $currClose = (float)($smoothCandles[$i]['close'] ?? 0.0);
+            $prevLow = (float)($smoothCandles[$i - 1]['low'] ?? $prevClose);
+            $currLow = (float)($smoothCandles[$i]['low'] ?? $currClose);
+            if ($currClose > $prevClose && $prevClose > 0.0) {
+                $higherCloseCount++;
+            }
+            if ($currLow > $prevLow && $prevLow > 0.0) {
+                $higherLowCount++;
+            }
+            $maxGain = max($maxGain, $currClose - $prevClose);
+        }
+        $out['smooth_growth_higher_close_count'] = $higherCloseCount;
+        $out['smooth_growth_higher_low_count'] = $higherLowCount;
+        if ($higherCloseCount < $smoothGrowthMinHigherCloseCount || $higherLowCount < $smoothGrowthMinHigherLowCount) {
+            $out['reject_reason'] = 'smooth_growth_structure_too_weak';
+            return $out;
+        }
+
+        $totalGain = max(0.0, $smoothEndPrice - $smoothStartPrice);
+        $dominancePct = $totalGain > 0.0 ? ($maxGain / $totalGain) * 100.0 : 100.0;
+        $out['smooth_growth_single_candle_dominance_pct'] = round($dominancePct, 4);
+        if ($dominancePct > $smoothGrowthMaxSingleCandleDominancePct) {
+            $out['reject_reason'] = 'smooth_growth_single_candle_dominance';
+            return $out;
+        }
+
+        $out['smooth_growth_passed'] = true;
+        $out['smooth_growth_score'] = round(
+            (
+                min(1.0, $smoothGrowthPct / max(0.000001, $smoothGrowthMaxPct))
+                + min(1.0, $higherCloseCount / max(1, $smoothGrowthMinHigherCloseCount))
+                + min(1.0, $higherLowCount / max(1, $smoothGrowthMinHigherLowCount))
+                + max(0.0, 1.0 - ($dominancePct / 100.0))
+            ) / 4.0,
+            4
+        );
+        $out['entry_timing'] = 'confirmed_later';
+        $out['reject_reason'] = null;
+
+        return $out;
     }
 
     /**
@@ -2014,6 +2432,7 @@ final class EarlyImpulseGrowthLongService
                 (int)($cfg['recovery_min_duration_minutes'] ?? $cfg['recovery_min_window_minutes'] ?? 120)
             )
         );
+        $cfg['recovery_duration_rule_mode'] = 'phase_based';
 
         // Prior decline
         $cfg['prior_decline_lookback_minutes'] = max(60, min(720, (int)($cfg['prior_decline_lookback_minutes'] ?? 240)));
@@ -2027,6 +2446,26 @@ final class EarlyImpulseGrowthLongService
         $cfg['max_recovery_growth_pct'] = max((float)$cfg['min_recovery_growth_pct'], (float)($cfg['max_recovery_growth_pct'] ?? 30.0));
         $recoveryScoreMode = (string)($cfg['recovery_score_mode'] ?? 'threshold');
         $cfg['recovery_score_mode'] = in_array($recoveryScoreMode, ['threshold', 'range'], true) ? $recoveryScoreMode : 'threshold';
+
+        // Phase-based dump / stabilization / smooth growth
+        $cfg['dump_lookback_minutes'] = max(30, min(720, (int)($cfg['dump_lookback_minutes'] ?? 120)));
+        $cfg['min_dump_pct'] = max(0.1, min(80.0, (float)($cfg['min_dump_pct'] ?? 2.0)));
+        $cfg['max_dump_age_minutes'] = max(1, min(1440, (int)($cfg['max_dump_age_minutes'] ?? 240)));
+        $cfg['stabilization_min_minutes'] = max(1, min(240, (int)($cfg['stabilization_min_minutes'] ?? 10)));
+        $cfg['stabilization_max_minutes'] = max(
+            (int)$cfg['stabilization_min_minutes'],
+            min(480, (int)($cfg['stabilization_max_minutes'] ?? 45))
+        );
+        $cfg['stabilization_max_range_pct'] = max(0.1, min(20.0, (float)($cfg['stabilization_max_range_pct'] ?? 1.5)));
+        $cfg['stabilization_allow_slight_growth_pct'] = max(0.0, min(20.0, (float)($cfg['stabilization_allow_slight_growth_pct'] ?? 1.0)));
+        $cfg['stabilization_max_new_low_break_pct'] = max(0.0, min(20.0, (float)($cfg['stabilization_max_new_low_break_pct'] ?? 0.3)));
+        $cfg['smooth_growth_window_minutes'] = max(3, min(120, (int)($cfg['smooth_growth_window_minutes'] ?? 10)));
+        $cfg['smooth_growth_min_minutes'] = max(1, min((int)$cfg['smooth_growth_window_minutes'], (int)($cfg['smooth_growth_min_minutes'] ?? 5)));
+        $cfg['smooth_growth_min_pct'] = max(0.0, min(20.0, (float)($cfg['smooth_growth_min_pct'] ?? 0.5)));
+        $cfg['smooth_growth_max_pct'] = max((float)$cfg['smooth_growth_min_pct'], min(50.0, (float)($cfg['smooth_growth_max_pct'] ?? 2.5)));
+        $cfg['smooth_growth_min_higher_close_count'] = max(1, min(50, (int)($cfg['smooth_growth_min_higher_close_count'] ?? 2)));
+        $cfg['smooth_growth_min_higher_low_count'] = max(1, min(50, (int)($cfg['smooth_growth_min_higher_low_count'] ?? 1)));
+        $cfg['smooth_growth_max_single_candle_dominance_pct'] = max(10.0, min(100.0, (float)($cfg['smooth_growth_max_single_candle_dominance_pct'] ?? 65.0)));
 
         // Open interest
         $cfg['open_interest_enabled'] = (bool)($cfg['open_interest_enabled'] ?? true);
@@ -2052,6 +2491,12 @@ final class EarlyImpulseGrowthLongService
         $cfg['fast_spike_price_change_pct'] = max(0.0, min(100.0, (float)($cfg['fast_spike_price_change_pct'] ?? 2.0)));
         $cfg['fast_spike_roi_equivalent_leverage'] = max(1.0, min(200.0, (float)($cfg['fast_spike_roi_equivalent_leverage'] ?? 5.0)));
         $cfg['fast_spike_roi_equivalent_threshold'] = max(0.0, min(1000.0, (float)($cfg['fast_spike_roi_equivalent_threshold'] ?? 10.0)));
+        $cfg['late_spike_price_change_10m_pct'] = max(0.0, min(100.0, (float)($cfg['late_spike_price_change_10m_pct'] ?? 2.0)));
+        $cfg['late_spike_roi_equivalent_leverage'] = max(1.0, min(200.0, (float)($cfg['late_spike_roi_equivalent_leverage'] ?? 5.0)));
+        $cfg['late_spike_roi_equivalent_threshold'] = max(0.0, min(1000.0, (float)($cfg['late_spike_roi_equivalent_threshold'] ?? 10.0)));
+        $cfg['block_late_spike_handoff'] = (bool)($cfg['block_late_spike_handoff'] ?? true);
+        $cfg['extended_recovery_growth_pct'] = max(0.0, min(200.0, (float)($cfg['extended_recovery_growth_pct'] ?? 8.0)));
+        $cfg['block_extended_recovery_handoff'] = (bool)($cfg['block_extended_recovery_handoff'] ?? true);
 
         // FilterEngine
         $cfg['filter_engine_enabled'] = (bool)($cfg['filter_engine_enabled'] ?? true);
@@ -2176,15 +2621,19 @@ final class EarlyImpulseGrowthLongService
         $filterResults = is_array($signal['filter_results'] ?? null) ? (array)$signal['filter_results'] : [];
         $enabledFilters = $this->computeEnabledFilters($config);
         return [
-            'recovery_window_minutes' => $signal['recovery_window_minutes'] ?? null,
-            'prior_decline_pct' => $signal['prior_decline_pct'] ?? null,
-            'recovery_growth_pct' => $signal['recovery_growth_pct'] ?? null,
-            'recovery_duration_minutes' => $signal['recovery_duration_minutes'] ?? null,
-            'recovery_score' => $signal['recovery_score'] ?? null,
+            'dump_pct' => $signal['dump_pct'] ?? null,
+            'stabilization_duration_minutes' => $signal['stabilization_duration_minutes'] ?? null,
+            'stabilization_range_pct' => $signal['stabilization_range_pct'] ?? null,
+            'smooth_growth_pct' => $signal['smooth_growth_pct'] ?? null,
+            'smooth_growth_duration_minutes' => $signal['smooth_growth_duration_minutes'] ?? null,
+            'smooth_growth_higher_close_count' => $signal['smooth_growth_higher_close_count'] ?? null,
+            'smooth_growth_higher_low_count' => $signal['smooth_growth_higher_low_count'] ?? null,
+            'smooth_growth_single_candle_dominance_pct' => $signal['smooth_growth_single_candle_dominance_pct'] ?? null,
             'open_interest_growth_pct' => $signal['open_interest_growth_pct'] ?? null,
-            'open_interest_growth_score' => $signal['open_interest_growth_score'] ?? null,
-            'combined_recovery_score' => $signal['combined_recovery_score'] ?? null,
-            'current_price_change_pct_10m' => $signal['current_price_change_pct_10m'] ?? null,
+            'recovery_phase' => $signal['recovery_phase'] ?? null,
+            'entry_timing' => $signal['entry_timing'] ?? null,
+            'early_entry_triggered' => (bool)($signal['early_entry_triggered'] ?? false),
+            'handoff_block_reason' => $signal['handoff_block_reason'] ?? null,
             'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],
             'filter_engine_enabled_filters_total' => count($enabledFilters),
             'filter_results' => $filterResults,
@@ -2240,8 +2689,8 @@ final class EarlyImpulseGrowthLongService
             'mode' => $mode,
             'entry_price' => (float)($signal['entry_price'] ?? 0.0),
             'entry_mode' => $entryMode,
-            'entry_type' => 'flow_recovery',
-            'timeframe' => 'recovery_window',
+            'entry_type' => 'early_impulse_growth',
+            'timeframe' => 'phase_based',
             'signal_source_mode' => 'direct_strategy_handoff',
             'strategy_signal_context' => $strategySignalContext,
             'handoff_status' => $handoffStatus,
@@ -2301,15 +2750,18 @@ final class EarlyImpulseGrowthLongService
             $missing[] = 'strategy_signal_context';
         } else {
             $requiredCtxKeys = [
-                'recovery_window_minutes',
-                'prior_decline_pct',
-                'recovery_growth_pct',
-                'recovery_duration_minutes',
-                'recovery_score',
+                'dump_pct',
+                'stabilization_duration_minutes',
+                'stabilization_range_pct',
+                'smooth_growth_pct',
+                'smooth_growth_duration_minutes',
+                'smooth_growth_higher_close_count',
+                'smooth_growth_higher_low_count',
+                'smooth_growth_single_candle_dominance_pct',
                 'open_interest_growth_pct',
-                'open_interest_growth_score',
-                'combined_recovery_score',
-                'current_price_change_pct_10m',
+                'recovery_phase',
+                'entry_timing',
+                'early_entry_triggered',
                 'filter_engine_enabled',
                 'filter_engine_enabled_filters_total',
                 'filter_results',

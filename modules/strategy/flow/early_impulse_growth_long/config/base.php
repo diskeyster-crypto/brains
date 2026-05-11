@@ -17,17 +17,18 @@ return [
     'continuous_scan_enabled' => true,
     'auto_requeue_when_done' => true,
 
-    // Recovery window — primary signal window (2–4 hours)
+    // Legacy recovery window diagnostics (kept for compatibility)
     'recovery_window_minutes' => 180,
     'recovery_min_window_minutes' => 120,
     'recovery_max_window_minutes' => 240,
     'recovery_min_duration_minutes' => 120,
+    'recovery_duration_rule_mode' => 'phase_based',
 
-    // Prior decline detection
+    // Legacy prior decline diagnostics
     'prior_decline_lookback_minutes' => 240,
     'min_prior_decline_pct' => 2.0,
 
-    // Recovery growth thresholds
+    // Legacy recovery growth diagnostics
     'recovery_score_mode' => 'threshold',
     'min_recovery_growth_pct' => 3.0,
     'min_recovery_score' => 0.55,
@@ -35,7 +36,28 @@ return [
     'recovery_score_target_pct' => 8.0,
     'max_recovery_growth_pct' => 30.0,
 
-    // Open interest growth over recovery window
+    // Phase-based entry: dump detection
+    'dump_lookback_minutes' => 120,
+    'min_dump_pct' => 2.0,
+    'max_dump_age_minutes' => 240,
+
+    // Phase-based entry: stabilization
+    'stabilization_min_minutes' => 10,
+    'stabilization_max_minutes' => 45,
+    'stabilization_max_range_pct' => 1.5,
+    'stabilization_allow_slight_growth_pct' => 1.0,
+    'stabilization_max_new_low_break_pct' => 0.3,
+
+    // Phase-based entry: smooth growth
+    'smooth_growth_window_minutes' => 10,
+    'smooth_growth_min_minutes' => 5,
+    'smooth_growth_min_pct' => 0.5,
+    'smooth_growth_max_pct' => 2.5,
+    'smooth_growth_min_higher_close_count' => 2,
+    'smooth_growth_min_higher_low_count' => 1,
+    'smooth_growth_max_single_candle_dominance_pct' => 65.0,
+
+    // Open interest confirmation
     'open_interest_enabled' => true,
     'min_open_interest_growth_pct' => 1.0,
     'min_open_interest_growth_score' => 0.55,
@@ -43,14 +65,13 @@ return [
     'allow_missing_open_interest' => true,
     'missing_open_interest_mode' => 'diagnostic_only',
 
-    // Recovery structure / phase detection (shape-based, replaces fixed duration rule)
-    'recovery_structure_enabled' => true,
-    'recovery_min_candles_after_low' => 20,
-    'recovery_min_higher_lows' => 5,
-    'recovery_min_higher_closes' => 5,
-    'recovery_max_single_candle_dominance_pct' => 60.0,
-    'recovery_max_speed_pct_per_min' => 0.3,
-    'recovery_min_structure_score' => 0.55,
+    // Late / extended guard
+    'late_spike_price_change_10m_pct' => 2.0,
+    'late_spike_roi_equivalent_leverage' => 5.0,
+    'late_spike_roi_equivalent_threshold' => 10.0,
+    'block_late_spike_handoff' => true,
+    'extended_recovery_growth_pct' => 8.0,
+    'block_extended_recovery_handoff' => true,
 
     // Current acceleration (diagnostic only — not a reject condition)
     'current_acceleration_window_minutes' => 10,

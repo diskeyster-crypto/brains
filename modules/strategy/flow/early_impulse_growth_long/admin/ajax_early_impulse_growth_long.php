@@ -15,7 +15,7 @@ if (!Auth::check()) {
 
 $moduleDir = SystemPaths::instance()->get('strategy.early_impulse_growth_long');
 require_once $moduleDir . '/service.php';
-require_once dirname($moduleDir, 4) . '/filter_engine/filter_engine.php';
+require_once dirname($moduleDir, 4) . '/modules/filter_engine/filter_engine.php';
 
 use Modules\Strategy\EarlyImpulseGrowthLong\EarlyImpulseGrowthLongService;
 use Modules\FilterEngine\FilterEngine;

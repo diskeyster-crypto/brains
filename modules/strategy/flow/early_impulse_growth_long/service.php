@@ -22,6 +22,7 @@ final class EarlyImpulseGrowthLongService
     /** @var array<string,array<string,mixed>>|null */
     private ?array $cachedFilterProfiles = null;
     private mixed $coinContextService = null;
+    private mixed $orderbookContextService = null;
 
     public function __construct(?string $moduleDir = null)
     {
@@ -253,6 +254,19 @@ final class EarlyImpulseGrowthLongService
             'coin_context_trend_1h_counts' => [],
             'coin_context_quality_counts' => [],
             'coin_context_examples' => [],
+            'orderbook_context_checked_total' => 0,
+            'orderbook_context_available_total' => 0,
+            'orderbook_context_missing_total' => 0,
+            'orderbook_context_error_counts' => [],
+            'orderbook_ask_wall_detected_total' => 0,
+            'orderbook_ask_wall_high_risk_total' => 0,
+            'orderbook_bid_support_strong_total' => 0,
+            'orderbook_filter_checked_total' => 0,
+            'orderbook_filter_blocked_total' => 0,
+            'orderbook_filter_passed_total' => 0,
+            'orderbook_filter_missing_allowed_total' => 0,
+            'orderbook_filter_examples' => [],
+            'chaotic_context_quality_downgraded_total' => 0,
             'open_interest_missing_examples' => [],
             'reject_reason_counts' => [],
             'filter_engine_results_by_filter' => [],
@@ -365,6 +379,9 @@ final class EarlyImpulseGrowthLongService
                 $diag['coin_context_trend_1h_counts'][$ctxTrend1h] = (int)($diag['coin_context_trend_1h_counts'][$ctxTrend1h] ?? 0) + 1;
                 $ctxQuality = (string)($coinContext['context_quality'] ?? 'unknown');
                 $diag['coin_context_quality_counts'][$ctxQuality] = (int)($diag['coin_context_quality_counts'][$ctxQuality] ?? 0) + 1;
+                if (in_array('chaotic_context_quality_downgraded', (array)($coinContext['context_reasons'] ?? []), true)) {
+                    $diag['chaotic_context_quality_downgraded_total']++;
+                }
 
                 if (count($diag['coin_context_examples']) < 20) {
                     $diag['coin_context_examples'][] = [
@@ -379,6 +396,77 @@ final class EarlyImpulseGrowthLongService
                         'context_phase' => $coinContext['context_phase'] ?? null,
                         'context_quality' => $coinContext['context_quality'] ?? null,
                         'context_reasons' => $coinContext['context_reasons'] ?? [],
+                    ];
+                }
+            }
+            if ($m['orderbook_context_checked'] ?? false) {
+                $diag['orderbook_context_checked_total']++;
+                $orderbookContext = is_array($candidate['orderbook_context'] ?? null) ? (array)$candidate['orderbook_context'] : [];
+                $orderbookAvailable = (bool)($orderbookContext['orderbook_context_available'] ?? false);
+                if ($orderbookAvailable) {
+                    $diag['orderbook_context_available_total']++;
+                } else {
+                    $diag['orderbook_context_missing_total']++;
+                    $obErr = (string)($orderbookContext['orderbook_context_error'] ?? 'unknown');
+                    $diag['orderbook_context_error_counts'][$obErr] = (int)($diag['orderbook_context_error_counts'][$obErr] ?? 0) + 1;
+                }
+                if ((bool)($orderbookContext['ask_wall_detected'] ?? false)) {
+                    $diag['orderbook_ask_wall_detected_total']++;
+                }
+                if ((string)($orderbookContext['ask_wall_risk'] ?? 'none') === 'high') {
+                    $diag['orderbook_ask_wall_high_risk_total']++;
+                }
+                if ((string)($orderbookContext['bid_support_quality'] ?? 'none') === 'strong') {
+                    $diag['orderbook_bid_support_strong_total']++;
+                }
+
+                $orderbookFilterRow = null;
+                foreach ((array)($candidate['filter_results'] ?? []) as $filterRow) {
+                    if (!is_array($filterRow)) {
+                        continue;
+                    }
+                    if ((string)($filterRow['filter_id'] ?? '') === 'orderbook_wall_filter') {
+                        $orderbookFilterRow = $filterRow;
+                        break;
+                    }
+                }
+                if (is_array($orderbookFilterRow)) {
+                    $diag['orderbook_filter_checked_total']++;
+                    if ((bool)($orderbookFilterRow['passed'] ?? false)) {
+                        $diag['orderbook_filter_passed_total']++;
+                    } else {
+                        $diag['orderbook_filter_blocked_total']++;
+                    }
+                    if ((string)($orderbookFilterRow['reason'] ?? '') === 'orderbook_missing_allowed') {
+                        $diag['orderbook_filter_missing_allowed_total']++;
+                    }
+                }
+
+                if (count($diag['orderbook_filter_examples']) < 20) {
+                    $diag['orderbook_filter_examples'][] = [
+                        'symbol' => $candidate['symbol'] ?? null,
+                        'entry_price' => $candidate['entry_price'] ?? null,
+                        'recovery_phase' => $candidate['recovery_phase'] ?? null,
+                        'entry_timing' => $candidate['entry_timing'] ?? null,
+                        'smooth_growth_pct' => $candidate['smooth_growth_pct'] ?? null,
+                        'open_interest_growth_pct' => $candidate['open_interest_growth_pct'] ?? null,
+                        'nearest_ask_wall_price' => $orderbookContext['nearest_ask_wall_price'] ?? null,
+                        'nearest_ask_wall_distance_pct' => $orderbookContext['nearest_ask_wall_distance_pct'] ?? null,
+                        'nearest_ask_wall_notional' => $orderbookContext['nearest_ask_wall_notional'] ?? null,
+                        'ask_wall_risk' => $orderbookContext['ask_wall_risk'] ?? null,
+                        'nearest_bid_wall_price' => $orderbookContext['nearest_bid_wall_price'] ?? null,
+                        'nearest_bid_wall_distance_pct' => $orderbookContext['nearest_bid_wall_distance_pct'] ?? null,
+                        'bid_support_score' => $orderbookContext['bid_support_score'] ?? null,
+                        'bid_ask_notional_ratio' => $orderbookContext['bid_ask_notional_ratio'] ?? null,
+                        'filter_result' => is_array($orderbookFilterRow)
+                            ? [
+                                'passed' => (bool)($orderbookFilterRow['passed'] ?? false),
+                                'reason' => (string)($orderbookFilterRow['reason'] ?? ''),
+                                'severity' => (string)($orderbookFilterRow['severity'] ?? ''),
+                            ]
+                            : null,
+                        'handoff_ready' => (bool)($candidate['handoff_ready'] ?? false),
+                        'handoff_block_reason' => $candidate['handoff_block_reason'] ?? null,
                     ];
                 }
             }
@@ -861,6 +949,21 @@ final class EarlyImpulseGrowthLongService
 
         $phaseExampleRow = static function (array $c): array {
             $coinContext = is_array($c['coin_context'] ?? null) ? (array)$c['coin_context'] : [];
+            $orderbookContext = is_array($c['orderbook_context'] ?? null) ? (array)$c['orderbook_context'] : [];
+            $orderbookFilterResult = null;
+            foreach ((array)($c['filter_results'] ?? []) as $filterRow) {
+                if (!is_array($filterRow)) {
+                    continue;
+                }
+                if ((string)($filterRow['filter_id'] ?? '') === 'orderbook_wall_filter') {
+                    $orderbookFilterResult = [
+                        'passed' => (bool)($filterRow['passed'] ?? false),
+                        'reason' => (string)($filterRow['reason'] ?? ''),
+                        'severity' => (string)($filterRow['severity'] ?? ''),
+                    ];
+                    break;
+                }
+            }
             return [
                 'symbol' => $c['symbol'] ?? null,
                 'dump_pct' => $c['dump_pct'] ?? null,
@@ -885,6 +988,12 @@ final class EarlyImpulseGrowthLongService
                 'context_phase' => $coinContext['context_phase'] ?? null,
                 'context_quality' => $coinContext['context_quality'] ?? null,
                 'context_reasons' => $coinContext['context_reasons'] ?? [],
+                'nearest_ask_wall_distance_pct' => $orderbookContext['nearest_ask_wall_distance_pct'] ?? null,
+                'nearest_ask_wall_notional' => $orderbookContext['nearest_ask_wall_notional'] ?? null,
+                'ask_wall_risk' => $orderbookContext['ask_wall_risk'] ?? null,
+                'bid_support_score' => $orderbookContext['bid_support_score'] ?? null,
+                'bid_ask_notional_ratio' => $orderbookContext['bid_ask_notional_ratio'] ?? null,
+                'orderbook_wall_filter_result' => $orderbookFilterResult,
             ];
         };
         $dumpExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (bool)($c['dump_detected'] ?? false)))), 0, 20);
@@ -1014,6 +1123,20 @@ final class EarlyImpulseGrowthLongService
             'coin_context_trend_1h_counts' => $diag['coin_context_trend_1h_counts'],
             'coin_context_quality_counts' => $diag['coin_context_quality_counts'],
             'coin_context_examples' => $diag['coin_context_examples'],
+            'orderbook_context_enabled' => (bool)($config['eig_filter_orderbook_wall_filter_enabled'] ?? true),
+            'orderbook_context_checked_total' => $diag['orderbook_context_checked_total'],
+            'orderbook_context_available_total' => $diag['orderbook_context_available_total'],
+            'orderbook_context_missing_total' => $diag['orderbook_context_missing_total'],
+            'orderbook_context_error_counts' => $diag['orderbook_context_error_counts'],
+            'orderbook_ask_wall_detected_total' => $diag['orderbook_ask_wall_detected_total'],
+            'orderbook_ask_wall_high_risk_total' => $diag['orderbook_ask_wall_high_risk_total'],
+            'orderbook_bid_support_strong_total' => $diag['orderbook_bid_support_strong_total'],
+            'orderbook_filter_checked_total' => $diag['orderbook_filter_checked_total'],
+            'orderbook_filter_blocked_total' => $diag['orderbook_filter_blocked_total'],
+            'orderbook_filter_passed_total' => $diag['orderbook_filter_passed_total'],
+            'orderbook_filter_missing_allowed_total' => $diag['orderbook_filter_missing_allowed_total'],
+            'orderbook_filter_examples' => $diag['orderbook_filter_examples'],
+            'chaotic_context_quality_downgraded_total' => $diag['chaotic_context_quality_downgraded_total'],
 
             'open_interest_missing_examples' => $diag['open_interest_missing_examples'],
             'reject_reason_counts' => $diag['reject_reason_counts'],
@@ -1092,6 +1215,7 @@ final class EarlyImpulseGrowthLongService
             'filter_diagnostic_only' => false,
             'late_spike_detected' => false,
             'coin_context_checked' => false,
+            'orderbook_context_checked' => false,
         ];
 
         // --- 1. Load candle and row data ---
@@ -1518,7 +1642,44 @@ final class EarlyImpulseGrowthLongService
             'coin_context_corridor_position_pct' => null,
             'coin_context_room_to_recent_high_pct' => null,
             'coin_context_distance_from_recent_low_pct' => null,
+            'orderbook_context' => null,
+            'orderbook_context_available' => null,
+            'orderbook_context_error' => null,
+            'orderbook_context_generated_at' => null,
+            'orderbook_source' => null,
+            'orderbook_depth_limit' => null,
+            'nearest_ask_wall_price' => null,
+            'nearest_ask_wall_distance_pct' => null,
+            'nearest_ask_wall_notional' => null,
+            'nearest_ask_wall_qty' => null,
+            'ask_wall_detected' => false,
+            'ask_wall_strength_score' => null,
+            'ask_wall_risk' => 'none',
+            'nearest_bid_wall_price' => null,
+            'nearest_bid_wall_distance_pct' => null,
+            'nearest_bid_wall_notional' => null,
+            'nearest_bid_wall_qty' => null,
+            'bid_wall_detected' => false,
+            'bid_support_score' => null,
+            'bid_support_quality' => 'none',
+            'orderbook_imbalance_score' => null,
+            'bid_ask_notional_ratio' => null,
+            'top_ask_notional' => null,
+            'top_bid_notional' => null,
+            'price_below_nearest_ask_wall' => null,
+            'price_above_nearest_ask_wall' => null,
+            'breakout_wall_confirmed' => false,
+            'wall_context_summary' => null,
         ];
+
+        $shouldAttachOrderbookContext = $rawPassed
+            && $entryTiming === 'early'
+            && $recoveryPhase === 'early_entry';
+        if ($shouldAttachOrderbookContext) {
+            $metrics['orderbook_context_checked'] = true;
+            $orderbookContext = $this->buildOrderbookContextForSymbol($symbol, (float)$candidate['entry_price'], $now, $config);
+            $candidate = $this->attachOrderbookContextToRecord($candidate, $orderbookContext);
+        }
 
         $filterEval = [
             'filter_results' => [],
@@ -1541,6 +1702,9 @@ final class EarlyImpulseGrowthLongService
         $hasFatal = !empty($filterEval['fatal_filter_reasons']);
         $hasHard = !empty($filterEval['hard_block_filter_reasons']);
         $hasSoft = !empty($filterEval['soft_block_filter_reasons']);
+        $fatalFilterReasons = array_values(array_filter(array_map('strval', (array)($filterEval['fatal_filter_reasons'] ?? [])), static fn(string $v): bool => $v !== ''));
+        $hardFilterReasons = array_values(array_filter(array_map('strval', (array)($filterEval['hard_block_filter_reasons'] ?? [])), static fn(string $v): bool => $v !== ''));
+        $blockingFilterReason = $fatalFilterReasons[0] ?? ($hardFilterReasons[0] ?? null);
         $mode = (string)$config['filter_enforcement_mode'];
 
         $enforcementBlocked = false;
@@ -1563,7 +1727,9 @@ final class EarlyImpulseGrowthLongService
 
         $handoffBlockReason = null;
         if (!$canBeActive) {
-            if ($entryTiming === 'late_spike') {
+            if ($blockingFilterReason !== null) {
+                $handoffBlockReason = $blockingFilterReason;
+            } elseif ($entryTiming === 'late_spike') {
                 $handoffBlockReason = 'late_spike_detected';
             } elseif ($entryTiming === 'extended') {
                 $handoffBlockReason = 'extended_recovery_late';
@@ -1605,6 +1771,15 @@ final class EarlyImpulseGrowthLongService
                 'early_entry_triggered' => (bool)($candidate['early_entry_triggered'] ?? false),
                 'handoff_block_reason' => $candidate['handoff_block_reason'] ?? null,
                 'coin_context' => $candidate['coin_context'] ?? null,
+                'orderbook_context' => $candidate['orderbook_context'] ?? null,
+                'orderbook_context_available' => $candidate['orderbook_context_available'] ?? null,
+                'nearest_ask_wall_distance_pct' => $candidate['nearest_ask_wall_distance_pct'] ?? null,
+                'nearest_ask_wall_notional' => $candidate['nearest_ask_wall_notional'] ?? null,
+                'ask_wall_strength_score' => $candidate['ask_wall_strength_score'] ?? null,
+                'ask_wall_risk' => $candidate['ask_wall_risk'] ?? null,
+                'bid_support_score' => $candidate['bid_support_score'] ?? null,
+                'bid_ask_notional_ratio' => $candidate['bid_ask_notional_ratio'] ?? null,
+                'breakout_wall_confirmed' => (bool)($candidate['breakout_wall_confirmed'] ?? false),
                 'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],
                 'filter_engine_enabled_filters_total' => count($enabledFilters),
                 'filter_results' => $candidate['filter_results'] ?? [],
@@ -2440,6 +2615,19 @@ final class EarlyImpulseGrowthLongService
             if (isset($disabledLegacy[$id])) {
                 $row['enabled'] = false;
             }
+            foreach ((array)($meta['configurable_fields'] ?? []) as $fieldMeta) {
+                if (!is_array($fieldMeta)) {
+                    continue;
+                }
+                $fieldKey = trim((string)($fieldMeta['key'] ?? ''));
+                if ($fieldKey === '' || array_key_exists($fieldKey, $row)) {
+                    continue;
+                }
+                $legacyFieldKey = 'eig_filter_' . $id . '_' . $fieldKey;
+                if (array_key_exists($legacyFieldKey, $config)) {
+                    $row[$fieldKey] = $config[$legacyFieldKey];
+                }
+            }
             $rows[$id] = \Modules\FilterEngine\FilterEngine::normalizeConfigRow($meta, $row);
         }
 
@@ -2639,6 +2827,16 @@ final class EarlyImpulseGrowthLongService
         $cfg['enabled_filters'] = array_values(array_filter((array)($cfg['enabled_filters'] ?? []), static fn($v): bool => trim((string)$v) !== ''));
         $cfg['disabled_filters'] = array_values(array_filter((array)($cfg['disabled_filters'] ?? []), static fn($v): bool => trim((string)$v) !== ''));
         $cfg['filter_config'] = is_array($cfg['filter_config'] ?? null) ? (array)$cfg['filter_config'] : [];
+        $cfg['eig_filter_orderbook_wall_filter_enabled'] = (bool)($cfg['eig_filter_orderbook_wall_filter_enabled'] ?? true);
+        $cfg['eig_filter_orderbook_wall_filter_severity'] = (string)($cfg['eig_filter_orderbook_wall_filter_severity'] ?? 'hard_block');
+        $cfg['eig_filter_orderbook_wall_filter_max_ask_wall_distance_pct'] = (float)($cfg['eig_filter_orderbook_wall_filter_max_ask_wall_distance_pct'] ?? 0.8);
+        $cfg['eig_filter_orderbook_wall_filter_min_ask_wall_notional'] = (float)($cfg['eig_filter_orderbook_wall_filter_min_ask_wall_notional'] ?? 20000.0);
+        $cfg['eig_filter_orderbook_wall_filter_min_ask_wall_strength_score'] = (float)($cfg['eig_filter_orderbook_wall_filter_min_ask_wall_strength_score'] ?? 0.60);
+        $cfg['eig_filter_orderbook_wall_filter_require_bid_support'] = (bool)($cfg['eig_filter_orderbook_wall_filter_require_bid_support'] ?? false);
+        $cfg['eig_filter_orderbook_wall_filter_min_bid_support_score'] = (float)($cfg['eig_filter_orderbook_wall_filter_min_bid_support_score'] ?? 0.35);
+        $cfg['eig_filter_orderbook_wall_filter_min_bid_ask_ratio'] = (float)($cfg['eig_filter_orderbook_wall_filter_min_bid_ask_ratio'] ?? 0.65);
+        $cfg['eig_filter_orderbook_wall_filter_allow_missing_orderbook'] = (bool)($cfg['eig_filter_orderbook_wall_filter_allow_missing_orderbook'] ?? true);
+        $cfg['eig_filter_orderbook_wall_filter_block_if_orderbook_missing'] = (bool)($cfg['eig_filter_orderbook_wall_filter_block_if_orderbook_missing'] ?? false);
         $cfg['coin_context_enabled'] = (bool)($cfg['coin_context_enabled'] ?? true);
         $cfg['coin_context_attach_to_candidates'] = (bool)($cfg['coin_context_attach_to_candidates'] ?? true);
         $cfg['coin_context_attach_to_signals'] = (bool)($cfg['coin_context_attach_to_signals'] ?? true);
@@ -2650,6 +2848,16 @@ final class EarlyImpulseGrowthLongService
         $cfg['disabled_filters'] = array_values(array_diff(array_keys($normalizedFilters['rows']), $normalizedFilters['enabled']));
         foreach ($normalizedFilters['rows'] as $id => $row) {
             $cfg['eig_filter_' . $id . '_enabled'] = (bool)($row['enabled'] ?? false);
+            foreach ((array)($normalizedFilters['metadata'][$id]['configurable_fields'] ?? []) as $fieldMeta) {
+                if (!is_array($fieldMeta)) {
+                    continue;
+                }
+                $fieldKey = trim((string)($fieldMeta['key'] ?? ''));
+                if ($fieldKey === '') {
+                    continue;
+                }
+                $cfg['eig_filter_' . $id . '_' . $fieldKey] = $row[$fieldKey] ?? null;
+            }
         }
 
         // Data sources
@@ -2769,6 +2977,15 @@ final class EarlyImpulseGrowthLongService
             'early_entry_triggered' => (bool)($signal['early_entry_triggered'] ?? false),
             'handoff_block_reason' => $signal['handoff_block_reason'] ?? null,
             'coin_context' => is_array($signal['coin_context'] ?? null) ? (array)$signal['coin_context'] : null,
+            'orderbook_context' => is_array($signal['orderbook_context'] ?? null) ? (array)$signal['orderbook_context'] : null,
+            'orderbook_context_available' => $signal['orderbook_context_available'] ?? null,
+            'nearest_ask_wall_distance_pct' => $signal['nearest_ask_wall_distance_pct'] ?? null,
+            'nearest_ask_wall_notional' => $signal['nearest_ask_wall_notional'] ?? null,
+            'ask_wall_strength_score' => $signal['ask_wall_strength_score'] ?? null,
+            'ask_wall_risk' => $signal['ask_wall_risk'] ?? null,
+            'bid_support_score' => $signal['bid_support_score'] ?? null,
+            'bid_ask_notional_ratio' => $signal['bid_ask_notional_ratio'] ?? null,
+            'breakout_wall_confirmed' => (bool)($signal['breakout_wall_confirmed'] ?? false),
             'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],
             'filter_engine_enabled_filters_total' => count($enabledFilters),
             'filter_results' => $filterResults,
@@ -3028,6 +3245,210 @@ final class EarlyImpulseGrowthLongService
             $this->coinContextService = false;
             return null;
         }
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function buildOrderbookContextForSymbol(string $symbol, float $entryPrice, int $now, array $config): array
+    {
+        $fallback = [
+            'orderbook_context_available' => false,
+            'orderbook_context_generated_at' => date('c', $now),
+            'orderbook_context_error' => 'service_unavailable',
+            'orderbook_source' => 'orderbook_context_service',
+            'orderbook_depth_limit' => null,
+            'nearest_ask_wall_price' => null,
+            'nearest_ask_wall_distance_pct' => null,
+            'nearest_ask_wall_notional' => null,
+            'nearest_ask_wall_qty' => null,
+            'ask_wall_detected' => false,
+            'ask_wall_strength_score' => null,
+            'ask_wall_risk' => 'none',
+            'nearest_bid_wall_price' => null,
+            'nearest_bid_wall_distance_pct' => null,
+            'nearest_bid_wall_notional' => null,
+            'nearest_bid_wall_qty' => null,
+            'bid_wall_detected' => false,
+            'bid_support_score' => null,
+            'bid_support_quality' => 'none',
+            'orderbook_imbalance_score' => null,
+            'bid_ask_notional_ratio' => null,
+            'top_ask_notional' => null,
+            'top_bid_notional' => null,
+            'price_below_nearest_ask_wall' => null,
+            'price_above_nearest_ask_wall' => null,
+            'breakout_wall_confirmed' => false,
+            'wall_context_summary' => null,
+        ];
+
+        if ($entryPrice <= 0.0) {
+            $fallback['orderbook_context_error'] = 'invalid_entry_price';
+            return $fallback;
+        }
+
+        $service = $this->getOrderbookContextService();
+        if ($service === null || !is_callable([$service, 'getWallContext'])) {
+            return $fallback;
+        }
+
+        try {
+            $context = $service->getWallContext($symbol, $entryPrice);
+            if (!is_array($context)) {
+                return $fallback;
+            }
+
+            $askWall = is_array($context['nearest_ask_wall'] ?? null) ? (array)$context['nearest_ask_wall'] : null;
+            $bidWall = is_array($context['nearest_bid_wall'] ?? null) ? (array)$context['nearest_bid_wall'] : null;
+            $fetchOk = (bool)($context['fetch_ok'] ?? false);
+            $askPrice = is_numeric($askWall['price'] ?? null) ? (float)$askWall['price'] : null;
+            $askNotional = is_numeric($askWall['notional'] ?? null) ? (float)$askWall['notional'] : null;
+            $bidNotional = is_numeric($bidWall['notional'] ?? null) ? (float)$bidWall['notional'] : null;
+            $askScore = is_numeric($context['ask_wall_score'] ?? null) ? (float)$context['ask_wall_score'] : null;
+            $bidScore = is_numeric($context['bid_wall_score'] ?? null) ? (float)$context['bid_wall_score'] : null;
+            $errors = is_array($context['errors'] ?? null) ? (array)$context['errors'] : [];
+
+            $result = $fallback;
+            $result['orderbook_context_available'] = $fetchOk;
+            $result['orderbook_context_generated_at'] = (string)($context['fetched_at'] ?? date('c', $now));
+            $result['orderbook_context_error'] = $fetchOk ? null : ((string)($errors[0] ?? 'fetch_failed'));
+            $result['orderbook_depth_limit'] = (int)($config['orderbook_wall_limit'] ?? 200);
+            $result['nearest_ask_wall_price'] = $askPrice;
+            $result['nearest_ask_wall_distance_pct'] = is_numeric($askWall['distance_pct'] ?? null) ? (float)$askWall['distance_pct'] : null;
+            $result['nearest_ask_wall_notional'] = $askNotional;
+            $result['nearest_ask_wall_qty'] = is_numeric($askWall['size'] ?? null) ? (float)$askWall['size'] : null;
+            $result['ask_wall_detected'] = $askWall !== null;
+            $result['ask_wall_strength_score'] = $askScore;
+            $result['ask_wall_risk'] = $this->classifyAskWallRisk($askScore, $result['nearest_ask_wall_distance_pct'], $askNotional);
+            $result['nearest_bid_wall_price'] = is_numeric($bidWall['price'] ?? null) ? (float)$bidWall['price'] : null;
+            $result['nearest_bid_wall_distance_pct'] = is_numeric($bidWall['distance_pct'] ?? null) ? (float)$bidWall['distance_pct'] : null;
+            $result['nearest_bid_wall_notional'] = $bidNotional;
+            $result['nearest_bid_wall_qty'] = is_numeric($bidWall['size'] ?? null) ? (float)$bidWall['size'] : null;
+            $result['bid_wall_detected'] = $bidWall !== null;
+            $result['bid_support_score'] = $bidScore;
+            $result['bid_support_quality'] = $this->classifyBidSupportQuality($bidScore);
+            $result['orderbook_imbalance_score'] = is_numeric($context['wall_imbalance'] ?? null) ? (float)$context['wall_imbalance'] : null;
+            $result['top_ask_notional'] = $askNotional;
+            $result['top_bid_notional'] = $bidNotional;
+            $result['bid_ask_notional_ratio'] = ($askNotional !== null && $askNotional > 0.0 && $bidNotional !== null)
+                ? round($bidNotional / $askNotional, 6)
+                : null;
+            $result['price_below_nearest_ask_wall'] = $askPrice !== null ? ($entryPrice < $askPrice) : null;
+            $result['price_above_nearest_ask_wall'] = $askPrice !== null ? ($entryPrice > $askPrice) : null;
+            $result['breakout_wall_confirmed'] = ((string)($context['ask_wall_status'] ?? '') === 'broken')
+                || ($result['price_above_nearest_ask_wall'] === true);
+            $result['wall_context_summary'] = $this->buildWallContextSummary($result);
+            return $result;
+        } catch (\Throwable) {
+            $fallback['orderbook_context_error'] = 'fetch_exception';
+            return $fallback;
+        }
+    }
+
+    /**
+     * @param array<string,mixed> $record
+     * @param array<string,mixed> $orderbookContext
+     * @return array<string,mixed>
+     */
+    private function attachOrderbookContextToRecord(array $record, array $orderbookContext): array
+    {
+        $record['orderbook_context'] = $orderbookContext;
+        foreach ($orderbookContext as $key => $value) {
+            if ($key === 'orderbook_context') {
+                continue;
+            }
+            $record[$key] = $value;
+        }
+        return $record;
+    }
+
+    private function getOrderbookContextService(): mixed
+    {
+        if ($this->orderbookContextService === false) {
+            return null;
+        }
+        if ($this->orderbookContextService !== null) {
+            return $this->orderbookContextService;
+        }
+
+        $moduleDir = $this->repoRoot . '/modules/system/orderbook_context';
+        $servicePath = $moduleDir . '/service.php';
+        if (!is_file($servicePath)) {
+            $this->orderbookContextService = false;
+            return null;
+        }
+
+        try {
+            require_once $servicePath;
+            if (!class_exists(\OrderBookContextService::class)) {
+                $this->orderbookContextService = false;
+                return null;
+            }
+            $this->orderbookContextService = new \OrderBookContextService($moduleDir);
+            return $this->orderbookContextService;
+        } catch (\Throwable) {
+            $this->orderbookContextService = false;
+            return null;
+        }
+    }
+
+    private function classifyAskWallRisk(?float $askScore, ?float $askDistancePct, ?float $askNotional): string
+    {
+        if ($askScore === null && $askDistancePct === null && $askNotional === null) {
+            return 'none';
+        }
+        if (
+            ($askDistancePct !== null && $askDistancePct <= 0.4 && $askNotional !== null && $askNotional >= 20000.0)
+            || ($askScore !== null && $askScore >= 3.0)
+        ) {
+            return 'high';
+        }
+        if (
+            ($askDistancePct !== null && $askDistancePct <= 0.8 && $askNotional !== null && $askNotional >= 10000.0)
+            || ($askScore !== null && $askScore >= 1.5)
+        ) {
+            return 'medium';
+        }
+        return 'low';
+    }
+
+    private function classifyBidSupportQuality(?float $bidScore): string
+    {
+        if ($bidScore === null || $bidScore <= 0.0) {
+            return 'none';
+        }
+        if ($bidScore >= 2.0) {
+            return 'strong';
+        }
+        if ($bidScore >= 1.0) {
+            return 'medium';
+        }
+        return 'weak';
+    }
+
+    /**
+     * @param array<string,mixed> $orderbookContext
+     */
+    private function buildWallContextSummary(array $orderbookContext): string
+    {
+        if (!(bool)($orderbookContext['orderbook_context_available'] ?? false)) {
+            return 'orderbook_missing';
+        }
+        if ((bool)($orderbookContext['breakout_wall_confirmed'] ?? false)) {
+            return 'breakout_confirmed_above_wall';
+        }
+        $askRisk = (string)($orderbookContext['ask_wall_risk'] ?? 'none');
+        if ($askRisk === 'high') {
+            return 'ask_wall_high_risk';
+        }
+        if ($askRisk === 'medium') {
+            return 'ask_wall_medium_risk';
+        }
+        $support = (string)($orderbookContext['bid_support_quality'] ?? 'none');
+        if ($support === 'strong') {
+            return 'bid_support_confirmed';
+        }
+        return 'no_wall_risk';
     }
 
     private function scoreRange(float $value, float $min, float $max): float

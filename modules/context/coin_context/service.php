@@ -244,6 +244,21 @@ final class CoinContextService
             $quality = $quality === 'good' ? 'medium' : $quality;
             $phaseReasons[] = 'phase_unclear';
         }
+        $hasChaoticReason = in_array('too_many_direction_flips', $phaseReasons, true);
+        $chaoticWindows = 0;
+        foreach ([$trend1h, $trend2h, $trend4h] as $trendDirection) {
+            if ($trendDirection === 'chaotic') {
+                $chaoticWindows++;
+            }
+        }
+        if ($phase === 'chaotic' || $hasChaoticReason) {
+            if ($chaoticWindows >= 2 || $phase === 'chaotic') {
+                $quality = 'bad';
+            } else {
+                $quality = $quality === 'bad' ? 'bad' : 'medium';
+            }
+            $phaseReasons[] = 'chaotic_context_quality_downgraded';
+        }
         if ($corridorRangePct <= 0.0) {
             $quality = 'bad';
             $phaseReasons[] = 'invalid_corridor_range';

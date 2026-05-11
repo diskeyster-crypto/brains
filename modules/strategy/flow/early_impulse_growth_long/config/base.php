@@ -83,12 +83,22 @@ return [
 
     // FilterEngine
     'filter_engine_enabled' => true,
-    'filter_enforcement_mode' => 'diagnostic_only',
+    'filter_enforcement_mode' => 'soft',
     'filter_profile' => 'raw_no_filters',
     'filter_profile_active' => 'raw_no_filters',
     'enabled_filters' => [],
     'disabled_filters' => [],
     'filter_config' => [],
+    'eig_filter_orderbook_wall_filter_enabled' => true,
+    'eig_filter_orderbook_wall_filter_severity' => 'hard_block',
+    'eig_filter_orderbook_wall_filter_max_ask_wall_distance_pct' => 0.8,
+    'eig_filter_orderbook_wall_filter_min_ask_wall_notional' => 20000.0,
+    'eig_filter_orderbook_wall_filter_min_ask_wall_strength_score' => 0.60,
+    'eig_filter_orderbook_wall_filter_require_bid_support' => false,
+    'eig_filter_orderbook_wall_filter_min_bid_support_score' => 0.35,
+    'eig_filter_orderbook_wall_filter_min_bid_ask_ratio' => 0.65,
+    'eig_filter_orderbook_wall_filter_allow_missing_orderbook' => true,
+    'eig_filter_orderbook_wall_filter_block_if_orderbook_missing' => false,
 
     // Coin context (diagnostic-only enrichment)
     'coin_context_enabled' => true,

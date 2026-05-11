@@ -128,4 +128,12 @@ return [
     'max_near_pass_store' => 2000,
     'max_rejects_store' => 2000,
     'max_signals_store' => 1000,
+
+    // Watch recheck (priority re-evaluation of active stabilizing candidates)
+    'watch_recheck_enabled' => true,
+    'watch_recheck_max_symbols_per_tick' => 30,
+    'watch_recheck_min_age_seconds' => 60,
+    'watch_recheck_max_age_minutes' => 60,
+    'watch_recheck_priority_phases' => 'stabilizing,dump_only',
+    'watch_recheck_only_if_not_failed' => true,
 ];

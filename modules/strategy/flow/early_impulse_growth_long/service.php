@@ -214,6 +214,168 @@ final class EarlyImpulseGrowthLongService
         $newRejects = [];
         $newSignals = [];
 
+        // Build watch candidate map (symbol_lower => latest watch record)
+        $watchMap = [];
+        foreach (is_array($allWatchCandidates) ? $allWatchCandidates : [] as $wc) {
+            if (!is_array($wc)) {
+                continue;
+            }
+            $symLow = strtolower(trim((string)($wc['symbol'] ?? '')));
+            if ($symLow !== '') {
+                $watchMap[$symLow] = $wc;
+            }
+        }
+
+        // --- Watch recheck phase: re-evaluate active stabilizing candidates ---
+        $watchRecheckDiag = [
+            'watch_recheck_enabled' => false,
+            'watch_recheck_candidates_loaded_total' => count($watchMap),
+            'watch_recheck_selected_total' => 0,
+            'watch_recheck_processed_total' => 0,
+            'watch_recheck_triggered_total' => 0,
+            'watch_recheck_still_stabilizing_total' => 0,
+            'watch_recheck_failed_total' => 0,
+            'watch_recheck_expired_total' => 0,
+            'watch_recheck_skipped_total' => 0,
+            'watch_recheck_skip_reasons' => [],
+            'watch_recheck_examples' => [],
+        ];
+        $recheckProcessedSymbols = [];
+
+        if ((bool)($config['watch_recheck_enabled'] ?? true)) {
+            $watchRecheckDiag['watch_recheck_enabled'] = true;
+            $recheckNow = time();
+            $recheckMaxPerTick = max(1, (int)($config['watch_recheck_max_symbols_per_tick'] ?? 30));
+            $recheckMinAgeSec = max(0, (int)($config['watch_recheck_min_age_seconds'] ?? 60));
+            $recheckMaxAgeMin = max(1, (int)($config['watch_recheck_max_age_minutes'] ?? 60));
+            $recheckOnlyIfNotFailed = (bool)($config['watch_recheck_only_if_not_failed'] ?? true);
+            $recheckPriorityPhases = array_values(array_filter(
+                array_map('trim', explode(',', (string)($config['watch_recheck_priority_phases'] ?? 'stabilizing,dump_only')))
+            ));
+
+            $selectedForRecheck = [];
+            foreach ($watchMap as $symLow => $wc) {
+                $watchStatus = (string)($wc['watch_status'] ?? 'active');
+                if (in_array($watchStatus, ['triggered', 'expired'], true)) {
+                    continue;
+                }
+                if ($recheckOnlyIfNotFailed && $watchStatus === 'failed') {
+                    continue;
+                }
+                $phase = (string)($wc['recovery_phase'] ?? $wc['entry_timing'] ?? '');
+                if ($recheckPriorityPhases !== [] && !in_array($phase, $recheckPriorityPhases, true)) {
+                    $watchRecheckDiag['watch_recheck_skipped_total']++;
+                    $watchRecheckDiag['watch_recheck_skip_reasons']['not_priority_phase'] = (int)($watchRecheckDiag['watch_recheck_skip_reasons']['not_priority_phase'] ?? 0) + 1;
+                    continue;
+                }
+                // Check expiry by age
+                $watchStartedAt = (string)($wc['watch_started_at'] ?? $wc['detected_at'] ?? '');
+                if ($watchStartedAt !== '') {
+                    $startTs = $this->parseIsoToTs($watchStartedAt);
+                    if ($startTs !== null && ($recheckNow - $startTs) > ($recheckMaxAgeMin * 60)) {
+                        $watchMap[$symLow]['watch_status'] = 'expired';
+                        $watchRecheckDiag['watch_recheck_expired_total']++;
+                        continue;
+                    }
+                }
+                // Check if too recently checked
+                $lastRecheckedAt = (string)($wc['last_rechecked_at'] ?? '');
+                if ($lastRecheckedAt !== '') {
+                    $lastTs = $this->parseIsoToTs($lastRecheckedAt);
+                    if ($lastTs !== null && ($recheckNow - $lastTs) < $recheckMinAgeSec) {
+                        $watchRecheckDiag['watch_recheck_skipped_total']++;
+                        $watchRecheckDiag['watch_recheck_skip_reasons']['too_recently_checked'] = (int)($watchRecheckDiag['watch_recheck_skip_reasons']['too_recently_checked'] ?? 0) + 1;
+                        continue;
+                    }
+                }
+                $selectedForRecheck[] = $symLow;
+                if (count($selectedForRecheck) >= $recheckMaxPerTick) {
+                    break;
+                }
+            }
+            $watchRecheckDiag['watch_recheck_selected_total'] = count($selectedForRecheck);
+
+            foreach ($selectedForRecheck as $symLow) {
+                $prevWc = $watchMap[$symLow] ?? [];
+                $prevPhase = (string)($prevWc['recovery_phase'] ?? $prevWc['entry_timing'] ?? '');
+                $prevSmoothGrowthPct = $prevWc['smooth_growth_pct'] ?? null;
+                $prevOiPct = $prevWc['open_interest_growth_pct'] ?? null;
+                $prevStabMin = $prevWc['stabilization_duration_minutes'] ?? null;
+                $recheckCount = (int)($prevWc['recheck_count'] ?? 0) + 1;
+
+                $res = $this->processSymbol(strtoupper($symLow), $config);
+                $recheckProcessedSymbols[$symLow] = true;
+                $watchRecheckDiag['watch_recheck_processed_total']++;
+
+                $rc = $res['candidate'];
+                $newPhase = (string)($rc['recovery_phase'] ?? '');
+
+                $updatedWc = array_merge((array)$prevWc, [
+                    'last_rechecked_at' => date('c', $recheckNow),
+                    'last_seen_at' => date('c', $recheckNow),
+                    'recheck_count' => $recheckCount,
+                    'recovery_phase' => $newPhase,
+                    'entry_timing' => $rc['entry_timing'] ?? ($prevWc['entry_timing'] ?? null),
+                    'smooth_growth_pct' => $rc['smooth_growth_pct'] ?? ($prevWc['smooth_growth_pct'] ?? null),
+                    'open_interest_growth_pct' => $rc['open_interest_growth_pct'] ?? ($prevWc['open_interest_growth_pct'] ?? null),
+                    'stabilization_duration_minutes' => $rc['stabilization_duration_minutes'] ?? ($prevWc['stabilization_duration_minutes'] ?? null),
+                    'dump_pct' => $rc['dump_pct'] ?? ($prevWc['dump_pct'] ?? null),
+                    'phase_block_reason' => $rc['phase_block_reason'] ?? ($prevWc['phase_block_reason'] ?? null),
+                    'handoff_ready' => (bool)($rc['handoff_ready'] ?? false),
+                    'handoff_block_reason' => $rc['handoff_block_reason'] ?? null,
+                ]);
+
+                if ($newPhase === 'early_entry') {
+                    $updatedWc['watch_status'] = 'triggered';
+                    $watchRecheckDiag['watch_recheck_triggered_total']++;
+                    $newEvaluated[] = $rc;
+                    $newCandidates[] = $rc;
+                    if (!empty($res['signal'])) {
+                        $newSignals[] = $res['signal'];
+                    }
+                } elseif (in_array($newPhase, ['stabilizing', 'dump_only'], true)) {
+                    $updatedWc['watch_status'] = 'active';
+                    $watchRecheckDiag['watch_recheck_still_stabilizing_total']++;
+                    $newEvaluated[] = $rc;
+                } elseif (in_array($newPhase, ['late_spike', 'extended'], true)) {
+                    $updatedWc['watch_status'] = 'failed';
+                    $updatedWc['fail_reason'] = $newPhase;
+                    $watchRecheckDiag['watch_recheck_failed_total']++;
+                    $newEvaluated[] = $rc;
+                } elseif ($newPhase === 'failed' || $newPhase === '') {
+                    $updatedWc['watch_status'] = 'failed';
+                    $updatedWc['fail_reason'] = (string)($rc['raw_reject_reason'] ?? 'failed');
+                    $watchRecheckDiag['watch_recheck_failed_total']++;
+                    $newEvaluated[] = $rc;
+                } else {
+                    // confirmed_later or other visual phases: keep active (still watching)
+                    $updatedWc['watch_status'] = 'active';
+                    $watchRecheckDiag['watch_recheck_still_stabilizing_total']++;
+                    $newEvaluated[] = $rc;
+                }
+
+                $watchMap[$symLow] = $updatedWc;
+
+                if (count($watchRecheckDiag['watch_recheck_examples']) < 20) {
+                    $watchRecheckDiag['watch_recheck_examples'][] = [
+                        'symbol' => strtoupper($symLow),
+                        'previous_phase' => $prevPhase,
+                        'new_phase' => $newPhase,
+                        'previous_smooth_growth_pct' => $prevSmoothGrowthPct,
+                        'new_smooth_growth_pct' => $rc['smooth_growth_pct'] ?? null,
+                        'previous_open_interest_growth_pct' => $prevOiPct,
+                        'new_open_interest_growth_pct' => $rc['open_interest_growth_pct'] ?? null,
+                        'previous_stabilization_duration_minutes' => $prevStabMin,
+                        'stabilization_duration_minutes' => $rc['stabilization_duration_minutes'] ?? null,
+                        'recheck_count' => $recheckCount,
+                        'handoff_ready' => (bool)($rc['handoff_ready'] ?? false),
+                        'handoff_block_reason' => $rc['handoff_block_reason'] ?? null,
+                        'watch_status' => $updatedWc['watch_status'],
+                    ];
+                }
+            }
+        }
+
         $diag = [
             'insufficient_data_total' => 0,
             'stale_data_total' => 0,
@@ -297,6 +459,9 @@ final class EarlyImpulseGrowthLongService
         ];
 
         foreach ($batchSymbols as $symbol) {
+            if (isset($recheckProcessedSymbols[strtolower((string)$symbol)])) {
+                continue;
+            }
             $res = $this->processSymbol((string)$symbol, $config);
 
             $candidate = $res['candidate'];
@@ -310,7 +475,17 @@ final class EarlyImpulseGrowthLongService
                 $newCandidates[] = $candidate;
             }
             if ($isWatchCandidate) {
-                $newWatchCandidates[] = $candidate;
+                $symLow = strtolower((string)$symbol);
+                $existingWc = $watchMap[$symLow] ?? null;
+                $candidateWithMeta = array_merge($candidate, [
+                    'watch_status' => 'active',
+                    'watch_started_at' => is_array($existingWc) ? (string)($existingWc['watch_started_at'] ?? $candidate['detected_at'] ?? date('c')) : (string)($candidate['detected_at'] ?? date('c')),
+                    'last_seen_at' => (string)($candidate['detected_at'] ?? date('c')),
+                    'last_rechecked_at' => is_array($existingWc) ? ($existingWc['last_rechecked_at'] ?? null) : null,
+                    'recheck_count' => is_array($existingWc) ? (int)($existingWc['recheck_count'] ?? 0) : 0,
+                ]);
+                $newWatchCandidates[] = $candidateWithMeta;
+                $watchMap[$symLow] = $candidateWithMeta;
             }
             if (!(($candidate['raw_strategy_passed'] ?? false) || $isVisualCandidate || $isWatchCandidate)) {
                 $newRejects[] = [
@@ -726,7 +901,7 @@ final class EarlyImpulseGrowthLongService
 
         $allEvaluated = array_merge(is_array($allEvaluated) ? $allEvaluated : [], $newEvaluated);
         $allCandidates = array_merge(is_array($allCandidates) ? $allCandidates : [], $newCandidates);
-        $allWatchCandidates = array_merge(is_array($allWatchCandidates) ? $allWatchCandidates : [], $newWatchCandidates);
+        $allWatchCandidates = array_values($watchMap);
         $allRejects = array_merge(is_array($allRejects) ? $allRejects : [], $newRejects);
 
         $signalIndex = [];
@@ -1381,6 +1556,20 @@ final class EarlyImpulseGrowthLongService
             'quality_guard_existing_ready_checked_total' => $diag['quality_guard_existing_ready_checked_total'],
             'quality_guard_existing_ready_withdrawn_total' => $diag['quality_guard_existing_ready_withdrawn_total'],
             'quality_guard_existing_ready_withdrawn_examples' => $diag['quality_guard_existing_ready_withdrawn_examples'],
+
+            // Watch recheck diagnostics
+            'watch_recheck_enabled' => $watchRecheckDiag['watch_recheck_enabled'],
+            'watch_recheck_candidates_loaded_total' => $watchRecheckDiag['watch_recheck_candidates_loaded_total'],
+            'watch_recheck_selected_total' => $watchRecheckDiag['watch_recheck_selected_total'],
+            'watch_recheck_processed_total' => $watchRecheckDiag['watch_recheck_processed_total'],
+            'watch_recheck_triggered_total' => $watchRecheckDiag['watch_recheck_triggered_total'],
+            'watch_recheck_still_stabilizing_total' => $watchRecheckDiag['watch_recheck_still_stabilizing_total'],
+            'watch_recheck_failed_total' => $watchRecheckDiag['watch_recheck_failed_total'],
+            'watch_recheck_expired_total' => $watchRecheckDiag['watch_recheck_expired_total'],
+            'watch_recheck_skipped_total' => $watchRecheckDiag['watch_recheck_skipped_total'],
+            'watch_recheck_skip_reasons' => $watchRecheckDiag['watch_recheck_skip_reasons'],
+            'watch_recheck_examples' => $watchRecheckDiag['watch_recheck_examples'],
+
             'accepted_examples' => $acceptedExamples,
             'near_pass_examples' => $watchExamples,
             'watch_candidates_examples' => $watchExamples,

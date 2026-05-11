@@ -67,6 +67,7 @@ $coinContextTrendCounts = is_array($lastRun['coin_context_trend_1h_counts'] ?? n
 $coinContextQualityCounts = is_array($lastRun['coin_context_quality_counts'] ?? null) ? (array)$lastRun['coin_context_quality_counts'] : [];
 $waveQualityFilterExamples = is_array($lastRun['wave_quality_filter_examples'] ?? null) ? (array)$lastRun['wave_quality_filter_examples'] : [];
 $orderbookFilterExamples = is_array($lastRun['orderbook_filter_examples'] ?? null) ? (array)$lastRun['orderbook_filter_examples'] : [];
+$watchRecheckExamples = is_array($lastRun['watch_recheck_examples'] ?? null) ? (array)$lastRun['watch_recheck_examples'] : [];
 ?>
 <style>
 .eig-rt-page { max-width: 1220px; }
@@ -234,6 +235,67 @@ $orderbookFilterExamples = is_array($lastRun['orderbook_filter_examples'] ?? nul
         <button type="submit" class="btn btn-sm" style="background:rgba(88,166,255,.12);color:#58a6ff;border:1px solid #58a6ff55;">Тик батча</button>
       </form>
     </div>
+  </div>
+
+  <div class="rt-section">
+    <h6>Watch recheck (priority re-evaluation)</h6>
+    <div class="rt-grid">
+      <div class="rt-box"><div class="rt-val"><?= $fmtBool((bool)($lastRun['watch_recheck_enabled'] ?? false)) ?></div><div class="rt-lbl">watch_recheck_enabled</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_candidates_loaded_total'] ?? 0)) ?></div><div class="rt-lbl">candidates_loaded</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_selected_total'] ?? 0)) ?></div><div class="rt-lbl">selected</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_processed_total'] ?? 0)) ?></div><div class="rt-lbl">processed</div></div>
+      <div class="rt-box" style="border-color:rgba(34,197,94,.4);"><div class="rt-val" style="color:#22c55e;"><?= $e((int)($lastRun['watch_recheck_triggered_total'] ?? 0)) ?></div><div class="rt-lbl">triggered (early_entry)</div></div>
+      <div class="rt-box" style="border-color:rgba(56,189,248,.4);"><div class="rt-val" style="color:#38bdf8;"><?= $e((int)($lastRun['watch_recheck_still_stabilizing_total'] ?? 0)) ?></div><div class="rt-lbl">still_stabilizing</div></div>
+      <div class="rt-box" style="border-color:rgba(248,81,73,.3);"><div class="rt-val" style="color:#f85149;"><?= $e((int)($lastRun['watch_recheck_failed_total'] ?? 0)) ?></div><div class="rt-lbl">failed</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_expired_total'] ?? 0)) ?></div><div class="rt-lbl">expired</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_skipped_total'] ?? 0)) ?></div><div class="rt-lbl">skipped</div></div>
+    </div>
+    <?php if (!empty($lastRun['watch_recheck_skip_reasons'])): ?>
+    <table class="rt-kv" style="margin-bottom:10px;">
+      <tr><td style="color:#64748b">skip_reasons</td><td><code><?= $e(json_encode((array)($lastRun['watch_recheck_skip_reasons'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+    </table>
+    <?php endif; ?>
+    <?php if (!empty($watchRecheckExamples)): ?>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em;">Recheck examples (up to 20)</div>
+    <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="color:#64748b;text-align:left;border-bottom:1px solid var(--border-color,#334155);">
+        <th style="padding:4px 8px;">symbol</th>
+        <th style="padding:4px 8px;">prev_phase</th>
+        <th style="padding:4px 8px;">new_phase</th>
+        <th style="padding:4px 8px;">watch_status</th>
+        <th style="padding:4px 8px;">stab_min</th>
+        <th style="padding:4px 8px;">prev_smooth%</th>
+        <th style="padding:4px 8px;">new_smooth%</th>
+        <th style="padding:4px 8px;">prev_oi%</th>
+        <th style="padding:4px 8px;">new_oi%</th>
+        <th style="padding:4px 8px;">rechecks</th>
+        <th style="padding:4px 8px;">handoff</th>
+        <th style="padding:4px 8px;">block_reason</th>
+      </tr></thead>
+      <tbody>
+      <?php foreach ($watchRecheckExamples as $row): ?>
+        <?php $row = is_array($row) ? $row : []; ?>
+        <?php $rStatusColor = match((string)($row['watch_status'] ?? '')) { 'triggered' => '#22c55e', 'failed' => '#f85149', 'expired' => '#f59e0b', default => '#94a3b8' }; ?>
+        <tr style="border-top:1px solid #1e293b;">
+          <td style="padding:4px 8px;font-weight:600;"><?= $e($row['symbol'] ?? '') ?></td>
+          <td style="padding:4px 8px;"><?= $e($row['previous_phase'] ?? '') ?></td>
+          <td style="padding:4px 8px;"><?= $e($row['new_phase'] ?? '') ?></td>
+          <td style="padding:4px 8px;color:<?= $rStatusColor ?>"><?= $e($row['watch_status'] ?? '') ?></td>
+          <td style="padding:4px 8px;"><?= $e(is_numeric($row['stabilization_duration_minutes'] ?? null) ? $row['stabilization_duration_minutes'] : '—') ?></td>
+          <td style="padding:4px 8px;"><?= $fmtNum($row['previous_smooth_growth_pct'] ?? null) ?></td>
+          <td style="padding:4px 8px;"><?= $fmtNum($row['new_smooth_growth_pct'] ?? null) ?></td>
+          <td style="padding:4px 8px;"><?= $fmtNum($row['previous_open_interest_growth_pct'] ?? null) ?></td>
+          <td style="padding:4px 8px;"><?= $fmtNum($row['new_open_interest_growth_pct'] ?? null) ?></td>
+          <td style="padding:4px 8px;"><?= $e($row['recheck_count'] ?? 0) ?></td>
+          <td style="padding:4px 8px;"><?= $fmtBool($row['handoff_ready'] ?? false) ?></td>
+          <td style="padding:4px 8px;font-size:11px;color:#94a3b8;"><?= $e($row['handoff_block_reason'] ?? '') ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    </div>
+    <?php endif; ?>
   </div>
 
   <div class="rt-section">

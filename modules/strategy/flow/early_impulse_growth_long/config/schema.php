@@ -115,4 +115,11 @@ return [
     'max_near_pass_store' => 'int',
     'max_rejects_store' => 'int',
     'max_signals_store' => 'int',
+
+    'watch_recheck_enabled' => 'bool',
+    'watch_recheck_max_symbols_per_tick' => 'int',
+    'watch_recheck_min_age_seconds' => 'int',
+    'watch_recheck_max_age_minutes' => 'int',
+    'watch_recheck_priority_phases' => 'string',
+    'watch_recheck_only_if_not_failed' => 'bool',
 ];

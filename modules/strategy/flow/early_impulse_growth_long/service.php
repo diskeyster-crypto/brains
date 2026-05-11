@@ -245,6 +245,16 @@ final class EarlyImpulseGrowthLongService
                     'raw_reject_reason' => (string)($candidate['raw_reject_reason'] ?? 'unknown'),
                     'reject_reason' => (string)($candidate['raw_reject_reason'] ?? 'unknown'),
                     'detected_at' => $candidate['detected_at'],
+                    'prior_decline_detected' => (bool)($candidate['prior_decline_detected'] ?? false),
+                    'prior_decline_pct' => $candidate['prior_decline_pct'] ?? null,
+                    'recovery_growth_pct' => $candidate['recovery_growth_pct'] ?? null,
+                    'recovery_duration_minutes' => $candidate['recovery_duration_minutes'] ?? null,
+                    'recovery_score' => $candidate['recovery_score'] ?? null,
+                    'open_interest_growth_pct' => $candidate['open_interest_growth_pct'] ?? null,
+                    'open_interest_growth_score' => $candidate['open_interest_growth_score'] ?? null,
+                    'combined_recovery_score' => $candidate['combined_recovery_score'] ?? null,
+                    'current_price_change_pct_10m' => $candidate['current_price_change_pct_10m'] ?? null,
+                    'data_source_used' => $candidate['data_source_used'] ?? null,
                 ];
             }
 
@@ -268,6 +278,7 @@ final class EarlyImpulseGrowthLongService
                 $bucket = &$diag['filter_engine_results_by_filter'][$fid];
                 if (!is_array($bucket)) {
                     $bucket = [
+                        'filter_id' => (string)$fid,
                         'seen_total' => 0,
                         'enabled_total' => 0,
                         'passed_total' => 0,
@@ -275,6 +286,7 @@ final class EarlyImpulseGrowthLongService
                         'warning_total' => 0,
                     ];
                 }
+                $bucket['filter_id'] = (string)$fid;
                 $bucket['seen_total']++;
                 if (!empty($frow['enabled'])) {
                     $bucket['enabled_total']++;
@@ -377,15 +389,18 @@ final class EarlyImpulseGrowthLongService
         $this->writeJson($this->storagePath('rejects.json'), $allRejects);
         $this->writeJson($this->storagePath('signals.json'), $allSignals);
 
+        $canEmitBotHandoff = (bool)$config['handoff_enabled'] && (bool)$config['emit_bot_handoff'];
         $handoffQueue = [];
-        foreach ($allSignals as $sig) {
-            if (!is_array($sig)) {
-                continue;
+        if ($canEmitBotHandoff) {
+            foreach ($allSignals as $sig) {
+                if (!is_array($sig)) {
+                    continue;
+                }
+                if (($sig['handoff_ready'] ?? false) !== true || ($sig['executable'] ?? false) !== true) {
+                    continue;
+                }
+                $handoffQueue[] = $sig;
             }
-            if (($sig['handoff_ready'] ?? false) !== true || ($sig['executable'] ?? false) !== true) {
-                continue;
-            }
-            $handoffQueue[] = $sig;
         }
         $this->writeJson($this->storagePath('bot_handoff_queue.json'), $handoffQueue);
 
@@ -399,7 +414,10 @@ final class EarlyImpulseGrowthLongService
         $state['batch_offset_after'] = $offsetAfter;
         $this->writeJson($this->storagePath('run_state.json'), $state);
 
+        $currentRunHandoffReadyTotal = count(array_filter($newSignals, static fn(array $s): bool => is_array($s) && (bool)($s['handoff_ready'] ?? false)));
         $handoffReadyTotal = count(array_filter($allSignals, static fn(array $s): bool => (bool)($s['handoff_ready'] ?? false)));
+        $currentRunBotQueueWrittenTotal = $canEmitBotHandoff ? $currentRunHandoffReadyTotal : 0;
+        $storedBotQueueWrittenTotal = count($handoffQueue);
         $enabledFilters = $this->computeEnabledFilters($config);
         $filterCatalog = $this->getFilterCatalog();
         $acceptedExamples = $newCandidates;
@@ -518,6 +536,8 @@ final class EarlyImpulseGrowthLongService
             'current_run_near_pass_total' => count($newNearPass),
             'current_run_signals_total' => count($newSignals),
             'current_run_rejects_total' => count($newRejects),
+            'current_run_handoff_ready_total' => $currentRunHandoffReadyTotal,
+            'current_run_bot_queue_written_total' => $currentRunBotQueueWrittenTotal,
             'batch_symbols_examples' => array_slice($batchSymbols, 0, 8),
 
             // Stored totals
@@ -526,6 +546,8 @@ final class EarlyImpulseGrowthLongService
             'stored_near_pass_total' => count($allNearPass),
             'stored_signals_total' => count($allSignals),
             'stored_rejects_total' => count($allRejects),
+            'stored_handoff_ready_total' => $handoffReadyTotal,
+            'stored_bot_queue_written_total' => $storedBotQueueWrittenTotal,
             'handoff_ready_total' => $handoffReadyTotal,
 
             // Universe info
@@ -749,19 +771,24 @@ final class EarlyImpulseGrowthLongService
                 $recoveryGrowthPct = (($latestPrice - $recoveryLowPrice) / $recoveryLowPrice) * 100.0;
                 $recoveryDurationMin = (int)round(($now - $recoveryLowTs) / 60);
                 $scoreMode = (string)($config['recovery_score_mode'] ?? 'threshold');
+                $recoveryMinGrowthPct = (float)$config['min_recovery_growth_pct'];
+                $recoveryMinScore = (float)$config['min_recovery_score'];
+                $recoveryTargetPct = (float)($config['recovery_score_target_pct'] ?? 8.0);
                 if ($scoreMode === 'range') {
                     $recoveryScore = $this->scoreRange(
                         $recoveryGrowthPct,
-                        (float)$config['min_recovery_growth_pct'],
+                        $recoveryMinGrowthPct,
                         (float)$config['max_recovery_growth_pct']
                     );
                 } else {
-                    $recoveryScore = $this->scoreThreshold(
+                    $recoveryScore = $this->scoreGradientTarget(
                         $recoveryGrowthPct,
-                        (float)$config['min_recovery_growth_pct']
+                        $recoveryMinGrowthPct,
+                        $recoveryMinScore,
+                        $recoveryTargetPct
                     );
                 }
-                $recoveryGrowthGate = $recoveryGrowthPct >= (float)$config['min_recovery_growth_pct'];
+                $recoveryGrowthGate = $recoveryGrowthPct >= $recoveryMinGrowthPct;
 
                 // Recovery phase classification
                 if ($recoveryDurationMin >= $recoveryMaxWindowMin) {
@@ -794,9 +821,13 @@ final class EarlyImpulseGrowthLongService
                 $oiEnd = (float)$oiSeries[count($oiSeries) - 1]['oi'];
                 if ($oiStart > 0.0) {
                     $oiGrowthPct = (($oiEnd - $oiStart) / $oiStart) * 100.0;
-                    $oiScore = $this->scoreThreshold($oiGrowthPct, (float)$config['min_open_interest_growth_pct']);
-                    $oiPass = $oiGrowthPct >= (float)$config['min_open_interest_growth_pct']
-                        && $oiScore >= (float)$config['min_open_interest_growth_score'];
+                    $oiScore = $this->scoreGradientTarget(
+                        $oiGrowthPct,
+                        (float)$config['min_open_interest_growth_pct'],
+                        (float)$config['min_open_interest_growth_score'],
+                        (float)($config['open_interest_score_target_pct'] ?? 5.0)
+                    );
+                    $oiPass = $oiGrowthPct >= (float)$config['min_open_interest_growth_pct'];
                 }
             }
 
@@ -827,11 +858,7 @@ final class EarlyImpulseGrowthLongService
             4
         );
 
-        $recoveryGrowthPass = $recoveryGrowthGate
-            && (
-                $recoveryScore >= (float)$config['min_recovery_score']
-                || $combinedRecoveryScore >= (float)$config['min_combined_recovery_score']
-            );
+        $recoveryGrowthPass = $recoveryGrowthGate;
         if ($recoveryGrowthPass) {
             $metrics['recovery_growth_pass'] = true;
         } elseif ($rejectReason === null) {
@@ -943,6 +970,7 @@ final class EarlyImpulseGrowthLongService
             'would_have_blocked_by_filters' => [],
             'handoff_ready' => false,
             'executable' => false,
+            'diagnostic_handoff_ready' => false,
             'active_final' => false,
         ];
 
@@ -983,11 +1011,14 @@ final class EarlyImpulseGrowthLongService
         }
 
         $canBeActive = $rawPassed && !$enforcementBlocked;
-        $canHandoff = $canBeActive && (bool)$config['handoff_enabled'];
+        $canHandoff = $canBeActive
+            && (bool)$config['handoff_enabled']
+            && (bool)$config['emit_bot_handoff'];
 
         $candidate['active_final'] = $canBeActive;
         $candidate['handoff_ready'] = $canHandoff;
         $candidate['executable'] = $canHandoff;
+        $candidate['diagnostic_handoff_ready'] = $canBeActive;
 
         $signal = null;
         if ($canBeActive) {
@@ -996,6 +1027,7 @@ final class EarlyImpulseGrowthLongService
                 'raw_reject_reason' => null,
                 'handoff_ready' => $canHandoff,
                 'executable' => $canHandoff,
+                'diagnostic_handoff_ready' => $canBeActive,
                 'active_final' => true,
                 'signal_source_mode' => 'direct_strategy_handoff',
             ]);
@@ -1473,6 +1505,7 @@ final class EarlyImpulseGrowthLongService
         $cfg['min_recovery_growth_pct'] = max(0.0, (float)($cfg['min_recovery_growth_pct'] ?? 3.0));
         $cfg['min_recovery_score'] = max(0.0, min(1.0, (float)($cfg['min_recovery_score'] ?? 0.55)));
         $cfg['min_combined_recovery_score'] = max(0.0, min(1.0, (float)($cfg['min_combined_recovery_score'] ?? 0.50)));
+        $cfg['recovery_score_target_pct'] = max((float)$cfg['min_recovery_growth_pct'], (float)($cfg['recovery_score_target_pct'] ?? 8.0));
         $cfg['max_recovery_growth_pct'] = max((float)$cfg['min_recovery_growth_pct'], (float)($cfg['max_recovery_growth_pct'] ?? 30.0));
         $recoveryScoreMode = (string)($cfg['recovery_score_mode'] ?? 'threshold');
         $cfg['recovery_score_mode'] = in_array($recoveryScoreMode, ['threshold', 'range'], true) ? $recoveryScoreMode : 'threshold';
@@ -1481,6 +1514,7 @@ final class EarlyImpulseGrowthLongService
         $cfg['open_interest_enabled'] = (bool)($cfg['open_interest_enabled'] ?? true);
         $cfg['min_open_interest_growth_pct'] = max(-100.0, min(100.0, (float)($cfg['min_open_interest_growth_pct'] ?? 1.0)));
         $cfg['min_open_interest_growth_score'] = max(0.0, min(1.0, (float)($cfg['min_open_interest_growth_score'] ?? 0.55)));
+        $cfg['open_interest_score_target_pct'] = max((float)$cfg['min_open_interest_growth_pct'], (float)($cfg['open_interest_score_target_pct'] ?? 5.0));
         $cfg['allow_missing_open_interest'] = (bool)($cfg['allow_missing_open_interest'] ?? true);
         $cfg['missing_open_interest_mode'] = (string)($cfg['missing_open_interest_mode'] ?? 'diagnostic_only');
 
@@ -1604,5 +1638,34 @@ final class EarlyImpulseGrowthLongService
             return 1.0;
         }
         return max(0.0, min(1.0, $value / $threshold));
+    }
+
+    private function scoreGradientTarget(float $value, float $min, float $scoreAtMin, float $target): float
+    {
+        $scoreAtMin = max(0.0, min(1.0, $scoreAtMin));
+
+        if ($target <= $min) {
+            if ($value >= $min) {
+                return 1.0;
+            }
+            if ($min <= 0.0) {
+                return 0.0;
+            }
+            return max(0.0, min($scoreAtMin, ($value / $min) * $scoreAtMin));
+        }
+
+        if ($value < $min) {
+            if ($min <= 0.0) {
+                return 0.0;
+            }
+            return max(0.0, min($scoreAtMin, ($value / $min) * $scoreAtMin));
+        }
+
+        if ($value >= $target) {
+            return 1.0;
+        }
+
+        $progress = ($value - $min) / ($target - $min);
+        return max(0.0, min(1.0, $scoreAtMin + ((1.0 - $scoreAtMin) * $progress)));
     }
 }

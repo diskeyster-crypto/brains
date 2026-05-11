@@ -28,11 +28,13 @@ return [
     'min_recovery_growth_pct' => 'float',
     'min_recovery_score' => 'float',
     'min_combined_recovery_score' => 'float',
+    'recovery_score_target_pct' => 'float',
     'max_recovery_growth_pct' => 'float',
 
     'open_interest_enabled' => 'bool',
     'min_open_interest_growth_pct' => 'float',
     'min_open_interest_growth_score' => 'float',
+    'open_interest_score_target_pct' => 'float',
     'allow_missing_open_interest' => 'bool',
     'missing_open_interest_mode' => 'string',
 

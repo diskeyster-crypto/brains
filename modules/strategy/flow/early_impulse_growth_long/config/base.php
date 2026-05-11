@@ -31,12 +31,14 @@ return [
     'min_recovery_growth_pct' => 3.0,
     'min_recovery_score' => 0.55,
     'min_combined_recovery_score' => 0.50,
+    'recovery_score_target_pct' => 8.0,
     'max_recovery_growth_pct' => 30.0,
 
     // Open interest growth over recovery window
     'open_interest_enabled' => true,
     'min_open_interest_growth_pct' => 1.0,
     'min_open_interest_growth_score' => 0.55,
+    'open_interest_score_target_pct' => 5.0,
     'allow_missing_open_interest' => true,
     'missing_open_interest_mode' => 'diagnostic_only',
 

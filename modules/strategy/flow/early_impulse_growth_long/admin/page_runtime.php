@@ -65,6 +65,7 @@ $coinContextExamples = is_array($lastRun['coin_context_examples'] ?? null) ? (ar
 $coinContextPhaseCounts = is_array($lastRun['coin_context_phase_counts'] ?? null) ? (array)$lastRun['coin_context_phase_counts'] : [];
 $coinContextTrendCounts = is_array($lastRun['coin_context_trend_1h_counts'] ?? null) ? (array)$lastRun['coin_context_trend_1h_counts'] : [];
 $coinContextQualityCounts = is_array($lastRun['coin_context_quality_counts'] ?? null) ? (array)$lastRun['coin_context_quality_counts'] : [];
+$waveQualityFilterExamples = is_array($lastRun['wave_quality_filter_examples'] ?? null) ? (array)$lastRun['wave_quality_filter_examples'] : [];
 $orderbookFilterExamples = is_array($lastRun['orderbook_filter_examples'] ?? null) ? (array)$lastRun['orderbook_filter_examples'] : [];
 ?>
 <style>
@@ -120,12 +121,17 @@ $orderbookFilterExamples = is_array($lastRun['orderbook_filter_examples'] ?? nul
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['coin_context_checked_total'] ?? 0)) ?></div><div class="rt-lbl">coin_context_checked</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['coin_context_available_total'] ?? 0)) ?></div><div class="rt-lbl">coin_context_available</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['coin_context_missing_total'] ?? 0)) ?></div><div class="rt-lbl">coin_context_missing</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['wave_quality_filter_checked_total'] ?? 0)) ?></div><div class="rt-lbl">wave_quality_checked</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['wave_quality_filter_blocked_total'] ?? 0)) ?></div><div class="rt-lbl">wave_quality_blocked</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['wave_quality_filter_passed_total'] ?? 0)) ?></div><div class="rt-lbl">wave_quality_passed</div></div>
       <div class="rt-box"><div class="rt-val"><?= $fmtBool((bool)($lastRun['orderbook_context_enabled'] ?? false)) ?></div><div class="rt-lbl">orderbook_context_enabled</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['orderbook_context_checked_total'] ?? 0)) ?></div><div class="rt-lbl">orderbook_checked</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['orderbook_context_available_total'] ?? 0)) ?></div><div class="rt-lbl">orderbook_available</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['orderbook_context_missing_total'] ?? 0)) ?></div><div class="rt-lbl">orderbook_missing</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['orderbook_filter_blocked_total'] ?? 0)) ?></div><div class="rt-lbl">orderbook_filter_blocked</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['chaotic_context_quality_downgraded_total'] ?? 0)) ?></div><div class="rt-lbl">chaotic_quality_downgraded</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['downtrend_context_quality_downgraded_total'] ?? 0)) ?></div><div class="rt-lbl">downtrend_quality_downgraded</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['spike_context_quality_downgraded_total'] ?? 0)) ?></div><div class="rt-lbl">spike_quality_downgraded</div></div>
     </div>
 
     <div style="margin-top:12px;margin-bottom:12px;padding:12px;border:1px solid rgba(56,189,248,.3);border-radius:6px;background:rgba(56,189,248,.04);">
@@ -211,6 +217,7 @@ $orderbookFilterExamples = is_array($lastRun['orderbook_filter_examples'] ?? nul
       <tr><td style="color:#64748b">coin_context_phase_counts</td><td colspan="3"><code><?= $e(json_encode($coinContextPhaseCounts, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
       <tr><td style="color:#64748b">coin_context_trend_1h_counts</td><td colspan="3"><code><?= $e(json_encode($coinContextTrendCounts, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
       <tr><td style="color:#64748b">coin_context_quality_counts</td><td colspan="3"><code><?= $e(json_encode($coinContextQualityCounts, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+      <tr><td style="color:#64748b">wave_quality_filter_examples</td><td colspan="3"><code><?= $e(json_encode($waveQualityFilterExamples, JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
       <tr><td style="color:#64748b">orderbook_context_error_counts</td><td colspan="3"><code><?= $e(json_encode((array)($lastRun['orderbook_context_error_counts'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
       <tr><td style="color:#64748b">orderbook_ask_wall_detected_total</td><td><?= $e((int)($lastRun['orderbook_ask_wall_detected_total'] ?? 0)) ?></td><td style="color:#64748b;padding-left:16px;">orderbook_ask_wall_high_risk_total</td><td><?= $e((int)($lastRun['orderbook_ask_wall_high_risk_total'] ?? 0)) ?></td></tr>
       <tr><td style="color:#64748b">orderbook_bid_support_strong_total</td><td><?= $e((int)($lastRun['orderbook_bid_support_strong_total'] ?? 0)) ?></td><td style="color:#64748b;padding-left:16px;">orderbook_filter_checked_total</td><td><?= $e((int)($lastRun['orderbook_filter_checked_total'] ?? 0)) ?></td></tr>
@@ -353,8 +360,8 @@ $phaseTableRow = static function (array $row) use ($e, $fmtNum, $fmtBool): strin
         'extended' => '#f85149',
         default => '#64748b',
     };
-    $orderbookFilterRow = is_array($row['orderbook_wall_filter_result'] ?? null) ? (array)$row['orderbook_wall_filter_result'] : [];
-    $orderbookFilterReason = (string)($orderbookFilterRow['reason'] ?? '');
+    $waveQualityFilterRow = is_array($row['wave_quality_filter_result'] ?? null) ? (array)$row['wave_quality_filter_result'] : [];
+    $waveQualityFilterReason = (string)($waveQualityFilterRow['reason'] ?? '');
     return '<tr style="border-bottom:1px solid rgba(51,65,85,.5);">'
         . '<td style="padding:3px 8px;font-weight:600;">' . $e($row['symbol'] ?? '—') . '</td>'
         . '<td style="padding:3px 8px;color:' . $phaseColor . ';font-weight:600;">' . $e($row['entry_timing'] ?? '—') . '</td>'
@@ -365,18 +372,12 @@ $phaseTableRow = static function (array $row) use ($e, $fmtNum, $fmtBool): strin
         . '<td style="padding:3px 8px;">' . $e($fmtNum($row['smooth_growth_pct'] ?? null, 3)) . '</td>'
         . '<td style="padding:3px 8px;">' . $e((string)($row['smooth_growth_duration_minutes'] ?? '—')) . '</td>'
         . '<td style="padding:3px 8px;">' . $e($fmtNum($row['open_interest_growth_pct'] ?? null, 3)) . '</td>'
-        . '<td style="padding:3px 8px;">' . $e($row['trend_1h_direction'] ?? '—') . '</td>'
-        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['price_change_1h_pct'] ?? null, 3)) . '</td>'
-        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['corridor_position_pct'] ?? null, 2)) . '</td>'
-        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['room_to_recent_high_pct'] ?? null, 3)) . '</td>'
         . '<td style="padding:3px 8px;">' . $e($row['context_phase'] ?? '—') . '</td>'
         . '<td style="padding:3px 8px;">' . $e($row['context_quality'] ?? '—') . '</td>'
-        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['nearest_ask_wall_distance_pct'] ?? null, 3)) . '</td>'
-        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['nearest_ask_wall_notional'] ?? null, 2)) . '</td>'
-        . '<td style="padding:3px 8px;">' . $e($row['ask_wall_risk'] ?? '—') . '</td>'
-        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['bid_support_score'] ?? null, 3)) . '</td>'
-        . '<td style="padding:3px 8px;">' . $e($fmtNum($row['bid_ask_notional_ratio'] ?? null, 3)) . '</td>'
-        . '<td style="padding:3px 8px;"><code style="font-size:11px;">' . $e($orderbookFilterReason) . '</code></td>'
+        . '<td style="padding:3px 8px;"><code style="font-size:11px;">' . $e(implode(',', (array)($row['context_reasons'] ?? []))) . '</code></td>'
+        . '<td style="padding:3px 8px;">' . $e($row['trend_1h_direction'] ?? '—') . '</td>'
+        . '<td style="padding:3px 8px;">' . $e($row['trend_2h_direction'] ?? '—') . '</td>'
+        . '<td style="padding:3px 8px;"><code style="font-size:11px;">' . $e($waveQualityFilterReason) . '</code></td>'
         . '<td style="padding:3px 8px;">' . $fmtBool((bool)($row['handoff_ready'] ?? false)) . '</td>'
         . '<td style="padding:3px 8px;"><code style="font-size:11px;">' . $e($row['handoff_block_reason'] ?? '') . '</code></td>'
         . '</tr>';
@@ -391,18 +392,12 @@ $phaseTableHead = '<thead><tr style="border-bottom:1px solid var(--border-color,
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">growth_pct</th>'
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">growth_min</th>'
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">oi_growth%</th>'
-    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">trend_1h</th>'
-    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">price_1h%</th>'
-    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">corridor_pos%</th>'
-    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">room_high%</th>'
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">context_phase</th>'
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">context_quality</th>'
-    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">ask_wall_dist%</th>'
-    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">ask_wall_notional</th>'
-    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">ask_wall_risk</th>'
-    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">bid_support</th>'
-    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">bid_ask_ratio</th>'
-    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">orderbook_filter</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">context_reasons</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">trend_1h</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">trend_2h</th>'
+    . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">wave_quality_filter</th>'
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">handoff_ready</th>'
     . '<th style="text-align:left;padding:4px 8px;color:#94a3b8;">block_reason</th>'
     . '</tr></thead>';

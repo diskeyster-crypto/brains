@@ -245,12 +245,16 @@ final class CoinContextService
             $phaseReasons[] = 'phase_unclear';
         }
         $hasChaoticReason = in_array('too_many_direction_flips', $phaseReasons, true);
+        $hasDowntrendReason = in_array('downward_trend_confirmed', $phaseReasons, true);
+        $hasSpikeReason = in_array('spike_threshold_10m', $phaseReasons, true);
         $chaoticWindows = 0;
         foreach ([$trend1h, $trend2h, $trend4h] as $trendDirection) {
             if ($trendDirection === 'chaotic') {
                 $chaoticWindows++;
             }
         }
+        $downOrChaotic1h = in_array($trend1h, ['down', 'chaotic'], true);
+        $downOrChaotic2h = in_array($trend2h, ['down', 'chaotic'], true);
         if ($phase === 'chaotic' || $hasChaoticReason) {
             if ($chaoticWindows >= 2 || $phase === 'chaotic') {
                 $quality = 'bad';
@@ -258,6 +262,20 @@ final class CoinContextService
                 $quality = $quality === 'bad' ? 'bad' : 'medium';
             }
             $phaseReasons[] = 'chaotic_context_quality_downgraded';
+        }
+        if ($phase === 'downtrend' || $trend1h === 'down' || $hasDowntrendReason) {
+            if (($downOrChaotic1h && $downOrChaotic2h) || ($trend1h === 'down' && $trend2h === 'down')) {
+                $quality = 'bad';
+            } else {
+                $quality = $quality === 'bad' ? 'bad' : 'medium';
+            }
+            $phaseReasons[] = 'downtrend_context_quality_downgraded';
+        }
+        if ($phase === 'spike' || $hasSpikeReason) {
+            if ($quality !== 'bad') {
+                $quality = ($downOrChaotic1h || $downOrChaotic2h || $phase === 'spike') ? 'medium' : $quality;
+            }
+            $phaseReasons[] = 'spike_context_quality_downgraded';
         }
         if ($corridorRangePct <= 0.0) {
             $quality = 'bad';

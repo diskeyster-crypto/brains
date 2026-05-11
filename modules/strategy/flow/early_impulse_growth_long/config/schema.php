@@ -89,6 +89,13 @@ return [
     'eig_filter_orderbook_wall_filter_min_bid_ask_ratio' => 'float',
     'eig_filter_orderbook_wall_filter_allow_missing_orderbook' => 'bool',
     'eig_filter_orderbook_wall_filter_block_if_orderbook_missing' => 'bool',
+    'eig_filter_wave_quality_filter_enabled' => 'bool',
+    'eig_filter_wave_quality_filter_severity' => 'string',
+    'eig_filter_wave_quality_filter_block_context_phases' => 'string',
+    'eig_filter_wave_quality_filter_block_context_reasons' => 'string',
+    'eig_filter_wave_quality_filter_block_trend_1h_directions' => 'string',
+    'eig_filter_wave_quality_filter_require_trend_2h_confirmation' => 'bool',
+    'eig_filter_wave_quality_filter_allow_unknown_context' => 'bool',
 
     'coin_context_enabled' => 'bool',
     'coin_context_attach_to_candidates' => 'bool',

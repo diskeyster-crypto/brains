@@ -99,6 +99,13 @@ return [
     'eig_filter_orderbook_wall_filter_min_bid_ask_ratio' => 0.65,
     'eig_filter_orderbook_wall_filter_allow_missing_orderbook' => true,
     'eig_filter_orderbook_wall_filter_block_if_orderbook_missing' => false,
+    'eig_filter_wave_quality_filter_enabled' => true,
+    'eig_filter_wave_quality_filter_severity' => 'hard_block',
+    'eig_filter_wave_quality_filter_block_context_phases' => 'chaotic,spike,downtrend',
+    'eig_filter_wave_quality_filter_block_context_reasons' => 'too_many_direction_flips,downward_trend_confirmed,spike_threshold_10m',
+    'eig_filter_wave_quality_filter_block_trend_1h_directions' => 'chaotic,down',
+    'eig_filter_wave_quality_filter_require_trend_2h_confirmation' => true,
+    'eig_filter_wave_quality_filter_allow_unknown_context' => true,
 
     // Coin context (diagnostic-only enrichment)
     'coin_context_enabled' => true,

@@ -39,6 +39,14 @@ return [
     'allow_missing_open_interest' => 'bool',
     'missing_open_interest_mode' => 'string',
 
+    'recovery_structure_enabled' => 'bool',
+    'recovery_min_candles_after_low' => 'int',
+    'recovery_min_higher_lows' => 'int',
+    'recovery_min_higher_closes' => 'int',
+    'recovery_max_single_candle_dominance_pct' => 'float',
+    'recovery_max_speed_pct_per_min' => 'float',
+    'recovery_min_structure_score' => 'float',
+
     'current_acceleration_window_minutes' => 'int',
     'fast_spike_diagnostic_enabled' => 'bool',
     'fast_spike_window_minutes' => 'int',

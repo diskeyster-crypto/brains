@@ -43,6 +43,15 @@ return [
     'allow_missing_open_interest' => true,
     'missing_open_interest_mode' => 'diagnostic_only',
 
+    // Recovery structure / phase detection (shape-based, replaces fixed duration rule)
+    'recovery_structure_enabled' => true,
+    'recovery_min_candles_after_low' => 20,
+    'recovery_min_higher_lows' => 5,
+    'recovery_min_higher_closes' => 5,
+    'recovery_max_single_candle_dominance_pct' => 60.0,
+    'recovery_max_speed_pct_per_min' => 0.3,
+    'recovery_min_structure_score' => 0.55,
+
     // Current acceleration (diagnostic only — not a reject condition)
     'current_acceleration_window_minutes' => 10,
     'fast_spike_diagnostic_enabled' => true,

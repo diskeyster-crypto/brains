@@ -219,7 +219,10 @@ final class EarlyImpulseGrowthLongService
             'oi_missing_allowed_total' => 0,
             'oi_missing_blocked_total' => 0,
             'current_acceleration_diagnostic_total' => 0,
-            'recovery_duration_too_short_total' => 0,
+            'too_early_no_structure_total' => 0,
+            'late_spike_detected_total' => 0,
+            'recovery_structure_too_weak_total' => 0,
+            'recovery_phase_valid_recovery_total' => 0,
             'fast_spike_detected_total' => 0,
             'raw_strategy_passed_total' => 0,
             'raw_strategy_rejected_total' => 0,
@@ -252,6 +255,11 @@ final class EarlyImpulseGrowthLongService
                     'recovery_growth_pct' => $candidate['recovery_growth_pct'] ?? null,
                     'recovery_duration_minutes' => $candidate['recovery_duration_minutes'] ?? null,
                     'recovery_min_duration_minutes' => $candidate['recovery_min_duration_minutes'] ?? null,
+                    'recovery_phase' => $candidate['recovery_phase'] ?? null,
+                    'recovery_structure_score' => $candidate['recovery_structure_score'] ?? null,
+                    'higher_low_count' => $candidate['higher_low_count'] ?? null,
+                    'higher_close_count' => $candidate['higher_close_count'] ?? null,
+                    'single_candle_dominance_pct' => $candidate['single_candle_dominance_pct'] ?? null,
                     'recovery_score' => $candidate['recovery_score'] ?? null,
                     'open_interest_growth_pct' => $candidate['open_interest_growth_pct'] ?? null,
                     'open_interest_growth_score' => $candidate['open_interest_growth_score'] ?? null,
@@ -260,6 +268,8 @@ final class EarlyImpulseGrowthLongService
                     'impulse_speed_pct_per_min' => $candidate['impulse_speed_pct_per_min'] ?? null,
                     'roi_equivalent_10m' => $candidate['roi_equivalent_10m'] ?? null,
                     'fast_spike_detected' => (bool)($candidate['fast_spike_detected'] ?? false),
+                    'late_spike_detected' => (bool)($candidate['late_spike_detected'] ?? false),
+                    'controlled_speed' => $candidate['controlled_speed'] ?? null,
                     'data_source_used' => $candidate['data_source_used'] ?? null,
                 ];
             }
@@ -342,8 +352,17 @@ final class EarlyImpulseGrowthLongService
             if ($m['accel_computed'] ?? false) {
                 $diag['current_acceleration_diagnostic_total']++;
             }
-            if (($candidate['raw_reject_reason'] ?? null) === 'recovery_duration_too_short') {
-                $diag['recovery_duration_too_short_total']++;
+            $rawRejectReason = (string)($candidate['raw_reject_reason'] ?? '');
+            if ($rawRejectReason === 'too_early_no_structure') {
+                $diag['too_early_no_structure_total']++;
+            } elseif ($rawRejectReason === 'recovery_structure_too_weak') {
+                $diag['recovery_structure_too_weak_total']++;
+            }
+            if ((bool)($candidate['late_spike_detected'] ?? false)) {
+                $diag['late_spike_detected_total']++;
+            }
+            if ((string)($candidate['recovery_phase'] ?? '') === 'valid_recovery') {
+                $diag['recovery_phase_valid_recovery_total']++;
             }
             if ($m['fast_spike_detected'] ?? false) {
                 $diag['fast_spike_detected_total']++;
@@ -586,8 +605,12 @@ final class EarlyImpulseGrowthLongService
         usort($accelExamples, static fn(array $a, array $b): int => ((float)($b['current_price_change_pct_10m'] ?? -INF) <=> (float)($a['current_price_change_pct_10m'] ?? -INF)));
         $fastSpikeExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => (bool)($c['fast_spike_detected'] ?? false)));
         usort($fastSpikeExamples, static fn(array $a, array $b): int => ((float)($b['roi_equivalent_10m'] ?? -INF) <=> (float)($a['roi_equivalent_10m'] ?? -INF)));
-        $recoveryDurationTooShortExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['raw_reject_reason'] ?? '') === 'recovery_duration_too_short'));
-        usort($recoveryDurationTooShortExamples, static fn(array $a, array $b): int => ((int)($a['recovery_duration_minutes'] ?? PHP_INT_MAX) <=> (int)($b['recovery_duration_minutes'] ?? PHP_INT_MAX)));
+        $lateSpikeExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => (bool)($c['late_spike_detected'] ?? false)));
+        usort($lateSpikeExamples, static fn(array $a, array $b): int => ((float)($b['impulse_speed_pct_per_min'] ?? -INF) <=> (float)($a['impulse_speed_pct_per_min'] ?? -INF)));
+        $tooEarlyExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['recovery_phase'] ?? '') === 'too_early'));
+        usort($tooEarlyExamples, static fn(array $a, array $b): int => ((int)($b['higher_low_count'] ?? 0) <=> (int)($a['higher_low_count'] ?? 0)));
+        $recoveryStructureTooWeakExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['raw_reject_reason'] ?? '') === 'recovery_structure_too_weak'));
+        usort($recoveryStructureTooWeakExamples, static fn(array $a, array $b): int => ((float)($b['recovery_structure_score'] ?? -INF) <=> (float)($a['recovery_structure_score'] ?? -INF)));
 
         $acceptedExamples = array_slice(array_map(static function (array $c): array {
             return [
@@ -596,6 +619,10 @@ final class EarlyImpulseGrowthLongService
                 'prior_decline_pct' => $c['prior_decline_pct'] ?? null,
                 'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
                 'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'recovery_phase' => $c['recovery_phase'] ?? null,
+                'recovery_structure_score' => $c['recovery_structure_score'] ?? null,
+                'higher_low_count' => $c['higher_low_count'] ?? null,
+                'higher_close_count' => $c['higher_close_count'] ?? null,
                 'recovery_score' => $c['recovery_score'] ?? null,
                 'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
                 'current_price_change_pct_10m' => $c['current_price_change_pct_10m'] ?? null,
@@ -611,6 +638,7 @@ final class EarlyImpulseGrowthLongService
                 'reject_reason' => $c['raw_reject_reason'] ?? null,
                 'prior_decline_pct' => $c['prior_decline_pct'] ?? null,
                 'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
+                'recovery_structure_score' => $c['recovery_structure_score'] ?? null,
                 'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
             ];
         }, $rejectedExamples), 0, 20);
@@ -621,6 +649,7 @@ final class EarlyImpulseGrowthLongService
                 'prior_decline_pct' => $c['prior_decline_pct'] ?? null,
                 'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
                 'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'recovery_structure_score' => $c['recovery_structure_score'] ?? null,
                 'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
                 'combined_recovery_score' => $c['combined_recovery_score'] ?? null,
                 'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
@@ -632,6 +661,8 @@ final class EarlyImpulseGrowthLongService
                 'symbol' => $c['symbol'] ?? null,
                 'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
                 'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'recovery_structure_score' => $c['recovery_structure_score'] ?? null,
+                'higher_low_count' => $c['higher_low_count'] ?? null,
                 'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
                 'combined_recovery_score' => $c['combined_recovery_score'] ?? null,
             ];
@@ -673,17 +704,52 @@ final class EarlyImpulseGrowthLongService
                 'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
             ];
         }, $fastSpikeExamples), 0, 20);
-        $recoveryDurationTooShortExamples = array_slice(array_map(static function (array $c): array {
+        $lateSpikeExamples = array_slice(array_map(static function (array $c): array {
             return [
                 'symbol' => $c['symbol'] ?? null,
                 'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
                 'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'recovery_structure_score' => $c['recovery_structure_score'] ?? null,
+                'higher_low_count' => $c['higher_low_count'] ?? null,
+                'higher_close_count' => $c['higher_close_count'] ?? null,
+                'single_candle_dominance_pct' => $c['single_candle_dominance_pct'] ?? null,
+                'impulse_speed_pct_per_min' => $c['impulse_speed_pct_per_min'] ?? null,
                 'current_price_change_pct_10m' => $c['current_price_change_pct_10m'] ?? null,
                 'roi_equivalent_10m' => $c['roi_equivalent_10m'] ?? null,
                 'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
                 'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
             ];
-        }, $recoveryDurationTooShortExamples), 0, 20);
+        }, $lateSpikeExamples), 0, 20);
+        $tooEarlyExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
+                'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'higher_low_count' => $c['higher_low_count'] ?? null,
+                'higher_close_count' => $c['higher_close_count'] ?? null,
+                'impulse_speed_pct_per_min' => $c['impulse_speed_pct_per_min'] ?? null,
+                'current_price_change_pct_10m' => $c['current_price_change_pct_10m'] ?? null,
+                'roi_equivalent_10m' => $c['roi_equivalent_10m'] ?? null,
+                'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
+                'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
+            ];
+        }, $tooEarlyExamples), 0, 20);
+        $recoveryStructureTooWeakExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
+                'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'recovery_structure_score' => $c['recovery_structure_score'] ?? null,
+                'higher_low_count' => $c['higher_low_count'] ?? null,
+                'higher_close_count' => $c['higher_close_count'] ?? null,
+                'single_candle_dominance_pct' => $c['single_candle_dominance_pct'] ?? null,
+                'impulse_speed_pct_per_min' => $c['impulse_speed_pct_per_min'] ?? null,
+                'current_price_change_pct_10m' => $c['current_price_change_pct_10m'] ?? null,
+                'roi_equivalent_10m' => $c['roi_equivalent_10m'] ?? null,
+                'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
+                'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
+            ];
+        }, $recoveryStructureTooWeakExamples), 0, 20);
 
         $lastRun = [
             'strategy_id' => self::STRATEGY_ID,
@@ -763,7 +829,10 @@ final class EarlyImpulseGrowthLongService
             'oi_missing_allowed_total' => $diag['oi_missing_allowed_total'],
             'oi_missing_blocked_total' => $diag['oi_missing_blocked_total'],
             'current_acceleration_diagnostic_total' => $diag['current_acceleration_diagnostic_total'],
-            'recovery_duration_too_short_total' => $diag['recovery_duration_too_short_total'],
+            'too_early_no_structure_total' => $diag['too_early_no_structure_total'],
+            'late_spike_detected_total' => $diag['late_spike_detected_total'],
+            'recovery_structure_too_weak_total' => $diag['recovery_structure_too_weak_total'],
+            'recovery_phase_valid_recovery_total' => $diag['recovery_phase_valid_recovery_total'],
             'fast_spike_detected_total' => $diag['fast_spike_detected_total'],
             'raw_strategy_passed_total' => $diag['raw_strategy_passed_total'],
             'raw_strategy_rejected_total' => $diag['raw_strategy_rejected_total'],
@@ -788,7 +857,9 @@ final class EarlyImpulseGrowthLongService
             'open_interest_growth_examples' => $openInterestExamples,
             'current_acceleration_examples' => $accelExamples,
             'fast_spike_examples' => $fastSpikeExamples,
-            'recovery_duration_too_short_examples' => $recoveryDurationTooShortExamples,
+            'late_spike_examples' => $lateSpikeExamples,
+            'too_early_examples' => $tooEarlyExamples,
+            'recovery_structure_too_weak_examples' => $recoveryStructureTooWeakExamples,
         ];
 
         $this->writeJson($this->storagePath('last_run.json'), $lastRun);
@@ -948,10 +1019,19 @@ final class EarlyImpulseGrowthLongService
         $recoveryGrowthPct = 0.0;
         $recoveryDurationMin = 0;
         $recoveryScore = 0.0;
-        $recoveryPhase = 'early';
+        $recoveryPhase = 'failed';
         $recoveryGrowthGate = false;
         $recoveryGrowthPass = false;
         $combinedRecoveryScore = 0.0;
+        // Structure state — always defined even if the recovery block is skipped
+        $recoveryStructureScore = 0.0;
+        $multiStepRecovery = false;
+        $higherLowCount = 0;
+        $higherCloseCount = 0;
+        $singleCandleDominancePct = null;
+        $impulseSpeedPctPerMin = null;
+        $controlledSpeed = false;
+        $lateSpikeDet = false;
 
         if ($rejectReason === null && $recoveryLowPrice !== null && $recoveryLowTs !== null) {
             if ($latestPrice > 0.0 && $recoveryLowPrice > 0.0) {
@@ -976,21 +1056,38 @@ final class EarlyImpulseGrowthLongService
                     );
                 }
                 $recoveryGrowthGate = $recoveryGrowthPct >= $recoveryMinGrowthPct;
-
-                // Recovery phase classification
-                if ($recoveryDurationMin >= $recoveryMaxWindowMin) {
-                    $recoveryPhase = 'extended';
-                } elseif ($recoveryDurationMin >= $recoveryMinWindowMin) {
-                    $recoveryPhase = 'developing';
-                } else {
-                    $recoveryPhase = 'early';
-                }
             }
 
+            // --- 3b. Recovery structure / phase analysis ---
             if (!$recoveryGrowthGate) {
                 $rejectReason = 'insufficient_recovery_growth';
-            } elseif ($recoveryDurationMin < $recoveryMinDurationMin) {
-                $rejectReason = 'recovery_duration_too_short';
+            } else {
+                $candlesAfterLow = array_values(array_filter(
+                    $allCandles,
+                    static fn(array $c): bool => (int)($c['ts'] ?? 0) >= (int)($recoveryLowTs ?? 0)
+                ));
+                $structResult = $this->computeRecoveryStructure(
+                    $candlesAfterLow,
+                    $recoveryGrowthPct,
+                    $recoveryDurationMin,
+                    $config
+                );
+                $recoveryPhase          = $structResult['recovery_phase'];
+                $recoveryStructureScore = (float)($structResult['recovery_structure_score'] ?? 0.0);
+                $multiStepRecovery      = (bool)($structResult['multi_step_recovery'] ?? false);
+                $higherLowCount         = (int)($structResult['higher_low_count'] ?? 0);
+                $higherCloseCount       = (int)($structResult['higher_close_count'] ?? 0);
+                $singleCandleDominancePct = $structResult['single_candle_dominance_pct'] ?? null;
+                $impulseSpeedPctPerMin  = $structResult['impulse_speed_pct_per_min'] ?? null;
+                $controlledSpeed        = (bool)($structResult['controlled_speed'] ?? false);
+                $lateSpikeDet           = (bool)($structResult['late_spike_detected'] ?? false);
+                if ($structResult['reject_reason'] !== null) {
+                    $rejectReason = $structResult['reject_reason'];
+                }
+            }
+            // Fallback speed for diagnostics when structure was not computed
+            if ($impulseSpeedPctPerMin === null && $recoveryDurationMin > 0) {
+                $impulseSpeedPctPerMin = round($recoveryGrowthPct / max(1, $recoveryDurationMin), 6);
             }
         }
 
@@ -1040,6 +1137,9 @@ final class EarlyImpulseGrowthLongService
             $oiPass = true;
             $metrics['oi_pass'] = true;
         }
+
+        // OI growth confirmed flag (true=passed, false=failed, null=missing data)
+        $oiGrowthConfirmed = $oiPass ? true : ($oiGrowthPct === null ? null : false);
 
         // Combined recovery score (diagnostic)
         $combinedRecoveryScore = round(
@@ -1092,7 +1192,6 @@ final class EarlyImpulseGrowthLongService
 
         // --- 5.1 Fast spike / late-entry diagnostics ---
         $priceChangePct10m = null;
-        $impulseSpeedPctPerMin = null;
         $roiEquivalent10m = null;
         $fastSpikeDetected = false;
         $fastSpikeReason = null;
@@ -1106,7 +1205,6 @@ final class EarlyImpulseGrowthLongService
             $fastSpikePriceStart = (float)($fastSpikeCandles[0]['close'] ?? 0.0);
             if ($fastSpikePriceStart > 0.0 && $latestPrice > 0.0) {
                 $priceChangePct10m = round((($latestPrice - $fastSpikePriceStart) / $fastSpikePriceStart) * 100.0, 6);
-                $impulseSpeedPctPerMin = round($priceChangePct10m / max(1, $fastSpikeWindowMin), 6);
                 $roiEquivalent10m = round($priceChangePct10m * $fastSpikeRoiEquivalentLeverage, 6);
                 if ($fastSpikeDiagnosticEnabled
                     && ($priceChangePct10m >= $fastSpikePriceChangeThreshold || $roiEquivalent10m >= $fastSpikeRoiEquivalentThreshold)
@@ -1128,7 +1226,7 @@ final class EarlyImpulseGrowthLongService
             && $priorDeclineDetected
             && $recoveryGrowthPct >= (float)$config['min_recovery_growth_pct']
             && ($oiPass || $metrics['oi_missing_allowed'])
-            && $combinedRecoveryScore >= 0.45;
+            && ($recoveryStructureScore >= 0.35 || $combinedRecoveryScore >= 0.45);
 
         $signalId = strtolower($symbol)
             . '_' . self::SIDE
@@ -1160,12 +1258,20 @@ final class EarlyImpulseGrowthLongService
             'recovery_min_duration_minutes' => $recoveryMinDurationMin,
             'recovery_score' => round($recoveryScore, 6),
             'recovery_phase' => $recoveryPhase,
+            'recovery_structure_score' => round($recoveryStructureScore, 4),
+            'multi_step_recovery' => $multiStepRecovery,
+            'higher_low_count' => $higherLowCount,
+            'higher_close_count' => $higherCloseCount,
+            'single_candle_dominance_pct' => $singleCandleDominancePct,
+            'controlled_speed' => $controlledSpeed,
+            'late_spike_detected' => $lateSpikeDet,
             'recovery_passed' => $recoveryGrowthPass,
 
             'open_interest_start' => $oiStart,
             'open_interest_end' => $oiEnd,
             'open_interest_growth_pct' => $oiGrowthPct !== null ? round($oiGrowthPct, 6) : null,
             'open_interest_growth_score' => $oiScore !== null ? round($oiScore, 6) : null,
+            'oi_growth_confirmed' => $oiGrowthConfirmed,
 
             'current_acceleration_window_minutes' => $accelWindowMin,
             'current_price_change_pct_10m' => $priceChangePct10m,
@@ -1333,6 +1439,157 @@ final class EarlyImpulseGrowthLongService
             'latest_ts' => $latestTs,
             'source' => $source,
             'error' => $error,
+        ];
+    }
+
+    /**
+     * Compute recovery structure/phase from candles after the recovery low.
+     *
+     * @param list<array<string,mixed>> $candlesAfterLow Candles from recovery low onward (ts >= low ts), sorted asc
+     * @param float $recoveryGrowthPct Overall recovery growth pct (from low to latest close)
+     * @param int $recoveryDurationMin Minutes since recovery low
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
+    private function computeRecoveryStructure(
+        array $candlesAfterLow,
+        float $recoveryGrowthPct,
+        int $recoveryDurationMin,
+        array $config
+    ): array {
+        $structureEnabled = (bool)($config['recovery_structure_enabled'] ?? true);
+        $minCandlesAfterLow = max(3, (int)($config['recovery_min_candles_after_low'] ?? 20));
+        $minHigherLows = max(1, (int)($config['recovery_min_higher_lows'] ?? 5));
+        $minHigherCloses = max(1, (int)($config['recovery_min_higher_closes'] ?? 5));
+        $maxDominancePct = max(10.0, min(100.0, (float)($config['recovery_max_single_candle_dominance_pct'] ?? 60.0)));
+        $maxSpeedPctPerMin = max(0.01, (float)($config['recovery_max_speed_pct_per_min'] ?? 0.3));
+        $minStructureScore = max(0.0, min(1.0, (float)($config['recovery_min_structure_score'] ?? 0.55)));
+
+        $n = count($candlesAfterLow);
+
+        // Overall recovery speed (full recovery window)
+        $impulseSpeedPctPerMin = $recoveryDurationMin > 0
+            ? round($recoveryGrowthPct / max(1, $recoveryDurationMin), 6)
+            : 0.0;
+
+        // If structure detection is disabled, report valid_recovery unconditionally
+        if (!$structureEnabled) {
+            return [
+                'recovery_phase' => 'valid_recovery',
+                'recovery_structure_score' => 1.0,
+                'multi_step_recovery' => true,
+                'higher_low_count' => 0,
+                'higher_close_count' => 0,
+                'single_candle_dominance_pct' => null,
+                'impulse_speed_pct_per_min' => $impulseSpeedPctPerMin,
+                'controlled_speed' => true,
+                'late_spike_detected' => false,
+                'reject_reason' => null,
+            ];
+        }
+
+        // Too few candles: cannot confirm structure yet
+        if ($n < $minCandlesAfterLow) {
+            return [
+                'recovery_phase' => 'too_early',
+                'recovery_structure_score' => 0.0,
+                'multi_step_recovery' => false,
+                'higher_low_count' => 0,
+                'higher_close_count' => 0,
+                'single_candle_dominance_pct' => null,
+                'impulse_speed_pct_per_min' => $impulseSpeedPctPerMin,
+                'controlled_speed' => $impulseSpeedPctPerMin <= $maxSpeedPctPerMin,
+                'late_spike_detected' => false,
+                'reject_reason' => 'too_early_no_structure',
+            ];
+        }
+
+        // Count higher lows and higher closes (consecutive candle comparisons)
+        $higherLowCount = 0;
+        $higherCloseCount = 0;
+        for ($i = 1; $i < $n; $i++) {
+            $prevLow = (float)($candlesAfterLow[$i - 1]['low'] ?? $candlesAfterLow[$i - 1]['close'] ?? 0.0);
+            $currLow = (float)($candlesAfterLow[$i]['low'] ?? $candlesAfterLow[$i]['close'] ?? 0.0);
+            $prevClose = (float)($candlesAfterLow[$i - 1]['close'] ?? 0.0);
+            $currClose = (float)($candlesAfterLow[$i]['close'] ?? 0.0);
+            if ($currLow > $prevLow && $prevLow > 0.0) {
+                $higherLowCount++;
+            }
+            if ($currClose > $prevClose && $prevClose > 0.0) {
+                $higherCloseCount++;
+            }
+        }
+
+        // Single-candle dominance: fraction of total recovery captured by the single best candle
+        $firstClose = (float)($candlesAfterLow[0]['close'] ?? 0.0);
+        $lastClose = (float)($candlesAfterLow[$n - 1]['close'] ?? 0.0);
+        $totalRecoveryAbs = $lastClose - $firstClose;
+        $singleCandleDominancePct = null;
+        if ($totalRecoveryAbs > 0.0) {
+            $maxCandleGain = 0.0;
+            for ($i = 1; $i < $n; $i++) {
+                $prevClose = (float)($candlesAfterLow[$i - 1]['close'] ?? 0.0);
+                $currClose = (float)($candlesAfterLow[$i]['close'] ?? 0.0);
+                $gain = $currClose - $prevClose;
+                if ($gain > $maxCandleGain) {
+                    $maxCandleGain = $gain;
+                }
+            }
+            $singleCandleDominancePct = round(($maxCandleGain / $totalRecoveryAbs) * 100.0, 2);
+        }
+
+        // Speed check
+        $controlledSpeed = $impulseSpeedPctPerMin <= $maxSpeedPctPerMin;
+
+        // Late spike: excessive single-candle dominance OR uncontrolled speed
+        $lateSpike = false;
+        if ($singleCandleDominancePct !== null && $singleCandleDominancePct >= $maxDominancePct) {
+            $lateSpike = true;
+        }
+        if (!$controlledSpeed) {
+            $lateSpike = true;
+        }
+
+        // Multi-step recovery: enough higher lows AND higher closes
+        $multiStepRecovery = $higherLowCount >= $minHigherLows && $higherCloseCount >= $minHigherCloses;
+
+        // Structure score (weighted components)
+        $hlScore = $minHigherLows > 0 ? min(1.0, $higherLowCount / $minHigherLows) : 1.0;
+        $hcScore = $minHigherCloses > 0 ? min(1.0, $higherCloseCount / $minHigherCloses) : 1.0;
+        $domScore = $singleCandleDominancePct !== null
+            ? max(0.0, 1.0 - $singleCandleDominancePct / 100.0)
+            : 0.5;
+        $speedScore = $controlledSpeed
+            ? 1.0
+            : max(0.0, 1.0 - (($impulseSpeedPctPerMin - $maxSpeedPctPerMin) / max(0.01, $maxSpeedPctPerMin)));
+        $recoveryStructureScore = round(
+            $hlScore * 0.30 + $hcScore * 0.30 + $domScore * 0.20 + $speedScore * 0.20,
+            4
+        );
+
+        // Phase determination
+        if ($lateSpike) {
+            $phase = 'late_spike';
+            $structRejectReason = 'late_spike_detected';
+        } elseif ($recoveryStructureScore >= $minStructureScore && $multiStepRecovery) {
+            $phase = 'valid_recovery';
+            $structRejectReason = null;
+        } else {
+            $phase = 'failed';
+            $structRejectReason = 'recovery_structure_too_weak';
+        }
+
+        return [
+            'recovery_phase' => $phase,
+            'recovery_structure_score' => $recoveryStructureScore,
+            'multi_step_recovery' => $multiStepRecovery,
+            'higher_low_count' => $higherLowCount,
+            'higher_close_count' => $higherCloseCount,
+            'single_candle_dominance_pct' => $singleCandleDominancePct,
+            'impulse_speed_pct_per_min' => $impulseSpeedPctPerMin,
+            'controlled_speed' => $controlledSpeed,
+            'late_spike_detected' => $lateSpike,
+            'reject_reason' => $structRejectReason,
         ];
     }
 
@@ -1778,6 +2035,15 @@ final class EarlyImpulseGrowthLongService
         $cfg['open_interest_score_target_pct'] = max((float)$cfg['min_open_interest_growth_pct'], (float)($cfg['open_interest_score_target_pct'] ?? 5.0));
         $cfg['allow_missing_open_interest'] = (bool)($cfg['allow_missing_open_interest'] ?? true);
         $cfg['missing_open_interest_mode'] = (string)($cfg['missing_open_interest_mode'] ?? 'diagnostic_only');
+
+        // Recovery structure / phase detection
+        $cfg['recovery_structure_enabled'] = (bool)($cfg['recovery_structure_enabled'] ?? true);
+        $cfg['recovery_min_candles_after_low'] = max(3, min(200, (int)($cfg['recovery_min_candles_after_low'] ?? 20)));
+        $cfg['recovery_min_higher_lows'] = max(1, min(100, (int)($cfg['recovery_min_higher_lows'] ?? 5)));
+        $cfg['recovery_min_higher_closes'] = max(1, min(100, (int)($cfg['recovery_min_higher_closes'] ?? 5)));
+        $cfg['recovery_max_single_candle_dominance_pct'] = max(10.0, min(100.0, (float)($cfg['recovery_max_single_candle_dominance_pct'] ?? 60.0)));
+        $cfg['recovery_max_speed_pct_per_min'] = max(0.01, min(10.0, (float)($cfg['recovery_max_speed_pct_per_min'] ?? 0.3)));
+        $cfg['recovery_min_structure_score'] = max(0.0, min(1.0, (float)($cfg['recovery_min_structure_score'] ?? 0.55)));
 
         // Current acceleration (diagnostic only)
         $cfg['current_acceleration_window_minutes'] = max(1, (int)($cfg['current_acceleration_window_minutes'] ?? 10));

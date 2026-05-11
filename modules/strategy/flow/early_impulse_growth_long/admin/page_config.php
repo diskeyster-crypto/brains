@@ -112,6 +112,20 @@ foreach ($filterConfig as $row) {
     </div>
 
     <div class="cfg-section">
+      <h6>A2) Recovery structure / phase detection</h6>
+      <p class="note" style="margin:0 0 10px;">Shape-based rules that replaced the fixed duration check. A recovery must be distributed across multiple candles with ascending lows/closes, no single-candle spike, and controlled speed.</p>
+      <div class="cfg-grid">
+        <div><label class="cfg-label">recovery_structure_enabled</label><select name="recovery_structure_enabled" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"><option value="1" <?= (bool)$cfg('recovery_structure_enabled', true) ? 'selected' : '' ?>>true</option><option value="0" <?= !(bool)$cfg('recovery_structure_enabled', true) ? 'selected' : '' ?>>false</option></select></div>
+        <div><label class="cfg-label">recovery_min_candles_after_low</label><input type="number" name="recovery_min_candles_after_low" min="3" max="200" value="<?= $e((int)$cfg('recovery_min_candles_after_low', 20)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">recovery_min_higher_lows</label><input type="number" name="recovery_min_higher_lows" min="1" max="100" value="<?= $e((int)$cfg('recovery_min_higher_lows', 5)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">recovery_min_higher_closes</label><input type="number" name="recovery_min_higher_closes" min="1" max="100" value="<?= $e((int)$cfg('recovery_min_higher_closes', 5)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">recovery_max_single_candle_dominance_pct</label><input type="number" name="recovery_max_single_candle_dominance_pct" step="0.1" min="10" max="100" value="<?= $e((float)$cfg('recovery_max_single_candle_dominance_pct', 60.0)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">recovery_max_speed_pct_per_min</label><input type="number" name="recovery_max_speed_pct_per_min" step="0.01" min="0.01" max="10" value="<?= $e((float)$cfg('recovery_max_speed_pct_per_min', 0.3)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+        <div><label class="cfg-label">recovery_min_structure_score</label><input type="number" name="recovery_min_structure_score" step="0.01" min="0" max="1" value="<?= $e((float)$cfg('recovery_min_structure_score', 0.55)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
+      </div>
+    </div>
+
+    <div class="cfg-section">
       <h6>B) Filter profile presets</h6>
       <div class="cfg-grid">
         <div>

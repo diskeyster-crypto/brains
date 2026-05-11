@@ -20,6 +20,7 @@ return [
     'recovery_window_minutes' => 'int',
     'recovery_min_window_minutes' => 'int',
     'recovery_max_window_minutes' => 'int',
+    'recovery_min_duration_minutes' => 'int',
 
     'prior_decline_lookback_minutes' => 'int',
     'min_prior_decline_pct' => 'float',
@@ -39,6 +40,11 @@ return [
     'missing_open_interest_mode' => 'string',
 
     'current_acceleration_window_minutes' => 'int',
+    'fast_spike_diagnostic_enabled' => 'bool',
+    'fast_spike_window_minutes' => 'int',
+    'fast_spike_price_change_pct' => 'float',
+    'fast_spike_roi_equivalent_leverage' => 'float',
+    'fast_spike_roi_equivalent_threshold' => 'float',
 
     'filter_engine_enabled' => 'bool',
     'filter_enforcement_mode' => 'string',

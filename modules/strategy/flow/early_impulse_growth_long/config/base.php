@@ -21,6 +21,7 @@ return [
     'recovery_window_minutes' => 180,
     'recovery_min_window_minutes' => 120,
     'recovery_max_window_minutes' => 240,
+    'recovery_min_duration_minutes' => 120,
 
     // Prior decline detection
     'prior_decline_lookback_minutes' => 240,
@@ -44,6 +45,11 @@ return [
 
     // Current acceleration (diagnostic only — not a reject condition)
     'current_acceleration_window_minutes' => 10,
+    'fast_spike_diagnostic_enabled' => true,
+    'fast_spike_window_minutes' => 10,
+    'fast_spike_price_change_pct' => 2.0,
+    'fast_spike_roi_equivalent_leverage' => 5,
+    'fast_spike_roi_equivalent_threshold' => 10.0,
 
     // FilterEngine
     'filter_engine_enabled' => true,

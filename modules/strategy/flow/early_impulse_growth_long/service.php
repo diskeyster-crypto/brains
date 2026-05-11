@@ -219,6 +219,8 @@ final class EarlyImpulseGrowthLongService
             'oi_missing_allowed_total' => 0,
             'oi_missing_blocked_total' => 0,
             'current_acceleration_diagnostic_total' => 0,
+            'recovery_duration_too_short_total' => 0,
+            'fast_spike_detected_total' => 0,
             'raw_strategy_passed_total' => 0,
             'raw_strategy_rejected_total' => 0,
             'filter_engine_checked_total' => 0,
@@ -249,11 +251,15 @@ final class EarlyImpulseGrowthLongService
                     'prior_decline_pct' => $candidate['prior_decline_pct'] ?? null,
                     'recovery_growth_pct' => $candidate['recovery_growth_pct'] ?? null,
                     'recovery_duration_minutes' => $candidate['recovery_duration_minutes'] ?? null,
+                    'recovery_min_duration_minutes' => $candidate['recovery_min_duration_minutes'] ?? null,
                     'recovery_score' => $candidate['recovery_score'] ?? null,
                     'open_interest_growth_pct' => $candidate['open_interest_growth_pct'] ?? null,
                     'open_interest_growth_score' => $candidate['open_interest_growth_score'] ?? null,
                     'combined_recovery_score' => $candidate['combined_recovery_score'] ?? null,
                     'current_price_change_pct_10m' => $candidate['current_price_change_pct_10m'] ?? null,
+                    'impulse_speed_pct_per_min' => $candidate['impulse_speed_pct_per_min'] ?? null,
+                    'roi_equivalent_10m' => $candidate['roi_equivalent_10m'] ?? null,
+                    'fast_spike_detected' => (bool)($candidate['fast_spike_detected'] ?? false),
                     'data_source_used' => $candidate['data_source_used'] ?? null,
                 ];
             }
@@ -335,6 +341,12 @@ final class EarlyImpulseGrowthLongService
             }
             if ($m['accel_computed'] ?? false) {
                 $diag['current_acceleration_diagnostic_total']++;
+            }
+            if (($candidate['raw_reject_reason'] ?? null) === 'recovery_duration_too_short') {
+                $diag['recovery_duration_too_short_total']++;
+            }
+            if ($m['fast_spike_detected'] ?? false) {
+                $diag['fast_spike_detected_total']++;
             }
             if ($candidate['raw_strategy_passed'] ?? false) {
                 $diag['raw_strategy_passed_total']++;
@@ -572,6 +584,10 @@ final class EarlyImpulseGrowthLongService
         usort($priorDeclineExamples, static fn(array $a, array $b): int => ((float)($b['prior_decline_pct'] ?? 0.0) <=> (float)($a['prior_decline_pct'] ?? 0.0)));
         $accelExamples = $newEvaluated;
         usort($accelExamples, static fn(array $a, array $b): int => ((float)($b['current_price_change_pct_10m'] ?? -INF) <=> (float)($a['current_price_change_pct_10m'] ?? -INF)));
+        $fastSpikeExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => (bool)($c['fast_spike_detected'] ?? false)));
+        usort($fastSpikeExamples, static fn(array $a, array $b): int => ((float)($b['roi_equivalent_10m'] ?? -INF) <=> (float)($a['roi_equivalent_10m'] ?? -INF)));
+        $recoveryDurationTooShortExamples = array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['raw_reject_reason'] ?? '') === 'recovery_duration_too_short'));
+        usort($recoveryDurationTooShortExamples, static fn(array $a, array $b): int => ((int)($a['recovery_duration_minutes'] ?? PHP_INT_MAX) <=> (int)($b['recovery_duration_minutes'] ?? PHP_INT_MAX)));
 
         $acceptedExamples = array_slice(array_map(static function (array $c): array {
             return [
@@ -646,6 +662,28 @@ final class EarlyImpulseGrowthLongService
                 'combined_recovery_score' => $c['combined_recovery_score'] ?? null,
             ];
         }, $accelExamples), 0, 20);
+        $fastSpikeExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
+                'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'current_price_change_pct_10m' => $c['current_price_change_pct_10m'] ?? null,
+                'roi_equivalent_10m' => $c['roi_equivalent_10m'] ?? null,
+                'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
+                'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
+            ];
+        }, $fastSpikeExamples), 0, 20);
+        $recoveryDurationTooShortExamples = array_slice(array_map(static function (array $c): array {
+            return [
+                'symbol' => $c['symbol'] ?? null,
+                'recovery_growth_pct' => $c['recovery_growth_pct'] ?? null,
+                'recovery_duration_minutes' => $c['recovery_duration_minutes'] ?? null,
+                'current_price_change_pct_10m' => $c['current_price_change_pct_10m'] ?? null,
+                'roi_equivalent_10m' => $c['roi_equivalent_10m'] ?? null,
+                'open_interest_growth_pct' => $c['open_interest_growth_pct'] ?? null,
+                'raw_reject_reason' => $c['raw_reject_reason'] ?? null,
+            ];
+        }, $recoveryDurationTooShortExamples), 0, 20);
 
         $lastRun = [
             'strategy_id' => self::STRATEGY_ID,
@@ -725,6 +763,8 @@ final class EarlyImpulseGrowthLongService
             'oi_missing_allowed_total' => $diag['oi_missing_allowed_total'],
             'oi_missing_blocked_total' => $diag['oi_missing_blocked_total'],
             'current_acceleration_diagnostic_total' => $diag['current_acceleration_diagnostic_total'],
+            'recovery_duration_too_short_total' => $diag['recovery_duration_too_short_total'],
+            'fast_spike_detected_total' => $diag['fast_spike_detected_total'],
             'raw_strategy_passed_total' => $diag['raw_strategy_passed_total'],
             'raw_strategy_rejected_total' => $diag['raw_strategy_rejected_total'],
 
@@ -747,6 +787,8 @@ final class EarlyImpulseGrowthLongService
             'prior_decline_examples' => $priorDeclineExamples,
             'open_interest_growth_examples' => $openInterestExamples,
             'current_acceleration_examples' => $accelExamples,
+            'fast_spike_examples' => $fastSpikeExamples,
+            'recovery_duration_too_short_examples' => $recoveryDurationTooShortExamples,
         ];
 
         $this->writeJson($this->storagePath('last_run.json'), $lastRun);
@@ -773,9 +815,15 @@ final class EarlyImpulseGrowthLongService
 
         $recoveryWindowMin = (int)$config['recovery_window_minutes'];
         $recoveryMinWindowMin = (int)$config['recovery_min_window_minutes'];
+        $recoveryMinDurationMin = (int)$config['recovery_min_duration_minutes'];
         $recoveryMaxWindowMin = (int)$config['recovery_max_window_minutes'];
         $priorDeclineLookbackMin = (int)$config['prior_decline_lookback_minutes'];
         $accelWindowMin = (int)$config['current_acceleration_window_minutes'];
+        $fastSpikeDiagnosticEnabled = (bool)$config['fast_spike_diagnostic_enabled'];
+        $fastSpikeWindowMin = (int)$config['fast_spike_window_minutes'];
+        $fastSpikePriceChangeThreshold = (float)$config['fast_spike_price_change_pct'];
+        $fastSpikeRoiEquivalentLeverage = (float)$config['fast_spike_roi_equivalent_leverage'];
+        $fastSpikeRoiEquivalentThreshold = (float)$config['fast_spike_roi_equivalent_threshold'];
 
         // Total candle history needed: prior decline window + recovery window + buffer
         $totalLookbackMin = $priorDeclineLookbackMin + $recoveryMaxWindowMin + 30;
@@ -797,6 +845,7 @@ final class EarlyImpulseGrowthLongService
             'filter_checked' => false,
             'filter_blocked' => false,
             'filter_diagnostic_only' => false,
+            'fast_spike_detected' => false,
         ];
 
         // --- 1. Load candle and row data ---
@@ -940,6 +989,8 @@ final class EarlyImpulseGrowthLongService
 
             if (!$recoveryGrowthGate) {
                 $rejectReason = 'insufficient_recovery_growth';
+            } elseif ($recoveryDurationMin < $recoveryMinDurationMin) {
+                $rejectReason = 'recovery_duration_too_short';
             }
         }
 
@@ -1039,6 +1090,34 @@ final class EarlyImpulseGrowthLongService
             $accelScore = round(($pScore + $oScore) / 2, 4);
         }
 
+        // --- 5.1 Fast spike / late-entry diagnostics ---
+        $priceChangePct10m = null;
+        $impulseSpeedPctPerMin = null;
+        $roiEquivalent10m = null;
+        $fastSpikeDetected = false;
+        $fastSpikeReason = null;
+
+        $fastSpikeWindowStart = $now - ($fastSpikeWindowMin * 60);
+        $fastSpikeCandles = array_values(array_filter(
+            $allCandles,
+            static fn(array $c): bool => (int)($c['ts'] ?? 0) >= $fastSpikeWindowStart
+        ));
+        if (count($fastSpikeCandles) >= 2) {
+            $fastSpikePriceStart = (float)($fastSpikeCandles[0]['close'] ?? 0.0);
+            if ($fastSpikePriceStart > 0.0 && $latestPrice > 0.0) {
+                $priceChangePct10m = round((($latestPrice - $fastSpikePriceStart) / $fastSpikePriceStart) * 100.0, 6);
+                $impulseSpeedPctPerMin = round($priceChangePct10m / max(1, $fastSpikeWindowMin), 6);
+                $roiEquivalent10m = round($priceChangePct10m * $fastSpikeRoiEquivalentLeverage, 6);
+                if ($fastSpikeDiagnosticEnabled
+                    && ($priceChangePct10m >= $fastSpikePriceChangeThreshold || $roiEquivalent10m >= $fastSpikeRoiEquivalentThreshold)
+                ) {
+                    $fastSpikeDetected = true;
+                    $fastSpikeReason = 'fast_impulse_already_gave_roi';
+                    $metrics['fast_spike_detected'] = true;
+                }
+            }
+        }
+
         // --- 6. Raw pass condition ---
         $rawPassed = $rejectReason === null
             && $priorDeclineDetected
@@ -1078,6 +1157,7 @@ final class EarlyImpulseGrowthLongService
 
             'recovery_growth_pct' => round($recoveryGrowthPct, 6),
             'recovery_duration_minutes' => $recoveryDurationMin,
+            'recovery_min_duration_minutes' => $recoveryMinDurationMin,
             'recovery_score' => round($recoveryScore, 6),
             'recovery_phase' => $recoveryPhase,
             'recovery_passed' => $recoveryGrowthPass,
@@ -1088,9 +1168,15 @@ final class EarlyImpulseGrowthLongService
             'open_interest_growth_score' => $oiScore !== null ? round($oiScore, 6) : null,
 
             'current_acceleration_window_minutes' => $accelWindowMin,
-            'current_price_change_pct_10m' => $accelPriceChangePct,
+            'current_price_change_pct_10m' => $priceChangePct10m,
             'current_oi_growth_pct_10m' => $accelOiGrowthPct,
             'current_acceleration_score' => $accelScore,
+            'impulse_speed_pct_per_min' => $impulseSpeedPctPerMin,
+            'roi_equivalent_10m' => $roiEquivalent10m,
+            'fast_spike_detected' => $fastSpikeDetected,
+            'fast_spike_reason' => $fastSpikeReason,
+            'fast_spike_window_minutes' => $fastSpikeWindowMin,
+            'fast_spike_diagnostic_enabled' => $fastSpikeDiagnosticEnabled,
 
             'combined_recovery_score' => $combinedRecoveryScore,
             'raw_strategy_passed' => $rawPassed,
@@ -1172,6 +1258,10 @@ final class EarlyImpulseGrowthLongService
                 'open_interest_growth_score' => $candidate['open_interest_growth_score'] ?? null,
                 'combined_recovery_score' => $candidate['combined_recovery_score'] ?? null,
                 'current_price_change_pct_10m' => $candidate['current_price_change_pct_10m'] ?? null,
+                'impulse_speed_pct_per_min' => $candidate['impulse_speed_pct_per_min'] ?? null,
+                'roi_equivalent_10m' => $candidate['roi_equivalent_10m'] ?? null,
+                'fast_spike_detected' => (bool)($candidate['fast_spike_detected'] ?? false),
+                'fast_spike_reason' => $candidate['fast_spike_reason'] ?? null,
                 'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],
                 'filter_engine_enabled_filters_total' => count($enabledFilters),
                 'filter_results' => $candidate['filter_results'] ?? [],
@@ -1660,6 +1750,13 @@ final class EarlyImpulseGrowthLongService
         $cfg['recovery_window_minutes'] = max(60, min(360, (int)($cfg['recovery_window_minutes'] ?? 180)));
         $cfg['recovery_min_window_minutes'] = max(30, min(240, (int)($cfg['recovery_min_window_minutes'] ?? 120)));
         $cfg['recovery_max_window_minutes'] = max((int)$cfg['recovery_min_window_minutes'], min(360, (int)($cfg['recovery_max_window_minutes'] ?? 240)));
+        $cfg['recovery_min_duration_minutes'] = max(
+            30,
+            min(
+                (int)$cfg['recovery_max_window_minutes'],
+                (int)($cfg['recovery_min_duration_minutes'] ?? $cfg['recovery_min_window_minutes'] ?? 120)
+            )
+        );
 
         // Prior decline
         $cfg['prior_decline_lookback_minutes'] = max(60, min(720, (int)($cfg['prior_decline_lookback_minutes'] ?? 240)));
@@ -1684,6 +1781,11 @@ final class EarlyImpulseGrowthLongService
 
         // Current acceleration (diagnostic only)
         $cfg['current_acceleration_window_minutes'] = max(1, (int)($cfg['current_acceleration_window_minutes'] ?? 10));
+        $cfg['fast_spike_diagnostic_enabled'] = (bool)($cfg['fast_spike_diagnostic_enabled'] ?? true);
+        $cfg['fast_spike_window_minutes'] = max(1, min(60, (int)($cfg['fast_spike_window_minutes'] ?? 10)));
+        $cfg['fast_spike_price_change_pct'] = max(0.0, min(100.0, (float)($cfg['fast_spike_price_change_pct'] ?? 2.0)));
+        $cfg['fast_spike_roi_equivalent_leverage'] = max(1.0, min(200.0, (float)($cfg['fast_spike_roi_equivalent_leverage'] ?? 5.0)));
+        $cfg['fast_spike_roi_equivalent_threshold'] = max(0.0, min(1000.0, (float)($cfg['fast_spike_roi_equivalent_threshold'] ?? 10.0)));
 
         // FilterEngine
         $cfg['filter_engine_enabled'] = (bool)($cfg['filter_engine_enabled'] ?? true);

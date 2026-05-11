@@ -418,6 +418,17 @@ final class EarlyImpulseGrowthLongService
         $handoffReadyTotal = count(array_filter($allSignals, static fn(array $s): bool => (bool)($s['handoff_ready'] ?? false)));
         $currentRunBotQueueWrittenTotal = $canEmitBotHandoff ? $currentRunHandoffReadyTotal : 0;
         $storedBotQueueWrittenTotal = count($handoffQueue);
+        $handoffEnabled = (bool)$config['handoff_enabled'];
+        $emitBotHandoff = (bool)$config['emit_bot_handoff'];
+        $effectiveBotHandoffEnabled = $handoffEnabled && $emitBotHandoff;
+        if (!$handoffEnabled) {
+            $botHandoffBlockReason = 'handoff_disabled';
+        } elseif (!$emitBotHandoff) {
+            $botHandoffBlockReason = 'emit_bot_handoff_disabled';
+        } else {
+            $botHandoffBlockReason = null;
+        }
+
         $enabledFilters = $this->computeEnabledFilters($config);
         $filterCatalog = $this->getFilterCatalog();
         $acceptedExamples = $newCandidates;
@@ -569,6 +580,12 @@ final class EarlyImpulseGrowthLongService
             'registry_window_end' => (int)($state['registry_window_end'] ?? 0),
             'registry_window_wrapped' => (bool)($state['registry_window_wrapped'] ?? false),
             'registry_cursor_reset_reason' => $state['registry_cursor_reset_reason'] ?? null,
+
+            // Handoff diagnostics
+            'handoff_enabled' => $handoffEnabled,
+            'emit_bot_handoff' => $emitBotHandoff,
+            'effective_bot_handoff_enabled' => $effectiveBotHandoffEnabled,
+            'bot_handoff_block_reason' => $botHandoffBlockReason,
 
             // Filter engine
             'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],

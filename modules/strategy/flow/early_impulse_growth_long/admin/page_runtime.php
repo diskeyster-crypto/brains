@@ -102,7 +102,25 @@ $accelExamples = is_array($lastRun['current_acceleration_examples'] ?? null) ? (
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['open_interest_growth_passed_total'] ?? 0)) ?></div><div class="rt-lbl">oi_growth_pass_count</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['raw_strategy_passed_total'] ?? 0)) ?></div><div class="rt-lbl">raw_strategy_pass_count</div></div>
     </div>
-    <table class="rt-kv">
+    <?php
+        $handoffEnabled = (bool)($lastRun['handoff_enabled'] ?? false);
+        $emitBotHandoff = (bool)($lastRun['emit_bot_handoff'] ?? false);
+        $effectiveHandoff = (bool)($lastRun['effective_bot_handoff_enabled'] ?? false);
+        $blockReason = (string)($lastRun['bot_handoff_block_reason'] ?? '');
+    ?>
+    <div style="margin-top:12px;padding:12px;border:1px solid <?= $effectiveHandoff ? 'rgba(34,197,94,.35)' : 'rgba(245,158,11,.35)' ?>;border-radius:6px;background:<?= $effectiveHandoff ? 'rgba(34,197,94,.05)' : 'rgba(245,158,11,.05)' ?>;">
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Bot handoff status</div>
+      <table class="rt-kv">
+        <tr><td style="color:#64748b">handoff_enabled</td><td><?= $fmtBool($handoffEnabled) ?></td><td style="color:#64748b;padding-left:16px;">emit_bot_handoff</td><td><?= $fmtBool($emitBotHandoff) ?></td></tr>
+        <tr><td style="color:#64748b">effective_bot_handoff_enabled</td><td><?= $fmtBool($effectiveHandoff) ?></td><td style="color:#64748b;padding-left:16px;">bot_handoff_block_reason</td><td><?= $blockReason !== '' ? '<code>' . $e($blockReason) . '</code>' : '<span style="color:#22c55e">none</span>' ?></td></tr>
+        <tr><td style="color:#64748b">current_run_handoff_ready_total</td><td><?= $e((int)($lastRun['current_run_handoff_ready_total'] ?? 0)) ?></td><td style="color:#64748b;padding-left:16px;">current_run_bot_queue_written_total</td><td><?= $e((int)($lastRun['current_run_bot_queue_written_total'] ?? 0)) ?></td></tr>
+        <tr><td style="color:#64748b">stored_handoff_ready_total</td><td><?= $e((int)($lastRun['stored_handoff_ready_total'] ?? 0)) ?></td><td style="color:#64748b;padding-left:16px;">stored_bot_queue_written_total</td><td><?= $e((int)($lastRun['stored_bot_queue_written_total'] ?? 0)) ?></td></tr>
+      </table>
+      <?php if (!$effectiveHandoff): ?>
+      <div style="font-size:12px;color:#f59e0b;margin-top:8px;">&#9888; Bot queue is not written. Both <code>handoff_enabled</code> and <code>emit_bot_handoff</code> must be <code>true</code> to write bot_handoff_queue.json.</div>
+      <?php endif; ?>
+    </div>
+    <table class="rt-kv" style="margin-top:10px;">
       <tr><td style="color:#64748b">filter_engine_available_filters_total</td><td><?= $e((int)($lastRun['filter_engine_available_filters_total'] ?? 0)) ?></td><td style="color:#64748b;padding-left:16px;">filter_engine_enabled_filters_total</td><td><?= $e((int)($lastRun['filter_engine_enabled_filters_total'] ?? 0)) ?></td></tr>
       <tr><td style="color:#64748b">filter_engine_enabled_filter_ids</td><td colspan="3"><code><?= $e(json_encode((array)($lastRun['filter_engine_enabled_filter_ids'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
       <tr><td style="color:#64748b">filter_engine_results_by_filter</td><td colspan="3"><code><?= $e(json_encode((array)($lastRun['filter_engine_results_by_filter'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>

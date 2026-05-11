@@ -221,7 +221,7 @@ foreach ($filterConfig as $row) {
         <div><label class="cfg-label">max_handoff_signals_per_tick</label><input type="number" name="max_handoff_signals_per_tick" min="1" max="100" value="<?= $e((int)$cfg('max_handoff_signals_per_tick', 5)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
         <div><label class="cfg-label">bot_ready_ttl_minutes</label><input type="number" name="bot_ready_ttl_minutes" min="1" max="240" value="<?= $e((int)$cfg('bot_ready_ttl_minutes', 10)) ?>" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;"></div>
       </div>
-      <div class="note" style="margin-top:8px;">Default visual-review mode: <code>handoff_enabled=false</code>, <code>emit_bot_handoff=false</code>.</div>
+      <div class="note" style="margin-top:8px;">Bot queue is written only when <strong>both</strong> <code>handoff_enabled</code> and <code>emit_bot_handoff</code> are <code>true</code>. Default visual-review mode: both <code>false</code>.</div>
     </div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">

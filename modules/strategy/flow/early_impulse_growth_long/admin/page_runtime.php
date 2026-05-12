@@ -241,18 +241,28 @@ $watchRecheckExamples = is_array($lastRun['watch_recheck_examples'] ?? null) ? (
     <h6>Watch recheck (priority re-evaluation)</h6>
     <div class="rt-grid">
       <div class="rt-box"><div class="rt-val"><?= $fmtBool((bool)($lastRun['watch_recheck_enabled'] ?? false)) ?></div><div class="rt-lbl">watch_recheck_enabled</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_storage_loaded_total'] ?? 0)) ?></div><div class="rt-lbl">storage_loaded</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_storage_active_total'] ?? 0)) ?></div><div class="rt-lbl">storage_active</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_storage_expired_total'] ?? 0)) ?></div><div class="rt-lbl">storage_expired</div></div>
+      <div class="rt-box" style="border-color:rgba(248,81,73,.3);"><div class="rt-val" style="color:#f85149;"><?= $e((int)($lastRun['watch_storage_failed_total'] ?? 0)) ?></div><div class="rt-lbl">storage_failed</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_storage_pruned_total'] ?? 0)) ?></div><div class="rt-lbl">storage_pruned</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_candidates_loaded_total'] ?? 0)) ?></div><div class="rt-lbl">candidates_loaded</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_active_priority_total'] ?? 0)) ?></div><div class="rt-lbl">active_priority</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_selection_limit'] ?? 0)) ?></div><div class="rt-lbl">selection_limit</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_selected_total'] ?? 0)) ?></div><div class="rt-lbl">selected</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_processed_total'] ?? 0)) ?></div><div class="rt-lbl">processed</div></div>
       <div class="rt-box" style="border-color:rgba(34,197,94,.4);"><div class="rt-val" style="color:#22c55e;"><?= $e((int)($lastRun['watch_recheck_triggered_total'] ?? 0)) ?></div><div class="rt-lbl">triggered (early_entry)</div></div>
       <div class="rt-box" style="border-color:rgba(56,189,248,.4);"><div class="rt-val" style="color:#38bdf8;"><?= $e((int)($lastRun['watch_recheck_still_stabilizing_total'] ?? 0)) ?></div><div class="rt-lbl">still_stabilizing</div></div>
       <div class="rt-box" style="border-color:rgba(248,81,73,.3);"><div class="rt-val" style="color:#f85149;"><?= $e((int)($lastRun['watch_recheck_failed_total'] ?? 0)) ?></div><div class="rt-lbl">failed</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_expired_total'] ?? 0)) ?></div><div class="rt-lbl">expired</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_too_recent_total'] ?? 0)) ?></div><div class="rt-lbl">too_recent</div></div>
+      <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_no_priority_total'] ?? 0)) ?></div><div class="rt-lbl">no_priority</div></div>
       <div class="rt-box"><div class="rt-val"><?= $e((int)($lastRun['watch_recheck_skipped_total'] ?? 0)) ?></div><div class="rt-lbl">skipped</div></div>
     </div>
-    <?php if (!empty($lastRun['watch_recheck_skip_reasons'])): ?>
+    <?php if (!empty($lastRun['watch_recheck_skip_reasons']) || !empty($lastRun['watch_recheck_selection_reason_counts'])): ?>
     <table class="rt-kv" style="margin-bottom:10px;">
       <tr><td style="color:#64748b">skip_reasons</td><td><code><?= $e(json_encode((array)($lastRun['watch_recheck_skip_reasons'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
+      <tr><td style="color:#64748b">selection_reason_counts</td><td><code><?= $e(json_encode((array)($lastRun['watch_recheck_selection_reason_counts'] ?? []), JSON_UNESCAPED_UNICODE)) ?></code></td></tr>
     </table>
     <?php endif; ?>
     <?php if (!empty($watchRecheckExamples)): ?>
@@ -264,12 +274,13 @@ $watchRecheckExamples = is_array($lastRun['watch_recheck_examples'] ?? null) ? (
         <th style="padding:4px 8px;">prev_phase</th>
         <th style="padding:4px 8px;">new_phase</th>
         <th style="padding:4px 8px;">watch_status</th>
+        <th style="padding:4px 8px;">phase_block_reason</th>
         <th style="padding:4px 8px;">stab_min</th>
-        <th style="padding:4px 8px;">prev_smooth%</th>
-        <th style="padding:4px 8px;">new_smooth%</th>
-        <th style="padding:4px 8px;">prev_oi%</th>
-        <th style="padding:4px 8px;">new_oi%</th>
+        <th style="padding:4px 8px;">smooth%</th>
+        <th style="padding:4px 8px;">oi%</th>
+        <th style="padding:4px 8px;">combined_score</th>
         <th style="padding:4px 8px;">rechecks</th>
+        <th style="padding:4px 8px;">selected_rank</th>
         <th style="padding:4px 8px;">handoff</th>
         <th style="padding:4px 8px;">block_reason</th>
       </tr></thead>
@@ -282,12 +293,13 @@ $watchRecheckExamples = is_array($lastRun['watch_recheck_examples'] ?? null) ? (
           <td style="padding:4px 8px;"><?= $e($row['previous_phase'] ?? '') ?></td>
           <td style="padding:4px 8px;"><?= $e($row['new_phase'] ?? '') ?></td>
           <td style="padding:4px 8px;color:<?= $rStatusColor ?>"><?= $e($row['watch_status'] ?? '') ?></td>
+          <td style="padding:4px 8px;font-size:11px;color:#94a3b8;"><?= $e($row['phase_block_reason'] ?? '') ?></td>
           <td style="padding:4px 8px;"><?= $e(is_numeric($row['stabilization_duration_minutes'] ?? null) ? $row['stabilization_duration_minutes'] : '—') ?></td>
-          <td style="padding:4px 8px;"><?= $fmtNum($row['previous_smooth_growth_pct'] ?? null) ?></td>
-          <td style="padding:4px 8px;"><?= $fmtNum($row['new_smooth_growth_pct'] ?? null) ?></td>
-          <td style="padding:4px 8px;"><?= $fmtNum($row['previous_open_interest_growth_pct'] ?? null) ?></td>
-          <td style="padding:4px 8px;"><?= $fmtNum($row['new_open_interest_growth_pct'] ?? null) ?></td>
+          <td style="padding:4px 8px;"><?= $fmtNum($row['smooth_growth_pct'] ?? null) ?></td>
+          <td style="padding:4px 8px;"><?= $fmtNum($row['open_interest_growth_pct'] ?? null) ?></td>
+          <td style="padding:4px 8px;"><?= $fmtNum($row['combined_recovery_score'] ?? null, 4) ?></td>
           <td style="padding:4px 8px;"><?= $e($row['recheck_count'] ?? 0) ?></td>
+          <td style="padding:4px 8px;"><?= $e($row['selected_rank'] ?? '—') ?></td>
           <td style="padding:4px 8px;"><?= $fmtBool($row['handoff_ready'] ?? false) ?></td>
           <td style="padding:4px 8px;font-size:11px;color:#94a3b8;"><?= $e($row['handoff_block_reason'] ?? '') ?></td>
         </tr>

@@ -122,4 +122,7 @@ return [
     'watch_recheck_max_age_minutes' => 'int',
     'watch_recheck_priority_phases' => 'string',
     'watch_recheck_only_if_not_failed' => 'bool',
+    'watch_storage_prune_enabled' => 'bool',
+    'watch_storage_keep_expired_minutes' => 'int',
+    'watch_storage_max_records' => 'int',
 ];

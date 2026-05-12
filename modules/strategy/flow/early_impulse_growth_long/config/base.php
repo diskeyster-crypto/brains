@@ -136,4 +136,7 @@ return [
     'watch_recheck_max_age_minutes' => 60,
     'watch_recheck_priority_phases' => 'stabilizing,dump_only',
     'watch_recheck_only_if_not_failed' => true,
+    'watch_storage_prune_enabled' => true,
+    'watch_storage_keep_expired_minutes' => 120,
+    'watch_storage_max_records' => 500,
 ];

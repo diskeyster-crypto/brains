@@ -35,22 +35,6 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">apply_learning_to_strategy_enabled</div>
-      <div style="font-weight:600;"><?= $e((bool)($run['apply_learning_to_strategy_enabled'] ?? false) ? 'true' : 'false') ?></div>
-    </div>
-    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">apply_learning_to_live_enabled</div>
-      <div style="font-weight:600;"><?= $e((bool)($run['apply_learning_to_live_enabled'] ?? false) ? 'true' : 'false') ?></div>
-    </div>
-    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">profile_status</div>
-      <div style="font-weight:600;"><?= $e($profileStatus) ?></div>
-    </div>
-    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">profile_rules_total</div>
-      <div style="font-weight:600;"><?= $e($profileRulesTotal) ?></div>
-    </div>
-    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">closed_outcomes_raw_loaded_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_raw_loaded_total'] ?? 0)) ?></div>
     </div>
@@ -85,6 +69,82 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">closed_outcomes_timing_low_confidence_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_timing_low_confidence_total'] ?? 0)) ?></div>
+    </div>
+  </div>
+
+  <!-- Architecture version and feature pipeline -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">architecture_version</div>
+      <div style="font-weight:600;"><?= $e((string)($run['architecture_version'] ?? 'unknown')) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">feature_records_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['feature_records_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">feature_time_valid_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['feature_time_valid_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">feature_time_invalid_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['feature_time_invalid_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">candle_micro_available_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['candle_micro_available_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">dump_micro_available_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['dump_micro_available_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">weighted_score_calculated_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['weighted_score_calculated_total'] ?? 0)) ?></div>
+    </div>
+  </div>
+
+  <!-- Profile and comparison status -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+    <div style="background:#14532d;color:#86efac;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">profile_status</div>
+      <div style="font-weight:600;"><?= $e($profileStatus) ?></div>
+    </div>
+    <div style="background:#14532d;color:#86efac;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">profile_rules_total</div>
+      <div style="font-weight:600;"><?= $e($profileRulesTotal) ?></div>
+    </div>
+    <div style="background:#14532d;color:#86efac;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">profile_compared_to_default</div>
+      <div style="font-weight:600;"><?= $e((bool)($run['profile_compared_to_default'] ?? false) ? 'true' : 'false') ?></div>
+    </div>
+    <div style="background:#14532d;color:#86efac;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">auto_not_worse_than_default</div>
+      <div style="font-weight:600;"><?= $e((bool)($run['auto_not_worse_than_default'] ?? false) ? 'true' : 'false') ?></div>
+    </div>
+    <div style="background:#14532d;color:#86efac;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">auto_improvement_score</div>
+      <div style="font-weight:600;"><?= $e($run['auto_improvement_score'] ?? 'n/a') ?></div>
+    </div>
+  </div>
+
+  <!-- Storage status -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+    <div style="background:#1c1917;color:#d6d3d1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">storage_size_estimate_mb</div>
+      <div style="font-weight:600;"><?= $e($run['storage_size_estimate_mb'] ?? 'n/a') ?></div>
+    </div>
+    <div style="background:#1c1917;color:#d6d3d1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">storage_pruned_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['storage_pruned_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">apply_learning_to_strategy_enabled</div>
+      <div style="font-weight:600;"><?= $e((bool)($run['apply_learning_to_strategy_enabled'] ?? false) ? 'true' : 'false') ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">apply_learning_to_live_enabled</div>
+      <div style="font-weight:600;"><?= $e((bool)($run['apply_learning_to_live_enabled'] ?? false) ? 'true' : 'false') ?></div>
     </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
@@ -136,6 +196,18 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
   <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
     <div style="font-size:12px;opacity:.8;margin-bottom:8px;">outcome_excluded_reasons</div>
     <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['outcome_excluded_reasons'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+  </div>
+  <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+    <div style="font-size:12px;opacity:.8;margin-bottom:8px;">feature_source_counts</div>
+    <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['feature_source_counts'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+  </div>
+  <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+    <div style="font-size:12px;opacity:.8;margin-bottom:8px;">feature_time_invalid_examples</div>
+    <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['feature_time_invalid_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+  </div>
+  <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+    <div style="font-size:12px;opacity:.8;margin-bottom:8px;">storage_prune_examples</div>
+    <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['storage_prune_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
   </div>
   <pre style="margin:0;background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;overflow:auto;"><?= $e(json_encode($run, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
 </div>

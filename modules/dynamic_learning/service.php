@@ -4,6 +4,46 @@ declare(strict_types=1);
 
 namespace Modules\DynamicLearning;
 
+require_once __DIR__ . '/analyzers/dl_helpers.php';
+require_once __DIR__ . '/analyzers/outcome/outcome_classifier.php';
+require_once __DIR__ . '/analyzers/patterns/pattern_miner.php';
+require_once __DIR__ . '/analyzers/candles/candle_micro_analyzer.php';
+require_once __DIR__ . '/analyzers/dump/dump_micro_analyzer.php';
+require_once __DIR__ . '/analyzers/impulse/impulse_birth_analyzer.php';
+require_once __DIR__ . '/analyzers/trend/trend_context_analyzer.php';
+require_once __DIR__ . '/analyzers/orderbook/orderbook_snapshot_analyzer.php';
+require_once __DIR__ . '/profiles/profile_builder.php';
+require_once __DIR__ . '/profiles/profile_comparator.php';
+require_once __DIR__ . '/decision/dynamic_learning_decision.php';
+
+use Modules\DynamicLearning\Analyzers\DlHelpers;
+use Modules\DynamicLearning\Analyzers\Outcome\OutcomeClassifier;
+use Modules\DynamicLearning\Analyzers\Patterns\PatternMiner;
+use Modules\DynamicLearning\Analyzers\Candles\CandleMicroAnalyzer;
+use Modules\DynamicLearning\Analyzers\Dump\DumpMicroAnalyzer;
+use Modules\DynamicLearning\Analyzers\Impulse\ImpulseBirthAnalyzer;
+use Modules\DynamicLearning\Analyzers\Trend\TrendContextAnalyzer;
+use Modules\DynamicLearning\Analyzers\Orderbook\OrderbookSnapshotAnalyzer;
+use Modules\DynamicLearning\Profiles\ProfileBuilder;
+use Modules\DynamicLearning\Profiles\ProfileComparator;
+use Modules\DynamicLearning\Decision\DynamicLearningDecision;
+
+/**
+ * Dynamic Learning Service — Orchestrator
+ *
+ * Coordinates the analyzer pipeline:
+ * 1. Collect entry snapshots (with feature extraction and feature_source tagging)
+ * 2. Observe active positions
+ * 3. Link closed outcomes (strong-link-only, timing correction, normalization)
+ * 4. Feature extraction pipeline (features.json per strategy)
+ * 5. Candle micro, dump micro, impulse birth, trend context, orderbook analyzers (scaffold)
+ * 6. Pattern mining (strong-link, timing-valid outcomes only)
+ * 7. Profile building (candidate only, no auto-apply)
+ * 8. Default vs auto comparison scaffold
+ * 9. Storage pruning
+ *
+ * Architecture: analyzer_pipeline_v1
+ */
 final class DynamicLearningService
 {
     private const STRATEGY_ID = 'early_impulse_growth_long';
@@ -36,6 +76,7 @@ final class DynamicLearningService
     {
         $cfg = $this->loadConfig();
         $result = [
+            'architecture_version' => 'analyzer_pipeline_v1',
             'enabled' => (bool)$cfg['enabled'],
             'mode' => (string)$cfg['mode'],
             'supported_strategy_id' => (string)$cfg['supported_strategy_id'],
@@ -67,12 +108,26 @@ final class DynamicLearningService
             'outcome_roi_normalization_examples' => [],
             'outcome_excluded_from_pattern_mining_total' => 0,
             'outcome_excluded_reasons' => [],
+            'feature_records_total' => 0,
+            'feature_time_valid_total' => 0,
+            'feature_time_invalid_total' => 0,
+            'feature_source_counts' => [],
+            'feature_time_invalid_examples' => [],
+            'candle_micro_available_total' => 0,
+            'dump_micro_available_total' => 0,
+            'weighted_score_calculated_total' => 0,
             'bad_patterns_total' => 0,
             'profile_generated' => false,
             'profile_id' => null,
             'profile_rules_total' => 0,
             'profile_rules_observe_only_total' => 0,
             'profile_rules_quarantined_total' => 0,
+            'profile_compared_to_default' => false,
+            'auto_not_worse_than_default' => false,
+            'auto_improvement_score' => null,
+            'storage_pruned_total' => 0,
+            'storage_size_estimate_mb' => null,
+            'storage_prune_examples' => [],
             'dynamic_filter_available' => is_file($this->repoRoot . '/modules/filter_engine/filters/dynamic_learning_filter.php'),
             'apply_learning_to_strategy_enabled' => (bool)$cfg['apply_learning_to_strategy_enabled'],
             'apply_learning_to_live_enabled' => (bool)$cfg['apply_learning_to_live_enabled'],
@@ -91,17 +146,20 @@ final class DynamicLearningService
             return $result;
         }
 
+        // 1. Collect entry snapshots
         $snapshots = $this->collectEntrySnapshots($cfg);
         $result['entry_snapshots_total'] = count($snapshots['all']);
         $result['entry_snapshots_new_total'] = $snapshots['new_total'];
         $result['entry_snapshot_examples'] = array_slice($snapshots['all'], 0, 8);
 
+        // 2. Observe active positions
         $obs = $this->observeActivePositions($cfg, $snapshots['index']);
         $result['active_positions_seen_total'] = $obs['seen_total'];
         $result['active_positions_observed_total'] = $obs['observed_total'];
         $result['observations_written_total'] = $obs['written_total'];
         $result['active_observation_examples'] = $obs['examples'];
 
+        // 3. Link closed outcomes
         $outcomes = $this->linkClosedOutcomes($cfg, $snapshots['index']);
         $result['closed_trades_loaded_total'] = $outcomes['loaded_total'];
         $result['closed_outcomes_raw_loaded_total'] = $outcomes['raw_loaded_total'];
@@ -129,19 +187,47 @@ final class DynamicLearningService
         $result['bad_entry_examples'] = array_slice($outcomes['bad'], 0, 6);
         $result['good_entry_examples'] = array_slice($outcomes['good'], 0, 6);
 
-        $patterns = $this->minePatterns($cfg, $outcomes['pattern_mining']);
+        // 4. Feature extraction pipeline
+        if ((bool)($cfg['feature_pipeline_enabled'] ?? true)) {
+            $featureResult = $this->runFeaturePipeline($cfg, $snapshots['all']);
+            $result['feature_records_total'] = $featureResult['records_total'];
+            $result['feature_time_valid_total'] = $featureResult['time_valid_total'];
+            $result['feature_time_invalid_total'] = $featureResult['time_invalid_total'];
+            $result['feature_source_counts'] = $featureResult['source_counts'];
+            $result['feature_time_invalid_examples'] = $featureResult['time_invalid_examples'];
+            $result['candle_micro_available_total'] = $featureResult['candle_micro_available_total'];
+            $result['dump_micro_available_total'] = $featureResult['dump_micro_available_total'];
+            $result['weighted_score_calculated_total'] = $featureResult['weighted_score_calculated_total'];
+        }
+
+        // 5. Pattern mining
+        $patterns = PatternMiner::mine($outcomes['pattern_mining'], $cfg);
         $this->writeJson($this->storagePath('patterns/bad_patterns.json'), $patterns['bad_patterns']);
         $this->writeJson($this->storagePath('patterns/pattern_stats.json'), $patterns['all']);
         $result['bad_patterns_total'] = count($patterns['all']);
         $result['top_bad_pattern_examples'] = array_slice($patterns['all'], 0, 10);
 
-        $profile = $this->buildProfile($cfg, $outcomes['pattern_mining'], $patterns['all']);
+        // 6. Profile building
+        $profile = ProfileBuilder::build($cfg, $outcomes['pattern_mining'], $patterns['all'], fn(string $f): string => $this->storagePath($f));
         $result['profile_generated'] = true;
         $result['profile_id'] = $profile['profile_id'];
         $result['profile_rules_total'] = count($profile['rules']);
         $result['profile_rules_observe_only_total'] = count($profile['rules']);
         $result['profile_rules_quarantined_total'] = count($profile['quarantined']);
         $result['quarantined_rule_examples'] = array_slice($profile['quarantined'], 0, 8);
+
+        // 7. Default vs auto comparison scaffold
+        $currentProfile = (array)$this->readJson($this->storagePath('profiles/early_impulse_growth_long/current_profile.json'), []);
+        $comparison = ProfileComparator::compare($currentProfile, [], $cfg);
+        $result['profile_compared_to_default'] = $comparison['compared_to_default'];
+        $result['auto_not_worse_than_default'] = $comparison['auto_not_worse_than_default'];
+        $result['auto_improvement_score'] = $comparison['auto_improvement_score'];
+
+        // 8. Storage pruning
+        $prune = $this->pruneStorage($cfg, $snapshots['all']);
+        $result['storage_pruned_total'] = $prune['pruned_total'];
+        $result['storage_size_estimate_mb'] = $prune['size_estimate_mb'];
+        $result['storage_prune_examples'] = $prune['prune_examples'];
 
         $this->writeJson($this->storagePath('last_run.json'), $result);
         $this->appendNdjson($this->storagePath('cycle_history.ndjson'), $result);
@@ -152,153 +238,9 @@ final class DynamicLearningService
     public function evaluateSignalForStrategy(string $strategyId, array $signalPacket): array
     {
         $cfg = $this->loadConfig();
-        $response = [
-            'enabled' => (bool)$cfg['enabled'],
-            'decision' => 'pass',
-            'mode' => (string)$cfg['mode'],
-            'profile_id' => null,
-            'matched_rules' => [],
-            'reason' => 'no_profile_rules',
-            'confidence' => 'low',
-            'profile_status' => null,
-            'apply_learning_to_live_enabled' => (bool)$cfg['apply_learning_to_live_enabled'],
-        ];
-
-        if (strtolower(trim($strategyId)) !== self::STRATEGY_ID) {
-            $response['decision'] = 'no_signal';
-            $response['reason'] = 'unsupported_strategy';
-            return $response;
-        }
-        if (!$cfg['enabled']) {
-            $response['reason'] = 'module_disabled';
-            return $response;
-        }
-        if ($signalPacket === []) {
-            $response['decision'] = 'no_signal';
-            $response['reason'] = 'signal_packet_missing';
-            return $response;
-        }
-
         $profilePath = $this->storagePath('profiles/early_impulse_growth_long/current_profile.json');
-        $profile = $this->readJson($profilePath, []);
-        if (!is_array($profile) || $profile === []) {
-            $response['decision'] = 'pass';
-            $response['profile_status'] = 'missing';
-            $response['reason'] = 'no_profile_rules';
-            return $response;
-        }
-
-        $response['profile_id'] = $profile['profile_id'] ?? null;
-        $response['profile_status'] = (string)($profile['status'] ?? '');
-        if (strtolower(trim((string)($profile['strategy_id'] ?? ''))) !== self::STRATEGY_ID) {
-            $response['decision'] = 'no_profile';
-            $response['reason'] = 'profile_strategy_mismatch';
-            return $response;
-        }
-
-        $rules = array_values(array_filter((array)($profile['rules'] ?? []), static fn(mixed $r): bool => is_array($r)));
-        if ($rules === []) {
-            $response['reason'] = 'no_profile_rules';
-            return $response;
-        }
-
-        $ctx = is_array($signalPacket['strategy_signal_context'] ?? null) ? (array)$signalPacket['strategy_signal_context'] : [];
-        $features = $this->extractEntryFeatures($ctx);
-        if ($features === []) {
-            $response['decision'] = 'insufficient_data';
-            $response['reason'] = 'entry_features_missing';
-            return $response;
-        }
-        foreach ($ctx as $k => $v) {
-            if (!array_key_exists((string)$k, $features)) {
-                $features[(string)$k] = $v;
-            }
-        }
-
-        $matched = [];
-        $strongestAction = 'observe_only';
-        $hasDemoOnlyAction = false;
-        $confidenceRank = ['low' => 1, 'medium' => 2, 'high' => 3];
-        $bestConfidence = 'low';
-
-        foreach ($rules as $rule) {
-            $status = strtolower(trim((string)($rule['status'] ?? 'candidate')));
-            if ($status === 'quarantined') {
-                continue;
-            }
-            $conditions = is_array($rule['conditions'] ?? null) ? (array)$rule['conditions'] : [];
-            if ($conditions === []) {
-                continue;
-            }
-            $ok = true;
-            foreach ($conditions as $cond) {
-                if (!is_array($cond)) {
-                    $ok = false;
-                    break;
-                }
-                $field = (string)($cond['field'] ?? $cond['f'] ?? '');
-                $op = (string)($cond['op'] ?? 'eq');
-                $value = $cond['value'] ?? $cond['v'] ?? null;
-                if ($field === '' || !$this->cond($features[$field] ?? null, $op, $value)) {
-                    $ok = false;
-                    break;
-                }
-            }
-            if (!$ok) {
-                continue;
-            }
-
-            $action = strtolower(trim((string)($rule['action'] ?? 'observe_only')));
-            $scope = strtolower(trim((string)($rule['scope'] ?? 'demo_only')));
-            $confidence = strtolower(trim((string)($rule['confidence'] ?? 'low')));
-            if (!isset($confidenceRank[$confidence])) {
-                $confidence = 'low';
-            }
-
-            if (in_array($action, ['hard_block', 'hard'], true)) {
-                $strongestAction = 'hard_block';
-            } elseif (in_array($action, ['soft_block', 'soft'], true) && $strongestAction !== 'hard_block') {
-                $strongestAction = 'soft_block';
-            }
-            if (in_array($scope, ['demo_only', 'demo'], true) && in_array($action, ['hard_block', 'hard', 'soft_block', 'soft'], true)) {
-                $hasDemoOnlyAction = true;
-            }
-            if ($confidenceRank[$confidence] > $confidenceRank[$bestConfidence]) {
-                $bestConfidence = $confidence;
-            }
-
-            $matched[] = [
-                'rule_id' => $rule['rule_id'] ?? null,
-                'source_pattern' => $rule['source_pattern'] ?? null,
-                'action' => $action,
-                'scope' => $scope,
-                'confidence' => $confidence,
-            ];
-        }
-
-        if ($matched === []) {
-            $response['reason'] = 'no_rule_match';
-            return $response;
-        }
-
-        $response['matched_rules'] = $matched;
-        $response['confidence'] = $bestConfidence;
-
-        if ($strongestAction === 'observe_only') {
-            $response['decision'] = 'pass';
-            $response['reason'] = 'observe_only_rules';
-            return $response;
-        }
-
-        if ($hasDemoOnlyAction) {
-            $response['decision'] = 'demo_only';
-            $response['reason'] = 'demo_only_rule_match';
-            return $response;
-        }
-
-        $response['decision'] = 'block';
-        $response['reason'] = 'rule_match_block';
-        return $response;
+        $profile = (array)$this->readJson($profilePath, []);
+        return DynamicLearningDecision::evaluate($strategyId, $signalPacket, $cfg, $profile !== [] ? $profile : null);
     }
 
     /** @return array{all:list<array<string,mixed>>,index:array<string,array<string,mixed>>,new_total:int} */
@@ -348,13 +290,13 @@ final class DynamicLearningService
     {
         $ctx = is_array($row['strategy_signal_context'] ?? null) ? (array)$row['strategy_signal_context'] : [];
         $symbol = strtoupper(trim((string)($row['symbol'] ?? '')));
-        $entryPrice = $this->toFloat($row['entry_price'] ?? null);
+        $entryPrice = DlHelpers::toFloat($row['entry_price'] ?? null);
         if ($symbol === '' || $entryPrice === null) {
             return null;
         }
         $side = strtolower(trim((string)($row['side'] ?? 'long')));
-        $openedAt = $this->normalizeTimestamp($row['opened_at'] ?? $row['entry_time'] ?? $row['detected_at'] ?? '');
-        $detectedAt = $this->normalizeTimestamp($row['detected_at'] ?? $openedAt);
+        $openedAt = DlHelpers::normalizeTimestamp($row['opened_at'] ?? $row['entry_time'] ?? $row['detected_at'] ?? '');
+        $detectedAt = DlHelpers::normalizeTimestamp($row['detected_at'] ?? $openedAt);
         $signalId = trim((string)($row['signal_id'] ?? ''));
         $strategySignalKey = trim((string)($row['strategy_signal_key'] ?? ''));
         $key = trim((string)($row['position_id'] ?? ''));
@@ -365,6 +307,14 @@ final class DynamicLearningService
             $key = implode('|', [$symbol, $side, (string)$entryPrice, $openedAt]);
         }
         $snapshotId = 'snap_' . substr(sha1(self::STRATEGY_ID . '|' . $key), 0, 16);
+
+        // Feature source: if strategy_signal_context is present and populated, features were
+        // captured by the strategy at signal generation time — always temporally valid.
+        $featureSource = ($ctx !== []) ? 'strategy_signal_context' : 'unknown';
+        $featureTimeValid = $featureSource === 'strategy_signal_context';
+
+        $entryFeatures = OutcomeClassifier::extractEntryFeatures($ctx);
+
         return [
             'snapshot_id' => $snapshotId,
             'created_at' => date('c'),
@@ -379,7 +329,9 @@ final class DynamicLearningService
             'detected_at' => $detectedAt,
             'position_id' => trim((string)($row['position_id'] ?? '')),
             'strategy_signal_context' => $ctx,
-            'entry_features' => $this->extractEntryFeatures($ctx),
+            'entry_features' => $entryFeatures,
+            'feature_source' => $featureSource,
+            'feature_time_valid' => $featureTimeValid,
         ];
     }
 
@@ -456,11 +408,11 @@ final class DynamicLearningService
             'max_drawdown_roi_so_far' => round((float)($row['max_drawdown_roi'] ?? $roi), 6),
             'price_change_since_entry_pct' => round((($price - $entry) / $entry) * 100.0, 6),
             'ask_wall_risk' => (string)($ob['ask_wall_risk'] ?? $ctx['ask_wall_risk'] ?? 'unknown'),
-            'nearest_ask_wall_distance_pct' => $this->toFloat($ob['nearest_ask_wall_distance_pct'] ?? $ctx['nearest_ask_wall_distance_pct'] ?? null),
-            'nearest_ask_wall_notional' => $this->toFloat($ob['nearest_ask_wall_notional'] ?? $ctx['nearest_ask_wall_notional'] ?? null),
+            'nearest_ask_wall_distance_pct' => DlHelpers::toFloat($ob['nearest_ask_wall_distance_pct'] ?? $ctx['nearest_ask_wall_distance_pct'] ?? null),
+            'nearest_ask_wall_notional' => DlHelpers::toFloat($ob['nearest_ask_wall_notional'] ?? $ctx['nearest_ask_wall_notional'] ?? null),
             'bid_support_quality' => (string)($ob['bid_support_quality'] ?? $ctx['bid_support_quality'] ?? 'unknown'),
-            'bid_ask_notional_ratio' => $this->toFloat($ob['bid_ask_notional_ratio'] ?? $ctx['bid_ask_notional_ratio'] ?? null),
-            'open_interest_change_since_entry_pct' => $this->toFloat($row['open_interest_change_since_entry_pct'] ?? null),
+            'bid_ask_notional_ratio' => DlHelpers::toFloat($ob['bid_ask_notional_ratio'] ?? $ctx['bid_ask_notional_ratio'] ?? null),
+            'open_interest_change_since_entry_pct' => DlHelpers::toFloat($row['open_interest_change_since_entry_pct'] ?? null),
             'observation_source_errors' => [],
         ];
     }
@@ -640,22 +592,22 @@ final class DynamicLearningService
     /** @return array<string,mixed> */
     private function makeOutcome(array $row, array $cfg, array $snapshotIndex): array
     {
-        $link = $this->resolveOutcomeSnapshotLink($row, $snapshotIndex, $cfg);
+        $link = OutcomeClassifier::resolveLink($row, $snapshotIndex, $cfg);
         $snapshotId = $link['snapshot_id'];
         $snapshot = is_array($link['snapshot']) ? $link['snapshot'] : null;
         $summary = is_string($snapshotId) && $snapshotId !== '' ? (array)$this->readJson($this->storagePath('active_observations/' . $snapshotId . '.json'), []) : [];
-        $closeRoi = $this->toFloat($row['close_roi'] ?? $row['roi'] ?? null);
-        $rawMaxDd = $this->toFloat($row['max_drawdown_roi'] ?? $row['mae_roi'] ?? ($summary['max_drawdown_roi_so_far'] ?? null));
-        $rawMaxProfit = $this->toFloat($row['max_profit_roi'] ?? $row['mfe_roi'] ?? ($summary['max_profit_roi_so_far'] ?? null));
+        $closeRoi = DlHelpers::toFloat($row['close_roi'] ?? $row['roi'] ?? null);
+        $rawMaxDd = DlHelpers::toFloat($row['max_drawdown_roi'] ?? $row['mae_roi'] ?? ($summary['max_drawdown_roi_so_far'] ?? null));
+        $rawMaxProfit = DlHelpers::toFloat($row['max_profit_roi'] ?? $row['mfe_roi'] ?? ($summary['max_profit_roi_so_far'] ?? null));
         $normalizedMaxProfit = ($rawMaxProfit !== null && $closeRoi !== null) ? max($rawMaxProfit, $closeRoi) : $rawMaxProfit;
         $normalizedMaxDd = ($rawMaxDd !== null && $closeRoi !== null) ? min($rawMaxDd, $closeRoi) : $rawMaxDd;
-        [$class, $reason] = $this->classify($closeRoi, $normalizedMaxDd, $normalizedMaxProfit, $cfg);
+        [$class, $reason] = OutcomeClassifier::classify($closeRoi, $normalizedMaxDd, $normalizedMaxProfit, $cfg);
         $composite = trim((string)($row['_dl_identity'] ?? ''));
         if ($composite === '') {
             $composite = $this->buildClosedTradeIdentity($row);
         }
-        $timing = $this->resolveOutcomeTiming($row, $snapshot, $link, $cfg);
-        $featureCheck = $this->determinePatternMiningEligibility($snapshot, $timing, (string)$link['link_strength']);
+        $timing = OutcomeClassifier::resolveTiming($row, $snapshot, $link, $cfg);
+        $featureCheck = OutcomeClassifier::determineEligibility($snapshot, $timing, (string)$link['link_strength']);
         return [
             'outcome_key' => 'out_' . substr(sha1($composite), 0, 20),
             'snapshot_id' => $snapshotId,
@@ -663,10 +615,10 @@ final class DynamicLearningService
             'side' => strtolower((string)($row['side'] ?? 'long')),
             'signal_id' => (string)($row['signal_id'] ?? ''),
             'strategy_signal_key' => (string)($row['strategy_signal_key'] ?? ''),
-            'entry_price' => $this->toFloat($row['entry_price'] ?? null),
-            'close_price' => $this->toFloat($row['close_price'] ?? $row['exit_price'] ?? null),
+            'entry_price' => DlHelpers::toFloat($row['entry_price'] ?? null),
+            'close_price' => DlHelpers::toFloat($row['close_price'] ?? $row['exit_price'] ?? null),
             'opened_at' => $timing['learning_opened_at'],
-            'closed_at' => $this->extractClosedAt($row),
+            'closed_at' => DlHelpers::extractClosedAt($row),
             'raw_closed_opened_at' => $timing['raw_closed_opened_at'],
             'learning_opened_at' => $timing['learning_opened_at'],
             'opened_at_source' => $timing['opened_at_source'],
@@ -694,392 +646,12 @@ final class DynamicLearningService
         ];
     }
 
-    /** @return array{snapshot_id:?string,snapshot:?array<string,mixed>,link_strength:string,match_type:string} */
-    private function resolveOutcomeSnapshotLink(array $row, array $snapshotIndex, array $cfg): array
-    {
-        $signalId = trim((string)($row['signal_id'] ?? ''));
-        $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
-        $pid = trim((string)($row['position_id'] ?? ''));
-        $sym = strtoupper(trim((string)($row['symbol'] ?? '')));
-        $side = strtolower(trim((string)($row['side'] ?? 'long')));
-        $entryPrice = $this->toFloat($row['entry_price'] ?? null);
-        $openedAt = $this->extractOpenedAt($row);
-        $timeToleranceSec = max(60, (int)$cfg['outcome_opened_at_mismatch_tolerance_minutes'] * 60);
-        $weakSymbolOnly = false;
-
-        foreach ($snapshotIndex as $id => $snap) {
-            if (!is_array($snap)) {
-                continue;
-            }
-            if ($signalId !== '' && $signalId === (string)($snap['signal_id'] ?? '')) {
-                return ['snapshot_id' => (string)$id, 'snapshot' => $snap, 'link_strength' => 'strong', 'match_type' => 'signal_id'];
-            }
-        }
-
-        foreach ($snapshotIndex as $id => $snap) {
-            if (!is_array($snap)) {
-                continue;
-            }
-            if ($ssk !== '' && $ssk === (string)($snap['strategy_signal_key'] ?? '')) {
-                return ['snapshot_id' => (string)$id, 'snapshot' => $snap, 'link_strength' => 'strong', 'match_type' => 'strategy_signal_key'];
-            }
-        }
-
-        foreach ($snapshotIndex as $id => $snap) {
-            if (!is_array($snap)) {
-                continue;
-            }
-            if ($pid !== '' && $pid === (string)($snap['position_id'] ?? '')) {
-                return ['snapshot_id' => (string)$id, 'snapshot' => $snap, 'link_strength' => 'strong', 'match_type' => 'position_id'];
-            }
-        }
-
-        $bestId = null;
-        $bestSnap = null;
-        $bestDiff = null;
-        foreach ($snapshotIndex as $id => $snap) {
-            if (!is_array($snap)) {
-                continue;
-            }
-            $snapSym = strtoupper(trim((string)($snap['symbol'] ?? '')));
-            $snapSide = strtolower(trim((string)($snap['side'] ?? 'long')));
-            if ($sym !== '' && $sym === $snapSym) {
-                $weakSymbolOnly = true;
-            }
-            if ($sym === '' || $side === '' || $entryPrice === null || $openedAt === '') {
-                continue;
-            }
-            if ($sym !== $snapSym || $side !== $snapSide) {
-                continue;
-            }
-            $snapEntryPrice = $this->toFloat($snap['entry_price'] ?? null);
-            if ($snapEntryPrice === null || round($snapEntryPrice, 8) !== round($entryPrice, 8)) {
-                continue;
-            }
-            $diff = $this->smallestTimestampDiffSeconds($openedAt, [
-                $this->extractSnapshotOpenedAt($snap),
-                $this->extractSnapshotDetectedAt($snap),
-            ]);
-            if ($diff === null || $diff > $timeToleranceSec) {
-                continue;
-            }
-            if ($bestDiff === null || $diff < $bestDiff) {
-                $bestDiff = $diff;
-                $bestId = (string)$id;
-                $bestSnap = $snap;
-            }
-        }
-
-        if ($bestId !== null && is_array($bestSnap)) {
-            return ['snapshot_id' => $bestId, 'snapshot' => $bestSnap, 'link_strength' => 'strong', 'match_type' => 'price_time'];
-        }
-
-        if ($weakSymbolOnly) {
-            return ['snapshot_id' => null, 'snapshot' => null, 'link_strength' => 'weak', 'match_type' => 'symbol_only'];
-        }
-
-        return ['snapshot_id' => null, 'snapshot' => null, 'link_strength' => 'none', 'match_type' => 'none'];
-    }
-
-    /** @return array{raw_closed_opened_at:string,learning_opened_at:string,opened_at_source:string,opened_at_corrected:bool,opened_at_mismatch_minutes:?float,timing_confidence:string,duration_sec:int} */
-    private function resolveOutcomeTiming(array $row, ?array $snapshot, array $link, array $cfg): array
-    {
-        $rawClosedOpenedAt = $this->extractOpenedAt($row);
-        $closedAt = $this->extractClosedAt($row);
-        $learningOpenedAt = $rawClosedOpenedAt;
-        $openedAtSource = 'closed_trade';
-        $openedAtCorrected = false;
-        $openedAtMismatchMinutes = null;
-        $timingConfidence = in_array((string)($link['match_type'] ?? ''), ['signal_id', 'strategy_signal_key'], true) ? 'high' : 'low';
-        $durationSec = max(0, (int)($row['duration_sec'] ?? 0));
-
-        if (!is_array($snapshot)) {
-            return [
-                'raw_closed_opened_at' => $rawClosedOpenedAt,
-                'learning_opened_at' => $learningOpenedAt,
-                'opened_at_source' => $openedAtSource,
-                'opened_at_corrected' => $openedAtCorrected,
-                'opened_at_mismatch_minutes' => $openedAtMismatchMinutes,
-                'timing_confidence' => $timingConfidence,
-                'duration_sec' => $durationSec,
-            ];
-        }
-
-        $snapshotOpenedAt = $this->extractSnapshotOpenedAt($snapshot);
-        $snapshotDetectedAt = $this->extractSnapshotDetectedAt($snapshot);
-        $referenceOpenedAt = $snapshotOpenedAt !== '' ? $snapshotOpenedAt : $snapshotDetectedAt;
-        $exactSignalMatch = in_array((string)($link['match_type'] ?? ''), ['signal_id', 'strategy_signal_key'], true);
-
-        if ($rawClosedOpenedAt === '' && $referenceOpenedAt !== '') {
-            $learningOpenedAt = $referenceOpenedAt;
-            $openedAtSource = 'entry_snapshot';
-            $openedAtCorrected = true;
-            $timingConfidence = $exactSignalMatch ? 'medium' : 'low';
-        } elseif ($exactSignalMatch && (bool)($cfg['prefer_entry_snapshot_time_on_signal_match'] ?? true) && $rawClosedOpenedAt !== '' && $referenceOpenedAt !== '') {
-            $diffSeconds = $this->smallestTimestampDiffSeconds($rawClosedOpenedAt, [$snapshotOpenedAt, $snapshotDetectedAt]);
-            $toleranceSeconds = max(60, (int)$cfg['outcome_opened_at_mismatch_tolerance_minutes'] * 60);
-            if ($diffSeconds !== null && $diffSeconds > $toleranceSeconds) {
-                $learningOpenedAt = $referenceOpenedAt;
-                $openedAtSource = 'entry_snapshot';
-                $openedAtCorrected = true;
-                $openedAtMismatchMinutes = round($diffSeconds / 60, 3);
-                $timingConfidence = 'medium';
-            }
-        }
-
-        if ($closedAt !== '' && $learningOpenedAt !== '') {
-            $computedDuration = $this->signedTimestampDiffSeconds($learningOpenedAt, $closedAt);
-            if ($computedDuration !== null) {
-                $durationSec = max(0, $computedDuration);
-            }
-        }
-
-        return [
-            'raw_closed_opened_at' => $rawClosedOpenedAt,
-            'learning_opened_at' => $learningOpenedAt,
-            'opened_at_source' => $openedAtSource,
-            'opened_at_corrected' => $openedAtCorrected,
-            'opened_at_mismatch_minutes' => $openedAtMismatchMinutes,
-            'timing_confidence' => $timingConfidence,
-            'duration_sec' => $durationSec,
-        ];
-    }
-
-    /** @return array{used_for_pattern_mining:bool,exclude_reason:?string} */
-    private function determinePatternMiningEligibility(?array $snapshot, array $timing, string $linkStrength): array
-    {
-        if (!is_array($snapshot)) {
-            return ['used_for_pattern_mining' => false, 'exclude_reason' => $linkStrength === 'weak' ? 'weak_symbol_only_match' : 'unlinked_closed_outcome'];
-        }
-        if ($linkStrength !== 'strong') {
-            return ['used_for_pattern_mining' => false, 'exclude_reason' => 'link_not_strong'];
-        }
-        if ((string)($timing['timing_confidence'] ?? 'low') === 'low') {
-            return ['used_for_pattern_mining' => false, 'exclude_reason' => 'timing_confidence_low'];
-        }
-        $entryFeatures = is_array($snapshot['entry_features'] ?? null) ? (array)$snapshot['entry_features'] : [];
-        if ($entryFeatures === []) {
-            $entryFeatures = $this->extractEntryFeatures((array)($snapshot['strategy_signal_context'] ?? []));
-        }
-        if ($entryFeatures === []) {
-            return ['used_for_pattern_mining' => false, 'exclude_reason' => 'entry_features_missing'];
-        }
-        $featureAvailableAt = $this->extractSnapshotFeatureAvailableAt($snapshot);
-        $learningOpenedAt = trim((string)($timing['learning_opened_at'] ?? ''));
-        if ($featureAvailableAt !== '' && $learningOpenedAt !== '') {
-            $featureDelay = $this->signedTimestampDiffSeconds($featureAvailableAt, $learningOpenedAt);
-            if ($featureDelay !== null && $featureDelay > 0) {
-                return ['used_for_pattern_mining' => false, 'exclude_reason' => 'entry_features_after_learning_opened_at'];
-            }
-        }
-        return ['used_for_pattern_mining' => true, 'exclude_reason' => null];
-    }
-
-    /** @return array{0:string,1:string} */
-    private function classify(?float $closeRoi, ?float $maxDd, ?float $maxProfit, array $cfg): array
-    {
-        if ($closeRoi === null) {
-            return ['outcome_incomplete', 'close_roi_missing'];
-        }
-        if ($closeRoi >= (float)$cfg['good_close_roi_threshold']) {
-            return ['good_or_do_not_touch', 'close_roi_good'];
-        }
-        if ($maxProfit !== null && $maxProfit >= (float)$cfg['good_max_profit_roi_threshold']) {
-            return ['entry_ok_exit_issue', 'max_profit_good_but_close_bad'];
-        }
-        if ($maxDd === null) {
-            return ['outcome_incomplete', 'max_drawdown_missing'];
-        }
-        if ($maxDd <= (float)$cfg['bad_drawdown_roi_threshold'] && $closeRoi < (float)$cfg['good_close_roi_threshold'] && ($maxProfit === null || $maxProfit < (float)$cfg['good_max_profit_roi_threshold'])) {
-            return ['bad_entry', 'deep_drawdown_and_bad_close'];
-        }
-        if ($closeRoi >= (float)$cfg['neutral_close_roi_min'] && $closeRoi <= (float)$cfg['neutral_close_roi_max']) {
-            return ['neutral', 'close_roi_neutral_range'];
-        }
-        return ['neutral', 'no_strong_signal'];
-    }
-
-    /** @return array{all:list<array<string,mixed>>,bad_patterns:list<array<string,mixed>>} */
-    private function minePatterns(array $cfg, array $outcomes): array
-    {
-        $defs = [
-            ['id' => 'context_phase_chaotic', 'label' => 'context_phase = chaotic', 'f' => 'context_phase', 'op' => 'eq', 'v' => 'chaotic'],
-            ['id' => 'context_quality_bad', 'label' => 'context_quality = bad', 'f' => 'context_quality', 'op' => 'eq', 'v' => 'bad'],
-            ['id' => 'wave_regime_fast_flip_chop', 'label' => 'wave_regime = fast_flip_chop', 'f' => 'wave_regime', 'op' => 'eq', 'v' => 'fast_flip_chop'],
-            ['id' => 'ask_wall_risk_high', 'label' => 'ask_wall_risk = high', 'f' => 'ask_wall_risk', 'op' => 'eq', 'v' => 'high'],
-            ['id' => 'bid_support_quality_weak_or_none', 'label' => 'bid_support_quality weak/none', 'f' => 'bid_support_quality', 'op' => 'in', 'v' => ['weak', 'none']],
-            ['id' => 'oi_not_confirmed', 'label' => 'open_interest_confirmed = false', 'f' => 'open_interest_confirmed', 'op' => 'eq', 'v' => false],
-            ['id' => 'single_candle_dominance_ge_65', 'label' => 'single_candle_dominance >= 65', 'f' => 'smooth_growth_single_candle_dominance_pct', 'op' => 'gte', 'v' => 65],
-            ['id' => 'combo_bad_context_high_ask_wall', 'label' => 'context_quality bad + ask_wall_risk high', 'combo' => [['f' => 'context_quality', 'op' => 'eq', 'v' => 'bad'], ['f' => 'ask_wall_risk', 'op' => 'eq', 'v' => 'high']]],
-            ['id' => 'combo_fast_flip_weak_bid', 'label' => 'wave fast_flip_chop + bid weak/none', 'combo' => [['f' => 'wave_regime', 'op' => 'eq', 'v' => 'fast_flip_chop'], ['f' => 'bid_support_quality', 'op' => 'in', 'v' => ['weak', 'none']]]],
-        ];
-        $rows = [];
-        foreach ($defs as $d) {
-            $bad = 0;
-            $good = 0;
-            $neutral = 0;
-            $badClose = [];
-            $badDd = [];
-            $goodClose = [];
-            foreach ($outcomes as $o) {
-                $f = (array)($o['entry_snapshot']['entry_features'] ?? []);
-                if ($f === []) {
-                    $f = $this->extractEntryFeatures((array)($o['entry_snapshot']['strategy_signal_context'] ?? []));
-                }
-                $match = isset($d['combo']) ? $this->matchCombo($f, (array)$d['combo']) : $this->cond($f[$d['f']] ?? null, (string)$d['op'], $d['v']);
-                if (!$match) {
-                    continue;
-                }
-                $c = (string)($o['outcome_class'] ?? '');
-                if ($c === 'bad_entry') {
-                    $bad++;
-                    if (is_numeric($o['close_roi'] ?? null)) {
-                        $badClose[] = (float)$o['close_roi'];
-                    }
-                    if (is_numeric($o['max_drawdown_roi'] ?? null)) {
-                        $badDd[] = (float)$o['max_drawdown_roi'];
-                    }
-                } elseif ($c === 'good_or_do_not_touch') {
-                    $good++;
-                    if (is_numeric($o['close_roi'] ?? null)) {
-                        $goodClose[] = (float)$o['close_roi'];
-                    }
-                } elseif ($c === 'neutral') {
-                    $neutral++;
-                }
-            }
-            if (($bad + $good + $neutral) === 0) {
-                continue;
-            }
-            $confidence = ($bad >= 5 && $good === 0) ? 'high' : (($bad >= 3 && $bad > $good) ? 'medium' : 'low');
-            $avgBadDd = $this->avg($badDd);
-            $goodOverlapHigh = $good > 0 && $good >= $bad;
-            $suggested = 'observe_only';
-            if ($bad >= 2 && $bad > $good && !$goodOverlapHigh && $avgBadDd !== null && $avgBadDd <= (float)$cfg['bad_drawdown_roi_threshold']) {
-                $suggested = $confidence === 'high' ? 'candidate_hard_block_demo' : 'candidate_soft_block';
-            }
-            $rows[] = [
-                'pattern_id' => $d['id'],
-                'pattern_label' => $d['label'],
-                'bad_count' => $bad,
-                'good_count' => $good,
-                'neutral_count' => $neutral,
-                'bad_share' => round($bad / max(1, $bad + $good + $neutral), 4),
-                'good_overlap_count' => $good,
-                'avg_bad_close_roi' => $this->avg($badClose),
-                'avg_bad_drawdown_roi' => $avgBadDd,
-                'avg_good_close_roi' => $this->avg($goodClose),
-                'confidence' => $confidence,
-                'suggested_action' => $suggested,
-                'good_overlap_note' => $goodOverlapHigh ? 'do_not_use_for_hard_block' : '',
-                'conditions' => isset($d['combo']) ? array_values($d['combo']) : [['field' => $d['f'], 'op' => $d['op'], 'value' => $d['v']]],
-            ];
-        }
-        usort($rows, static fn(array $a, array $b): int => (int)$b['bad_count'] <=> (int)$a['bad_count']);
-        return ['all' => $rows, 'bad_patterns' => array_values(array_filter($rows, static fn(array $r): bool => (int)$r['bad_count'] > 0))];
-    }
-
-    /** @return array<string,mixed> */
-    private function buildProfile(array $cfg, array $outcomes, array $patterns): array
-    {
-        $profileId = 'dl_eigl_' . gmdate('Ymd_His');
-        $rules = [];
-        $quarantined = [];
-        foreach ($patterns as $p) {
-            if ((int)($p['bad_count'] ?? 0) < (int)$cfg['min_bad_entries_for_rule']) {
-                continue;
-            }
-            $self = $this->selfTest($p, $outcomes);
-            $pass = $self['bad_blocked_total'] >= (int)$cfg['min_bad_blocked_for_rule']
-                && $self['bad_blocked_total'] > $self['good_blocked_total']
-                && $self['good_blocked_total'] <= (int)$cfg['max_good_blocked_for_rule']
-                && $self['net_score'] > (float)$cfg['min_rule_net_score'];
-            $rule = [
-                'rule_id' => 'rule_' . substr(sha1((string)$p['pattern_id']), 0, 12),
-                'source_pattern' => $p['pattern_id'],
-                'conditions' => $p['conditions'],
-                'action' => 'observe_only',
-                'scope' => 'demo_only',
-                'confidence' => $p['confidence'],
-                'bad_count' => $p['bad_count'],
-                'good_count' => $p['good_count'],
-                'expected_bad_blocked' => $self['bad_blocked_total'],
-                'expected_good_blocked' => $self['good_blocked_total'],
-                'self_test_result' => $self,
-            ];
-            if ($pass) {
-                $rules[] = $rule + ['status' => 'candidate'];
-            } else {
-                $quarantined[] = $rule + ['status' => 'quarantined', 'quarantine_reason' => ($self['good_blocked_total'] > (int)$cfg['max_good_blocked_for_rule'] ? 'too_much_good_overlap' : 'no_improvement')];
-            }
-        }
-        $profile = [
-            'profile_id' => $profileId,
-            'strategy_id' => self::STRATEGY_ID,
-            'created_at' => date('c'),
-            'source_window' => ['closed_outcomes_total' => count($outcomes)],
-            'trades_total' => count($outcomes),
-            'bad_entries_total' => count(array_filter($outcomes, static fn(array $o): bool => (string)($o['outcome_class'] ?? '') === 'bad_entry')),
-            'good_entries_total' => count(array_filter($outcomes, static fn(array $o): bool => (string)($o['outcome_class'] ?? '') === 'good_or_do_not_touch')),
-            'rules' => $rules,
-            'status' => 'candidate',
-            'apply_mode' => 'observe_only',
-        ];
-        $this->writeJson($this->storagePath('profiles/early_impulse_growth_long/current_profile.json'), $profile);
-        if ((bool)$cfg['profile_history_enabled']) {
-            $this->appendNdjson($this->storagePath('profiles/early_impulse_growth_long/profile_history.ndjson'), $profile);
-        }
-        $this->writeJson($this->storagePath('quarantine/rejected_rules.json'), $quarantined);
-        return ['profile_id' => $profileId, 'rules' => $rules, 'quarantined' => $quarantined];
-    }
-
-    /** @return array<string,mixed> */
-    private function selfTest(array $pattern, array $outcomes): array
-    {
-        $tested = 0;
-        $bad = 0;
-        $good = 0;
-        $neutral = 0;
-        foreach ($outcomes as $o) {
-            $tested++;
-            $f = (array)($o['entry_snapshot']['entry_features'] ?? []);
-            $ok = true;
-            foreach ((array)$pattern['conditions'] as $c) {
-                if (!$this->cond($f[(string)($c['field'] ?? '')] ?? null, (string)($c['op'] ?? 'eq'), $c['value'] ?? null)) {
-                    $ok = false;
-                    break;
-                }
-            }
-            if (!$ok) {
-                continue;
-            }
-            $cls = (string)($o['outcome_class'] ?? '');
-            if ($cls === 'bad_entry') {
-                $bad++;
-            } elseif ($cls === 'good_or_do_not_touch') {
-                $good++;
-            } elseif ($cls === 'neutral') {
-                $neutral++;
-            }
-        }
-        $net = ($bad * 1.0) - ($good * 1.5) - ($neutral * 0.25);
-        return [
-            'tested_trades_total' => $tested,
-            'bad_blocked_total' => $bad,
-            'good_blocked_total' => $good,
-            'neutral_blocked_total' => $neutral,
-            'bad_block_rate' => round($bad / max(1, $tested), 6),
-            'good_block_rate' => round($good / max(1, $tested), 6),
-            'net_score' => round($net, 6),
-        ];
-    }
-
     private function buildClosedTradeIdentity(array $row): string
     {
         $signalId = trim((string)($row['signal_id'] ?? ''));
         $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
-        $openedAt = $this->extractOpenedAt($row);
-        $closedAt = $this->extractClosedAt($row);
+        $openedAt = DlHelpers::extractOpenedAt($row);
+        $closedAt = DlHelpers::extractClosedAt($row);
 
         if ($signalId !== '' && $openedAt !== '' && $closedAt !== '') {
             return 'signal_time|' . implode('|', [$signalId, $openedAt, $closedAt]);
@@ -1095,7 +667,7 @@ final class DynamicLearningService
             return 'time|' . implode('|', [$symbol, $side, $openedAt, $closedAt]);
         }
 
-        $entryPrice = $this->toFloat($row['entry_price'] ?? null);
+        $entryPrice = DlHelpers::toFloat($row['entry_price'] ?? null);
         if ($symbol !== '' && $side !== '' && $entryPrice !== null && $openedAt !== '' && $closedAt !== '') {
             return 'price_time|' . implode('|', [$symbol, $side, (string)round($entryPrice, 8), $openedAt, $closedAt]);
         }
@@ -1140,13 +712,13 @@ final class DynamicLearningService
         if (trim((string)($row['strategy_signal_key'] ?? '')) !== '') {
             $score += 2;
         }
-        if ($this->extractOpenedAt($row) !== '') {
+        if (DlHelpers::extractOpenedAt($row) !== '') {
             $score += 1;
         }
-        if ($this->extractClosedAt($row) !== '') {
+        if (DlHelpers::extractClosedAt($row) !== '') {
             $score += 1;
         }
-        if ($this->toFloat($row['close_roi'] ?? $row['roi'] ?? null) !== null) {
+        if (DlHelpers::toFloat($row['close_roi'] ?? $row['roi'] ?? null) !== null) {
             $score += 2;
         }
         return $score;
@@ -1276,27 +848,6 @@ final class DynamicLearningService
         return $tb - $ta;
     }
 
-    private function matchCombo(array $features, array $conds): bool
-    {
-        foreach ($conds as $c) {
-            if (!$this->cond($features[(string)($c['f'] ?? '')] ?? null, (string)($c['op'] ?? 'eq'), $c['v'] ?? null)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private function cond(mixed $actual, string $op, mixed $value): bool
-    {
-        return match ($op) {
-            'eq' => $actual === $value || strtolower((string)$actual) === strtolower((string)$value),
-            'in' => is_array($value) && in_array(strtolower((string)$actual), array_map(static fn($v): string => strtolower((string)$v), $value), true),
-            'gte' => is_numeric($actual) && is_numeric($value) && (float)$actual >= (float)$value,
-            'lt' => is_numeric($actual) && is_numeric($value) && (float)$actual < (float)$value,
-            default => false,
-        };
-    }
-
     private function isEigl(array $row, string $strategyId): bool
     {
         $sid = strtolower(trim((string)($row['strategy_id'] ?? $row['owner_strategy'] ?? '')));
@@ -1313,54 +864,276 @@ final class DynamicLearningService
     }
 
     /** @return array<string,mixed> */
-    private function extractEntryFeatures(array $ctx): array
+    private function runFeaturePipeline(array $cfg, array $snapshots): array
     {
-        $coin = is_array($ctx['coin_context'] ?? null) ? (array)$ctx['coin_context'] : [];
-        $wave = is_array($ctx['wave_context'] ?? null) ? (array)$ctx['wave_context'] : [];
-        $ob = is_array($ctx['orderbook_context'] ?? null) ? (array)$ctx['orderbook_context'] : [];
-        $f = static fn(string $k, mixed $d = null) => $ctx[$k] ?? $coin[$k] ?? $wave[$k] ?? $ob[$k] ?? $d;
+        $result = [
+            'records_total' => 0,
+            'time_valid_total' => 0,
+            'time_invalid_total' => 0,
+            'source_counts' => [],
+            'time_invalid_examples' => [],
+            'candle_micro_available_total' => 0,
+            'dump_micro_available_total' => 0,
+            'weighted_score_calculated_total' => 0,
+        ];
+
+        $records = [];
+        foreach ($snapshots as $snap) {
+            if (!is_array($snap)) {
+                continue;
+            }
+            $ctx = is_array($snap['strategy_signal_context'] ?? null) ? (array)$snap['strategy_signal_context'] : [];
+            $featureSource = (string)($snap['feature_source'] ?? 'unknown');
+            $featureTimeValid = (bool)($snap['feature_time_valid'] ?? ($featureSource === 'strategy_signal_context'));
+
+            $featureTimeWarning = null;
+            if (!$featureTimeValid) {
+                $featureTimeWarning = 'feature_source_unknown_timing_unproven';
+            }
+
+            $candleMicro = (bool)($cfg['candle_micro_analyzer_enabled'] ?? true)
+                ? CandleMicroAnalyzer::analyze($ctx)
+                : ['micro_context_available' => false];
+            $dumpMicro = (bool)($cfg['dump_micro_analyzer_enabled'] ?? true)
+                ? DumpMicroAnalyzer::analyze($ctx)
+                : ['dump_micro_available' => false];
+            $impulse = (bool)($cfg['impulse_birth_analyzer_enabled'] ?? true)
+                ? ImpulseBirthAnalyzer::analyze($ctx)
+                : ['impulse_birth_available' => false];
+            $trend = (bool)($cfg['trend_context_analyzer_enabled'] ?? true)
+                ? TrendContextAnalyzer::analyze($ctx)
+                : ['trend_context_available' => false];
+            $ob = (bool)($cfg['orderbook_snapshot_analyzer_enabled'] ?? true)
+                ? OrderbookSnapshotAnalyzer::analyze($ctx)
+                : ['orderbook_context_available' => false];
+
+            $weightedScore = null;
+            $riskComponents = [];
+            $qualityComponents = [];
+            if ((bool)($cfg['weighted_scoring_enabled'] ?? true)) {
+                $featuresForScore = array_merge(
+                    is_array($snap['entry_features'] ?? null) ? (array)$snap['entry_features'] : OutcomeClassifier::extractEntryFeatures($ctx),
+                    $candleMicro,
+                    $dumpMicro,
+                    $ob
+                );
+                [$weightedScore, $riskComponents, $qualityComponents] = $this->computeWeightedScore($featuresForScore);
+            }
+
+            $coin = is_array($ctx['coin_context'] ?? null) ? (array)$ctx['coin_context'] : [];
+            $wave = is_array($ctx['wave_context'] ?? null) ? (array)$ctx['wave_context'] : [];
+            $g = static fn(string $k, mixed $d = null) => $ctx[$k] ?? $coin[$k] ?? $wave[$k] ?? $d;
+
+            $featureRecord = [
+                'feature_id' => 'feat_' . substr(sha1(($snap['snapshot_id'] ?? '') . $featureSource . ($snap['created_at'] ?? '')), 0, 16),
+                'snapshot_id' => $snap['snapshot_id'] ?? null,
+                'strategy_id' => self::STRATEGY_ID,
+                'symbol' => $snap['symbol'] ?? null,
+                'side' => $snap['side'] ?? null,
+                'signal_id' => $snap['signal_id'] ?? null,
+                'entry_price' => $snap['entry_price'] ?? null,
+                'learning_opened_at' => $snap['opened_at'] ?? null,
+                'feature_source' => $featureSource,
+                'feature_time_valid' => $featureTimeValid,
+                'feature_time_warning' => $featureTimeWarning,
+                'dump_pct' => $g('dump_pct'),
+                'stabilization_duration_minutes' => $g('stabilization_duration_minutes'),
+                'stabilization_range_pct' => $g('stabilization_range_pct'),
+                'smooth_growth_pct' => $g('smooth_growth_pct'),
+                'smooth_growth_duration_minutes' => $g('smooth_growth_duration_minutes'),
+                'smooth_growth_higher_close_count' => $g('smooth_growth_higher_close_count'),
+                'smooth_growth_higher_low_count' => $g('smooth_growth_higher_low_count'),
+                'smooth_growth_single_candle_dominance_pct' => $g('smooth_growth_single_candle_dominance_pct'),
+                'open_interest_growth_pct' => $g('open_interest_growth_pct'),
+                'recovery_phase' => $g('recovery_phase'),
+                'entry_timing' => $g('entry_timing'),
+                'context_phase' => $trend['context_phase'] ?? $g('context_phase'),
+                'context_quality' => $trend['context_quality'] ?? $g('context_quality'),
+                'context_reasons' => is_array($g('context_reasons', [])) ? $g('context_reasons', []) : [],
+                'trend_1h_direction' => $trend['trend_1h_direction'] ?? null,
+                'trend_2h_direction' => $trend['trend_2h_direction'] ?? null,
+                'wave_regime' => $trend['wave_regime'] ?? null,
+                'trend_flip_count_2h' => $trend['trend_flip_count_2h'] ?? null,
+                'avg_time_between_flips_minutes' => $trend['avg_time_between_flips_minutes'] ?? null,
+                'trend_persistence_score' => $trend['trend_persistence_score'] ?? null,
+                'ask_wall_risk' => $ob['ask_wall_risk'] ?? null,
+                'nearest_ask_wall_distance_pct' => $ob['nearest_ask_wall_distance_pct'] ?? null,
+                'nearest_ask_wall_notional' => $ob['nearest_ask_wall_notional'] ?? null,
+                'bid_support_quality' => $ob['bid_support_quality'] ?? null,
+                'bid_ask_notional_ratio' => $ob['bid_ask_notional_ratio'] ?? null,
+                'micro_candle' => $candleMicro,
+                'micro_dump' => $dumpMicro,
+                'micro_impulse' => $impulse,
+                'dynamic_risk_score' => is_array($weightedScore) ? ($weightedScore['risk'] ?? null) : null,
+                'dynamic_quality_score' => is_array($weightedScore) ? ($weightedScore['quality'] ?? null) : null,
+                'risk_components' => $riskComponents,
+                'quality_components' => $qualityComponents,
+                'created_at' => date('c'),
+            ];
+
+            $records[] = $featureRecord;
+            $result['records_total']++;
+
+            $src = $featureSource;
+            $result['source_counts'][$src] = ($result['source_counts'][$src] ?? 0) + 1;
+
+            if ($featureTimeValid) {
+                $result['time_valid_total']++;
+            } else {
+                $result['time_invalid_total']++;
+                if (count($result['time_invalid_examples']) < 10) {
+                    $result['time_invalid_examples'][] = [
+                        'snapshot_id' => $snap['snapshot_id'] ?? null,
+                        'symbol' => $snap['symbol'] ?? null,
+                        'feature_source' => $featureSource,
+                        'feature_time_warning' => $featureTimeWarning,
+                    ];
+                }
+            }
+
+            if ((bool)($candleMicro['micro_context_available'] ?? false)) {
+                $result['candle_micro_available_total']++;
+            }
+            if ((bool)($dumpMicro['dump_micro_available'] ?? false)) {
+                $result['dump_micro_available_total']++;
+            }
+            if ($weightedScore !== null) {
+                $result['weighted_score_calculated_total']++;
+            }
+        }
+
+        $featureJsonPath = $this->storagePath('features/early_impulse_growth_long/features.json');
+        $featureNdjsonPath = $this->storagePath('features/early_impulse_growth_long/features.ndjson');
+        $featureDir = dirname($featureJsonPath);
+        if (!is_dir($featureDir)) {
+            @mkdir($featureDir, 0755, true);
+        }
+        $json = json_encode($records, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (is_string($json)) {
+            @file_put_contents($featureJsonPath, $json, LOCK_EX);
+        }
+        $ndjsonContent = '';
+        foreach ($records as $rec) {
+            $line = json_encode($rec, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (is_string($line)) {
+                $ndjsonContent .= $line . PHP_EOL;
+            }
+        }
+        @file_put_contents($featureNdjsonPath, $ndjsonContent, LOCK_EX);
+
+        return $result;
+    }
+
+    /**
+     * Compute weighted risk/quality score from features — diagnostic only.
+     *
+     * @return array{0:array{risk:float,quality:float}|null,1:array<string,mixed>,2:array<string,mixed>}
+     */
+    private function computeWeightedScore(array $f): array
+    {
+        $riskComponents = [];
+        $qualityComponents = [];
+        $riskScore = 0.0;
+        $qualityScore = 0.0;
+
+        if ((string)($f['micro_single_candle_dominance_pct'] ?? '') !== '' && is_numeric($f['micro_single_candle_dominance_pct'] ?? null) && (float)$f['micro_single_candle_dominance_pct'] >= 65) {
+            $riskScore += 20.0;
+            $riskComponents['micro_single_candle_dominance_high'] = 20.0;
+        }
+        if ((string)($f['wave_regime'] ?? '') === 'fast_flip_chop') {
+            $riskScore += 15.0;
+            $riskComponents['fast_flip_chop'] = 15.0;
+        }
+        if ((string)($f['ask_wall_risk'] ?? '') === 'high') {
+            $riskScore += 15.0;
+            $riskComponents['ask_wall_high'] = 15.0;
+        }
+        if (in_array(strtolower((string)($f['bid_support_quality'] ?? '')), ['weak', 'none'], true)) {
+            $riskScore += 10.0;
+            $riskComponents['bid_support_weak'] = 10.0;
+        }
+        if ($f['open_interest_confirmed'] === false || $f['open_interest_confirmed'] === 'false') {
+            $riskScore += 5.0;
+            $riskComponents['oi_not_confirmed'] = 5.0;
+        }
+        if (is_numeric($f['smooth_growth_higher_close_count'] ?? null) && (int)$f['smooth_growth_higher_close_count'] >= 3) {
+            $qualityScore += 15.0;
+            $qualityComponents['smooth_growth_sequence_good'] = 15.0;
+        }
+        if (in_array(strtolower((string)($f['bid_support_quality'] ?? '')), ['strong', 'medium'], true)) {
+            $qualityScore += 10.0;
+            $qualityComponents['bid_support_strong'] = 10.0;
+        }
+        if ((string)($f['context_quality'] ?? '') === 'good') {
+            $qualityScore += 10.0;
+            $qualityComponents['context_quality_good'] = 10.0;
+        }
+
         return [
-            'dump_pct' => $f('dump_pct'),
-            'stabilization_duration_minutes' => $f('stabilization_duration_minutes'),
-            'stabilization_range_pct' => $f('stabilization_range_pct'),
-            'stabilization_price_change_pct' => $f('stabilization_price_change_pct'),
-            'smooth_growth_pct' => $f('smooth_growth_pct'),
-            'smooth_growth_duration_minutes' => $f('smooth_growth_duration_minutes'),
-            'smooth_growth_higher_close_count' => $f('smooth_growth_higher_close_count'),
-            'smooth_growth_higher_low_count' => $f('smooth_growth_higher_low_count'),
-            'smooth_growth_single_candle_dominance_pct' => $f('smooth_growth_single_candle_dominance_pct'),
-            'open_interest_growth_pct' => $f('open_interest_growth_pct'),
-            'open_interest_confirmed' => $f('open_interest_confirmed'),
-            'recovery_phase' => $f('recovery_phase'),
-            'entry_timing' => $f('entry_timing'),
-            'late_spike_detected' => $f('late_spike_detected'),
-            'extended_recovery_detected' => $f('extended_recovery_detected'),
-            'context_phase' => $f('context_phase'),
-            'context_quality' => $f('context_quality'),
-            'context_reasons' => is_array($f('context_reasons', [])) ? $f('context_reasons', []) : [],
-            'trend_1h_direction' => $f('trend_1h_direction'),
-            'trend_2h_direction' => $f('trend_2h_direction'),
-            'trend_4h_direction' => $f('trend_4h_direction'),
-            'price_change_1h_pct' => $f('price_change_1h_pct'),
-            'corridor_position_pct' => $f('corridor_position_pct'),
-            'room_to_recent_high_pct' => $f('room_to_recent_high_pct'),
-            'distance_from_recent_low_pct' => $f('distance_from_recent_low_pct'),
-            'wave_regime' => $f('wave_regime'),
-            'trend_flip_count_2h' => $f('trend_flip_count_2h'),
-            'avg_time_between_flips_minutes' => $f('avg_time_between_flips_minutes'),
-            'wave_amplitude_avg_pct' => $f('wave_amplitude_avg_pct'),
-            'wave_noise_score' => $f('wave_noise_score'),
-            'trend_persistence_score' => $f('trend_persistence_score'),
-            'ask_wall_risk' => $f('ask_wall_risk'),
-            'nearest_ask_wall_distance_pct' => $f('nearest_ask_wall_distance_pct'),
-            'nearest_ask_wall_notional' => $f('nearest_ask_wall_notional'),
-            'ask_wall_strength_score' => $f('ask_wall_strength_score'),
-            'bid_support_quality' => $f('bid_support_quality'),
-            'bid_support_score' => $f('bid_support_score'),
-            'bid_ask_notional_ratio' => $f('bid_ask_notional_ratio'),
-            'filter_results' => is_array($f('filter_results', [])) ? $f('filter_results', []) : [],
-            'would_have_blocked_by_filters' => is_array($f('would_have_blocked_by_filters', [])) ? $f('would_have_blocked_by_filters', []) : [],
-            'handoff_block_reason' => $f('handoff_block_reason'),
+            ['risk' => round($riskScore, 2), 'quality' => round($qualityScore, 2)],
+            $riskComponents,
+            $qualityComponents,
+        ];
+    }
+
+    /**
+     * Prune old storage records to stay within configured limits.
+     * Never deletes active position observations.
+     *
+     * @return array{pruned_total:int,size_estimate_mb:float|null,prune_examples:list<string>}
+     */
+    private function pruneStorage(array $cfg, array $currentSnapshots): array
+    {
+        $prunedTotal = 0;
+        $pruneExamples = [];
+
+        $maxSnapshots = max(100, (int)($cfg['max_entry_snapshots'] ?? 2000));
+        if (count($currentSnapshots) > $maxSnapshots) {
+            $snapshotPath = $this->storagePath('entry_snapshots.json');
+            $allSnaps = (array)$this->readJson($snapshotPath, []);
+            if (count($allSnaps) > $maxSnapshots) {
+                $trimCount = count($allSnaps) - $maxSnapshots;
+                $pruned = array_splice($allSnaps, 0, $trimCount);
+                $prunedTotal += $trimCount;
+                foreach (array_slice($pruned, 0, 5) as $p) {
+                    $pruneExamples[] = 'snapshot:' . (is_array($p) ? (string)($p['snapshot_id'] ?? '?') : '?');
+                }
+                $this->writeJson($snapshotPath, array_values($allSnaps));
+            }
+        }
+
+        $maxOutcomes = max(100, (int)($cfg['max_closed_outcomes'] ?? 1000));
+        $outcomesPath = $this->storagePath('closed_outcomes.json');
+        $allOutcomes = (array)$this->readJson($outcomesPath, []);
+        if (count($allOutcomes) > $maxOutcomes) {
+            $trimCount = count($allOutcomes) - $maxOutcomes;
+            array_splice($allOutcomes, 0, $trimCount);
+            $prunedTotal += $trimCount;
+            $pruneExamples[] = 'closed_outcomes:' . $trimCount . '_pruned';
+            $this->writeJson($outcomesPath, array_values($allOutcomes));
+        }
+
+        $sizeEstimateMb = null;
+        $storageDir = $this->moduleDir . '/storage';
+        if (is_dir($storageDir)) {
+            $total = 0;
+            try {
+                $iter = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($storageDir, \FilesystemIterator::SKIP_DOTS));
+                foreach ($iter as $file) {
+                    if ($file instanceof \SplFileInfo && $file->isFile()) {
+                        $total += $file->getSize();
+                    }
+                }
+                $sizeEstimateMb = round($total / 1048576, 3);
+            } catch (\Throwable) {
+                // Ignore filesystem errors during size estimate
+            }
+        }
+
+        return [
+            'pruned_total' => $prunedTotal,
+            'size_estimate_mb' => $sizeEstimateMb,
+            'prune_examples' => array_slice($pruneExamples, 0, 20),
         ];
     }
 
@@ -1422,6 +1195,19 @@ final class DynamicLearningService
         $cfg['rollback_drawdown_pct'] = (float)($cfg['rollback_drawdown_pct'] ?? 7.0);
         $cfg['rollback_bad_trade_streak'] = max(1, (int)($cfg['rollback_bad_trade_streak'] ?? 3));
         $cfg['profile_history_enabled'] = (bool)($cfg['profile_history_enabled'] ?? true);
+        $cfg['compare_auto_vs_default_enabled'] = (bool)($cfg['compare_auto_vs_default_enabled'] ?? true);
+        $cfg['auto_apply_enabled'] = (bool)($cfg['auto_apply_enabled'] ?? false);
+        $cfg['feature_pipeline_enabled'] = (bool)($cfg['feature_pipeline_enabled'] ?? true);
+        $cfg['candle_micro_analyzer_enabled'] = (bool)($cfg['candle_micro_analyzer_enabled'] ?? true);
+        $cfg['dump_micro_analyzer_enabled'] = (bool)($cfg['dump_micro_analyzer_enabled'] ?? true);
+        $cfg['impulse_birth_analyzer_enabled'] = (bool)($cfg['impulse_birth_analyzer_enabled'] ?? true);
+        $cfg['trend_context_analyzer_enabled'] = (bool)($cfg['trend_context_analyzer_enabled'] ?? true);
+        $cfg['orderbook_snapshot_analyzer_enabled'] = (bool)($cfg['orderbook_snapshot_analyzer_enabled'] ?? true);
+        $cfg['weighted_scoring_enabled'] = (bool)($cfg['weighted_scoring_enabled'] ?? true);
+        $cfg['max_entry_snapshots'] = max(100, (int)($cfg['max_entry_snapshots'] ?? 2000));
+        $cfg['max_feature_records'] = max(100, (int)($cfg['max_feature_records'] ?? 2000));
+        $cfg['max_closed_outcomes'] = max(100, (int)($cfg['max_closed_outcomes'] ?? 1000));
+        $cfg['max_active_observation_files'] = max(100, (int)($cfg['max_active_observation_files'] ?? 1000));
         return $cfg;
     }
 

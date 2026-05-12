@@ -38,4 +38,32 @@ return [
     'rollback_drawdown_pct' => 7.0,
     'rollback_bad_trade_streak' => 3,
     'profile_history_enabled' => true,
+
+    // Timing tolerance for outcome opened_at correction
+    'outcome_opened_at_mismatch_tolerance_minutes' => 15,
+    'prefer_entry_snapshot_time_on_signal_match' => true,
+
+    // Profile comparison: default vs auto-generated
+    'compare_auto_vs_default_enabled' => true,
+    'auto_profile_requires_not_worse_than_default' => true,
+    'auto_apply_enabled' => false,
+
+    // Feature pipeline
+    'feature_pipeline_enabled' => true,
+    'candle_micro_analyzer_enabled' => true,
+    'dump_micro_analyzer_enabled' => true,
+    'impulse_birth_analyzer_enabled' => true,
+    'trend_context_analyzer_enabled' => true,
+    'orderbook_snapshot_analyzer_enabled' => true,
+    'weighted_scoring_enabled' => true,
+
+    // Supported strategies
+    'supported_strategy_ids' => ['early_impulse_growth_long'],
+    'active_strategy_id' => 'early_impulse_growth_long',
+
+    // Storage limits
+    'max_entry_snapshots' => 2000,
+    'max_feature_records' => 2000,
+    'max_closed_outcomes' => 1000,
+    'max_active_observation_files' => 1000,
 ];

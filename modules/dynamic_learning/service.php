@@ -46,6 +46,10 @@ final class DynamicLearningService
             'observations_written_total' => 0,
             'closed_trades_loaded_total' => 0,
             'closed_outcomes_matched_total' => 0,
+            'closed_outcomes_raw_loaded_total' => 0,
+            'closed_outcomes_unique_total' => 0,
+            'closed_outcomes_duplicates_skipped_total' => 0,
+            'closed_outcomes_duplicate_examples' => [],
             'bad_entry_total' => 0,
             'good_or_do_not_touch_total' => 0,
             'entry_ok_exit_issue_total' => 0,
@@ -88,6 +92,10 @@ final class DynamicLearningService
 
         $outcomes = $this->linkClosedOutcomes($cfg, $snapshots['index']);
         $result['closed_trades_loaded_total'] = $outcomes['loaded_total'];
+        $result['closed_outcomes_raw_loaded_total'] = $outcomes['raw_loaded_total'];
+        $result['closed_outcomes_unique_total'] = $outcomes['unique_total'];
+        $result['closed_outcomes_duplicates_skipped_total'] = $outcomes['duplicates_skipped_total'];
+        $result['closed_outcomes_duplicate_examples'] = $outcomes['duplicate_examples'];
         $result['closed_outcomes_matched_total'] = count($outcomes['all']);
         $result['bad_entry_total'] = count($outcomes['bad']);
         $result['good_or_do_not_touch_total'] = count($outcomes['good']);
@@ -114,6 +122,159 @@ final class DynamicLearningService
         $this->writeJson($this->storagePath('last_run.json'), $result);
         $this->appendNdjson($this->storagePath('cycle_history.ndjson'), $result);
         return $result;
+    }
+
+    /** @return array<string,mixed> */
+    public function evaluateSignalForStrategy(string $strategyId, array $signalPacket): array
+    {
+        $cfg = $this->loadConfig();
+        $response = [
+            'enabled' => (bool)$cfg['enabled'],
+            'decision' => 'pass',
+            'mode' => (string)$cfg['mode'],
+            'profile_id' => null,
+            'matched_rules' => [],
+            'reason' => 'no_profile_rules',
+            'confidence' => 'low',
+            'profile_status' => null,
+            'apply_learning_to_live_enabled' => (bool)$cfg['apply_learning_to_live_enabled'],
+        ];
+
+        if (strtolower(trim($strategyId)) !== self::STRATEGY_ID) {
+            $response['decision'] = 'no_signal';
+            $response['reason'] = 'unsupported_strategy';
+            return $response;
+        }
+        if (!$cfg['enabled']) {
+            $response['reason'] = 'module_disabled';
+            return $response;
+        }
+        if ($signalPacket === []) {
+            $response['decision'] = 'no_signal';
+            $response['reason'] = 'signal_packet_missing';
+            return $response;
+        }
+
+        $profilePath = $this->storagePath('profiles/early_impulse_growth_long/current_profile.json');
+        $profile = $this->readJson($profilePath, []);
+        if (!is_array($profile) || $profile === []) {
+            $response['decision'] = 'pass';
+            $response['profile_status'] = 'missing';
+            $response['reason'] = 'no_profile_rules';
+            return $response;
+        }
+
+        $response['profile_id'] = $profile['profile_id'] ?? null;
+        $response['profile_status'] = (string)($profile['status'] ?? '');
+        if (strtolower(trim((string)($profile['strategy_id'] ?? ''))) !== self::STRATEGY_ID) {
+            $response['decision'] = 'no_profile';
+            $response['reason'] = 'profile_strategy_mismatch';
+            return $response;
+        }
+
+        $rules = array_values(array_filter((array)($profile['rules'] ?? []), static fn(mixed $r): bool => is_array($r)));
+        if ($rules === []) {
+            $response['reason'] = 'no_profile_rules';
+            return $response;
+        }
+
+        $ctx = is_array($signalPacket['strategy_signal_context'] ?? null) ? (array)$signalPacket['strategy_signal_context'] : [];
+        $features = $this->extractEntryFeatures($ctx);
+        if ($features === []) {
+            $response['decision'] = 'insufficient_data';
+            $response['reason'] = 'entry_features_missing';
+            return $response;
+        }
+        foreach ($ctx as $k => $v) {
+            if (!array_key_exists((string)$k, $features)) {
+                $features[(string)$k] = $v;
+            }
+        }
+
+        $matched = [];
+        $strongestAction = 'observe_only';
+        $hasDemoOnlyAction = false;
+        $confidenceRank = ['low' => 1, 'medium' => 2, 'high' => 3];
+        $bestConfidence = 'low';
+
+        foreach ($rules as $rule) {
+            $status = strtolower(trim((string)($rule['status'] ?? 'candidate')));
+            if ($status === 'quarantined') {
+                continue;
+            }
+            $conditions = is_array($rule['conditions'] ?? null) ? (array)$rule['conditions'] : [];
+            if ($conditions === []) {
+                continue;
+            }
+            $ok = true;
+            foreach ($conditions as $cond) {
+                if (!is_array($cond)) {
+                    $ok = false;
+                    break;
+                }
+                $field = (string)($cond['field'] ?? $cond['f'] ?? '');
+                $op = (string)($cond['op'] ?? 'eq');
+                $value = $cond['value'] ?? $cond['v'] ?? null;
+                if ($field === '' || !$this->cond($features[$field] ?? null, $op, $value)) {
+                    $ok = false;
+                    break;
+                }
+            }
+            if (!$ok) {
+                continue;
+            }
+
+            $action = strtolower(trim((string)($rule['action'] ?? 'observe_only')));
+            $scope = strtolower(trim((string)($rule['scope'] ?? 'demo_only')));
+            $confidence = strtolower(trim((string)($rule['confidence'] ?? 'low')));
+            if (!isset($confidenceRank[$confidence])) {
+                $confidence = 'low';
+            }
+
+            if (in_array($action, ['hard_block', 'hard'], true)) {
+                $strongestAction = 'hard_block';
+            } elseif (in_array($action, ['soft_block', 'soft'], true) && $strongestAction !== 'hard_block') {
+                $strongestAction = 'soft_block';
+            }
+            if (in_array($scope, ['demo_only', 'demo'], true) && in_array($action, ['hard_block', 'hard', 'soft_block', 'soft'], true)) {
+                $hasDemoOnlyAction = true;
+            }
+            if ($confidenceRank[$confidence] > $confidenceRank[$bestConfidence]) {
+                $bestConfidence = $confidence;
+            }
+
+            $matched[] = [
+                'rule_id' => $rule['rule_id'] ?? null,
+                'source_pattern' => $rule['source_pattern'] ?? null,
+                'action' => $action,
+                'scope' => $scope,
+                'confidence' => $confidence,
+            ];
+        }
+
+        if ($matched === []) {
+            $response['reason'] = 'no_rule_match';
+            return $response;
+        }
+
+        $response['matched_rules'] = $matched;
+        $response['confidence'] = $bestConfidence;
+
+        if ($strongestAction === 'observe_only') {
+            $response['decision'] = 'pass';
+            $response['reason'] = 'observe_only_rules';
+            return $response;
+        }
+
+        if ($hasDemoOnlyAction) {
+            $response['decision'] = 'demo_only';
+            $response['reason'] = 'demo_only_rule_match';
+            return $response;
+        }
+
+        $response['decision'] = 'block';
+        $response['reason'] = 'rule_match_block';
+        return $response;
     }
 
     /** @return array{all:list<array<string,mixed>>,index:array<string,array<string,mixed>>,new_total:int} */
@@ -279,40 +440,74 @@ final class DynamicLearningService
         ];
     }
 
-    /** @return array{all:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int} */
+    /** @return array{all:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,unique_total:int,duplicates_skipped_total:int,duplicate_examples:list<array<string,mixed>>} */
     private function linkClosedOutcomes(array $cfg, array $snapshotIndex): array
     {
         $stored = $this->readJson($this->storagePath('closed_outcomes.json'), []);
-        $index = [];
+        $existingIndex = [];
         foreach ((array)$stored as $row) {
             if (is_array($row) && !empty($row['outcome_key'])) {
-                $index[(string)$row['outcome_key']] = $row;
+                $existingIndex[(string)$row['outcome_key']] = $row;
             }
         }
-        $closed = [];
+
+        $rawLoadedTotal = 0;
+        $uniqueMap = [];
+        $duplicatesSkippedTotal = 0;
+        $duplicateExamples = [];
+
         foreach ([
             $this->repoRoot . '/modules/bot/storage/trades/closed_trades.json',
             $this->repoRoot . '/modules/bot/storage/closed_positions.json',
             $this->repoRoot . '/modules/bot/storage/closed_trades.json',
         ] as $path) {
             foreach ((array)$this->readJson($path, []) as $row) {
-                if (is_array($row)) {
-                    $closed[] = $row;
+                if (!is_array($row)) {
+                    continue;
+                }
+                if (!$this->isEigl($row, (string)$cfg['supported_strategy_id'])) {
+                    continue;
+                }
+
+                $rawLoadedTotal++;
+                $identity = $this->buildClosedTradeIdentity($row);
+                $existing = $uniqueMap[$identity] ?? null;
+                if ($existing === null) {
+                    $uniqueMap[$identity] = $row;
+                    continue;
+                }
+
+                $duplicatesSkippedTotal++;
+                if (count($duplicateExamples) < 20) {
+                    $duplicateExamples[] = [
+                        'identity' => $identity,
+                        'symbol' => strtoupper((string)($row['symbol'] ?? '')),
+                        'side' => strtolower((string)($row['side'] ?? '')),
+                        'opened_at' => (string)($row['opened_at'] ?? $row['entry_time'] ?? ''),
+                        'closed_at' => (string)($row['closed_at'] ?? $row['close_time'] ?? ''),
+                        'close_roi' => $this->toFloat($row['close_roi'] ?? $row['roi'] ?? null),
+                    ];
+                }
+
+                if ($this->closedTradeRichnessScore($row) > $this->closedTradeRichnessScore((array)$existing)) {
+                    $uniqueMap[$identity] = $row;
                 }
             }
         }
-        foreach ($closed as $row) {
-            if (!$this->isEigl($row, (string)$cfg['supported_strategy_id'])) {
+
+        $all = [];
+        foreach ($uniqueMap as $identity => $row) {
+            if (!is_array($row)) {
                 continue;
             }
+            $row['_dl_identity'] = $identity;
             $outcome = $this->makeOutcome($row, $cfg, $snapshotIndex);
-            $key = (string)$outcome['outcome_key'];
-            if (!isset($index[$key])) {
+            $all[] = $outcome;
+            if (!isset($existingIndex[(string)$outcome['outcome_key']])) {
                 $this->appendNdjson($this->storagePath('closed_outcomes.ndjson'), $outcome);
             }
-            $index[$key] = $outcome;
         }
-        $all = array_values($index);
+
         usort($all, static fn(array $a, array $b): int => strcmp((string)($b['closed_at'] ?? ''), (string)($a['closed_at'] ?? '')));
         $this->writeJson($this->storagePath('closed_outcomes.json'), $all);
         $pick = static fn(string $c): array => array_values(array_filter($all, static fn(array $r): bool => (string)($r['outcome_class'] ?? '') === $c));
@@ -323,7 +518,11 @@ final class DynamicLearningService
             'exit_issue' => $pick('entry_ok_exit_issue'),
             'neutral' => $pick('neutral'),
             'incomplete' => $pick('outcome_incomplete'),
-            'loaded_total' => count($closed),
+            'loaded_total' => $rawLoadedTotal,
+            'raw_loaded_total' => $rawLoadedTotal,
+            'unique_total' => count($all),
+            'duplicates_skipped_total' => $duplicatesSkippedTotal,
+            'duplicate_examples' => $duplicateExamples,
         ];
     }
 
@@ -336,9 +535,9 @@ final class DynamicLearningService
         $maxDd = $this->toFloat($row['max_drawdown_roi'] ?? $row['mae_roi'] ?? ($summary['max_drawdown_roi_so_far'] ?? null));
         $maxProfit = $this->toFloat($row['max_profit_roi'] ?? $row['mfe_roi'] ?? ($summary['max_profit_roi_so_far'] ?? null));
         [$class, $reason] = $this->classify($closeRoi, $maxDd, $maxProfit, $cfg);
-        $composite = trim((string)($row['closed_trade_id'] ?? $row['id'] ?? $row['position_id'] ?? ''));
+        $composite = trim((string)($row['_dl_identity'] ?? ''));
         if ($composite === '') {
-            $composite = implode('|', [(string)($row['symbol'] ?? ''), (string)($row['side'] ?? ''), (string)($row['opened_at'] ?? ''), (string)($row['closed_at'] ?? ''), (string)round((float)($closeRoi ?? 0), 4)]);
+            $composite = $this->buildClosedTradeIdentity($row);
         }
         return [
             'outcome_key' => 'out_' . substr(sha1($composite), 0, 20),
@@ -560,6 +759,73 @@ final class DynamicLearningService
             'good_block_rate' => round($good / max(1, $tested), 6),
             'net_score' => round($net, 6),
         ];
+    }
+
+    private function buildClosedTradeIdentity(array $row): string
+    {
+        $closedTradeId = trim((string)($row['closed_trade_id'] ?? $row['id'] ?? ''));
+        if ($closedTradeId !== '') {
+            return 'closed_trade_id|' . $closedTradeId;
+        }
+
+        $positionId = trim((string)($row['position_id'] ?? ''));
+        if ($positionId !== '') {
+            return 'position_id|' . $positionId;
+        }
+
+        $symbol = strtoupper(trim((string)($row['symbol'] ?? '')));
+        $side = strtolower(trim((string)($row['side'] ?? '')));
+        $openedAt = trim((string)($row['opened_at'] ?? $row['entry_time'] ?? ''));
+        $closedAt = trim((string)($row['closed_at'] ?? $row['close_time'] ?? ''));
+        $closeRoi = $this->toFloat($row['close_roi'] ?? $row['roi'] ?? null);
+        if ($symbol !== '' && $side !== '' && $openedAt !== '' && $closedAt !== '' && $closeRoi !== null) {
+            return 'time_roi|' . implode('|', [$symbol, $side, $openedAt, $closedAt, (string)round($closeRoi, 8)]);
+        }
+
+        $entryPrice = $this->toFloat($row['entry_price'] ?? null);
+        $closePrice = $this->toFloat($row['close_price'] ?? $row['exit_price'] ?? null);
+        $closeTime = trim((string)($row['closed_at'] ?? $row['close_time'] ?? ''));
+        if ($symbol !== '' && $side !== '' && $entryPrice !== null && $closePrice !== null && $closeTime !== '') {
+            return 'price_close_time|' . implode('|', [$symbol, $side, (string)round($entryPrice, 8), (string)round($closePrice, 8), $closeTime]);
+        }
+
+        return 'fallback|' . substr(sha1(json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: ''), 0, 32);
+    }
+
+    private function closedTradeRichnessScore(array $row): int
+    {
+        $score = 0;
+        if (trim((string)($row['closed_trade_id'] ?? $row['id'] ?? '')) !== '') {
+            $score += 4;
+        }
+        if (trim((string)($row['position_id'] ?? '')) !== '') {
+            $score += 4;
+        }
+        if (!empty($row['strategy_signal_context']) && is_array($row['strategy_signal_context'])) {
+            $score += 4;
+        }
+        if (is_numeric($row['max_drawdown_roi'] ?? $row['mae_roi'] ?? null)) {
+            $score += 3;
+        }
+        if (is_numeric($row['max_profit_roi'] ?? $row['mfe_roi'] ?? null)) {
+            $score += 3;
+        }
+        if (trim((string)($row['close_reason'] ?? '')) !== '') {
+            $score += 2;
+        }
+        if (trim((string)($row['signal_id'] ?? '')) !== '') {
+            $score += 2;
+        }
+        if (trim((string)($row['strategy_signal_key'] ?? '')) !== '') {
+            $score += 2;
+        }
+        if (trim((string)($row['opened_at'] ?? $row['entry_time'] ?? '')) !== '') {
+            $score += 1;
+        }
+        if (trim((string)($row['closed_at'] ?? $row['close_time'] ?? '')) !== '') {
+            $score += 1;
+        }
+        return $score;
     }
 
     private function matchCombo(array $features, array $conds): bool

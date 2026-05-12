@@ -297,6 +297,28 @@ foreach ($filterConfig as $row) {
       <div class="note" style="margin-top:8px;">Bot queue is written only when <strong>both</strong> <code>handoff_enabled</code> and <code>emit_bot_handoff</code> are <code>true</code>. Default visual-review mode: both <code>false</code>.</div>
     </div>
 
+    <div class="cfg-section">
+      <h6>D1) Dynamic Learning</h6>
+      <p class="note" style="margin:0 0 10px;">If disabled, dynamic learning does not affect this strategy. Data collection may still run in <code>modules/dynamic_learning</code>.</p>
+      <div class="cfg-grid">
+        <div>
+          <label class="cfg-label">dynamic_learning_enabled</label>
+          <select name="dynamic_learning_enabled" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
+            <option value="1" <?= (bool)$cfg('dynamic_learning_enabled', false) ? 'selected' : '' ?>>true</option>
+            <option value="0" <?= !(bool)$cfg('dynamic_learning_enabled', false) ? 'selected' : '' ?>>false</option>
+          </select>
+        </div>
+        <div>
+          <label class="cfg-label">dynamic_learning_mode</label>
+          <select name="dynamic_learning_mode" class="form-control" style="height:30px;font-size:13px;padding:2px 8px;">
+            <?php foreach (['off', 'shadow', 'gate_demo', 'gate_live'] as $mode): ?>
+            <option value="<?= $e($mode) ?>" <?= (string)$cfg('dynamic_learning_mode', 'shadow') === $mode ? 'selected' : '' ?>><?= $e($mode) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
       <button type="submit" class="btn btn-primary">Save config</button>
       <a href="<?= $e($eigUrl) ?>/config" class="btn" style="background:transparent;border:1px solid var(--ui-border);color:var(--ui-text-muted);">Cancel</a>

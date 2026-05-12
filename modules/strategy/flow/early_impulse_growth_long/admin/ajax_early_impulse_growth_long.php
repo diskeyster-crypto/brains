@@ -229,6 +229,8 @@ if ($action === 'save_config') {
         'coin_context_attach_to_candidates' => $boolField('coin_context_attach_to_candidates', true),
         'coin_context_attach_to_signals' => $boolField('coin_context_attach_to_signals', true),
         'coin_context_fail_open' => $boolField('coin_context_fail_open', true),
+        'dynamic_learning_enabled' => $boolField('dynamic_learning_enabled', false),
+        'dynamic_learning_mode' => $strField('dynamic_learning_mode', ['off', 'shadow', 'gate_demo', 'gate_live'], 'shadow'),
         'max_data_staleness_seconds' => $intField('max_data_staleness_seconds', 30, 600, 300),
         'parser2_history_lookback_minutes' => $intField('parser2_history_lookback_minutes', 30, 1440, 500),
         'bybit_kline_limit' => $intField('bybit_kline_limit', 20, 1000, 500),

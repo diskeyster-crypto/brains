@@ -109,6 +109,8 @@ return [
     'eig_filter_dynamic_learning_filter_enabled' => 'bool',
     'eig_filter_dynamic_learning_filter_severity' => 'string',
     'eig_filter_dynamic_learning_filter_allow_missing_profile' => 'bool',
+    'dynamic_learning_enabled' => 'bool',
+    'dynamic_learning_mode' => 'string',
 
     'coin_context_enabled' => 'bool',
     'coin_context_attach_to_candidates' => 'bool',

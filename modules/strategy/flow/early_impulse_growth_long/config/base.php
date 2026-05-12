@@ -119,6 +119,8 @@ return [
     'eig_filter_dynamic_learning_filter_enabled' => false,
     'eig_filter_dynamic_learning_filter_severity' => 'soft_block',
     'eig_filter_dynamic_learning_filter_allow_missing_profile' => true,
+    'dynamic_learning_enabled' => false,
+    'dynamic_learning_mode' => 'shadow',
 
     // Coin context (diagnostic-only enrichment)
     'coin_context_enabled' => true,

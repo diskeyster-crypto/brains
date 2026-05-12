@@ -67,5 +67,31 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_merged_total'] ?? 0)) ?></div>
     </div>
   </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">bad_entry_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['bad_entry_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">good_or_do_not_touch_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['good_or_do_not_touch_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">entry_ok_exit_issue_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['entry_ok_exit_issue_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">neutral_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['neutral_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">outcome_incomplete_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['outcome_incomplete_total'] ?? 0)) ?></div>
+    </div>
+  </div>
+  <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+    <div style="font-size:12px;opacity:.8;margin-bottom:8px;">closed_outcomes_duplicate_examples</div>
+    <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['closed_outcomes_duplicate_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+  </div>
   <pre style="margin:0;background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;overflow:auto;"><?= $e(json_encode($run, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
 </div>

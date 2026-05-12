@@ -486,8 +486,8 @@ final class DynamicLearningService
                         'identity' => $identity,
                         'symbol' => strtoupper((string)($row['symbol'] ?? '')),
                         'side' => strtolower((string)($row['side'] ?? '')),
-                        'opened_at' => (string)($row['opened_at'] ?? $row['entry_time'] ?? ''),
-                        'closed_at' => (string)($row['closed_at'] ?? $row['close_time'] ?? ''),
+                        'opened_at' => $this->extractOpenedAt($row),
+                        'closed_at' => $this->extractClosedAt($row),
                         'close_roi_incoming' => $this->toFloat($row['close_roi'] ?? $row['roi'] ?? null),
                         'close_roi_existing' => $this->toFloat(((array)$existing)['close_roi'] ?? ((array)$existing)['roi'] ?? null),
                     ];
@@ -561,8 +561,8 @@ final class DynamicLearningService
             'strategy_signal_key' => (string)($row['strategy_signal_key'] ?? ''),
             'entry_price' => $this->toFloat($row['entry_price'] ?? null),
             'close_price' => $this->toFloat($row['close_price'] ?? $row['exit_price'] ?? null),
-            'opened_at' => (string)($row['opened_at'] ?? $row['entry_time'] ?? ''),
-            'closed_at' => (string)($row['closed_at'] ?? $row['close_time'] ?? ''),
+            'opened_at' => $this->extractOpenedAt($row),
+            'closed_at' => $this->extractClosedAt($row),
             'close_roi' => $closeRoi,
             'max_drawdown_roi' => $maxDd,
             'max_profit_roi' => $maxProfit,
@@ -776,26 +776,17 @@ final class DynamicLearningService
 
     private function buildClosedTradeIdentity(array $row): string
     {
-        $closedTradeId = trim((string)($row['closed_trade_id'] ?? $row['id'] ?? ''));
-        if ($closedTradeId !== '') {
-            return 'closed_trade_id|' . $closedTradeId;
-        }
-
-        $positionId = trim((string)($row['position_id'] ?? ''));
-        if ($positionId !== '') {
-            return 'position_id|' . $positionId;
-        }
-
-        $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
-        $closedAt = trim((string)($row['closed_at'] ?? $row['close_time'] ?? ''));
-        if ($ssk !== '' && $closedAt !== '') {
-            return 'ssk_closed|' . implode('|', [$ssk, $closedAt]);
-        }
-
         $signalId = trim((string)($row['signal_id'] ?? ''));
-        $openedAt = trim((string)($row['opened_at'] ?? $row['entry_time'] ?? ''));
+        $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
+        $openedAt = $this->extractOpenedAt($row);
+        $closedAt = $this->extractClosedAt($row);
+
         if ($signalId !== '' && $openedAt !== '' && $closedAt !== '') {
             return 'signal_time|' . implode('|', [$signalId, $openedAt, $closedAt]);
+        }
+
+        if ($ssk !== '' && $openedAt !== '' && $closedAt !== '') {
+            return 'ssk_time|' . implode('|', [$ssk, $openedAt, $closedAt]);
         }
 
         $symbol = strtoupper(trim((string)($row['symbol'] ?? '')));
@@ -807,6 +798,16 @@ final class DynamicLearningService
         $entryPrice = $this->toFloat($row['entry_price'] ?? null);
         if ($symbol !== '' && $side !== '' && $entryPrice !== null && $openedAt !== '' && $closedAt !== '') {
             return 'price_time|' . implode('|', [$symbol, $side, (string)round($entryPrice, 8), $openedAt, $closedAt]);
+        }
+
+        $positionId = trim((string)($row['position_id'] ?? ''));
+        if ($positionId !== '') {
+            return 'position_id|' . $positionId;
+        }
+
+        $closedTradeId = trim((string)($row['closed_trade_id'] ?? $row['id'] ?? ''));
+        if ($closedTradeId !== '') {
+            return 'closed_trade_id|' . $closedTradeId;
         }
 
         return 'fallback|' . substr(sha1(json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: ''), 0, 32);
@@ -839,10 +840,10 @@ final class DynamicLearningService
         if (trim((string)($row['strategy_signal_key'] ?? '')) !== '') {
             $score += 2;
         }
-        if (trim((string)($row['opened_at'] ?? $row['entry_time'] ?? '')) !== '') {
+        if ($this->extractOpenedAt($row) !== '') {
             $score += 1;
         }
-        if (trim((string)($row['closed_at'] ?? $row['close_time'] ?? '')) !== '') {
+        if ($this->extractClosedAt($row) !== '') {
             $score += 1;
         }
         if ($this->toFloat($row['close_roi'] ?? $row['roi'] ?? null) !== null) {
@@ -868,8 +869,8 @@ final class DynamicLearningService
             'strategy_signal_key',
             'position_id',
             'closed_trade_id',
-            'opened_at', 'entry_time',
-            'closed_at', 'close_time',
+            'opened_at', 'entry_time', 'created_at',
+            'closed_at', 'close_time', 'closed_time',
             'entry_price',
         ];
         foreach ($fillFields as $field) {
@@ -890,6 +891,41 @@ final class DynamicLearningService
         }
 
         return $merged;
+    }
+
+    private function extractOpenedAt(array $row): string
+    {
+        return $this->normalizeTimestamp($row['opened_at'] ?? $row['entry_time'] ?? $row['created_at'] ?? '');
+    }
+
+    private function extractClosedAt(array $row): string
+    {
+        return $this->normalizeTimestamp($row['closed_at'] ?? $row['close_time'] ?? $row['closed_time'] ?? '');
+    }
+
+    private function normalizeTimestamp(mixed $value): string
+    {
+        if ($value === null) {
+            return '';
+        }
+        if (is_int($value) || is_float($value) || (is_string($value) && is_numeric(trim($value)))) {
+            $num = (float)$value;
+            if ($num > 1000000000000) {
+                $num /= 1000.0;
+            }
+            if ($num > 0) {
+                return gmdate('c', (int)round($num));
+            }
+        }
+        $s = trim((string)$value);
+        if ($s === '') {
+            return '';
+        }
+        $ts = strtotime($s);
+        if ($ts !== false) {
+            return gmdate('c', $ts);
+        }
+        return $s;
     }
 
     private function matchCombo(array $features, array $conds): bool

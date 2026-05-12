@@ -116,6 +116,9 @@ return [
     'eig_filter_wave_quality_filter_block_context_reasons' => 'too_many_direction_flips,downward_trend_confirmed,spike_threshold_10m',
     'eig_filter_wave_quality_filter_block_trend_1h_directions' => 'chaotic,down',
     'eig_filter_wave_quality_filter_require_trend_2h_confirmation' => true,
+    'eig_filter_dynamic_learning_filter_enabled' => false,
+    'eig_filter_dynamic_learning_filter_severity' => 'soft_block',
+    'eig_filter_dynamic_learning_filter_allow_missing_profile' => true,
 
     // Coin context (diagnostic-only enrichment)
     'coin_context_enabled' => true,

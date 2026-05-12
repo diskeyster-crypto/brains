@@ -1619,6 +1619,7 @@ final class EarlyImpulseGrowthLongService
         $extendedExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['entry_timing'] ?? '') === 'extended'))), 0, 20);
 
         $outcomeAnalyzerResult = $this->runOutcomeAnalyzer($config);
+        $dynamicLearningResult = $this->runDynamicLearningModule();
 
         $lastRun = [
             'strategy_id' => self::STRATEGY_ID,
@@ -1863,6 +1864,10 @@ final class EarlyImpulseGrowthLongService
             'outcome_bad_order_examples' => $outcomeAnalyzerResult['bad_order_examples'],
             'outcome_good_order_examples' => $outcomeAnalyzerResult['good_order_examples'],
             'outcome_entry_ok_exit_issue_examples' => $outcomeAnalyzerResult['entry_ok_exit_issue_examples'],
+            'dynamic_learning_enabled' => (bool)($dynamicLearningResult['enabled'] ?? false),
+            'dynamic_learning_profile_id' => $dynamicLearningResult['profile_id'] ?? null,
+            'dynamic_learning_bad_patterns_total' => (int)($dynamicLearningResult['bad_patterns_total'] ?? 0),
+            'dynamic_learning_profile_rules_total' => (int)($dynamicLearningResult['profile_rules_total'] ?? 0),
         ];
 
         $this->writeJson($this->storagePath('last_run.json'), $lastRun);
@@ -1877,6 +1882,26 @@ final class EarlyImpulseGrowthLongService
     public function tickRun(): array
     {
         return $this->tickBatch();
+    }
+
+    /** @return array<string,mixed> */
+    private function runDynamicLearningModule(): array
+    {
+        $moduleDir = $this->repoRoot . '/modules/dynamic_learning';
+        $servicePath = $moduleDir . '/service.php';
+        if (!is_file($servicePath)) {
+            return [];
+        }
+        try {
+            require_once $servicePath;
+            if (!class_exists('\\Modules\\DynamicLearning\\DynamicLearningService')) {
+                return [];
+            }
+            $svc = \Modules\DynamicLearning\DynamicLearningService::instance($moduleDir);
+            return $svc->runCycle();
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     /**
@@ -4500,6 +4525,9 @@ final class EarlyImpulseGrowthLongService
         $cfg['eig_filter_orderbook_wall_filter_min_bid_ask_ratio'] = (float)($cfg['eig_filter_orderbook_wall_filter_min_bid_ask_ratio'] ?? 0.65);
         $cfg['eig_filter_orderbook_wall_filter_allow_missing_orderbook'] = (bool)($cfg['eig_filter_orderbook_wall_filter_allow_missing_orderbook'] ?? true);
         $cfg['eig_filter_orderbook_wall_filter_block_if_orderbook_missing'] = (bool)($cfg['eig_filter_orderbook_wall_filter_block_if_orderbook_missing'] ?? false);
+        $cfg['eig_filter_dynamic_learning_filter_enabled'] = (bool)($cfg['eig_filter_dynamic_learning_filter_enabled'] ?? false);
+        $cfg['eig_filter_dynamic_learning_filter_severity'] = (string)($cfg['eig_filter_dynamic_learning_filter_severity'] ?? 'soft_block');
+        $cfg['eig_filter_dynamic_learning_filter_allow_missing_profile'] = (bool)($cfg['eig_filter_dynamic_learning_filter_allow_missing_profile'] ?? true);
         $cfg['coin_context_enabled'] = (bool)($cfg['coin_context_enabled'] ?? true);
         $cfg['coin_context_attach_to_candidates'] = (bool)($cfg['coin_context_attach_to_candidates'] ?? true);
         $cfg['coin_context_attach_to_signals'] = (bool)($cfg['coin_context_attach_to_signals'] ?? true);

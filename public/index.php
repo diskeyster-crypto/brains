@@ -1402,6 +1402,68 @@ Router::get('/admin/strategy/early_impulse_growth_long/runtime', function () {
 });
 
 // ============================================================
+// modules.dynamic_learning routes
+// ============================================================
+
+Router::get('/admin/dynamic_learning', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    Router::redirect(System::web('admin/dynamic_learning/runtime'));
+});
+
+Router::get('/admin/dynamic_learning/config', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = System::path('root') . '/modules/dynamic_learning';
+    ob_start();
+    require $moduleDir . '/admin/page_config.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Dynamic Learning — Config', $content, 'strategy', []);
+});
+
+Router::get('/admin/dynamic_learning/stats', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = System::path('root') . '/modules/dynamic_learning';
+    ob_start();
+    require $moduleDir . '/admin/page_stats.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Dynamic Learning — Stats', $content, 'strategy', []);
+});
+
+Router::post('/admin/dynamic_learning/ajax', function () {
+    if (!\Core\Auth\Auth::check()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'error' => 'Unauthorized']);
+        return;
+    }
+    $moduleDir = System::path('root') . '/modules/dynamic_learning';
+    require $moduleDir . '/admin/ajax_dynamic_learning.php';
+});
+
+Router::get('/admin/dynamic_learning/runtime', function () {
+    if (!\Core\Auth\Auth::check()) {
+        Router::redirect(System::web('admin/login'));
+        return;
+    }
+    $moduleDir = System::path('root') . '/modules/dynamic_learning';
+    ob_start();
+    require $moduleDir . '/admin/page_runtime.php';
+    $content = ob_get_clean();
+    require_once System::path('root') . '/admin/views/layout.php';
+    echo renderLayout('Dynamic Learning — Runtime', $content, 'strategy', []);
+});
+
+// ============================================================
 // DISPATCH
 // ============================================================
 

@@ -1,0 +1,35 @@
+<?php
+
+declare(strict_types=1);
+
+return [
+    'enabled' => 'bool',
+    'mode' => 'string',
+    'supported_strategy_id' => 'string',
+    'collect_entry_snapshots_enabled' => 'bool',
+    'observe_active_positions_enabled' => 'bool',
+    'analyze_closed_outcomes_enabled' => 'bool',
+    'build_dynamic_profile_enabled' => 'bool',
+    'apply_learning_to_strategy_enabled' => 'bool',
+    'apply_learning_to_live_enabled' => 'bool',
+    'apply_learning_to_demo_enabled' => 'bool',
+    'observation_interval_seconds' => 'int',
+    'max_observations_per_position' => 'int',
+    'observe_orderbook_enabled' => 'bool',
+    'observe_open_interest_enabled' => 'bool',
+    'observe_price_enabled' => 'bool',
+    'bad_drawdown_roi_threshold' => 'float',
+    'good_close_roi_threshold' => 'float',
+    'good_max_profit_roi_threshold' => 'float',
+    'neutral_close_roi_min' => 'float',
+    'neutral_close_roi_max' => 'float',
+    'min_closed_outcomes_for_profile' => 'int',
+    'min_bad_entries_for_rule' => 'int',
+    'min_bad_blocked_for_rule' => 'int',
+    'max_good_blocked_for_rule' => 'int',
+    'min_rule_net_score' => 'float',
+    'rollback_guard_enabled' => 'bool',
+    'rollback_drawdown_pct' => 'float',
+    'rollback_bad_trade_streak' => 'int',
+    'profile_history_enabled' => 'bool',
+];

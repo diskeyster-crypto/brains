@@ -106,6 +106,9 @@ return [
     'eig_filter_wave_quality_filter_block_context_reasons' => 'string',
     'eig_filter_wave_quality_filter_block_trend_1h_directions' => 'string',
     'eig_filter_wave_quality_filter_require_trend_2h_confirmation' => 'bool',
+    'eig_filter_dynamic_learning_filter_enabled' => 'bool',
+    'eig_filter_dynamic_learning_filter_severity' => 'string',
+    'eig_filter_dynamic_learning_filter_allow_missing_profile' => 'bool',
 
     'coin_context_enabled' => 'bool',
     'coin_context_attach_to_candidates' => 'bool',

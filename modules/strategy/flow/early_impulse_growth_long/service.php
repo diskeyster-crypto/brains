@@ -1618,6 +1618,8 @@ final class EarlyImpulseGrowthLongService
         $lateSpikePhaseExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['entry_timing'] ?? '') === 'late_spike'))), 0, 20);
         $extendedExamples = array_slice(array_map($phaseExampleRow, array_values(array_filter($newEvaluated, static fn(array $c): bool => (string)($c['entry_timing'] ?? '') === 'extended'))), 0, 20);
 
+        $outcomeAnalyzerResult = $this->runOutcomeAnalyzer($config);
+
         $lastRun = [
             'strategy_id' => self::STRATEGY_ID,
             'status' => $statusDone ? 'done' : 'running',
@@ -1845,6 +1847,22 @@ final class EarlyImpulseGrowthLongService
             'late_spike_recovery_examples' => $lateSpikeExamples,
             'too_early_examples' => $tooEarlyExamples,
             'recovery_structure_too_weak_examples' => $recoveryStructureTooWeakExamples,
+
+            // Outcome analyzer
+            'outcome_analyzer_enabled' => $outcomeAnalyzerResult['enabled'],
+            'outcome_trades_loaded_total' => $outcomeAnalyzerResult['trades_loaded_total'],
+            'outcome_trades_matched_total' => $outcomeAnalyzerResult['trades_matched_total'],
+            'outcome_trades_deduped_total' => $outcomeAnalyzerResult['trades_deduped_total'],
+            'outcome_bad_entry_total' => $outcomeAnalyzerResult['bad_entry_total'],
+            'outcome_good_or_do_not_touch_total' => $outcomeAnalyzerResult['good_or_do_not_touch_total'],
+            'outcome_entry_ok_exit_issue_total' => $outcomeAnalyzerResult['entry_ok_exit_issue_total'],
+            'outcome_neutral_total' => $outcomeAnalyzerResult['neutral_total'],
+            'outcome_incomplete_total' => $outcomeAnalyzerResult['incomplete_total'],
+            'outcome_bad_pattern_candidates_total' => $outcomeAnalyzerResult['bad_pattern_candidates_total'],
+            'outcome_top_bad_patterns' => $outcomeAnalyzerResult['top_bad_patterns'],
+            'outcome_bad_order_examples' => $outcomeAnalyzerResult['bad_order_examples'],
+            'outcome_good_order_examples' => $outcomeAnalyzerResult['good_order_examples'],
+            'outcome_entry_ok_exit_issue_examples' => $outcomeAnalyzerResult['entry_ok_exit_issue_examples'],
         ];
 
         $this->writeJson($this->storagePath('last_run.json'), $lastRun);
@@ -1859,6 +1877,876 @@ final class EarlyImpulseGrowthLongService
     public function tickRun(): array
     {
         return $this->tickBatch();
+    }
+
+    /**
+     * Outcome analyzer: mines bad-entry pattern candidates from real closed trades.
+     * Read-only analytics — does NOT change filters, blocks, or live behavior.
+     *
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
+    private function runOutcomeAnalyzer(array $config): array
+    {
+        $empty = [
+            'enabled' => false,
+            'trades_loaded_total' => 0,
+            'trades_matched_total' => 0,
+            'trades_deduped_total' => 0,
+            'bad_entry_total' => 0,
+            'good_or_do_not_touch_total' => 0,
+            'entry_ok_exit_issue_total' => 0,
+            'neutral_total' => 0,
+            'incomplete_total' => 0,
+            'bad_pattern_candidates_total' => 0,
+            'top_bad_patterns' => [],
+            'bad_order_examples' => [],
+            'good_order_examples' => [],
+            'entry_ok_exit_issue_examples' => [],
+        ];
+
+        if (!(bool)($config['outcome_analyzer_enabled'] ?? false)) {
+            return $empty;
+        }
+
+        $badDrawdownThreshold = (float)($config['bad_drawdown_roi_threshold'] ?? -10.0);
+        $goodCloseThreshold = (float)($config['good_close_roi_threshold'] ?? 5.0);
+        $goodMaxProfitThreshold = (float)($config['good_max_profit_roi_threshold'] ?? 5.0);
+
+        // --- Load closed trades ---
+        $allTrades = $this->loadClosedTradesForAnalysis();
+        $loadedTotal = count($allTrades);
+
+        // --- Match only EIGL trades ---
+        $analyzerStrategyId = (string)($config['outcome_analyzer_strategy_id'] ?? self::STRATEGY_ID);
+        $matchedTrades = $this->matchEiglClosedTrades($allTrades, $analyzerStrategyId);
+        $matchedTotal = count($matchedTrades);
+
+        // --- Deduplicate ---
+        $dedupedTrades = $this->dedupeClosedTradesForAnalysis($matchedTrades);
+        $dedupedTotal = count($dedupedTrades);
+
+        // --- Classify each trade and extract features ---
+        $classifiedTrades = [];
+        $badEntries = [];
+        $goodOrDoNotTouch = [];
+        $entryOkExitIssue = [];
+        $neutral = [];
+        $incomplete = [];
+
+        foreach ($dedupedTrades as $trade) {
+            $classified = $this->classifyTradeOutcome($trade, $config);
+            $classifiedTrades[] = $classified;
+
+            switch ($classified['outcome_class']) {
+                case 'bad_entry':
+                    $badEntries[] = $classified;
+                    break;
+                case 'good_or_do_not_touch':
+                    $goodOrDoNotTouch[] = $classified;
+                    break;
+                case 'entry_ok_exit_issue':
+                    $entryOkExitIssue[] = $classified;
+                    break;
+                case 'neutral':
+                    $neutral[] = $classified;
+                    break;
+                default:
+                    $incomplete[] = $classified;
+                    break;
+            }
+        }
+
+        // --- Mine bad pattern candidates ---
+        $patterns = $this->mineOutcomePatterns($badEntries, $goodOrDoNotTouch, $neutral, $config);
+
+        // --- Identify suggested candidates ---
+        $candidatePatterns = array_values(array_filter($patterns, static function (array $p): bool {
+            return (string)($p['suggested_action'] ?? 'observe_only') !== 'observe_only'
+                || (string)($p['confidence'] ?? 'low') === 'high';
+        }));
+
+        // Sort patterns by bad_count desc
+        usort($patterns, static fn(array $a, array $b): int => (int)($b['bad_count'] ?? 0) <=> (int)($a['bad_count'] ?? 0));
+        $topBadPatterns = array_slice($patterns, 0, 15);
+
+        // --- Build example arrays for last_run ---
+        $badOrderExamples = $this->buildBadOrderExamplesForLastRun($badEntries, 10);
+        $goodOrderExamples = $this->buildGoodOrderExamplesForLastRun($goodOrDoNotTouch, 5);
+        $exitIssueExamples = $this->buildBadOrderExamplesForLastRun($entryOkExitIssue, 5);
+
+        // --- Write storage files ---
+        $outDir = $this->moduleDir . '/storage/outcome_analyzer';
+
+        $this->writeJson($outDir . '/trade_outcomes.json', $classifiedTrades);
+        $this->writeJson($outDir . '/bad_order_examples.json', $badEntries);
+        $this->writeJson($outDir . '/good_order_examples.json', $goodOrDoNotTouch);
+        $this->writeJson($outDir . '/entry_ok_exit_issue_examples.json', $entryOkExitIssue);
+        $this->writeJson($outDir . '/outcome_patterns.json', $patterns);
+
+        // NDJSON: append only new patterns (write full file)
+        $ndjsonPath = $outDir . '/outcome_patterns.ndjson';
+        $ndjsonContent = '';
+        foreach ($patterns as $pattern) {
+            $line = json_encode($pattern, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (is_string($line)) {
+                $ndjsonContent .= $line . PHP_EOL;
+            }
+        }
+        if ($ndjsonContent !== '') {
+            if (!is_dir($outDir)) {
+                @mkdir($outDir, 0755, true);
+            }
+            @file_put_contents($ndjsonPath, $ndjsonContent, LOCK_EX);
+        }
+
+        return [
+            'enabled' => true,
+            'trades_loaded_total' => $loadedTotal,
+            'trades_matched_total' => $matchedTotal,
+            'trades_deduped_total' => $dedupedTotal,
+            'bad_entry_total' => count($badEntries),
+            'good_or_do_not_touch_total' => count($goodOrDoNotTouch),
+            'entry_ok_exit_issue_total' => count($entryOkExitIssue),
+            'neutral_total' => count($neutral),
+            'incomplete_total' => count($incomplete),
+            'bad_pattern_candidates_total' => count($candidatePatterns),
+            'top_bad_patterns' => $topBadPatterns,
+            'bad_order_examples' => $badOrderExamples,
+            'good_order_examples' => $goodOrderExamples,
+            'entry_ok_exit_issue_examples' => $exitIssueExamples,
+        ];
+    }
+
+    /**
+     * Load closed trades from all known bot storage paths.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function loadClosedTradesForAnalysis(): array
+    {
+        $paths = [
+            $this->repoRoot . '/modules/bot/storage/trades/closed_trades.json',
+            $this->repoRoot . '/modules/bot/storage/closed_trades.json',
+        ];
+
+        foreach ($paths as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
+            $raw = @file_get_contents($path);
+            if (!is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+            $decoded = json_decode($raw, true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+            if (array_is_list($decoded)) {
+                return array_values(array_filter($decoded, 'is_array'));
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Filter closed trades that belong to the given strategy.
+     *
+     * @param list<array<string,mixed>> $allTrades
+     * @return list<array<string,mixed>>
+     */
+    private function matchEiglClosedTrades(array $allTrades, string $strategyId): array
+    {
+        $matched = [];
+        foreach ($allTrades as $trade) {
+            if (!is_array($trade)) {
+                continue;
+            }
+
+            // Primary: strategy_id field
+            $tradeStrategyId = strtolower(trim((string)($trade['strategy_id'] ?? '')));
+            if ($tradeStrategyId === strtolower($strategyId)) {
+                $matched[] = $trade;
+                continue;
+            }
+
+            // Fallback: owner_strategy
+            $ownerStrategy = strtolower(trim((string)($trade['owner_strategy'] ?? '')));
+            if ($ownerStrategy === strtolower($strategyId)) {
+                $matched[] = $trade;
+                continue;
+            }
+
+            // Fallback: strategy_signal_context.strategy_id
+            $ctx = is_array($trade['strategy_signal_context'] ?? null) ? (array)$trade['strategy_signal_context'] : [];
+            $ctxStrategyId = strtolower(trim((string)($ctx['strategy_id'] ?? '')));
+            if ($ctxStrategyId === strtolower($strategyId)) {
+                $matched[] = $trade;
+                continue;
+            }
+
+            // Fallback: signal_id prefix
+            $signalId = strtolower(trim((string)($trade['signal_id'] ?? '')));
+            if (str_starts_with($signalId, 'eigl_') || str_starts_with($signalId, 'early_impulse_')) {
+                $matched[] = $trade;
+                continue;
+            }
+        }
+
+        return $matched;
+    }
+
+    /**
+     * Deduplicate closed trades to ensure one evidence vote per trade.
+     *
+     * @param list<array<string,mixed>> $trades
+     * @return list<array<string,mixed>>
+     */
+    private function dedupeClosedTradesForAnalysis(array $trades): array
+    {
+        $seen = [];
+        $result = [];
+
+        foreach ($trades as $trade) {
+            if (!is_array($trade)) {
+                continue;
+            }
+
+            // Build dedup key: prefer closed_trade_id, then position_id, then composite
+            $key = trim((string)($trade['id'] ?? $trade['closed_trade_id'] ?? ''));
+            if ($key === '') {
+                $key = trim((string)($trade['position_id'] ?? ''));
+            }
+            if ($key === '') {
+                $symbol = strtolower(trim((string)($trade['symbol'] ?? '')));
+                $side = strtolower(trim((string)($trade['side'] ?? '')));
+                $openedAt = trim((string)($trade['opened_at'] ?? $trade['entry_time'] ?? ''));
+                $closedAt = trim((string)($trade['closed_at'] ?? $trade['close_time'] ?? ''));
+                $roi = round((float)($trade['roi'] ?? $trade['close_roi'] ?? 0.0), 4);
+                $key = implode('|', [$symbol, $side, $openedAt, $closedAt, (string)$roi]);
+            }
+
+            if ($key === '' || isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $result[] = $trade;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Classify a single closed trade outcome and extract entry-time features.
+     *
+     * @param array<string,mixed> $trade
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
+    private function classifyTradeOutcome(array $trade, array $config): array
+    {
+        $badDrawdownThreshold = (float)($config['bad_drawdown_roi_threshold'] ?? -10.0);
+        $goodCloseThreshold = (float)($config['good_close_roi_threshold'] ?? 5.0);
+        $goodMaxProfitThreshold = (float)($config['good_max_profit_roi_threshold'] ?? 5.0);
+        $neutralMin = (float)($config['neutral_close_roi_min'] ?? -2.0);
+        $neutralMax = (float)($config['neutral_close_roi_max'] ?? 2.0);
+
+        // Extract trade fields
+        $symbol = strtoupper(trim((string)($trade['symbol'] ?? '')));
+        $side = strtolower(trim((string)($trade['side'] ?? 'long')));
+        $signalId = trim((string)($trade['signal_id'] ?? ''));
+        $openedAt = trim((string)($trade['opened_at'] ?? $trade['entry_time'] ?? ''));
+        $closedAt = trim((string)($trade['closed_at'] ?? $trade['close_time'] ?? ''));
+        $entryPrice = is_numeric($trade['entry_price'] ?? null) ? (float)$trade['entry_price'] : null;
+        $closePrice = is_numeric($trade['exit_price'] ?? $trade['close_price'] ?? null)
+            ? (float)($trade['exit_price'] ?? $trade['close_price'])
+            : null;
+        $closeRoi = is_numeric($trade['roi'] ?? $trade['close_roi'] ?? null)
+            ? (float)($trade['roi'] ?? $trade['close_roi'])
+            : null;
+        $durationSec = is_numeric($trade['duration_sec'] ?? null) ? (int)$trade['duration_sec'] : null;
+        $closeReason = trim((string)($trade['close_reason'] ?? ''));
+
+        // Max drawdown / MAE
+        $maxDrawdownRoi = null;
+        $maxDrawdownAvailable = false;
+        foreach (['max_drawdown_roi', 'mae_roi', 'max_adverse_excursion_roi'] as $field) {
+            if (is_numeric($trade[$field] ?? null)) {
+                $maxDrawdownRoi = (float)$trade[$field];
+                $maxDrawdownAvailable = true;
+                break;
+            }
+        }
+
+        // Max profit / MFE
+        $maxProfitRoi = null;
+        $maxProfitAvailable = false;
+        foreach (['max_profit_roi', 'mfe_roi', 'max_favorable_excursion_roi'] as $field) {
+            if (is_numeric($trade[$field] ?? null)) {
+                $maxProfitRoi = (float)$trade[$field];
+                $maxProfitAvailable = true;
+                break;
+            }
+        }
+
+        // Strategy signal context
+        $ctx = is_array($trade['strategy_signal_context'] ?? null) ? (array)$trade['strategy_signal_context'] : [];
+        $strategySignalKey = trim((string)($trade['strategy_signal_key'] ?? $ctx['strategy_signal_key'] ?? ''));
+
+        // Extract features
+        $features = $this->extractEiglOutcomeFeatures($trade, $ctx);
+
+        // --- Classification ---
+        $outcomeClass = 'outcome_incomplete';
+        $classificationReason = 'max_drawdown_missing';
+
+        if ($closeRoi === null) {
+            $outcomeClass = 'outcome_incomplete';
+            $classificationReason = 'close_roi_missing';
+        } elseif ($closeRoi >= $goodCloseThreshold) {
+            $outcomeClass = 'good_or_do_not_touch';
+            $classificationReason = 'close_roi_good';
+        } elseif ($maxProfitAvailable && $maxProfitRoi !== null && $maxProfitRoi >= $goodMaxProfitThreshold) {
+            $outcomeClass = 'entry_ok_exit_issue';
+            $classificationReason = 'max_profit_good_but_close_bad';
+        } elseif (!$maxDrawdownAvailable) {
+            $outcomeClass = 'outcome_incomplete';
+            $classificationReason = 'max_drawdown_missing';
+        } elseif ($maxDrawdownRoi !== null
+            && $maxDrawdownRoi <= $badDrawdownThreshold
+            && $closeRoi < $goodCloseThreshold
+            && (!$maxProfitAvailable || ($maxProfitRoi !== null && $maxProfitRoi < $goodMaxProfitThreshold))
+        ) {
+            $outcomeClass = 'bad_entry';
+            $classificationReason = 'deep_drawdown_and_bad_close';
+        } elseif ($closeRoi >= $neutralMin && $closeRoi <= $neutralMax) {
+            $outcomeClass = 'neutral';
+            $classificationReason = 'close_roi_neutral_range';
+        } else {
+            $outcomeClass = 'neutral';
+            $classificationReason = 'no_strong_signal';
+        }
+
+        $outcomeKey = implode('|', [
+            $symbol,
+            $side,
+            $openedAt,
+            $closedAt,
+            (string)round((float)($closeRoi ?? 0.0), 4),
+        ]);
+
+        return [
+            'outcome_key' => $outcomeKey,
+            'symbol' => $symbol,
+            'side' => $side,
+            'signal_id' => $signalId,
+            'strategy_signal_key' => $strategySignalKey,
+            'opened_at' => $openedAt,
+            'closed_at' => $closedAt,
+            'entry_price' => $entryPrice,
+            'close_price' => $closePrice,
+            'close_roi' => $closeRoi,
+            'max_drawdown_roi' => $maxDrawdownRoi,
+            'max_drawdown_available' => $maxDrawdownAvailable,
+            'max_profit_roi' => $maxProfitRoi,
+            'max_profit_available' => $maxProfitAvailable,
+            'close_reason' => $closeReason,
+            'duration_sec' => $durationSec,
+            'outcome_class' => $outcomeClass,
+            'classification_reason' => $classificationReason,
+            'extracted_features' => $features,
+        ];
+    }
+
+    /**
+     * Extract entry-time features from strategy_signal_context and top-level trade fields.
+     *
+     * @param array<string,mixed> $trade
+     * @param array<string,mixed> $ctx  strategy_signal_context
+     * @return array<string,mixed>
+     */
+    private function extractEiglOutcomeFeatures(array $trade, array $ctx): array
+    {
+        // Nested contexts
+        $coinCtx = is_array($ctx['coin_context'] ?? null) ? (array)$ctx['coin_context'] : [];
+        $waveCtx = is_array($ctx['wave_context'] ?? null) ? (array)$ctx['wave_context'] : [];
+        $obCtx = is_array($ctx['orderbook_context'] ?? null) ? (array)$ctx['orderbook_context'] : [];
+
+        // Helper to read from multiple sources
+        $get = static function (string $key, array ...$sources) {
+            foreach ($sources as $src) {
+                if (array_key_exists($key, $src) && $src[$key] !== null) {
+                    return $src[$key];
+                }
+            }
+            return null;
+        };
+
+        return [
+            // Raw strategy shape
+            'dump_pct' => $get('dump_pct', $ctx),
+            'stabilization_duration_minutes' => $get('stabilization_duration_minutes', $ctx),
+            'stabilization_range_pct' => $get('stabilization_range_pct', $ctx),
+            'stabilization_price_change_pct' => $get('stabilization_price_change_pct', $ctx),
+            'smooth_growth_pct' => $get('smooth_growth_pct', $ctx),
+            'smooth_growth_duration_minutes' => $get('smooth_growth_duration_minutes', $ctx),
+            'smooth_growth_higher_close_count' => $get('smooth_growth_higher_close_count', $ctx),
+            'smooth_growth_higher_low_count' => $get('smooth_growth_higher_low_count', $ctx),
+            'smooth_growth_single_candle_dominance_pct' => $get('smooth_growth_single_candle_dominance_pct', $ctx),
+            'open_interest_growth_pct' => $get('open_interest_growth_pct', $ctx),
+            'open_interest_confirmed' => $get('open_interest_confirmed', $ctx),
+            'recovery_phase' => $get('recovery_phase', $ctx),
+            'entry_timing' => $get('entry_timing', $ctx),
+            'late_spike_detected' => $get('late_spike_detected', $ctx),
+            'extended_recovery_detected' => $get('extended_recovery_detected', $ctx),
+
+            // Coin context
+            'context_phase' => $get('context_phase', $ctx, $coinCtx),
+            'context_quality' => $get('context_quality', $ctx, $coinCtx),
+            'context_reasons' => is_array($get('context_reasons', $ctx, $coinCtx)) ? $get('context_reasons', $ctx, $coinCtx) : [],
+            'trend_1h_direction' => $get('trend_1h_direction', $ctx, $coinCtx),
+            'trend_2h_direction' => $get('trend_2h_direction', $ctx, $coinCtx),
+            'trend_4h_direction' => $get('trend_4h_direction', $coinCtx),
+            'price_change_1h_pct' => $get('price_change_1h_pct', $ctx, $coinCtx),
+            'corridor_position_pct' => $get('corridor_position_pct', $ctx, $coinCtx),
+            'room_to_recent_high_pct' => $get('room_to_recent_high_pct', $ctx, $coinCtx),
+            'distance_from_recent_low_pct' => $get('distance_from_recent_low_pct', $ctx, $coinCtx),
+
+            // Wave context
+            'wave_regime' => $get('wave_regime', $ctx, $coinCtx, $waveCtx),
+            'trend_flip_count_2h' => $get('trend_flip_count_2h', $ctx, $coinCtx, $waveCtx),
+            'avg_time_between_flips_minutes' => $get('avg_time_between_flips_minutes', $ctx, $coinCtx, $waveCtx),
+            'wave_amplitude_avg_pct' => $get('wave_amplitude_avg_pct', $ctx, $coinCtx, $waveCtx),
+            'wave_noise_score' => $get('wave_noise_score', $ctx, $coinCtx, $waveCtx),
+            'trend_persistence_score' => $get('trend_persistence_score', $ctx, $coinCtx, $waveCtx),
+
+            // Orderbook
+            'ask_wall_risk' => $get('ask_wall_risk', $ctx, $obCtx),
+            'nearest_ask_wall_distance_pct' => $get('nearest_ask_wall_distance_pct', $ctx, $obCtx),
+            'nearest_ask_wall_notional' => $get('nearest_ask_wall_notional', $ctx, $obCtx),
+            'ask_wall_strength_score' => $get('ask_wall_strength_score', $ctx, $obCtx),
+            'bid_support_quality' => $get('bid_support_quality', $obCtx),
+            'bid_support_score' => $get('bid_support_score', $ctx, $obCtx),
+            'bid_ask_notional_ratio' => $get('bid_ask_notional_ratio', $ctx, $obCtx),
+
+            // Filter data
+            'filter_results' => is_array($ctx['filter_results'] ?? null) ? $ctx['filter_results'] : [],
+            'would_have_blocked_by_filters' => is_array($ctx['would_have_blocked_by_filters'] ?? null) ? $ctx['would_have_blocked_by_filters'] : [],
+            'handoff_block_reason' => $get('handoff_block_reason', $ctx),
+        ];
+    }
+
+    /**
+     * Mine bad-entry pattern candidates by comparing bad_entry vs good_or_do_not_touch trades.
+     *
+     * @param list<array<string,mixed>> $badTrades
+     * @param list<array<string,mixed>> $goodTrades
+     * @param list<array<string,mixed>> $neutralTrades
+     * @param array<string,mixed> $config
+     * @return list<array<string,mixed>>
+     */
+    private function mineOutcomePatterns(
+        array $badTrades,
+        array $goodTrades,
+        array $neutralTrades,
+        array $config
+    ): array {
+        $badDrawdownThreshold = (float)($config['bad_drawdown_roi_threshold'] ?? -10.0);
+
+        // Define the feature buckets to evaluate
+        $buckets = $this->buildOutcomeFeatureBuckets($config);
+
+        $patterns = [];
+
+        foreach ($buckets as $bucket) {
+            $bucketId = (string)($bucket['bucket_id'] ?? '');
+            $label = (string)($bucket['label'] ?? $bucketId);
+            $checkFn = $bucket['check'] ?? null;
+
+            if (!is_callable($checkFn)) {
+                continue;
+            }
+
+            $badCount = 0;
+            $goodCount = 0;
+            $neutralCount = 0;
+            $badCloseRois = [];
+            $badDrawdownRois = [];
+            $goodCloseRois = [];
+
+            foreach ($badTrades as $t) {
+                $features = is_array($t['extracted_features'] ?? null) ? (array)$t['extracted_features'] : [];
+                if ($checkFn($features, $t)) {
+                    $badCount++;
+                    if (is_numeric($t['close_roi'] ?? null)) {
+                        $badCloseRois[] = (float)$t['close_roi'];
+                    }
+                    if (is_numeric($t['max_drawdown_roi'] ?? null)) {
+                        $badDrawdownRois[] = (float)$t['max_drawdown_roi'];
+                    }
+                }
+            }
+
+            foreach ($goodTrades as $t) {
+                $features = is_array($t['extracted_features'] ?? null) ? (array)$t['extracted_features'] : [];
+                if ($checkFn($features, $t)) {
+                    $goodCount++;
+                    if (is_numeric($t['close_roi'] ?? null)) {
+                        $goodCloseRois[] = (float)$t['close_roi'];
+                    }
+                }
+            }
+
+            foreach ($neutralTrades as $t) {
+                $features = is_array($t['extracted_features'] ?? null) ? (array)$t['extracted_features'] : [];
+                if ($checkFn($features, $t)) {
+                    $neutralCount++;
+                }
+            }
+
+            if ($badCount === 0) {
+                continue;
+            }
+
+            $totalWithBucket = $badCount + $goodCount + $neutralCount;
+            $badShare = $totalWithBucket > 0 ? round($badCount / $totalWithBucket, 4) : 0.0;
+
+            $avgBadCloseRoi = $badCloseRois !== [] ? round(array_sum($badCloseRois) / count($badCloseRois), 4) : null;
+            $avgBadDrawdownRoi = $badDrawdownRois !== [] ? round(array_sum($badDrawdownRois) / count($badDrawdownRois), 4) : null;
+            $avgGoodCloseRoi = $goodCloseRois !== [] ? round(array_sum($goodCloseRois) / count($goodCloseRois), 4) : null;
+
+            // Confidence scoring
+            $confidence = 'low';
+            if ($badCount >= 5 && $badCount > $goodCount * 2 && $badShare >= 0.70) {
+                $confidence = 'high';
+            } elseif ($badCount >= 3 && $badCount > $goodCount && $badShare >= 0.55) {
+                $confidence = 'medium';
+            }
+
+            // Suggested action
+            $suggestedAction = 'observe_only';
+            if (
+                $badCount >= 2
+                && $badCount > $goodCount
+                && $goodCount <= 1
+                && ($avgBadDrawdownRoi === null || $avgBadDrawdownRoi <= $badDrawdownThreshold)
+            ) {
+                if ($confidence === 'high') {
+                    $suggestedAction = 'candidate_hard_block';
+                } elseif ($confidence === 'medium') {
+                    $suggestedAction = 'candidate_soft_block';
+                }
+            }
+
+            // Never suggest hard-block if good_overlap is high
+            $doNotUseForHardBlock = false;
+            if ($goodCount > 0 && $goodCount >= $badCount) {
+                $doNotUseForHardBlock = true;
+                $suggestedAction = 'observe_only';
+            }
+
+            $patterns[] = [
+                'bucket_id' => $bucketId,
+                'label' => $label,
+                'feature_group' => (string)($bucket['feature_group'] ?? 'unknown'),
+                'bad_count' => $badCount,
+                'good_count' => $goodCount,
+                'neutral_count' => $neutralCount,
+                'bad_share' => $badShare,
+                'good_overlap_count' => $goodCount,
+                'avg_bad_close_roi' => $avgBadCloseRoi,
+                'avg_bad_drawdown_roi' => $avgBadDrawdownRoi,
+                'avg_good_close_roi' => $avgGoodCloseRoi,
+                'confidence' => $confidence,
+                'suggested_action' => $suggestedAction,
+                'do_not_use_for_hard_block' => $doNotUseForHardBlock,
+            ];
+        }
+
+        // Sort: candidate_hard_block > candidate_soft_block > observe_only, then by bad_count desc
+        $actionOrder = ['candidate_hard_block' => 0, 'candidate_soft_block' => 1, 'observe_only' => 2];
+        usort($patterns, static function (array $a, array $b) use ($actionOrder): int {
+            $aOrder = $actionOrder[$a['suggested_action'] ?? 'observe_only'] ?? 2;
+            $bOrder = $actionOrder[$b['suggested_action'] ?? 'observe_only'] ?? 2;
+            if ($aOrder !== $bOrder) {
+                return $aOrder <=> $bOrder;
+            }
+            return (int)($b['bad_count'] ?? 0) <=> (int)($a['bad_count'] ?? 0);
+        });
+
+        return array_values($patterns);
+    }
+
+    /**
+     * Build the feature bucket definitions for pattern mining.
+     *
+     * @param array<string,mixed> $config
+     * @return list<array<string,mixed>>
+     */
+    private function buildOutcomeFeatureBuckets(array $config): array
+    {
+        $badDrawdownThreshold = (float)($config['bad_drawdown_roi_threshold'] ?? -10.0);
+
+        $buckets = [];
+
+        // --- Context buckets ---
+        $buckets[] = [
+            'bucket_id' => 'context_phase_chaotic',
+            'label' => 'context_phase = chaotic',
+            'feature_group' => 'context',
+            'check' => static fn(array $f): bool => (string)($f['context_phase'] ?? '') === 'chaotic',
+        ];
+        $buckets[] = [
+            'bucket_id' => 'context_phase_downtrend',
+            'label' => 'context_phase = downtrend',
+            'feature_group' => 'context',
+            'check' => static fn(array $f): bool => (string)($f['context_phase'] ?? '') === 'downtrend',
+        ];
+        $buckets[] = [
+            'bucket_id' => 'context_quality_bad',
+            'label' => 'context_quality = bad',
+            'feature_group' => 'context',
+            'check' => static fn(array $f): bool => (string)($f['context_quality'] ?? '') === 'bad',
+        ];
+        $buckets[] = [
+            'bucket_id' => 'context_reason_too_many_flips',
+            'label' => 'context_reasons contains too_many_direction_flips',
+            'feature_group' => 'context',
+            'check' => static fn(array $f): bool => in_array('too_many_direction_flips', (array)($f['context_reasons'] ?? []), true),
+        ];
+        $buckets[] = [
+            'bucket_id' => 'context_reason_downward_trend',
+            'label' => 'context_reasons contains downward_trend_confirmed',
+            'feature_group' => 'context',
+            'check' => static fn(array $f): bool => in_array('downward_trend_confirmed', (array)($f['context_reasons'] ?? []), true),
+        ];
+
+        // --- Wave buckets ---
+        $buckets[] = [
+            'bucket_id' => 'wave_regime_fast_flip_chop',
+            'label' => 'wave_regime = fast_flip_chop',
+            'feature_group' => 'wave',
+            'check' => static fn(array $f): bool => (string)($f['wave_regime'] ?? '') === 'fast_flip_chop',
+        ];
+        $buckets[] = [
+            'bucket_id' => 'wave_regime_narrow_chop',
+            'label' => 'wave_regime = narrow_chop',
+            'feature_group' => 'wave',
+            'check' => static fn(array $f): bool => (string)($f['wave_regime'] ?? '') === 'narrow_chop',
+        ];
+        $buckets[] = [
+            'bucket_id' => 'trend_flip_count_2h_gte4',
+            'label' => 'trend_flip_count_2h >= 4',
+            'feature_group' => 'wave',
+            'check' => static fn(array $f): bool => is_numeric($f['trend_flip_count_2h'] ?? null) && (float)$f['trend_flip_count_2h'] >= 4,
+        ];
+        $buckets[] = [
+            'bucket_id' => 'avg_flip_minutes_lte35',
+            'label' => 'avg_time_between_flips_minutes <= 35',
+            'feature_group' => 'wave',
+            'check' => static fn(array $f): bool => is_numeric($f['avg_time_between_flips_minutes'] ?? null) && (float)$f['avg_time_between_flips_minutes'] <= 35.0,
+        ];
+        $buckets[] = [
+            'bucket_id' => 'trend_persistence_score_lt045',
+            'label' => 'trend_persistence_score < 0.45',
+            'feature_group' => 'wave',
+            'check' => static fn(array $f): bool => is_numeric($f['trend_persistence_score'] ?? null) && (float)$f['trend_persistence_score'] < 0.45,
+        ];
+
+        // --- Orderbook buckets ---
+        $buckets[] = [
+            'bucket_id' => 'ask_wall_risk_high',
+            'label' => 'ask_wall_risk = high',
+            'feature_group' => 'orderbook',
+            'check' => static fn(array $f): bool => (string)($f['ask_wall_risk'] ?? '') === 'high',
+        ];
+        $buckets[] = [
+            'bucket_id' => 'ask_wall_distance_lte08',
+            'label' => 'nearest_ask_wall_distance_pct <= 0.8',
+            'feature_group' => 'orderbook',
+            'check' => static fn(array $f): bool => is_numeric($f['nearest_ask_wall_distance_pct'] ?? null) && (float)$f['nearest_ask_wall_distance_pct'] <= 0.8,
+        ];
+        $buckets[] = [
+            'bucket_id' => 'ask_wall_notional_gte20k',
+            'label' => 'nearest_ask_wall_notional >= 20000',
+            'feature_group' => 'orderbook',
+            'check' => static fn(array $f): bool => is_numeric($f['nearest_ask_wall_notional'] ?? null) && (float)$f['nearest_ask_wall_notional'] >= 20000.0,
+        ];
+        $buckets[] = [
+            'bucket_id' => 'bid_support_quality_none_or_weak',
+            'label' => 'bid_support_quality = none or weak',
+            'feature_group' => 'orderbook',
+            'check' => static fn(array $f): bool => in_array((string)($f['bid_support_quality'] ?? ''), ['none', 'weak', ''], true),
+        ];
+        $buckets[] = [
+            'bucket_id' => 'bid_ask_ratio_lt065',
+            'label' => 'bid_ask_notional_ratio < 0.65',
+            'feature_group' => 'orderbook',
+            'check' => static fn(array $f): bool => is_numeric($f['bid_ask_notional_ratio'] ?? null) && (float)$f['bid_ask_notional_ratio'] < 0.65,
+        ];
+
+        // --- Strategy shape buckets ---
+        $smoothMaxPct = (float)($config['smooth_growth_max_pct'] ?? 2.5);
+        $stabilizationMaxRange = (float)($config['stabilization_max_range_pct'] ?? 1.5);
+
+        $buckets[] = [
+            'bucket_id' => 'single_candle_dominance_gte65',
+            'label' => 'smooth_growth_single_candle_dominance_pct >= 65',
+            'feature_group' => 'strategy_shape',
+            'check' => static fn(array $f): bool => is_numeric($f['smooth_growth_single_candle_dominance_pct'] ?? null) && (float)$f['smooth_growth_single_candle_dominance_pct'] >= 65.0,
+        ];
+        $buckets[] = [
+            'bucket_id' => 'smooth_growth_pct_above_max',
+            'label' => 'smooth_growth_pct > configured max (' . $smoothMaxPct . ')',
+            'feature_group' => 'strategy_shape',
+            'check' => static function (array $f) use ($smoothMaxPct): bool {
+                return is_numeric($f['smooth_growth_pct'] ?? null) && (float)$f['smooth_growth_pct'] > $smoothMaxPct;
+            },
+        ];
+        $buckets[] = [
+            'bucket_id' => 'stabilization_range_too_wide',
+            'label' => 'stabilization_range_pct > configured max (' . $stabilizationMaxRange . ')',
+            'feature_group' => 'strategy_shape',
+            'check' => static function (array $f) use ($stabilizationMaxRange): bool {
+                return is_numeric($f['stabilization_range_pct'] ?? null) && (float)$f['stabilization_range_pct'] > $stabilizationMaxRange;
+            },
+        ];
+        $buckets[] = [
+            'bucket_id' => 'oi_not_confirmed',
+            'label' => 'open_interest_confirmed = false',
+            'feature_group' => 'strategy_shape',
+            'check' => static fn(array $f): bool => array_key_exists('open_interest_confirmed', $f) && $f['open_interest_confirmed'] === false,
+        ];
+        $buckets[] = [
+            'bucket_id' => 'oi_growth_lt1',
+            'label' => 'open_interest_growth_pct < 1.0',
+            'feature_group' => 'strategy_shape',
+            'check' => static fn(array $f): bool => is_numeric($f['open_interest_growth_pct'] ?? null) && (float)$f['open_interest_growth_pct'] < 1.0,
+        ];
+
+        // --- Combination buckets ---
+        $buckets[] = [
+            'bucket_id' => 'combo_chaotic_ask_wall_high',
+            'label' => 'context_phase chaotic + ask_wall_risk high',
+            'feature_group' => 'combination',
+            'check' => static fn(array $f): bool => (string)($f['context_phase'] ?? '') === 'chaotic' && (string)($f['ask_wall_risk'] ?? '') === 'high',
+        ];
+        $buckets[] = [
+            'bucket_id' => 'combo_wave_chop_weak_bid',
+            'label' => 'wave_regime fast_flip_chop + bid_support_quality weak/none',
+            'feature_group' => 'combination',
+            'check' => static fn(array $f): bool => (string)($f['wave_regime'] ?? '') === 'fast_flip_chop'
+                && in_array((string)($f['bid_support_quality'] ?? ''), ['none', 'weak', ''], true),
+        ];
+        $buckets[] = [
+            'bucket_id' => 'combo_oi_not_confirmed_quality_bad',
+            'label' => 'OI not confirmed + context_quality bad',
+            'feature_group' => 'combination',
+            'check' => static fn(array $f): bool => ($f['open_interest_confirmed'] ?? null) === false
+                && (string)($f['context_quality'] ?? '') === 'bad',
+        ];
+        $buckets[] = [
+            'bucket_id' => 'combo_single_candle_ask_wall_high',
+            'label' => 'high single candle dominance + ask_wall_risk high',
+            'feature_group' => 'combination',
+            'check' => static fn(array $f): bool => is_numeric($f['smooth_growth_single_candle_dominance_pct'] ?? null)
+                && (float)$f['smooth_growth_single_candle_dominance_pct'] >= 65.0
+                && (string)($f['ask_wall_risk'] ?? '') === 'high',
+        ];
+        $buckets[] = [
+            'bucket_id' => 'combo_too_many_flips_fast',
+            'label' => 'too_many_direction_flips + avg_time_between_flips_minutes <= 35',
+            'feature_group' => 'combination',
+            'check' => static fn(array $f): bool => in_array('too_many_direction_flips', (array)($f['context_reasons'] ?? []), true)
+                && is_numeric($f['avg_time_between_flips_minutes'] ?? null)
+                && (float)$f['avg_time_between_flips_minutes'] <= 35.0,
+        ];
+
+        return $buckets;
+    }
+
+    /**
+     * Build compact bad order example records for last_run display.
+     *
+     * @param list<array<string,mixed>> $trades
+     * @return list<array<string,mixed>>
+     */
+    private function buildBadOrderExamplesForLastRun(array $trades, int $limit): array
+    {
+        $examples = [];
+        foreach (array_slice($trades, 0, $limit) as $t) {
+            $features = is_array($t['extracted_features'] ?? null) ? (array)$t['extracted_features'] : [];
+
+            // Find matching bad pattern labels
+            $patternLabels = [];
+            if ((string)($features['context_phase'] ?? '') === 'chaotic') {
+                $patternLabels[] = 'context_phase_chaotic';
+            }
+            if ((string)($features['wave_regime'] ?? '') === 'fast_flip_chop') {
+                $patternLabels[] = 'wave_regime_fast_flip_chop';
+            }
+            if ((string)($features['ask_wall_risk'] ?? '') === 'high') {
+                $patternLabels[] = 'ask_wall_risk_high';
+            }
+            if ((string)($features['context_quality'] ?? '') === 'bad') {
+                $patternLabels[] = 'context_quality_bad';
+            }
+            if (is_numeric($features['smooth_growth_single_candle_dominance_pct'] ?? null) && (float)$features['smooth_growth_single_candle_dominance_pct'] >= 65.0) {
+                $patternLabels[] = 'single_candle_dominance_gte65';
+            }
+            if (($features['open_interest_confirmed'] ?? null) === false) {
+                $patternLabels[] = 'oi_not_confirmed';
+            }
+
+            $examples[] = [
+                'symbol' => (string)($t['symbol'] ?? ''),
+                'close_roi' => $t['close_roi'] ?? null,
+                'max_drawdown_roi' => $t['max_drawdown_roi'] ?? null,
+                'max_profit_roi' => $t['max_profit_roi'] ?? null,
+                'close_reason' => (string)($t['close_reason'] ?? ''),
+                'context_phase' => $features['context_phase'] ?? null,
+                'context_quality' => $features['context_quality'] ?? null,
+                'wave_regime' => $features['wave_regime'] ?? null,
+                'ask_wall_risk' => $features['ask_wall_risk'] ?? null,
+                'bid_support_quality' => $features['bid_support_quality'] ?? null,
+                'open_interest_growth_pct' => $features['open_interest_growth_pct'] ?? null,
+                'smooth_growth_pct' => $features['smooth_growth_pct'] ?? null,
+                'matched_bad_pattern_labels' => $patternLabels,
+            ];
+        }
+
+        return $examples;
+    }
+
+    /**
+     * Build compact good order example records for last_run display.
+     *
+     * @param list<array<string,mixed>> $trades
+     * @return list<array<string,mixed>>
+     */
+    private function buildGoodOrderExamplesForLastRun(array $trades, int $limit): array
+    {
+        $examples = [];
+        foreach (array_slice($trades, 0, $limit) as $t) {
+            $features = is_array($t['extracted_features'] ?? null) ? (array)$t['extracted_features'] : [];
+            $examples[] = [
+                'symbol' => (string)($t['symbol'] ?? ''),
+                'close_roi' => $t['close_roi'] ?? null,
+                'max_drawdown_roi' => $t['max_drawdown_roi'] ?? null,
+                'max_profit_roi' => $t['max_profit_roi'] ?? null,
+                'close_reason' => (string)($t['close_reason'] ?? ''),
+                'context_phase' => $features['context_phase'] ?? null,
+                'context_quality' => $features['context_quality'] ?? null,
+                'wave_regime' => $features['wave_regime'] ?? null,
+                'ask_wall_risk' => $features['ask_wall_risk'] ?? null,
+                'open_interest_growth_pct' => $features['open_interest_growth_pct'] ?? null,
+                'smooth_growth_pct' => $features['smooth_growth_pct'] ?? null,
+            ];
+        }
+
+        return $examples;
     }
 
     /**

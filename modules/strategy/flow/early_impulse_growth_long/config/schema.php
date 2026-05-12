@@ -135,4 +135,14 @@ return [
     'watch_storage_prune_enabled' => 'bool',
     'watch_storage_keep_expired_minutes' => 'int',
     'watch_storage_max_records' => 'int',
+
+    'outcome_analyzer_enabled' => 'bool',
+    'outcome_analyzer_strategy_id' => 'string',
+    'outcome_analyzer_mode' => 'string',
+    'outcome_test_leverage' => 'float',
+    'bad_drawdown_roi_threshold' => 'float',
+    'good_close_roi_threshold' => 'float',
+    'good_max_profit_roi_threshold' => 'float',
+    'neutral_close_roi_min' => 'float',
+    'neutral_close_roi_max' => 'float',
 ];

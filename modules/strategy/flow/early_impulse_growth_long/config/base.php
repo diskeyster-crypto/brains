@@ -149,4 +149,17 @@ return [
     'watch_storage_prune_enabled' => true,
     'watch_storage_keep_expired_minutes' => 120,
     'watch_storage_max_records' => 500,
+
+    // Outcome analyzer (read-only trade outcome mining — diagnostic only)
+    'outcome_analyzer_enabled' => true,
+    'outcome_analyzer_strategy_id' => 'early_impulse_growth_long',
+    'outcome_analyzer_mode' => 'diagnostic_only',
+
+    // Classification thresholds
+    'outcome_test_leverage' => 5,
+    'bad_drawdown_roi_threshold' => -10.0,
+    'good_close_roi_threshold' => 5.0,
+    'good_max_profit_roi_threshold' => 5.0,
+    'neutral_close_roi_min' => -2.0,
+    'neutral_close_roi_max' => 2.0,
 ];

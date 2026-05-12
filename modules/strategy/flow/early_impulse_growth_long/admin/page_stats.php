@@ -49,6 +49,37 @@ if (is_file($cyclePath)) {
 }
 $cycleHistory = array_slice($cycleHistory, -200);
 
+$outcomeAnalyzerEnabled = (bool)($lastRun['outcome_analyzer_enabled'] ?? false);
+$outcomeBadTotal = (int)($lastRun['outcome_bad_entry_total'] ?? 0);
+$outcomeGoodTotal = (int)($lastRun['outcome_good_or_do_not_touch_total'] ?? 0);
+$outcomeExitIssueTotal = (int)($lastRun['outcome_entry_ok_exit_issue_total'] ?? 0);
+$outcomeNeutralTotal = (int)($lastRun['outcome_neutral_total'] ?? 0);
+$outcomeIncompleteTotal = (int)($lastRun['outcome_incomplete_total'] ?? 0);
+$outcomePatternCandidates = (int)($lastRun['outcome_bad_pattern_candidates_total'] ?? 0);
+$outcomeTopPatterns = is_array($lastRun['outcome_top_bad_patterns'] ?? null) ? (array)$lastRun['outcome_top_bad_patterns'] : [];
+$outcomeBadExamples = is_array($lastRun['outcome_bad_order_examples'] ?? null) ? (array)$lastRun['outcome_bad_order_examples'] : [];
+$outcomeGoodExamples = is_array($lastRun['outcome_good_order_examples'] ?? null) ? (array)$lastRun['outcome_good_order_examples'] : [];
+$outcomeExitIssueExamples = is_array($lastRun['outcome_entry_ok_exit_issue_examples'] ?? null) ? (array)$lastRun['outcome_entry_ok_exit_issue_examples'] : [];
+
+// Also read from storage files directly for completeness
+$readOutcomeJson = static function (string $file, mixed $default = []) use ($storageDir): mixed {
+    $path = $storageDir . '/outcome_analyzer/' . $file;
+    if (!is_file($path)) {
+        return $default;
+    }
+    $raw = @file_get_contents($path);
+    if (!is_string($raw) || trim($raw) === '') {
+        return $default;
+    }
+    $decoded = json_decode($raw, true);
+    return $decoded !== null ? $decoded : $default;
+};
+
+$outcomePatterns = $readOutcomeJson('outcome_patterns.json', []);
+if ($outcomePatterns !== [] && $outcomeTopPatterns === []) {
+    $outcomeTopPatterns = array_slice((array)$outcomePatterns, 0, 15);
+}
+
 $acceptedExamples = is_array($lastRun['accepted_examples'] ?? null) ? (array)$lastRun['accepted_examples'] : [];
 $bestRecoveryExamples = is_array($lastRun['best_recovery_examples'] ?? null) ? (array)$lastRun['best_recovery_examples'] : [];
 $oiGrowthExamples = is_array($lastRun['open_interest_growth_examples'] ?? null) ? (array)$lastRun['open_interest_growth_examples'] : [];
@@ -193,4 +224,185 @@ if ($oiVals !== []) {
       </table>
     </div>
   </div>
+
+  <?php if ($outcomeAnalyzerEnabled || $outcomeBadTotal + $outcomeGoodTotal + $outcomeExitIssueTotal + $outcomeNeutralTotal + $outcomeIncompleteTotal > 0 || $outcomePatterns !== []): ?>
+
+  <div class="st-section" style="border-left:3px solid #a78bfa;">
+    <h6>Outcome analyzer — bad-entry pattern mining (diagnostic only)</h6>
+    <div class="st-grid">
+      <div class="st-box"><div class="st-val" style="color:<?= $outcomeAnalyzerEnabled ? '#22c55e' : '#94a3b8' ?>"><?= $outcomeAnalyzerEnabled ? 'enabled' : 'disabled' ?></div><div class="st-lbl">outcome_analyzer_enabled</div></div>
+      <div class="st-box"><div class="st-val" style="color:#f87171;"><?= $e($outcomeBadTotal) ?></div><div class="st-lbl">bad_entry_total</div></div>
+      <div class="st-box"><div class="st-val" style="color:#22c55e;"><?= $e($outcomeGoodTotal) ?></div><div class="st-lbl">good_or_do_not_touch_total</div></div>
+      <div class="st-box"><div class="st-val" style="color:#f59e0b;"><?= $e($outcomeExitIssueTotal) ?></div><div class="st-lbl">entry_ok_exit_issue_total</div></div>
+      <div class="st-box"><div class="st-val"><?= $e($outcomeNeutralTotal) ?></div><div class="st-lbl">neutral_total</div></div>
+      <div class="st-box"><div class="st-val" style="color:#64748b;"><?= $e($outcomeIncompleteTotal) ?></div><div class="st-lbl">outcome_incomplete_total</div></div>
+      <div class="st-box"><div class="st-val" style="color:#a78bfa;"><?= $e($outcomePatternCandidates) ?></div><div class="st-lbl">bad_pattern_candidates_total</div></div>
+      <div class="st-box"><div class="st-val"><?= $e((int)($lastRun['outcome_trades_matched_total'] ?? 0)) ?></div><div class="st-lbl">trades_matched_total</div></div>
+      <div class="st-box"><div class="st-val"><?= $e((int)($lastRun['outcome_trades_loaded_total'] ?? 0)) ?></div><div class="st-lbl">trades_loaded_total</div></div>
+    </div>
+    <div style="margin-top:8px;padding:8px 12px;background:rgba(167,139,250,.05);border:1px solid rgba(167,139,250,.15);border-radius:4px;font-size:11px;color:#94a3b8;">
+      ⚠ This is read-only diagnostic analytics. It does not change filters, block trades, or auto-apply anything.
+    </div>
+  </div>
+
+  <?php if ($outcomeTopPatterns !== []): ?>
+  <div class="st-section">
+    <h6>Top bad-entry pattern candidates</h6>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border-color,#334155);">
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">bucket_id</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">feature_group</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">bad</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">good</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">bad_share</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">avg_bad_roi</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">avg_bad_dd</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">confidence</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">suggested_action</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">note</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($outcomeTopPatterns as $pat): ?>
+          <?php
+            $suggAction = (string)($pat['suggested_action'] ?? 'observe_only');
+            $noHardBlock = (bool)($pat['do_not_use_for_hard_block'] ?? false);
+            $conf = (string)($pat['confidence'] ?? 'low');
+            $actionColor = match ($suggAction) {
+                'candidate_hard_block' => '#f87171',
+                'candidate_soft_block' => '#f59e0b',
+                default => '#64748b',
+            };
+            $confColor = match ($conf) {
+                'high' => '#22c55e',
+                'medium' => '#f59e0b',
+                default => '#64748b',
+            };
+          ?>
+          <tr style="border-bottom:1px solid rgba(51,65,85,.5);">
+            <td style="padding:3px 8px;"><code style="font-size:11px;"><?= $e($pat['bucket_id'] ?? '—') ?></code></td>
+            <td style="padding:3px 8px;color:#64748b;"><?= $e($pat['feature_group'] ?? '—') ?></td>
+            <td style="padding:3px 8px;font-weight:600;color:#f87171;"><?= $e((int)($pat['bad_count'] ?? 0)) ?></td>
+            <td style="padding:3px 8px;font-weight:600;color:#22c55e;"><?= $e((int)($pat['good_count'] ?? 0)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($pat['bad_share'] ?? null, 3)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($pat['avg_bad_close_roi'] ?? null, 2)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($pat['avg_bad_drawdown_roi'] ?? null, 2)) ?></td>
+            <td style="padding:3px 8px;color:<?= $confColor ?>"><?= $e($conf) ?></td>
+            <td style="padding:3px 8px;color:<?= $actionColor ?>;font-weight:600;"><?= $e($suggAction) ?></td>
+            <td style="padding:3px 8px;color:#94a3b8;font-size:10px;"><?= $noHardBlock ? '⚠ do not use for hard block (high good overlap)' : '' ?></td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <?php endif; ?>
+
+  <?php if ($outcomeBadExamples !== []): ?>
+  <div class="st-section">
+    <h6>Bad entry examples</h6>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border-color,#334155);">
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">symbol</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">close_roi</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">max_drawdown_roi</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">close_reason</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">context_phase</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">wave_regime</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">ask_wall_risk</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">oi_growth_pct</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">matched_patterns</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($outcomeBadExamples as $ex): ?>
+          <tr style="border-bottom:1px solid rgba(51,65,85,.5);">
+            <td style="padding:3px 8px;font-weight:600;"><?= $e($ex['symbol'] ?? '—') ?></td>
+            <td style="padding:3px 8px;color:#f87171;"><?= $e($fmtNum($ex['close_roi'] ?? null, 2)) ?></td>
+            <td style="padding:3px 8px;color:#f87171;"><?= $e($fmtNum($ex['max_drawdown_roi'] ?? null, 2)) ?></td>
+            <td style="padding:3px 8px;font-size:10px;"><?= $e($ex['close_reason'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><?= $e($ex['context_phase'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><?= $e($ex['wave_regime'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><?= $e($ex['ask_wall_risk'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($ex['open_interest_growth_pct'] ?? null, 2)) ?></td>
+            <td style="padding:3px 8px;font-size:10px;color:#a78bfa;"><?= $e(implode(', ', (array)($ex['matched_bad_pattern_labels'] ?? []))) ?></td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <?php endif; ?>
+
+  <?php if ($outcomeGoodExamples !== []): ?>
+  <div class="st-section">
+    <h6>Good / do-not-touch examples</h6>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border-color,#334155);">
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">symbol</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">close_roi</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">context_phase</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">wave_regime</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">ask_wall_risk</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">smooth_growth_pct</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">oi_growth_pct</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($outcomeGoodExamples as $ex): ?>
+          <tr style="border-bottom:1px solid rgba(51,65,85,.5);">
+            <td style="padding:3px 8px;font-weight:600;"><?= $e($ex['symbol'] ?? '—') ?></td>
+            <td style="padding:3px 8px;color:#22c55e;"><?= $e($fmtNum($ex['close_roi'] ?? null, 2)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($ex['context_phase'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><?= $e($ex['wave_regime'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><?= $e($ex['ask_wall_risk'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($ex['smooth_growth_pct'] ?? null, 4)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($fmtNum($ex['open_interest_growth_pct'] ?? null, 2)) ?></td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <?php endif; ?>
+
+  <?php if ($outcomeExitIssueExamples !== []): ?>
+  <div class="st-section">
+    <h6>Entry OK / exit issue examples</h6>
+    <p style="font-size:11px;color:#94a3b8;margin-bottom:10px;">These trades had good max_profit_roi but closed badly — entry was likely fine, issue is exit management. Do not use as bad-entry evidence.</p>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border-color,#334155);">
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">symbol</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">close_roi</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">max_profit_roi</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">context_phase</th>
+            <th style="text-align:left;padding:4px 8px;color:#94a3b8;">wave_regime</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php foreach ($outcomeExitIssueExamples as $ex): ?>
+          <tr style="border-bottom:1px solid rgba(51,65,85,.5);">
+            <td style="padding:3px 8px;font-weight:600;"><?= $e($ex['symbol'] ?? '—') ?></td>
+            <td style="padding:3px 8px;color:#f87171;"><?= $e($fmtNum($ex['close_roi'] ?? null, 2)) ?></td>
+            <td style="padding:3px 8px;color:#22c55e;"><?= $e($fmtNum($ex['max_profit_roi'] ?? null, 2)) ?></td>
+            <td style="padding:3px 8px;"><?= $e($ex['context_phase'] ?? '—') ?></td>
+            <td style="padding:3px 8px;"><?= $e($ex['wave_regime'] ?? '—') ?></td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <?php endif; ?>
+
+  <?php endif; ?>
+
 </div>

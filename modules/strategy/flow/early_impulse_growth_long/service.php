@@ -514,6 +514,16 @@ final class EarlyImpulseGrowthLongService
             'quality_guard_existing_ready_checked_total' => 0,
             'quality_guard_existing_ready_withdrawn_total' => 0,
             'quality_guard_existing_ready_withdrawn_examples' => [],
+            'early_entry_price_phase_total' => 0,
+            'early_entry_oi_confirmed_total' => 0,
+            'early_entry_oi_unconfirmed_total' => 0,
+            'early_entry_wave_soft_block_total' => 0,
+            'early_entry_orderbook_hard_block_total' => 0,
+            'early_entry_handoff_written_total' => 0,
+            'early_entry_handoff_cap_skipped_total' => 0,
+            'early_entry_handoff_examples' => [],
+            'early_entry_oi_warning_examples' => [],
+            'early_entry_wave_warning_examples' => [],
         ];
 
         foreach ($batchSymbols as $symbol) {
@@ -860,6 +870,82 @@ final class EarlyImpulseGrowthLongService
             if ($phaseKey === 'early_entry') {
                 $diag['handoff_candidates_before_filters_total']++;
             }
+            // Detailed early_entry diagnostics
+            if ($phaseKey === 'early_entry') {
+                $diag['early_entry_price_phase_total']++;
+                if ((bool)($candidate['open_interest_confirmed'] ?? false)) {
+                    $diag['early_entry_oi_confirmed_total']++;
+                } elseif ($candidate['open_interest_confirmed'] !== null || (bool)($candidate['oi_warning_mode'] ?? false)) {
+                    $diag['early_entry_oi_unconfirmed_total']++;
+                }
+                // Check for wave soft-block (wave_quality_filter passed=false but enforcement did not hard-block)
+                $waveFilterSoftBlock = false;
+                $orderbookFilterHardBlock = false;
+                foreach ((array)($candidate['filter_results'] ?? []) as $fr) {
+                    if (!is_array($fr)) {
+                        continue;
+                    }
+                    if ((string)($fr['filter_id'] ?? '') === 'wave_quality_filter'
+                        && !(bool)($fr['passed'] ?? true)
+                        && (string)($fr['severity'] ?? '') === 'soft_block'
+                    ) {
+                        $waveFilterSoftBlock = true;
+                    }
+                    if ((string)($fr['filter_id'] ?? '') === 'orderbook_wall_filter'
+                        && !(bool)($fr['passed'] ?? true)
+                        && in_array((string)($fr['severity'] ?? ''), ['hard_block', 'fatal'], true)
+                    ) {
+                        $orderbookFilterHardBlock = true;
+                    }
+                }
+                if ($waveFilterSoftBlock) {
+                    $diag['early_entry_wave_soft_block_total']++;
+                }
+                if ($orderbookFilterHardBlock) {
+                    $diag['early_entry_orderbook_hard_block_total']++;
+                }
+                if ((bool)($candidate['handoff_ready'] ?? false)) {
+                    $diag['early_entry_handoff_written_total']++;
+                }
+                $coinCtxRow = is_array($candidate['coin_context'] ?? null) ? (array)$candidate['coin_context'] : [];
+                $obCtxRow = is_array($candidate['orderbook_context'] ?? null) ? (array)$candidate['orderbook_context'] : [];
+                $earlyEx = [
+                    'symbol' => $candidate['symbol'] ?? null,
+                    'dump_pct' => $candidate['dump_pct'] ?? null,
+                    'stabilization_duration_minutes' => $candidate['stabilization_duration_minutes'] ?? null,
+                    'smooth_growth_pct' => $candidate['smooth_growth_pct'] ?? null,
+                    'open_interest_growth_pct' => $candidate['open_interest_growth_pct'] ?? null,
+                    'open_interest_confirmed' => $candidate['open_interest_confirmed'] ?? null,
+                    'context_phase' => $coinCtxRow['context_phase'] ?? null,
+                    'context_quality' => $coinCtxRow['context_quality'] ?? null,
+                    'wave_regime' => $candidate['wave_regime'] ?? ($coinCtxRow['wave_regime'] ?? null),
+                    'ask_wall_risk' => $obCtxRow['ask_wall_risk'] ?? ($candidate['ask_wall_risk'] ?? null),
+                    'nearest_ask_wall_distance_pct' => $obCtxRow['nearest_ask_wall_distance_pct'] ?? ($candidate['nearest_ask_wall_distance_pct'] ?? null),
+                    'nearest_ask_wall_notional' => $obCtxRow['nearest_ask_wall_notional'] ?? ($candidate['nearest_ask_wall_notional'] ?? null),
+                    'handoff_ready' => (bool)($candidate['handoff_ready'] ?? false),
+                    'executable' => (bool)($candidate['executable'] ?? false),
+                    'handoff_block_reason' => $candidate['handoff_block_reason'] ?? null,
+                    'would_have_blocked_by_filters' => $candidate['would_have_blocked_by_filters'] ?? [],
+                ];
+                if (count($diag['early_entry_handoff_examples']) < 20) {
+                    $diag['early_entry_handoff_examples'][] = $earlyEx;
+                }
+                if ((bool)($candidate['oi_warning_mode'] ?? false) && count($diag['early_entry_oi_warning_examples']) < 10) {
+                    $diag['early_entry_oi_warning_examples'][] = array_merge($earlyEx, [
+                        'oi_warning_reason' => $candidate['oi_warning_reason'] ?? null,
+                    ]);
+                }
+                if ($waveFilterSoftBlock && count($diag['early_entry_wave_warning_examples']) < 10) {
+                    $diag['early_entry_wave_warning_examples'][] = array_merge($earlyEx, [
+                        'trend_1h_direction' => $coinCtxRow['trend_1h_direction'] ?? null,
+                        'trend_2h_direction' => $coinCtxRow['trend_2h_direction'] ?? null,
+                        'trend_flip_count_2h' => $candidate['trend_flip_count_2h'] ?? null,
+                        'avg_time_between_flips_minutes' => $candidate['avg_time_between_flips_minutes'] ?? null,
+                        'wave_amplitude_avg_pct' => $candidate['wave_amplitude_avg_pct'] ?? null,
+                        'trend_persistence_score' => $candidate['trend_persistence_score'] ?? null,
+                    ]);
+                }
+            }
             $phaseBlockReason = trim((string)($candidate['phase_block_reason'] ?? ''));
             if ($phaseKey !== 'early_entry') {
                 $diag['handoff_blocked_by_phase_total']++;
@@ -1170,6 +1256,28 @@ final class EarlyImpulseGrowthLongService
                 return ((int)($b['refreshed_ts'] ?? 0)) <=> ((int)($a['refreshed_ts'] ?? 0));
             });
 
+            $maxEarlyHandoffPerTick = max(1, (int)($config['max_early_entry_handoff_per_tick'] ?? 3));
+            $maxEarlyHandoffPer30m = max(1, (int)($config['max_early_entry_handoff_per_30m'] ?? 10));
+            $thirtyMinAgo = $queueNowTs - (30 * 60);
+
+            // Count recent handoff-ready signals from previous batches (not current run)
+            $recentPrevBatchHandoffCount = 0;
+            foreach ($allSignals as $prevSig) {
+                if (!is_array($prevSig) || !(bool)($prevSig['handoff_ready'] ?? false)) {
+                    continue;
+                }
+                $prevSid = trim((string)($prevSig['signal_id'] ?? ''));
+                if ($prevSid !== '' && isset($currentRunSignalIds[$prevSid])) {
+                    continue;
+                }
+                $prevSigTs = $this->parseIsoToTs((string)($prevSig['detected_at'] ?? '')) ?? 0;
+                if ($prevSigTs >= $thirtyMinAgo) {
+                    $recentPrevBatchHandoffCount++;
+                }
+            }
+            $remainingPer30mBudget = max(0, $maxEarlyHandoffPer30m - $recentPrevBatchHandoffCount);
+            $currentRunHandoffCount = 0;
+
             $dedupeSeen = [];
             foreach ($queueCandidates as $candidate) {
                 $record = (array)($candidate['record'] ?? []);
@@ -1191,6 +1299,24 @@ final class EarlyImpulseGrowthLongService
                         );
                     }
                     continue;
+                }
+                // Apply signal throughput cap for current-run signals
+                $isCurrent = (bool)($candidate['is_current_run'] ?? false);
+                if ($isCurrent) {
+                    if ($currentRunHandoffCount >= $maxEarlyHandoffPerTick || $remainingPer30mBudget <= 0) {
+                        $diag['early_entry_handoff_cap_skipped_total']++;
+                        if (isset($allSignals[$signalIndex]) && is_array($allSignals[$signalIndex])) {
+                            $allSignals[$signalIndex] = $this->markSignalWithdrawn(
+                                (array)$allSignals[$signalIndex],
+                                false,
+                                'handoff_cap_exceeded',
+                                $queueNowIso
+                            );
+                        }
+                        continue;
+                    }
+                    $currentRunHandoffCount++;
+                    $remainingPer30mBudget--;
                 }
                 $dedupeSeen[$dedupeKey] = true;
                 $handoffQueue[] = $record;
@@ -1605,6 +1731,19 @@ final class EarlyImpulseGrowthLongService
             'late_spike_handoff_blocked_total' => $diag['late_spike_handoff_blocked_total'],
             'extended_handoff_blocked_total' => $diag['extended_handoff_blocked_total'],
 
+            // Early entry signal flow diagnostics
+            'oi_required_for_early_entry' => (bool)($config['oi_required_for_early_entry'] ?? false),
+            'early_entry_price_phase_total' => $diag['early_entry_price_phase_total'],
+            'early_entry_oi_confirmed_total' => $diag['early_entry_oi_confirmed_total'],
+            'early_entry_oi_unconfirmed_total' => $diag['early_entry_oi_unconfirmed_total'],
+            'early_entry_wave_soft_block_total' => $diag['early_entry_wave_soft_block_total'],
+            'early_entry_orderbook_hard_block_total' => $diag['early_entry_orderbook_hard_block_total'],
+            'early_entry_handoff_written_total' => $diag['early_entry_handoff_written_total'],
+            'early_entry_handoff_cap_skipped_total' => $diag['early_entry_handoff_cap_skipped_total'],
+            'early_entry_handoff_examples' => $diag['early_entry_handoff_examples'],
+            'early_entry_oi_warning_examples' => $diag['early_entry_oi_warning_examples'],
+            'early_entry_wave_warning_examples' => $diag['early_entry_wave_warning_examples'],
+
             // Data quality
             'insufficient_data_total' => $diag['insufficient_data_total'],
             'stale_data_total' => $diag['stale_data_total'],
@@ -1903,6 +2042,9 @@ final class EarlyImpulseGrowthLongService
         $oiGrowthPct = null;
         $oiScore = null;
         $oiPass = false;
+        $oiWarningMode = false;
+        $oiWarningReason = null;
+        $oiRequiredForEarlyEntry = (bool)($config['oi_required_for_early_entry'] ?? false);
 
         if ((bool)$config['open_interest_enabled']) {
             $oiFromTs = (int)($stabilizationStartTs ?? $dumpLowTs ?? ($now - ($dumpLookbackMin * 60)));
@@ -1940,7 +2082,14 @@ final class EarlyImpulseGrowthLongService
                         $metrics['oi_missing_blocked'] = true;
                     }
                 } else {
-                    $rejectReason = 'open_interest_growth_too_low';
+                    // OI data available but growth insufficient
+                    if (!$oiRequiredForEarlyEntry) {
+                        // Not a hard gate — record as warning and allow entry
+                        $oiWarningMode = true;
+                        $oiWarningReason = $oiGrowthPct < 0.0 ? 'oi_growth_negative' : 'oi_growth_weak';
+                    } else {
+                        $rejectReason = 'open_interest_growth_too_low';
+                    }
                 }
             }
         } else {
@@ -2036,7 +2185,7 @@ final class EarlyImpulseGrowthLongService
             if ($rejectReason === null) {
                 $rejectReason = 'extended_recovery_late';
             }
-        } elseif ($dumpDetected && $stabilizationPassed && $smoothGrowthPassed && ($oiPass || $metrics['oi_missing_allowed'])) {
+        } elseif ($dumpDetected && $stabilizationPassed && $smoothGrowthPassed && ($oiPass || $metrics['oi_missing_allowed'] || $oiWarningMode)) {
             $recoveryPhase = 'early_entry';
             $entryTiming = 'early';
             $earlyEntryTriggered = true;
@@ -2148,6 +2297,9 @@ final class EarlyImpulseGrowthLongService
             'open_interest_growth_pct' => $oiGrowthPct !== null ? round($oiGrowthPct, 6) : null,
             'open_interest_growth_score' => $oiScore !== null ? round($oiScore, 6) : null,
             'oi_growth_confirmed' => $oiGrowthConfirmed,
+            'open_interest_confirmed' => $oiGrowthConfirmed,
+            'oi_warning_mode' => $oiWarningMode,
+            'oi_warning_reason' => $oiWarningReason,
             'open_interest_missing_diagnostic' => $metrics['oi_missing_allowed'],
 
             'current_acceleration_window_minutes' => $currentAccelWindowMin,
@@ -3348,6 +3500,8 @@ final class EarlyImpulseGrowthLongService
         $cfg['handoff_enabled'] = (bool)($cfg['handoff_enabled'] ?? false);
         $cfg['emit_bot_handoff'] = (bool)($cfg['emit_bot_handoff'] ?? false);
         $cfg['max_handoff_signals_per_tick'] = max(1, min(100, (int)($cfg['max_handoff_signals_per_tick'] ?? 5)));
+        $cfg['max_early_entry_handoff_per_tick'] = max(1, min(50, (int)($cfg['max_early_entry_handoff_per_tick'] ?? 3)));
+        $cfg['max_early_entry_handoff_per_30m'] = max(1, min(200, (int)($cfg['max_early_entry_handoff_per_30m'] ?? 10)));
         $cfg['bot_ready_ttl_minutes'] = max(1, min(240, (int)($cfg['bot_ready_ttl_minutes'] ?? 10)));
         $cfg['mode'] = (string)($cfg['mode'] ?? 'passive');
         $cfg['side'] = self::SIDE;
@@ -3405,6 +3559,9 @@ final class EarlyImpulseGrowthLongService
 
         // Open interest
         $cfg['open_interest_enabled'] = (bool)($cfg['open_interest_enabled'] ?? true);
+        $cfg['oi_required_for_early_entry'] = (bool)($cfg['oi_required_for_early_entry'] ?? false);
+        $cfg['oi_min_growth_for_bonus_pct'] = max(-100.0, min(100.0, (float)($cfg['oi_min_growth_for_bonus_pct'] ?? 1.0)));
+        $cfg['oi_weak_warning_threshold_pct'] = (float)($cfg['oi_weak_warning_threshold_pct'] ?? 0.0);
         $cfg['min_open_interest_growth_pct'] = max(-100.0, min(100.0, (float)($cfg['min_open_interest_growth_pct'] ?? 1.0)));
         $cfg['min_open_interest_growth_score'] = max(0.0, min(1.0, (float)($cfg['min_open_interest_growth_score'] ?? 0.55)));
         $cfg['open_interest_score_target_pct'] = max((float)$cfg['min_open_interest_growth_pct'], (float)($cfg['open_interest_score_target_pct'] ?? 5.0));

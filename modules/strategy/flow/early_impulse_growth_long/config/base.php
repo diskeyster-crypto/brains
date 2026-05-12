@@ -8,6 +8,8 @@ return [
     'handoff_enabled' => false,
     'emit_bot_handoff' => false,
     'max_handoff_signals_per_tick' => 5,
+    'max_early_entry_handoff_per_tick' => 3,
+    'max_early_entry_handoff_per_30m' => 10,
     'bot_ready_ttl_minutes' => 10,
     'mode' => 'passive',
     'side' => 'long',
@@ -59,6 +61,9 @@ return [
 
     // Open interest confirmation
     'open_interest_enabled' => true,
+    'oi_required_for_early_entry' => false,
+    'oi_min_growth_for_bonus_pct' => 1.0,
+    'oi_weak_warning_threshold_pct' => 0.0,
     'min_open_interest_growth_pct' => 1.0,
     'min_open_interest_growth_score' => 0.55,
     'open_interest_score_target_pct' => 5.0,
@@ -100,7 +105,7 @@ return [
     'eig_filter_orderbook_wall_filter_allow_missing_orderbook' => true,
     'eig_filter_orderbook_wall_filter_block_if_orderbook_missing' => false,
     'eig_filter_wave_quality_filter_enabled' => true,
-    'eig_filter_wave_quality_filter_severity' => 'hard_block',
+    'eig_filter_wave_quality_filter_severity' => 'soft_block',
     'eig_filter_wave_quality_filter_block_regimes' => 'fast_flip_chop,narrow_chop,chaotic',
     'eig_filter_wave_quality_filter_min_avg_time_between_flips_minutes' => 45,
     'eig_filter_wave_quality_filter_max_trend_flip_count_2h' => 4,

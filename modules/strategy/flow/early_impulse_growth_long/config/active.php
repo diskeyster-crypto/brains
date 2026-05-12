@@ -26,7 +26,7 @@ return [
     'filter_config' => [
         'wave_quality_filter' => [
             'enabled' => true,
-            'severity' => 'hard_block',
+            'severity' => 'soft_block',
             'block_context_phases' => 'chaotic,spike,downtrend',
             'block_context_reasons' => 'too_many_direction_flips,downward_trend_confirmed,spike_threshold_10m',
             'block_trend_1h_directions' => 'chaotic,down',

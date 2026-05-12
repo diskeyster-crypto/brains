@@ -8,6 +8,8 @@ return [
     'handoff_enabled' => 'bool',
     'emit_bot_handoff' => 'bool',
     'max_handoff_signals_per_tick' => 'int',
+    'max_early_entry_handoff_per_tick' => 'int',
+    'max_early_entry_handoff_per_30m' => 'int',
     'bot_ready_ttl_minutes' => 'int',
     'mode' => 'string',
     'side' => 'string',
@@ -52,6 +54,9 @@ return [
     'smooth_growth_max_single_candle_dominance_pct' => 'float',
 
     'open_interest_enabled' => 'bool',
+    'oi_required_for_early_entry' => 'bool',
+    'oi_min_growth_for_bonus_pct' => 'float',
+    'oi_weak_warning_threshold_pct' => 'float',
     'min_open_interest_growth_pct' => 'float',
     'min_open_interest_growth_score' => 'float',
     'open_interest_score_target_pct' => 'float',

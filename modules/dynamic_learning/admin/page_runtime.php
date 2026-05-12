@@ -62,6 +62,10 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-size:12px;opacity:.8;">closed_outcomes_duplicates_skipped_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_duplicates_skipped_total'] ?? 0)) ?></div>
     </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">closed_outcomes_merged_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_merged_total'] ?? 0)) ?></div>
+    </div>
   </div>
   <pre style="margin:0;background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;overflow:auto;"><?= $e(json_encode($run, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
 </div>

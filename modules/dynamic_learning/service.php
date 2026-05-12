@@ -49,6 +49,7 @@ final class DynamicLearningService
             'closed_outcomes_raw_loaded_total' => 0,
             'closed_outcomes_unique_total' => 0,
             'closed_outcomes_duplicates_skipped_total' => 0,
+            'closed_outcomes_merged_total' => 0,
             'closed_outcomes_duplicate_examples' => [],
             'bad_entry_total' => 0,
             'good_or_do_not_touch_total' => 0,
@@ -95,6 +96,7 @@ final class DynamicLearningService
         $result['closed_outcomes_raw_loaded_total'] = $outcomes['raw_loaded_total'];
         $result['closed_outcomes_unique_total'] = $outcomes['unique_total'];
         $result['closed_outcomes_duplicates_skipped_total'] = $outcomes['duplicates_skipped_total'];
+        $result['closed_outcomes_merged_total'] = $outcomes['merged_total'];
         $result['closed_outcomes_duplicate_examples'] = $outcomes['duplicate_examples'];
         $result['closed_outcomes_matched_total'] = count($outcomes['all']);
         $result['bad_entry_total'] = count($outcomes['bad']);
@@ -440,7 +442,7 @@ final class DynamicLearningService
         ];
     }
 
-    /** @return array{all:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,unique_total:int,duplicates_skipped_total:int,duplicate_examples:list<array<string,mixed>>} */
+    /** @return array{all:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,unique_total:int,duplicates_skipped_total:int,merged_total:int,duplicate_examples:list<array<string,mixed>>} */
     private function linkClosedOutcomes(array $cfg, array $snapshotIndex): array
     {
         $stored = $this->readJson($this->storagePath('closed_outcomes.json'), []);
@@ -454,6 +456,7 @@ final class DynamicLearningService
         $rawLoadedTotal = 0;
         $uniqueMap = [];
         $duplicatesSkippedTotal = 0;
+        $mergedTotal = 0;
         $duplicateExamples = [];
 
         foreach ([
@@ -485,13 +488,22 @@ final class DynamicLearningService
                         'side' => strtolower((string)($row['side'] ?? '')),
                         'opened_at' => (string)($row['opened_at'] ?? $row['entry_time'] ?? ''),
                         'closed_at' => (string)($row['closed_at'] ?? $row['close_time'] ?? ''),
-                        'close_roi' => $this->toFloat($row['close_roi'] ?? $row['roi'] ?? null),
+                        'close_roi_incoming' => $this->toFloat($row['close_roi'] ?? $row['roi'] ?? null),
+                        'close_roi_existing' => $this->toFloat(((array)$existing)['close_roi'] ?? ((array)$existing)['roi'] ?? null),
                     ];
                 }
 
-                if ($this->closedTradeRichnessScore($row) > $this->closedTradeRichnessScore((array)$existing)) {
-                    $uniqueMap[$identity] = $row;
+                // Merge: use richer as base, fill missing fields from secondary
+                $scoreRow = $this->closedTradeRichnessScore($row);
+                $scoreExisting = $this->closedTradeRichnessScore((array)$existing);
+                [$primary, $secondary] = $scoreRow >= $scoreExisting
+                    ? [$row, (array)$existing]
+                    : [(array)$existing, $row];
+                $merged = $this->mergeClosedTradeRecords($primary, $secondary);
+                if ($this->closedTradeRichnessScore($merged) > $this->closedTradeRichnessScore($primary)) {
+                    $mergedTotal++;
                 }
+                $uniqueMap[$identity] = $merged;
             }
         }
 
@@ -522,6 +534,7 @@ final class DynamicLearningService
             'raw_loaded_total' => $rawLoadedTotal,
             'unique_total' => count($all),
             'duplicates_skipped_total' => $duplicatesSkippedTotal,
+            'merged_total' => $mergedTotal,
             'duplicate_examples' => $duplicateExamples,
         ];
     }
@@ -773,20 +786,27 @@ final class DynamicLearningService
             return 'position_id|' . $positionId;
         }
 
+        $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
+        $closedAt = trim((string)($row['closed_at'] ?? $row['close_time'] ?? ''));
+        if ($ssk !== '' && $closedAt !== '') {
+            return 'ssk_closed|' . implode('|', [$ssk, $closedAt]);
+        }
+
+        $signalId = trim((string)($row['signal_id'] ?? ''));
+        $openedAt = trim((string)($row['opened_at'] ?? $row['entry_time'] ?? ''));
+        if ($signalId !== '' && $openedAt !== '' && $closedAt !== '') {
+            return 'signal_time|' . implode('|', [$signalId, $openedAt, $closedAt]);
+        }
+
         $symbol = strtoupper(trim((string)($row['symbol'] ?? '')));
         $side = strtolower(trim((string)($row['side'] ?? '')));
-        $openedAt = trim((string)($row['opened_at'] ?? $row['entry_time'] ?? ''));
-        $closedAt = trim((string)($row['closed_at'] ?? $row['close_time'] ?? ''));
-        $closeRoi = $this->toFloat($row['close_roi'] ?? $row['roi'] ?? null);
-        if ($symbol !== '' && $side !== '' && $openedAt !== '' && $closedAt !== '' && $closeRoi !== null) {
-            return 'time_roi|' . implode('|', [$symbol, $side, $openedAt, $closedAt, (string)round($closeRoi, 8)]);
+        if ($symbol !== '' && $side !== '' && $openedAt !== '' && $closedAt !== '') {
+            return 'time|' . implode('|', [$symbol, $side, $openedAt, $closedAt]);
         }
 
         $entryPrice = $this->toFloat($row['entry_price'] ?? null);
-        $closePrice = $this->toFloat($row['close_price'] ?? $row['exit_price'] ?? null);
-        $closeTime = trim((string)($row['closed_at'] ?? $row['close_time'] ?? ''));
-        if ($symbol !== '' && $side !== '' && $entryPrice !== null && $closePrice !== null && $closeTime !== '') {
-            return 'price_close_time|' . implode('|', [$symbol, $side, (string)round($entryPrice, 8), (string)round($closePrice, 8), $closeTime]);
+        if ($symbol !== '' && $side !== '' && $entryPrice !== null && $openedAt !== '' && $closedAt !== '') {
+            return 'price_time|' . implode('|', [$symbol, $side, (string)round($entryPrice, 8), $openedAt, $closedAt]);
         }
 
         return 'fallback|' . substr(sha1(json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: ''), 0, 32);
@@ -825,7 +845,51 @@ final class DynamicLearningService
         if (trim((string)($row['closed_at'] ?? $row['close_time'] ?? '')) !== '') {
             $score += 1;
         }
+        if ($this->toFloat($row['close_roi'] ?? $row['roi'] ?? null) !== null) {
+            $score += 2;
+        }
         return $score;
+    }
+
+    /** Merge two records describing the same closed trade, preferring non-empty fields. */
+    private function mergeClosedTradeRecords(array $primary, array $secondary): array
+    {
+        $merged = $primary;
+
+        // Scalar fields: take from secondary if primary value is missing/null/empty
+        $fillFields = [
+            'close_roi', 'roi',
+            'close_price', 'exit_price',
+            'max_drawdown_roi', 'mae_roi',
+            'max_profit_roi', 'mfe_roi',
+            'close_reason',
+            'duration_sec',
+            'signal_id',
+            'strategy_signal_key',
+            'position_id',
+            'closed_trade_id',
+            'opened_at', 'entry_time',
+            'closed_at', 'close_time',
+            'entry_price',
+        ];
+        foreach ($fillFields as $field) {
+            if (($merged[$field] ?? null) === null || (is_string($merged[$field]) && trim($merged[$field]) === '')) {
+                if (($secondary[$field] ?? null) !== null && !(is_string($secondary[$field]) && trim($secondary[$field]) === '')) {
+                    $merged[$field] = $secondary[$field];
+                }
+            }
+        }
+
+        // strategy_signal_context: keep whichever is non-empty and more detailed
+        $primaryCtx = is_array($primary['strategy_signal_context'] ?? null) ? $primary['strategy_signal_context'] : null;
+        $secondaryCtx = is_array($secondary['strategy_signal_context'] ?? null) ? $secondary['strategy_signal_context'] : null;
+        if ($primaryCtx === null && $secondaryCtx !== null) {
+            $merged['strategy_signal_context'] = $secondaryCtx;
+        } elseif ($primaryCtx !== null && $secondaryCtx !== null && count($secondaryCtx) > count($primaryCtx)) {
+            $merged['strategy_signal_context'] = $secondaryCtx;
+        }
+
+        return $merged;
     }
 
     private function matchCombo(array $features, array $conds): bool

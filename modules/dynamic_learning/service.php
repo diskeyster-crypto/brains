@@ -51,11 +51,22 @@ final class DynamicLearningService
             'closed_outcomes_duplicates_skipped_total' => 0,
             'closed_outcomes_merged_total' => 0,
             'closed_outcomes_duplicate_examples' => [],
+            'closed_outcomes_strong_link_total' => 0,
+            'closed_outcomes_weak_link_skipped_total' => 0,
+            'closed_outcomes_time_mismatch_total' => 0,
+            'closed_outcomes_opened_at_corrected_total' => 0,
+            'closed_outcomes_timing_low_confidence_total' => 0,
+            'closed_outcomes_time_mismatch_examples' => [],
             'bad_entry_total' => 0,
             'good_or_do_not_touch_total' => 0,
             'entry_ok_exit_issue_total' => 0,
             'neutral_total' => 0,
             'outcome_incomplete_total' => 0,
+            'outcome_mfe_normalized_total' => 0,
+            'outcome_mae_normalized_total' => 0,
+            'outcome_roi_normalization_examples' => [],
+            'outcome_excluded_from_pattern_mining_total' => 0,
+            'outcome_excluded_reasons' => [],
             'bad_patterns_total' => 0,
             'profile_generated' => false,
             'profile_id' => null,
@@ -98,22 +109,33 @@ final class DynamicLearningService
         $result['closed_outcomes_duplicates_skipped_total'] = $outcomes['duplicates_skipped_total'];
         $result['closed_outcomes_merged_total'] = $outcomes['merged_total'];
         $result['closed_outcomes_duplicate_examples'] = $outcomes['duplicate_examples'];
+        $result['closed_outcomes_strong_link_total'] = $outcomes['strong_link_total'];
+        $result['closed_outcomes_weak_link_skipped_total'] = $outcomes['weak_link_skipped_total'];
+        $result['closed_outcomes_time_mismatch_total'] = $outcomes['time_mismatch_total'];
+        $result['closed_outcomes_opened_at_corrected_total'] = $outcomes['opened_at_corrected_total'];
+        $result['closed_outcomes_timing_low_confidence_total'] = $outcomes['timing_low_confidence_total'];
+        $result['closed_outcomes_time_mismatch_examples'] = $outcomes['time_mismatch_examples'];
         $result['closed_outcomes_matched_total'] = count($outcomes['all']);
         $result['bad_entry_total'] = count($outcomes['bad']);
         $result['good_or_do_not_touch_total'] = count($outcomes['good']);
         $result['entry_ok_exit_issue_total'] = count($outcomes['exit_issue']);
         $result['neutral_total'] = count($outcomes['neutral']);
         $result['outcome_incomplete_total'] = count($outcomes['incomplete']);
+        $result['outcome_mfe_normalized_total'] = $outcomes['mfe_normalized_total'];
+        $result['outcome_mae_normalized_total'] = $outcomes['mae_normalized_total'];
+        $result['outcome_roi_normalization_examples'] = $outcomes['roi_normalization_examples'];
+        $result['outcome_excluded_from_pattern_mining_total'] = $outcomes['excluded_from_pattern_mining_total'];
+        $result['outcome_excluded_reasons'] = $outcomes['excluded_reasons'];
         $result['bad_entry_examples'] = array_slice($outcomes['bad'], 0, 6);
         $result['good_entry_examples'] = array_slice($outcomes['good'], 0, 6);
 
-        $patterns = $this->minePatterns($cfg, $outcomes['all']);
+        $patterns = $this->minePatterns($cfg, $outcomes['pattern_mining']);
         $this->writeJson($this->storagePath('patterns/bad_patterns.json'), $patterns['bad_patterns']);
         $this->writeJson($this->storagePath('patterns/pattern_stats.json'), $patterns['all']);
         $result['bad_patterns_total'] = count($patterns['all']);
         $result['top_bad_pattern_examples'] = array_slice($patterns['all'], 0, 10);
 
-        $profile = $this->buildProfile($cfg, $outcomes['all'], $patterns['all']);
+        $profile = $this->buildProfile($cfg, $outcomes['pattern_mining'], $patterns['all']);
         $result['profile_generated'] = true;
         $result['profile_id'] = $profile['profile_id'];
         $result['profile_rules_total'] = count($profile['rules']);
@@ -331,7 +353,8 @@ final class DynamicLearningService
             return null;
         }
         $side = strtolower(trim((string)($row['side'] ?? 'long')));
-        $openedAt = trim((string)($row['opened_at'] ?? $row['entry_time'] ?? $row['detected_at'] ?? ''));
+        $openedAt = $this->normalizeTimestamp($row['opened_at'] ?? $row['entry_time'] ?? $row['detected_at'] ?? '');
+        $detectedAt = $this->normalizeTimestamp($row['detected_at'] ?? $openedAt);
         $signalId = trim((string)($row['signal_id'] ?? ''));
         $strategySignalKey = trim((string)($row['strategy_signal_key'] ?? ''));
         $key = trim((string)($row['position_id'] ?? ''));
@@ -353,7 +376,7 @@ final class DynamicLearningService
             'mode' => $mode,
             'entry_price' => $entryPrice,
             'opened_at' => $openedAt,
-            'detected_at' => trim((string)($row['detected_at'] ?? $openedAt)),
+            'detected_at' => $detectedAt,
             'position_id' => trim((string)($row['position_id'] ?? '')),
             'strategy_signal_context' => $ctx,
             'entry_features' => $this->extractEntryFeatures($ctx),
@@ -442,7 +465,7 @@ final class DynamicLearningService
         ];
     }
 
-    /** @return array{all:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,unique_total:int,duplicates_skipped_total:int,merged_total:int,duplicate_examples:list<array<string,mixed>>} */
+    /** @return array{all:list<array<string,mixed>>,pattern_mining:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,unique_total:int,duplicates_skipped_total:int,merged_total:int,duplicate_examples:list<array<string,mixed>>,strong_link_total:int,weak_link_skipped_total:int,time_mismatch_total:int,opened_at_corrected_total:int,timing_low_confidence_total:int,time_mismatch_examples:list<array<string,mixed>>,mfe_normalized_total:int,mae_normalized_total:int,roi_normalization_examples:list<array<string,mixed>>,excluded_from_pattern_mining_total:int,excluded_reasons:array<string,int>} */
     private function linkClosedOutcomes(array $cfg, array $snapshotIndex): array
     {
         $stored = $this->readJson($this->storagePath('closed_outcomes.json'), []);
@@ -458,6 +481,17 @@ final class DynamicLearningService
         $duplicatesSkippedTotal = 0;
         $mergedTotal = 0;
         $duplicateExamples = [];
+        $strongLinkTotal = 0;
+        $weakLinkSkippedTotal = 0;
+        $timeMismatchTotal = 0;
+        $openedAtCorrectedTotal = 0;
+        $timingLowConfidenceTotal = 0;
+        $timeMismatchExamples = [];
+        $mfeNormalizedTotal = 0;
+        $maeNormalizedTotal = 0;
+        $roiNormalizationExamples = [];
+        $excludedFromPatternMiningTotal = 0;
+        $excludedReasons = [];
 
         foreach ([
             $this->repoRoot . '/modules/bot/storage/trades/closed_trades.json',
@@ -508,6 +542,7 @@ final class DynamicLearningService
         }
 
         $all = [];
+        $patternMining = [];
         foreach ($uniqueMap as $identity => $row) {
             if (!is_array($row)) {
                 continue;
@@ -515,6 +550,57 @@ final class DynamicLearningService
             $row['_dl_identity'] = $identity;
             $outcome = $this->makeOutcome($row, $cfg, $snapshotIndex);
             $all[] = $outcome;
+            if ((string)($outcome['link_strength'] ?? '') === 'strong') {
+                $strongLinkTotal++;
+            }
+            if ((string)($outcome['link_strength'] ?? '') === 'weak' && (string)($outcome['pattern_mining_exclude_reason'] ?? '') === 'weak_symbol_only_match') {
+                $weakLinkSkippedTotal++;
+            }
+            if ((bool)($outcome['opened_at_corrected'] ?? false)) {
+                $openedAtCorrectedTotal++;
+            }
+            if ((string)($outcome['timing_confidence'] ?? '') === 'low') {
+                $timingLowConfidenceTotal++;
+            }
+            if (($outcome['opened_at_mismatch_minutes'] ?? null) !== null) {
+                $timeMismatchTotal++;
+                if (count($timeMismatchExamples) < 20) {
+                    $timeMismatchExamples[] = [
+                        'symbol' => (string)($outcome['symbol'] ?? ''),
+                        'signal_id' => (string)($outcome['signal_id'] ?? ''),
+                        'strategy_signal_key' => (string)($outcome['strategy_signal_key'] ?? ''),
+                        'raw_closed_opened_at' => (string)($outcome['raw_closed_opened_at'] ?? ''),
+                        'learning_opened_at' => (string)($outcome['learning_opened_at'] ?? ''),
+                        'closed_at' => (string)($outcome['closed_at'] ?? ''),
+                        'opened_at_mismatch_minutes' => $outcome['opened_at_mismatch_minutes'],
+                        'opened_at_source' => (string)($outcome['opened_at_source'] ?? ''),
+                    ];
+                }
+            }
+            if ((bool)($outcome['mfe_normalized'] ?? false)) {
+                $mfeNormalizedTotal++;
+            }
+            if ((bool)($outcome['mae_normalized'] ?? false)) {
+                $maeNormalizedTotal++;
+            }
+            if (((bool)($outcome['mfe_normalized'] ?? false) || (bool)($outcome['mae_normalized'] ?? false)) && count($roiNormalizationExamples) < 20) {
+                $roiNormalizationExamples[] = [
+                    'symbol' => (string)($outcome['symbol'] ?? ''),
+                    'signal_id' => (string)($outcome['signal_id'] ?? ''),
+                    'close_roi' => $outcome['close_roi'] ?? null,
+                    'raw_max_profit_roi' => $outcome['raw_max_profit_roi'] ?? null,
+                    'normalized_max_profit_roi' => $outcome['normalized_max_profit_roi'] ?? null,
+                    'raw_max_drawdown_roi' => $outcome['raw_max_drawdown_roi'] ?? null,
+                    'normalized_max_drawdown_roi' => $outcome['normalized_max_drawdown_roi'] ?? null,
+                ];
+            }
+            if ((bool)($outcome['used_for_pattern_mining'] ?? false)) {
+                $patternMining[] = $outcome;
+            } else {
+                $excludedFromPatternMiningTotal++;
+                $reason = (string)($outcome['pattern_mining_exclude_reason'] ?? 'unknown');
+                $excludedReasons[$reason] = (int)($excludedReasons[$reason] ?? 0) + 1;
+            }
             if (!isset($existingIndex[(string)$outcome['outcome_key']])) {
                 $this->appendNdjson($this->storagePath('closed_outcomes.ndjson'), $outcome);
             }
@@ -525,6 +611,7 @@ final class DynamicLearningService
         $pick = static fn(string $c): array => array_values(array_filter($all, static fn(array $r): bool => (string)($r['outcome_class'] ?? '') === $c));
         return [
             'all' => $all,
+            'pattern_mining' => $patternMining,
             'bad' => $pick('bad_entry'),
             'good' => $pick('good_or_do_not_touch'),
             'exit_issue' => $pick('entry_ok_exit_issue'),
@@ -536,22 +623,39 @@ final class DynamicLearningService
             'duplicates_skipped_total' => $duplicatesSkippedTotal,
             'merged_total' => $mergedTotal,
             'duplicate_examples' => $duplicateExamples,
+            'strong_link_total' => $strongLinkTotal,
+            'weak_link_skipped_total' => $weakLinkSkippedTotal,
+            'time_mismatch_total' => $timeMismatchTotal,
+            'opened_at_corrected_total' => $openedAtCorrectedTotal,
+            'timing_low_confidence_total' => $timingLowConfidenceTotal,
+            'time_mismatch_examples' => $timeMismatchExamples,
+            'mfe_normalized_total' => $mfeNormalizedTotal,
+            'mae_normalized_total' => $maeNormalizedTotal,
+            'roi_normalization_examples' => $roiNormalizationExamples,
+            'excluded_from_pattern_mining_total' => $excludedFromPatternMiningTotal,
+            'excluded_reasons' => $excludedReasons,
         ];
     }
 
     /** @return array<string,mixed> */
     private function makeOutcome(array $row, array $cfg, array $snapshotIndex): array
     {
-        $snapshotId = $this->resolveSnapshotId($row, $snapshotIndex);
-        $summary = $snapshotId ? (array)$this->readJson($this->storagePath('active_observations/' . $snapshotId . '.json'), []) : [];
+        $link = $this->resolveOutcomeSnapshotLink($row, $snapshotIndex, $cfg);
+        $snapshotId = $link['snapshot_id'];
+        $snapshot = is_array($link['snapshot']) ? $link['snapshot'] : null;
+        $summary = is_string($snapshotId) && $snapshotId !== '' ? (array)$this->readJson($this->storagePath('active_observations/' . $snapshotId . '.json'), []) : [];
         $closeRoi = $this->toFloat($row['close_roi'] ?? $row['roi'] ?? null);
-        $maxDd = $this->toFloat($row['max_drawdown_roi'] ?? $row['mae_roi'] ?? ($summary['max_drawdown_roi_so_far'] ?? null));
-        $maxProfit = $this->toFloat($row['max_profit_roi'] ?? $row['mfe_roi'] ?? ($summary['max_profit_roi_so_far'] ?? null));
-        [$class, $reason] = $this->classify($closeRoi, $maxDd, $maxProfit, $cfg);
+        $rawMaxDd = $this->toFloat($row['max_drawdown_roi'] ?? $row['mae_roi'] ?? ($summary['max_drawdown_roi_so_far'] ?? null));
+        $rawMaxProfit = $this->toFloat($row['max_profit_roi'] ?? $row['mfe_roi'] ?? ($summary['max_profit_roi_so_far'] ?? null));
+        $normalizedMaxProfit = ($rawMaxProfit !== null && $closeRoi !== null) ? max($rawMaxProfit, $closeRoi) : $rawMaxProfit;
+        $normalizedMaxDd = ($rawMaxDd !== null && $closeRoi !== null) ? min($rawMaxDd, $closeRoi) : $rawMaxDd;
+        [$class, $reason] = $this->classify($closeRoi, $normalizedMaxDd, $normalizedMaxProfit, $cfg);
         $composite = trim((string)($row['_dl_identity'] ?? ''));
         if ($composite === '') {
             $composite = $this->buildClosedTradeIdentity($row);
         }
+        $timing = $this->resolveOutcomeTiming($row, $snapshot, $link, $cfg);
+        $featureCheck = $this->determinePatternMiningEligibility($snapshot, $timing, (string)$link['link_strength']);
         return [
             'outcome_key' => 'out_' . substr(sha1($composite), 0, 20),
             'snapshot_id' => $snapshotId,
@@ -561,18 +665,214 @@ final class DynamicLearningService
             'strategy_signal_key' => (string)($row['strategy_signal_key'] ?? ''),
             'entry_price' => $this->toFloat($row['entry_price'] ?? null),
             'close_price' => $this->toFloat($row['close_price'] ?? $row['exit_price'] ?? null),
-            'opened_at' => $this->extractOpenedAt($row),
+            'opened_at' => $timing['learning_opened_at'],
             'closed_at' => $this->extractClosedAt($row),
+            'raw_closed_opened_at' => $timing['raw_closed_opened_at'],
+            'learning_opened_at' => $timing['learning_opened_at'],
+            'opened_at_source' => $timing['opened_at_source'],
+            'opened_at_corrected' => $timing['opened_at_corrected'],
+            'opened_at_mismatch_minutes' => $timing['opened_at_mismatch_minutes'],
+            'timing_confidence' => $timing['timing_confidence'],
+            'link_strength' => (string)$link['link_strength'],
             'close_roi' => $closeRoi,
-            'max_drawdown_roi' => $maxDd,
-            'max_profit_roi' => $maxProfit,
+            'raw_max_drawdown_roi' => $rawMaxDd,
+            'raw_max_profit_roi' => $rawMaxProfit,
+            'max_drawdown_roi' => $rawMaxDd,
+            'max_profit_roi' => $rawMaxProfit,
+            'normalized_max_drawdown_roi' => $normalizedMaxDd,
+            'normalized_max_profit_roi' => $normalizedMaxProfit,
+            'mae_normalized' => $rawMaxDd !== $normalizedMaxDd,
+            'mfe_normalized' => $rawMaxProfit !== $normalizedMaxProfit,
             'close_reason' => (string)($row['close_reason'] ?? ''),
-            'duration_sec' => (int)($row['duration_sec'] ?? 0),
-            'entry_snapshot' => $snapshotId && isset($snapshotIndex[$snapshotId]) ? $snapshotIndex[$snapshotId] : null,
+            'duration_sec' => $timing['duration_sec'],
+            'entry_snapshot' => $snapshot,
             'observation_summary' => $summary,
             'outcome_class' => $class,
             'classification_reason' => $reason,
+            'used_for_pattern_mining' => $featureCheck['used_for_pattern_mining'],
+            'pattern_mining_exclude_reason' => $featureCheck['exclude_reason'],
         ];
+    }
+
+    /** @return array{snapshot_id:?string,snapshot:?array<string,mixed>,link_strength:string,match_type:string} */
+    private function resolveOutcomeSnapshotLink(array $row, array $snapshotIndex, array $cfg): array
+    {
+        $signalId = trim((string)($row['signal_id'] ?? ''));
+        $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
+        $pid = trim((string)($row['position_id'] ?? ''));
+        $sym = strtoupper(trim((string)($row['symbol'] ?? '')));
+        $side = strtolower(trim((string)($row['side'] ?? 'long')));
+        $entryPrice = $this->toFloat($row['entry_price'] ?? null);
+        $openedAt = $this->extractOpenedAt($row);
+        $timeToleranceSec = max(60, (int)$cfg['outcome_opened_at_mismatch_tolerance_minutes'] * 60);
+        $weakSymbolOnly = false;
+
+        foreach ($snapshotIndex as $id => $snap) {
+            if (!is_array($snap)) {
+                continue;
+            }
+            if ($signalId !== '' && $signalId === (string)($snap['signal_id'] ?? '')) {
+                return ['snapshot_id' => (string)$id, 'snapshot' => $snap, 'link_strength' => 'strong', 'match_type' => 'signal_id'];
+            }
+        }
+
+        foreach ($snapshotIndex as $id => $snap) {
+            if (!is_array($snap)) {
+                continue;
+            }
+            if ($ssk !== '' && $ssk === (string)($snap['strategy_signal_key'] ?? '')) {
+                return ['snapshot_id' => (string)$id, 'snapshot' => $snap, 'link_strength' => 'strong', 'match_type' => 'strategy_signal_key'];
+            }
+        }
+
+        foreach ($snapshotIndex as $id => $snap) {
+            if (!is_array($snap)) {
+                continue;
+            }
+            if ($pid !== '' && $pid === (string)($snap['position_id'] ?? '')) {
+                return ['snapshot_id' => (string)$id, 'snapshot' => $snap, 'link_strength' => 'strong', 'match_type' => 'position_id'];
+            }
+        }
+
+        $bestId = null;
+        $bestSnap = null;
+        $bestDiff = null;
+        foreach ($snapshotIndex as $id => $snap) {
+            if (!is_array($snap)) {
+                continue;
+            }
+            $snapSym = strtoupper(trim((string)($snap['symbol'] ?? '')));
+            $snapSide = strtolower(trim((string)($snap['side'] ?? 'long')));
+            if ($sym !== '' && $sym === $snapSym) {
+                $weakSymbolOnly = true;
+            }
+            if ($sym === '' || $side === '' || $entryPrice === null || $openedAt === '') {
+                continue;
+            }
+            if ($sym !== $snapSym || $side !== $snapSide) {
+                continue;
+            }
+            $snapEntryPrice = $this->toFloat($snap['entry_price'] ?? null);
+            if ($snapEntryPrice === null || round($snapEntryPrice, 8) !== round($entryPrice, 8)) {
+                continue;
+            }
+            $diff = $this->smallestTimestampDiffSeconds($openedAt, [
+                $this->extractSnapshotOpenedAt($snap),
+                $this->extractSnapshotDetectedAt($snap),
+            ]);
+            if ($diff === null || $diff > $timeToleranceSec) {
+                continue;
+            }
+            if ($bestDiff === null || $diff < $bestDiff) {
+                $bestDiff = $diff;
+                $bestId = (string)$id;
+                $bestSnap = $snap;
+            }
+        }
+
+        if ($bestId !== null && is_array($bestSnap)) {
+            return ['snapshot_id' => $bestId, 'snapshot' => $bestSnap, 'link_strength' => 'strong', 'match_type' => 'price_time'];
+        }
+
+        if ($weakSymbolOnly) {
+            return ['snapshot_id' => null, 'snapshot' => null, 'link_strength' => 'weak', 'match_type' => 'symbol_only'];
+        }
+
+        return ['snapshot_id' => null, 'snapshot' => null, 'link_strength' => 'none', 'match_type' => 'none'];
+    }
+
+    /** @return array{raw_closed_opened_at:string,learning_opened_at:string,opened_at_source:string,opened_at_corrected:bool,opened_at_mismatch_minutes:?float,timing_confidence:string,duration_sec:int} */
+    private function resolveOutcomeTiming(array $row, ?array $snapshot, array $link, array $cfg): array
+    {
+        $rawClosedOpenedAt = $this->extractOpenedAt($row);
+        $closedAt = $this->extractClosedAt($row);
+        $learningOpenedAt = $rawClosedOpenedAt;
+        $openedAtSource = 'closed_trade';
+        $openedAtCorrected = false;
+        $openedAtMismatchMinutes = null;
+        $timingConfidence = in_array((string)($link['match_type'] ?? ''), ['signal_id', 'strategy_signal_key'], true) ? 'high' : 'low';
+        $durationSec = max(0, (int)($row['duration_sec'] ?? 0));
+
+        if (!is_array($snapshot)) {
+            return [
+                'raw_closed_opened_at' => $rawClosedOpenedAt,
+                'learning_opened_at' => $learningOpenedAt,
+                'opened_at_source' => $openedAtSource,
+                'opened_at_corrected' => $openedAtCorrected,
+                'opened_at_mismatch_minutes' => $openedAtMismatchMinutes,
+                'timing_confidence' => $timingConfidence,
+                'duration_sec' => $durationSec,
+            ];
+        }
+
+        $snapshotOpenedAt = $this->extractSnapshotOpenedAt($snapshot);
+        $snapshotDetectedAt = $this->extractSnapshotDetectedAt($snapshot);
+        $referenceOpenedAt = $snapshotOpenedAt !== '' ? $snapshotOpenedAt : $snapshotDetectedAt;
+        $exactSignalMatch = in_array((string)($link['match_type'] ?? ''), ['signal_id', 'strategy_signal_key'], true);
+
+        if ($rawClosedOpenedAt === '' && $referenceOpenedAt !== '') {
+            $learningOpenedAt = $referenceOpenedAt;
+            $openedAtSource = 'entry_snapshot';
+            $openedAtCorrected = true;
+            $timingConfidence = $exactSignalMatch ? 'medium' : 'low';
+        } elseif ($exactSignalMatch && (bool)($cfg['prefer_entry_snapshot_time_on_signal_match'] ?? true) && $rawClosedOpenedAt !== '' && $referenceOpenedAt !== '') {
+            $diffSeconds = $this->smallestTimestampDiffSeconds($rawClosedOpenedAt, [$snapshotOpenedAt, $snapshotDetectedAt]);
+            $toleranceSeconds = max(60, (int)$cfg['outcome_opened_at_mismatch_tolerance_minutes'] * 60);
+            if ($diffSeconds !== null && $diffSeconds > $toleranceSeconds) {
+                $learningOpenedAt = $referenceOpenedAt;
+                $openedAtSource = 'entry_snapshot';
+                $openedAtCorrected = true;
+                $openedAtMismatchMinutes = round($diffSeconds / 60, 3);
+                $timingConfidence = 'medium';
+            }
+        }
+
+        if ($closedAt !== '' && $learningOpenedAt !== '') {
+            $computedDuration = $this->signedTimestampDiffSeconds($learningOpenedAt, $closedAt);
+            if ($computedDuration !== null) {
+                $durationSec = max(0, $computedDuration);
+            }
+        }
+
+        return [
+            'raw_closed_opened_at' => $rawClosedOpenedAt,
+            'learning_opened_at' => $learningOpenedAt,
+            'opened_at_source' => $openedAtSource,
+            'opened_at_corrected' => $openedAtCorrected,
+            'opened_at_mismatch_minutes' => $openedAtMismatchMinutes,
+            'timing_confidence' => $timingConfidence,
+            'duration_sec' => $durationSec,
+        ];
+    }
+
+    /** @return array{used_for_pattern_mining:bool,exclude_reason:?string} */
+    private function determinePatternMiningEligibility(?array $snapshot, array $timing, string $linkStrength): array
+    {
+        if (!is_array($snapshot)) {
+            return ['used_for_pattern_mining' => false, 'exclude_reason' => $linkStrength === 'weak' ? 'weak_symbol_only_match' : 'unlinked_closed_outcome'];
+        }
+        if ($linkStrength !== 'strong') {
+            return ['used_for_pattern_mining' => false, 'exclude_reason' => 'link_not_strong'];
+        }
+        if ((string)($timing['timing_confidence'] ?? 'low') === 'low') {
+            return ['used_for_pattern_mining' => false, 'exclude_reason' => 'timing_confidence_low'];
+        }
+        $entryFeatures = is_array($snapshot['entry_features'] ?? null) ? (array)$snapshot['entry_features'] : [];
+        if ($entryFeatures === []) {
+            $entryFeatures = $this->extractEntryFeatures((array)($snapshot['strategy_signal_context'] ?? []));
+        }
+        if ($entryFeatures === []) {
+            return ['used_for_pattern_mining' => false, 'exclude_reason' => 'entry_features_missing'];
+        }
+        $featureAvailableAt = $this->extractSnapshotFeatureAvailableAt($snapshot);
+        $learningOpenedAt = trim((string)($timing['learning_opened_at'] ?? ''));
+        if ($featureAvailableAt !== '' && $learningOpenedAt !== '') {
+            $featureDelay = $this->signedTimestampDiffSeconds($featureAvailableAt, $learningOpenedAt);
+            if ($featureDelay !== null && $featureDelay > 0) {
+                return ['used_for_pattern_mining' => false, 'exclude_reason' => 'entry_features_after_learning_opened_at'];
+            }
+        }
+        return ['used_for_pattern_mining' => true, 'exclude_reason' => null];
     }
 
     /** @return array{0:string,1:string} */
@@ -928,6 +1228,54 @@ final class DynamicLearningService
         return $s;
     }
 
+    private function extractSnapshotOpenedAt(array $snapshot): string
+    {
+        return $this->normalizeTimestamp($snapshot['opened_at'] ?? '');
+    }
+
+    private function extractSnapshotDetectedAt(array $snapshot): string
+    {
+        return $this->normalizeTimestamp($snapshot['detected_at'] ?? '');
+    }
+
+    private function extractSnapshotFeatureAvailableAt(array $snapshot): string
+    {
+        return $this->extractSnapshotOpenedAt($snapshot)
+            ?: $this->extractSnapshotDetectedAt($snapshot)
+            ?: $this->normalizeTimestamp($snapshot['created_at'] ?? '');
+    }
+
+    private function smallestTimestampDiffSeconds(string $base, array $candidates): ?int
+    {
+        $best = null;
+        foreach ($candidates as $candidate) {
+            $diff = $this->timestampDiffSeconds($base, (string)$candidate);
+            if ($diff === null) {
+                continue;
+            }
+            if ($best === null || $diff < $best) {
+                $best = $diff;
+            }
+        }
+        return $best;
+    }
+
+    private function timestampDiffSeconds(string $a, string $b): ?int
+    {
+        $signed = $this->signedTimestampDiffSeconds($a, $b);
+        return $signed === null ? null : abs($signed);
+    }
+
+    private function signedTimestampDiffSeconds(string $a, string $b): ?int
+    {
+        $ta = strtotime($a);
+        $tb = strtotime($b);
+        if ($ta === false || $tb === false) {
+            return null;
+        }
+        return $tb - $ta;
+    }
+
     private function matchCombo(array $features, array $conds): bool
     {
         foreach ($conds as $c) {
@@ -1063,6 +1411,8 @@ final class DynamicLearningService
         $cfg['good_max_profit_roi_threshold'] = (float)($cfg['good_max_profit_roi_threshold'] ?? 5.0);
         $cfg['neutral_close_roi_min'] = (float)($cfg['neutral_close_roi_min'] ?? -2.0);
         $cfg['neutral_close_roi_max'] = (float)($cfg['neutral_close_roi_max'] ?? 2.0);
+        $cfg['outcome_opened_at_mismatch_tolerance_minutes'] = max(1, (int)($cfg['outcome_opened_at_mismatch_tolerance_minutes'] ?? 15));
+        $cfg['prefer_entry_snapshot_time_on_signal_match'] = (bool)($cfg['prefer_entry_snapshot_time_on_signal_match'] ?? true);
         $cfg['min_closed_outcomes_for_profile'] = max(1, (int)($cfg['min_closed_outcomes_for_profile'] ?? 10));
         $cfg['min_bad_entries_for_rule'] = max(1, (int)($cfg['min_bad_entries_for_rule'] ?? 2));
         $cfg['min_bad_blocked_for_rule'] = max(1, (int)($cfg['min_bad_blocked_for_rule'] ?? 2));

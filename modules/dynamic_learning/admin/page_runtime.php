@@ -66,6 +66,26 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-size:12px;opacity:.8;">closed_outcomes_merged_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_merged_total'] ?? 0)) ?></div>
     </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">closed_outcomes_strong_link_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_strong_link_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">closed_outcomes_weak_link_skipped_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_weak_link_skipped_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">closed_outcomes_time_mismatch_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_time_mismatch_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">closed_outcomes_opened_at_corrected_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_opened_at_corrected_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">closed_outcomes_timing_low_confidence_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_timing_low_confidence_total'] ?? 0)) ?></div>
+    </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
@@ -88,10 +108,34 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-size:12px;opacity:.8;">outcome_incomplete_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['outcome_incomplete_total'] ?? 0)) ?></div>
     </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">outcome_mfe_normalized_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['outcome_mfe_normalized_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">outcome_mae_normalized_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['outcome_mae_normalized_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">outcome_excluded_from_pattern_mining_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['outcome_excluded_from_pattern_mining_total'] ?? 0)) ?></div>
+    </div>
   </div>
   <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
     <div style="font-size:12px;opacity:.8;margin-bottom:8px;">closed_outcomes_duplicate_examples</div>
     <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['closed_outcomes_duplicate_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+  </div>
+  <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+    <div style="font-size:12px;opacity:.8;margin-bottom:8px;">closed_outcomes_time_mismatch_examples</div>
+    <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['closed_outcomes_time_mismatch_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+  </div>
+  <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+    <div style="font-size:12px;opacity:.8;margin-bottom:8px;">outcome_roi_normalization_examples</div>
+    <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['outcome_roi_normalization_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+  </div>
+  <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+    <div style="font-size:12px;opacity:.8;margin-bottom:8px;">outcome_excluded_reasons</div>
+    <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['outcome_excluded_reasons'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
   </div>
   <pre style="margin:0;background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;overflow:auto;"><?= $e(json_encode($run, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
 </div>

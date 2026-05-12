@@ -66,6 +66,31 @@ final class CoinContextService
             'context_phase' => 'unknown',
             'context_quality' => 'unknown',
             'context_reasons' => [],
+            'wave_context_available' => false,
+            'wave_window_minutes' => null,
+            'trend_flip_count_1h' => null,
+            'trend_flip_count_2h' => null,
+            'trend_flip_count_4h' => null,
+            'avg_time_between_flips_minutes' => null,
+            'wave_avg_duration_minutes' => null,
+            'wave_median_duration_minutes' => null,
+            'wave_amplitude_avg_pct' => null,
+            'wave_amplitude_median_pct' => null,
+            'wave_noise_score' => null,
+            'trend_persistence_score' => null,
+            'wave_regime' => 'unknown',
+            'wave_context_reasons' => [],
+            'wave_context' => [
+                'wave_context_available' => false,
+                'wave_window_minutes' => null,
+                'trend_flip_count_2h' => null,
+                'avg_time_between_flips_minutes' => null,
+                'wave_amplitude_avg_pct' => null,
+                'wave_noise_score' => null,
+                'trend_persistence_score' => null,
+                'wave_regime' => 'unknown',
+                'wave_context_reasons' => [],
+            ],
         ];
 
         if ($normalizedSymbol === '' || !preg_match('/^[A-Z0-9]{2,30}$/', $normalizedSymbol)) {
@@ -282,6 +307,27 @@ final class CoinContextService
             $phaseReasons[] = 'invalid_corridor_range';
         }
 
+        $waveWindowMinutes = max(
+            (int)$config['corridor_window_minutes'],
+            (int)($config['trend_windows_minutes'][count((array)$config['trend_windows_minutes']) - 1] ?? 240),
+            240
+        );
+        $waveMetrics = $this->computeWaveMetrics(
+            $candles,
+            $latestTs,
+            $waveWindowMinutes,
+            $trend1h,
+            $trend2h,
+            $trend4h,
+            $change1h !== null ? (float)$change1h : null,
+            $change2h !== null ? (float)$change2h : null,
+            $phase,
+            $flatThreshold,
+            (int)($flipByWindow[60] ?? 0),
+            (int)($flipByWindow[120] ?? 0),
+            (int)($flipByWindow[240] ?? 0)
+        );
+
         $ctx['context_available'] = true;
         $ctx['context_error'] = null;
         $ctx['trend_1h_direction'] = $trend1h;
@@ -307,6 +353,35 @@ final class CoinContextService
         $ctx['context_phase'] = $phase;
         $ctx['context_quality'] = $quality;
         $ctx['context_reasons'] = array_values(array_unique($phaseReasons));
+        $ctx['wave_context_available'] = (bool)($waveMetrics['wave_context_available'] ?? false);
+        $ctx['wave_window_minutes'] = $waveMetrics['wave_window_minutes'] ?? null;
+        $ctx['trend_flip_count_1h'] = $waveMetrics['trend_flip_count_1h'] ?? null;
+        $ctx['trend_flip_count_2h'] = $waveMetrics['trend_flip_count_2h'] ?? null;
+        $ctx['trend_flip_count_4h'] = $waveMetrics['trend_flip_count_4h'] ?? null;
+        $ctx['avg_time_between_flips_minutes'] = $waveMetrics['avg_time_between_flips_minutes'] ?? null;
+        $ctx['wave_avg_duration_minutes'] = $waveMetrics['wave_avg_duration_minutes'] ?? null;
+        $ctx['wave_median_duration_minutes'] = $waveMetrics['wave_median_duration_minutes'] ?? null;
+        $ctx['wave_amplitude_avg_pct'] = $waveMetrics['wave_amplitude_avg_pct'] ?? null;
+        $ctx['wave_amplitude_median_pct'] = $waveMetrics['wave_amplitude_median_pct'] ?? null;
+        $ctx['wave_noise_score'] = $waveMetrics['wave_noise_score'] ?? null;
+        $ctx['trend_persistence_score'] = $waveMetrics['trend_persistence_score'] ?? null;
+        $ctx['wave_regime'] = (string)($waveMetrics['wave_regime'] ?? 'unknown');
+        $ctx['wave_context_reasons'] = is_array($waveMetrics['wave_context_reasons'] ?? null)
+            ? array_values((array)$waveMetrics['wave_context_reasons'])
+            : [];
+        $ctx['wave_context'] = [
+            'wave_context_available' => (bool)($waveMetrics['wave_context_available'] ?? false),
+            'wave_window_minutes' => $waveMetrics['wave_window_minutes'] ?? null,
+            'trend_flip_count_2h' => $waveMetrics['trend_flip_count_2h'] ?? null,
+            'avg_time_between_flips_minutes' => $waveMetrics['avg_time_between_flips_minutes'] ?? null,
+            'wave_amplitude_avg_pct' => $waveMetrics['wave_amplitude_avg_pct'] ?? null,
+            'wave_noise_score' => $waveMetrics['wave_noise_score'] ?? null,
+            'trend_persistence_score' => $waveMetrics['trend_persistence_score'] ?? null,
+            'wave_regime' => (string)($waveMetrics['wave_regime'] ?? 'unknown'),
+            'wave_context_reasons' => is_array($waveMetrics['wave_context_reasons'] ?? null)
+                ? array_values((array)$waveMetrics['wave_context_reasons'])
+                : [],
+        ];
 
         return $ctx;
     }
@@ -381,6 +456,200 @@ final class CoinContextService
             $lastDir = $dir;
         }
         return $flips;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $candles
+     * @return array<string,mixed>
+     */
+    private function computeWaveMetrics(
+        array $candles,
+        int $latestTs,
+        int $waveWindowMinutes,
+        string $trend1h,
+        string $trend2h,
+        string $trend4h,
+        ?float $change1h,
+        ?float $change2h,
+        string $contextPhase,
+        float $flatThreshold,
+        int $flipCount1h,
+        int $flipCount2h,
+        int $flipCount4h
+    ): array {
+        $result = [
+            'wave_context_available' => false,
+            'wave_window_minutes' => $waveWindowMinutes,
+            'trend_flip_count_1h' => $flipCount1h,
+            'trend_flip_count_2h' => $flipCount2h,
+            'trend_flip_count_4h' => $flipCount4h,
+            'avg_time_between_flips_minutes' => null,
+            'wave_avg_duration_minutes' => null,
+            'wave_median_duration_minutes' => null,
+            'wave_amplitude_avg_pct' => null,
+            'wave_amplitude_median_pct' => null,
+            'wave_noise_score' => null,
+            'trend_persistence_score' => null,
+            'wave_regime' => 'unknown',
+            'wave_context_reasons' => ['insufficient_wave_history'],
+        ];
+
+        $windowCandles = $this->sliceCandlesByWindow($candles, $latestTs, $waveWindowMinutes);
+        if (count($windowCandles) < 20) {
+            return $result;
+        }
+
+        $durations = [];
+        $amplitudes = [];
+        $upMinutes = 0;
+        $downMinutes = 0;
+        $currentDir = 0;
+        $segmentStartTs = 0;
+        $segmentStartClose = null;
+
+        for ($i = 1, $n = count($windowCandles); $i < $n; $i++) {
+            $prevClose = (float)($windowCandles[$i - 1]['close'] ?? 0.0);
+            $currClose = (float)($windowCandles[$i]['close'] ?? 0.0);
+            $prevTs = (int)($windowCandles[$i - 1]['ts'] ?? 0);
+            $currTs = (int)($windowCandles[$i]['ts'] ?? 0);
+            if ($prevClose <= 0.0 || $currClose <= 0.0 || $prevTs <= 0 || $currTs <= 0) {
+                continue;
+            }
+            $dir = $currClose > $prevClose ? 1 : ($currClose < $prevClose ? -1 : 0);
+            if ($dir === 0) {
+                continue;
+            }
+            if ($currentDir === 0) {
+                $currentDir = $dir;
+                $segmentStartTs = $prevTs;
+                $segmentStartClose = $prevClose;
+                continue;
+            }
+            if ($dir !== $currentDir) {
+                $durationMin = max(1, (int)floor(max(0, $prevTs - $segmentStartTs) / 60));
+                $ampPct = ($segmentStartClose !== null && $segmentStartClose > 0.0)
+                    ? abs((($prevClose - $segmentStartClose) / $segmentStartClose) * 100.0)
+                    : 0.0;
+                $durations[] = (float)$durationMin;
+                $amplitudes[] = (float)$ampPct;
+                if ($currentDir > 0) {
+                    $upMinutes += $durationMin;
+                } else {
+                    $downMinutes += $durationMin;
+                }
+                $currentDir = $dir;
+                $segmentStartTs = $prevTs;
+                $segmentStartClose = $prevClose;
+            }
+        }
+
+        if ($currentDir !== 0 && $segmentStartTs > 0 && $segmentStartClose !== null) {
+            $last = $windowCandles[count($windowCandles) - 1];
+            $lastTs = (int)($last['ts'] ?? $latestTs);
+            $lastClose = (float)($last['close'] ?? 0.0);
+            if ($lastTs > 0 && $lastClose > 0.0) {
+                $durationMin = max(1, (int)floor(max(0, $lastTs - $segmentStartTs) / 60));
+                $ampPct = abs((($lastClose - $segmentStartClose) / $segmentStartClose) * 100.0);
+                $durations[] = (float)$durationMin;
+                $amplitudes[] = (float)$ampPct;
+                if ($currentDir > 0) {
+                    $upMinutes += $durationMin;
+                } else {
+                    $downMinutes += $durationMin;
+                }
+            }
+        }
+
+        if ($durations === []) {
+            return $result;
+        }
+
+        $avgDuration = array_sum($durations) / count($durations);
+        $medianDuration = $this->computeMedian($durations);
+        $avgAmplitude = $amplitudes !== [] ? (array_sum($amplitudes) / count($amplitudes)) : null;
+        $medianAmplitude = $amplitudes !== [] ? $this->computeMedian($amplitudes) : null;
+        $totalDirectionalMinutes = max(1.0, (float)($upMinutes + $downMinutes));
+        $dominantDirectionalMinutes = (float)max($upMinutes, $downMinutes);
+        $directionDominance = $dominantDirectionalMinutes / $totalDirectionalMinutes;
+        $flipIntensity = min(1.0, max(0.0, $flipCount2h / 8.0));
+        $trendPersistenceScore = max(0.0, min(1.0, $directionDominance * (1.0 - ($flipIntensity * 0.75))));
+        $waveNoiseScore = max(0.0, min(1.0, ((1.0 - $trendPersistenceScore) * 0.65) + ($flipIntensity * 0.35)));
+        $avgTimeBetweenFlips = $avgDuration;
+
+        $recoveryLike = in_array($contextPhase, ['recovery', 'uptrend'], true)
+            || (($change1h ?? 0.0) > 0.0 && ($change2h ?? 0.0) >= 0.0)
+            || ($trend1h === 'up' && !in_array($trend2h, ['down', 'chaotic'], true));
+
+        $regime = 'unknown';
+        $reasons = [];
+
+        if ($flipCount2h >= 4 && $avgTimeBetweenFlips <= 35.0) {
+            $regime = 'fast_flip_chop';
+            $reasons[] = 'fast_flip_chop_rule';
+        } elseif (
+            $flipCount2h >= 4
+            && $avgTimeBetweenFlips <= 45.0
+            && $avgAmplitude !== null
+            && $avgAmplitude <= max(0.2, $flatThreshold * 1.5)
+        ) {
+            $regime = 'narrow_chop';
+            $reasons[] = 'narrow_chop_small_amplitude';
+        } elseif ($flipCount2h >= 4 && $trendPersistenceScore < 0.45) {
+            $regime = 'chaotic';
+            $reasons[] = 'chaotic_low_persistence';
+        } elseif ($recoveryLike && $trendPersistenceScore >= 0.60 && $avgTimeBetweenFlips >= 45.0) {
+            $regime = 'stable_recovery';
+            $reasons[] = 'stable_recovery_persistence';
+        } elseif ($recoveryLike && $avgTimeBetweenFlips >= 60.0) {
+            $regime = 'slow_wave_trend';
+            $reasons[] = 'slow_wave_trend_timing';
+        } elseif (
+            $avgAmplitude !== null
+            && $avgAmplitude >= max(1.5, $flatThreshold * 3.0)
+            && $flipCount2h >= 2
+            && !in_array($trend4h, ['chaotic', 'unknown'], true)
+        ) {
+            $regime = 'wide_corridor_wave';
+            $reasons[] = 'wide_corridor_amplitude';
+        } elseif ($flipCount2h >= 3 && $avgAmplitude !== null && $avgAmplitude <= max(0.3, $flatThreshold * 1.3)) {
+            $regime = 'narrow_chop';
+            $reasons[] = 'narrow_chop_frequent_small_waves';
+        } elseif ($flipCount2h >= 3 && $trendPersistenceScore < 0.40) {
+            $regime = 'chaotic';
+            $reasons[] = 'chaotic_frequent_flips';
+        } else {
+            $reasons[] = 'wave_regime_unclear';
+        }
+
+        $result['wave_context_available'] = true;
+        $result['avg_time_between_flips_minutes'] = round($avgTimeBetweenFlips, 6);
+        $result['wave_avg_duration_minutes'] = round($avgDuration, 6);
+        $result['wave_median_duration_minutes'] = round($medianDuration, 6);
+        $result['wave_amplitude_avg_pct'] = $avgAmplitude !== null ? round($avgAmplitude, 6) : null;
+        $result['wave_amplitude_median_pct'] = $medianAmplitude !== null ? round($medianAmplitude, 6) : null;
+        $result['wave_noise_score'] = round($waveNoiseScore, 6);
+        $result['trend_persistence_score'] = round($trendPersistenceScore, 6);
+        $result['wave_regime'] = $regime;
+        $result['wave_context_reasons'] = $reasons;
+
+        return $result;
+    }
+
+    /**
+     * @param list<float> $values
+     */
+    private function computeMedian(array $values): float
+    {
+        if ($values === []) {
+            return 0.0;
+        }
+        sort($values, SORT_NUMERIC);
+        $count = count($values);
+        $mid = (int)floor($count / 2);
+        if ($count % 2 === 1) {
+            return (float)$values[$mid];
+        }
+        return ((float)$values[$mid - 1] + (float)$values[$mid]) / 2.0;
     }
 
     private function loadConfig(): array

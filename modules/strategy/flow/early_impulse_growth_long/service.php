@@ -466,10 +466,17 @@ final class EarlyImpulseGrowthLongService
             'coin_context_phase_counts' => [],
             'coin_context_trend_1h_counts' => [],
             'coin_context_quality_counts' => [],
+            'coin_context_wave_available_total' => 0,
+            'coin_context_wave_regime_counts' => [],
+            'coin_context_fast_flip_chop_total' => 0,
+            'coin_context_narrow_chop_total' => 0,
+            'coin_context_stable_recovery_total' => 0,
             'coin_context_examples' => [],
             'wave_quality_filter_checked_total' => 0,
             'wave_quality_filter_blocked_total' => 0,
             'wave_quality_filter_passed_total' => 0,
+            'wave_quality_filter_warning_total' => 0,
+            'wave_quality_filter_generic_chaotic_warning_total' => 0,
             'wave_quality_filter_examples' => [],
             'orderbook_context_checked_total' => 0,
             'orderbook_context_available_total' => 0,
@@ -633,6 +640,22 @@ final class EarlyImpulseGrowthLongService
                 $diag['coin_context_trend_1h_counts'][$ctxTrend1h] = (int)($diag['coin_context_trend_1h_counts'][$ctxTrend1h] ?? 0) + 1;
                 $ctxQuality = (string)($coinContext['context_quality'] ?? 'unknown');
                 $diag['coin_context_quality_counts'][$ctxQuality] = (int)($diag['coin_context_quality_counts'][$ctxQuality] ?? 0) + 1;
+                $waveContextAvailable = (bool)($coinContext['wave_context_available'] ?? false);
+                if ($waveContextAvailable) {
+                    $diag['coin_context_wave_available_total']++;
+                }
+                $waveRegime = strtolower(trim((string)($coinContext['wave_regime'] ?? 'unknown')));
+                if ($waveRegime === '') {
+                    $waveRegime = 'unknown';
+                }
+                $diag['coin_context_wave_regime_counts'][$waveRegime] = (int)($diag['coin_context_wave_regime_counts'][$waveRegime] ?? 0) + 1;
+                if ($waveRegime === 'fast_flip_chop') {
+                    $diag['coin_context_fast_flip_chop_total']++;
+                } elseif ($waveRegime === 'narrow_chop') {
+                    $diag['coin_context_narrow_chop_total']++;
+                } elseif ($waveRegime === 'stable_recovery') {
+                    $diag['coin_context_stable_recovery_total']++;
+                }
                 if (in_array('chaotic_context_quality_downgraded', (array)($coinContext['context_reasons'] ?? []), true)) {
                     $diag['chaotic_context_quality_downgraded_total']++;
                 }
@@ -657,6 +680,13 @@ final class EarlyImpulseGrowthLongService
                         'context_phase' => $coinContext['context_phase'] ?? null,
                         'context_quality' => $coinContext['context_quality'] ?? null,
                         'context_reasons' => $coinContext['context_reasons'] ?? [],
+                        'wave_context_available' => $waveContextAvailable,
+                        'wave_regime' => $coinContext['wave_regime'] ?? null,
+                        'trend_flip_count_2h' => $coinContext['trend_flip_count_2h'] ?? null,
+                        'avg_time_between_flips_minutes' => $coinContext['avg_time_between_flips_minutes'] ?? null,
+                        'wave_amplitude_avg_pct' => $coinContext['wave_amplitude_avg_pct'] ?? null,
+                        'trend_persistence_score' => $coinContext['trend_persistence_score'] ?? null,
+                        'wave_context_reasons' => $coinContext['wave_context_reasons'] ?? [],
                     ];
                 }
 
@@ -677,23 +707,38 @@ final class EarlyImpulseGrowthLongService
                     } else {
                         $diag['wave_quality_filter_blocked_total']++;
                     }
+                    if ((string)($waveQualityFilterRow['severity'] ?? '') === 'warning') {
+                        $diag['wave_quality_filter_warning_total']++;
+                    }
+                    if ((string)($waveQualityFilterRow['reason'] ?? '') === 'generic_chaotic_without_wave_context_allowed') {
+                        $diag['wave_quality_filter_generic_chaotic_warning_total']++;
+                    }
                     if (count($diag['wave_quality_filter_examples']) < 20) {
                         $diag['wave_quality_filter_examples'][] = [
                             'symbol' => $candidate['symbol'] ?? null,
-                            'recovery_phase' => $candidate['recovery_phase'] ?? null,
-                            'entry_timing' => $candidate['entry_timing'] ?? null,
+                            'previous_phase' => $candidate['recovery_phase'] ?? null,
+                            'new_phase' => $candidate['entry_timing'] ?? null,
+                            'watch_status' => $candidate['watch_status'] ?? null,
+                            'phase_block_reason' => $candidate['phase_block_reason'] ?? null,
+                            'stabilization_duration_minutes' => $candidate['stabilization_duration_minutes'] ?? null,
                             'smooth_growth_pct' => $candidate['smooth_growth_pct'] ?? null,
                             'open_interest_growth_pct' => $candidate['open_interest_growth_pct'] ?? null,
+                            'combined_recovery_score' => $candidate['combined_recovery_score'] ?? null,
+                            'recheck_count' => $candidate['recheck_count'] ?? null,
+                            'selected_rank' => $candidate['selected_rank'] ?? null,
                             'context_phase' => $coinContext['context_phase'] ?? null,
                             'context_quality' => $coinContext['context_quality'] ?? null,
                             'context_reasons' => $coinContext['context_reasons'] ?? [],
                             'trend_1h_direction' => $coinContext['trend_1h_direction'] ?? null,
                             'trend_2h_direction' => $coinContext['trend_2h_direction'] ?? null,
-                            'filter_result' => [
-                                'passed' => (bool)($waveQualityFilterRow['passed'] ?? false),
-                                'reason' => (string)($waveQualityFilterRow['reason'] ?? ''),
-                                'severity' => (string)($waveQualityFilterRow['severity'] ?? ''),
-                            ],
+                            'wave_regime' => $coinContext['wave_regime'] ?? null,
+                            'trend_flip_count_2h' => $coinContext['trend_flip_count_2h'] ?? null,
+                            'avg_time_between_flips_minutes' => $coinContext['avg_time_between_flips_minutes'] ?? null,
+                            'wave_amplitude_avg_pct' => $coinContext['wave_amplitude_avg_pct'] ?? null,
+                            'trend_persistence_score' => $coinContext['trend_persistence_score'] ?? null,
+                            'filter_result' => (bool)($waveQualityFilterRow['passed'] ?? false) ? 'passed' : 'blocked',
+                            'filter_result_reason' => (string)($waveQualityFilterRow['reason'] ?? ''),
+                            'filter_result_severity' => (string)($waveQualityFilterRow['severity'] ?? ''),
                             'handoff_ready' => (bool)($candidate['handoff_ready'] ?? false),
                             'handoff_block_reason' => $candidate['handoff_block_reason'] ?? null,
                         ];
@@ -1577,10 +1622,17 @@ final class EarlyImpulseGrowthLongService
             'coin_context_phase_counts' => $diag['coin_context_phase_counts'],
             'coin_context_trend_1h_counts' => $diag['coin_context_trend_1h_counts'],
             'coin_context_quality_counts' => $diag['coin_context_quality_counts'],
+            'coin_context_wave_available_total' => $diag['coin_context_wave_available_total'],
+            'coin_context_wave_regime_counts' => $diag['coin_context_wave_regime_counts'],
+            'coin_context_fast_flip_chop_total' => $diag['coin_context_fast_flip_chop_total'],
+            'coin_context_narrow_chop_total' => $diag['coin_context_narrow_chop_total'],
+            'coin_context_stable_recovery_total' => $diag['coin_context_stable_recovery_total'],
             'coin_context_examples' => $diag['coin_context_examples'],
             'wave_quality_filter_checked_total' => $diag['wave_quality_filter_checked_total'],
             'wave_quality_filter_blocked_total' => $diag['wave_quality_filter_blocked_total'],
             'wave_quality_filter_passed_total' => $diag['wave_quality_filter_passed_total'],
+            'wave_quality_filter_warning_total' => $diag['wave_quality_filter_warning_total'],
+            'wave_quality_filter_generic_chaotic_warning_total' => $diag['wave_quality_filter_generic_chaotic_warning_total'],
             'wave_quality_filter_examples' => $diag['wave_quality_filter_examples'],
             'orderbook_context_enabled' => $diag['orderbook_context_checked_total'] > 0,
             'orderbook_context_checked_total' => $diag['orderbook_context_checked_total'],
@@ -2140,6 +2192,16 @@ final class EarlyImpulseGrowthLongService
             'coin_context_corridor_position_pct' => null,
             'coin_context_room_to_recent_high_pct' => null,
             'coin_context_distance_from_recent_low_pct' => null,
+            'wave_context' => null,
+            'wave_context_available' => null,
+            'wave_window_minutes' => null,
+            'trend_flip_count_2h' => null,
+            'avg_time_between_flips_minutes' => null,
+            'wave_amplitude_avg_pct' => null,
+            'wave_noise_score' => null,
+            'trend_persistence_score' => null,
+            'wave_regime' => null,
+            'wave_context_reasons' => [],
             'orderbook_context' => null,
             'orderbook_context_available' => null,
             'orderbook_context_error' => null,
@@ -2198,6 +2260,18 @@ final class EarlyImpulseGrowthLongService
             $candidate['coin_context_corridor_position_pct'] = $coinContext['corridor_position_pct'] ?? null;
             $candidate['coin_context_room_to_recent_high_pct'] = $coinContext['room_to_recent_high_pct'] ?? null;
             $candidate['coin_context_distance_from_recent_low_pct'] = $coinContext['distance_from_recent_low_pct'] ?? null;
+            $candidate['wave_context'] = is_array($coinContext['wave_context'] ?? null) ? (array)$coinContext['wave_context'] : null;
+            $candidate['wave_context_available'] = $coinContext['wave_context_available'] ?? ($coinContext['wave_context']['wave_context_available'] ?? null);
+            $candidate['wave_window_minutes'] = $coinContext['wave_window_minutes'] ?? ($coinContext['wave_context']['wave_window_minutes'] ?? null);
+            $candidate['trend_flip_count_2h'] = $coinContext['trend_flip_count_2h'] ?? ($coinContext['wave_context']['trend_flip_count_2h'] ?? null);
+            $candidate['avg_time_between_flips_minutes'] = $coinContext['avg_time_between_flips_minutes'] ?? ($coinContext['wave_context']['avg_time_between_flips_minutes'] ?? null);
+            $candidate['wave_amplitude_avg_pct'] = $coinContext['wave_amplitude_avg_pct'] ?? ($coinContext['wave_context']['wave_amplitude_avg_pct'] ?? null);
+            $candidate['wave_noise_score'] = $coinContext['wave_noise_score'] ?? ($coinContext['wave_context']['wave_noise_score'] ?? null);
+            $candidate['trend_persistence_score'] = $coinContext['trend_persistence_score'] ?? ($coinContext['wave_context']['trend_persistence_score'] ?? null);
+            $candidate['wave_regime'] = $coinContext['wave_regime'] ?? ($coinContext['wave_context']['wave_regime'] ?? null);
+            $candidate['wave_context_reasons'] = is_array($coinContext['wave_context_reasons'] ?? null)
+                ? (array)$coinContext['wave_context_reasons']
+                : (is_array($coinContext['wave_context']['wave_context_reasons'] ?? null) ? (array)$coinContext['wave_context']['wave_context_reasons'] : []);
         }
 
         $filterEval = [
@@ -2295,6 +2369,15 @@ final class EarlyImpulseGrowthLongService
                 'coin_context_reasons' => $candidate['coin_context_reasons'] ?? [],
                 'coin_context_trend_1h_direction' => $candidate['coin_context_trend_1h_direction'] ?? null,
                 'coin_context_trend_2h_direction' => $candidate['coin_context_trend_2h_direction'] ?? null,
+                'wave_context' => $candidate['wave_context'] ?? null,
+                'wave_context_available' => $candidate['wave_context_available'] ?? null,
+                'wave_regime' => $candidate['wave_regime'] ?? null,
+                'trend_flip_count_2h' => $candidate['trend_flip_count_2h'] ?? null,
+                'avg_time_between_flips_minutes' => $candidate['avg_time_between_flips_minutes'] ?? null,
+                'wave_amplitude_avg_pct' => $candidate['wave_amplitude_avg_pct'] ?? null,
+                'wave_noise_score' => $candidate['wave_noise_score'] ?? null,
+                'trend_persistence_score' => $candidate['trend_persistence_score'] ?? null,
+                'wave_context_reasons' => $candidate['wave_context_reasons'] ?? [],
                 'orderbook_context' => $candidate['orderbook_context'] ?? null,
                 'orderbook_context_available' => $candidate['orderbook_context_available'] ?? null,
                 'nearest_ask_wall_distance_pct' => $candidate['nearest_ask_wall_distance_pct'] ?? null,
@@ -2341,7 +2424,18 @@ final class EarlyImpulseGrowthLongService
             $signal['coin_context_corridor_position_pct'] = $candidate['coin_context_corridor_position_pct'];
             $signal['coin_context_room_to_recent_high_pct'] = $candidate['coin_context_room_to_recent_high_pct'];
             $signal['coin_context_distance_from_recent_low_pct'] = $candidate['coin_context_distance_from_recent_low_pct'];
+            $signal['wave_context'] = $candidate['wave_context'];
+            $signal['wave_context_available'] = $candidate['wave_context_available'];
+            $signal['wave_window_minutes'] = $candidate['wave_window_minutes'];
+            $signal['trend_flip_count_2h'] = $candidate['trend_flip_count_2h'];
+            $signal['avg_time_between_flips_minutes'] = $candidate['avg_time_between_flips_minutes'];
+            $signal['wave_amplitude_avg_pct'] = $candidate['wave_amplitude_avg_pct'];
+            $signal['wave_noise_score'] = $candidate['wave_noise_score'];
+            $signal['trend_persistence_score'] = $candidate['trend_persistence_score'];
+            $signal['wave_regime'] = $candidate['wave_regime'];
+            $signal['wave_context_reasons'] = $candidate['wave_context_reasons'];
             $signal['strategy_signal_context']['coin_context'] = $candidate['coin_context'];
+            $signal['strategy_signal_context']['wave_context'] = $candidate['wave_context'];
         }
 
         return [
@@ -3880,6 +3974,31 @@ final class EarlyImpulseGrowthLongService
             'context_phase' => 'unknown',
             'context_quality' => 'unknown',
             'context_reasons' => ['coin_context_unavailable'],
+            'wave_context_available' => false,
+            'wave_window_minutes' => null,
+            'trend_flip_count_1h' => null,
+            'trend_flip_count_2h' => null,
+            'trend_flip_count_4h' => null,
+            'avg_time_between_flips_minutes' => null,
+            'wave_avg_duration_minutes' => null,
+            'wave_median_duration_minutes' => null,
+            'wave_amplitude_avg_pct' => null,
+            'wave_amplitude_median_pct' => null,
+            'wave_noise_score' => null,
+            'trend_persistence_score' => null,
+            'wave_regime' => 'unknown',
+            'wave_context_reasons' => ['wave_context_unavailable'],
+            'wave_context' => [
+                'wave_context_available' => false,
+                'wave_window_minutes' => null,
+                'trend_flip_count_2h' => null,
+                'avg_time_between_flips_minutes' => null,
+                'wave_amplitude_avg_pct' => null,
+                'wave_noise_score' => null,
+                'trend_persistence_score' => null,
+                'wave_regime' => 'unknown',
+                'wave_context_reasons' => ['wave_context_unavailable'],
+            ],
         ];
 
         if (!(bool)($config['coin_context_enabled'] ?? true)) {

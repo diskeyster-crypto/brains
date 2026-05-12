@@ -101,11 +101,16 @@ return [
     'eig_filter_orderbook_wall_filter_block_if_orderbook_missing' => false,
     'eig_filter_wave_quality_filter_enabled' => true,
     'eig_filter_wave_quality_filter_severity' => 'hard_block',
+    'eig_filter_wave_quality_filter_block_regimes' => 'fast_flip_chop,narrow_chop,chaotic',
+    'eig_filter_wave_quality_filter_min_avg_time_between_flips_minutes' => 45,
+    'eig_filter_wave_quality_filter_max_trend_flip_count_2h' => 4,
+    'eig_filter_wave_quality_filter_min_trend_persistence_score' => 0.45,
+    'eig_filter_wave_quality_filter_allow_unknown_context' => true,
+    'eig_filter_wave_quality_filter_block_generic_chaotic_without_wave_context' => false,
     'eig_filter_wave_quality_filter_block_context_phases' => 'chaotic,spike,downtrend',
     'eig_filter_wave_quality_filter_block_context_reasons' => 'too_many_direction_flips,downward_trend_confirmed,spike_threshold_10m',
     'eig_filter_wave_quality_filter_block_trend_1h_directions' => 'chaotic,down',
     'eig_filter_wave_quality_filter_require_trend_2h_confirmation' => true,
-    'eig_filter_wave_quality_filter_allow_unknown_context' => true,
 
     // Coin context (diagnostic-only enrichment)
     'coin_context_enabled' => true,

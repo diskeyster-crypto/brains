@@ -9,14 +9,27 @@ final class DlMarketData
     private string $repoRoot;
     /** @var array<string,mixed> */
     private array $cfg;
-    /** @var array<string,array<int,array<string,mixed>>> */
+    /**
+     * Filtered cache: symbol|entryTs|lookbackMinutes → filtered candle list.
+     * Hit counted as bybit_kline_cache_hit_total.
+     * @var array<string,list<array<string,mixed>>>
+     */
     private array $cache = [];
+    /**
+     * Raw fetch cache: symbol|entryTs|interval|limit → {candles, source}.
+     * Hit counted as bybit_kline_reused_window_total.
+     * @var array<string,array{candles:list<array<string,mixed>>,source:string}>
+     */
+    private array $rawCache = [];
     /** @var array<string,mixed> */
     private array $stats = [
         'bybit_kline_requests_total' => 0,
         'bybit_kline_success_total' => 0,
         'bybit_kline_error_total' => 0,
         'bybit_kline_cache_hit_total' => 0,
+        'bybit_kline_unique_fetch_total' => 0,
+        'bybit_kline_reused_window_total' => 0,
+        'bybit_kline_fetch_cache_key_mode' => 'symbol_entry_interval_limit',
         'parser2_fallback_used_total' => 0,
         'micro_data_missing_total' => 0,
     ];
@@ -35,6 +48,15 @@ final class DlMarketData
     }
 
     /**
+     * Returns candles <= entryTs within lookbackMinutes.
+     *
+     * Two-tier cache:
+     * 1. Filtered cache (symbol|entryTs|lookbackMinutes) — exact window hit, no re-fetch.
+     * 2. Raw fetch cache (symbol|entryTs|interval|limit) — reuse the same full Bybit pull
+     *    for different lookback windows of the same symbol+entry.
+     *
+     * This reduces Bybit HTTP requests from ~4× per feature record to ~1× per feature record.
+     *
      * @return array{candles:list<array<string,mixed>>,source:string,missing_reason:?string}
      */
     public function getCandlesBeforeEntry(string $symbol, int $entryTs, int $lookbackMinutes, int $minCandles = 3): array
@@ -45,49 +67,67 @@ final class DlMarketData
             return ['candles' => [], 'source' => 'none', 'missing_reason' => 'parser2_history_missing'];
         }
 
-        $cacheKey = implode('|', [$normalized, (string)$entryTs, (string)$lookbackMinutes]);
-        if (isset($this->cache[$cacheKey])) {
+        $interval = (string)($this->cfg['bybit_kline_interval'] ?? '1');
+        $limit = max(20, min(1000, (int)($this->cfg['bybit_kline_limit'] ?? 120)));
+
+        // 1. Filtered cache: exact window already computed
+        $filteredCacheKey = implode('|', [$normalized, (string)$entryTs, (string)$lookbackMinutes]);
+        if (isset($this->cache[$filteredCacheKey])) {
             $this->stats['bybit_kline_cache_hit_total']++;
-            return ['candles' => $this->cache[$cacheKey], 'source' => 'cache', 'missing_reason' => null];
+            return ['candles' => $this->cache[$filteredCacheKey], 'source' => 'cache', 'missing_reason' => null];
         }
 
-        $candles = [];
+        // 2. Raw fetch cache: same symbol+entry but different window — reuse and filter locally
+        $rawCacheKey = implode('|', [$normalized, (string)$entryTs, $interval, (string)$limit]);
         $source = 'none';
 
-        $primary = strtolower((string)($this->cfg['micro_data_source_primary'] ?? 'bybit'));
-        $fallback = strtolower((string)($this->cfg['micro_data_source_fallback'] ?? 'parser2'));
+        if (isset($this->rawCache[$rawCacheKey])) {
+            $rawEntry = $this->rawCache[$rawCacheKey];
+            $rawCandles = $rawEntry['candles'];
+            $source = $rawEntry['source'];
+            $this->stats['bybit_kline_reused_window_total']++;
+        } else {
+            // 3. Actual fetch (Bybit → parser2 fallback)
+            $primary = strtolower((string)($this->cfg['micro_data_source_primary'] ?? 'bybit'));
+            $fallback = strtolower((string)($this->cfg['micro_data_source_fallback'] ?? 'parser2'));
 
-        if ($primary === 'bybit' && (bool)($this->cfg['bybit_micro_fetch_enabled'] ?? true)) {
-            $candles = $this->fetchBybitCandles($normalized, $entryTs);
-            if (count($candles) >= $minCandles) {
-                $source = 'bybit';
+            $rawCandles = [];
+            if ($primary === 'bybit' && (bool)($this->cfg['bybit_micro_fetch_enabled'] ?? true)) {
+                $rawCandles = $this->fetchBybitCandles($normalized, $entryTs);
+                if (count($rawCandles) >= $minCandles) {
+                    $source = 'bybit';
+                }
             }
+
+            if (count($rawCandles) < $minCandles && $fallback === 'parser2') {
+                // Use the full bybit limit as lookback for parser2 so all windows are covered
+                $fallbackCandles = $this->loadParser2Candles($normalized, $entryTs, $limit);
+                if (count($fallbackCandles) >= $minCandles) {
+                    $rawCandles = $fallbackCandles;
+                    $source = 'parser2';
+                    $this->stats['parser2_fallback_used_total']++;
+                }
+            }
+
+            $this->rawCache[$rawCacheKey] = ['candles' => $rawCandles, 'source' => $source];
         }
 
-        if (count($candles) < $minCandles && $fallback === 'parser2') {
-            $fallbackCandles = $this->loadParser2Candles($normalized, $entryTs, $lookbackMinutes);
-            if (count($fallbackCandles) >= $minCandles) {
-                $candles = $fallbackCandles;
-                $source = 'parser2';
-                $this->stats['parser2_fallback_used_total']++;
-            }
+        if (count($rawCandles) < $minCandles) {
+            $this->stats['micro_data_missing_total']++;
+            return ['candles' => [], 'source' => 'none', 'missing_reason' => 'parser2_history_missing'];
         }
+
+        // Filter to the requested lookback window
+        $startTs = $entryTs - max(1, $lookbackMinutes) * 60;
+        $candles = array_values(array_filter($rawCandles, static fn(array $c): bool => (int)($c['ts'] ?? 0) <= $entryTs && (int)($c['ts'] ?? 0) >= $startTs));
+        usort($candles, static fn(array $a, array $b): int => ((int)$a['ts']) <=> ((int)$b['ts']));
 
         if (count($candles) < $minCandles) {
             $this->stats['micro_data_missing_total']++;
             return ['candles' => [], 'source' => 'none', 'missing_reason' => 'parser2_history_missing'];
         }
 
-        $startTs = $entryTs - max(1, $lookbackMinutes) * 60;
-        $candles = array_values(array_filter($candles, static fn(array $c): bool => (int)($c['ts'] ?? 0) <= $entryTs && (int)($c['ts'] ?? 0) >= $startTs));
-        usort($candles, static fn(array $a, array $b): int => ((int)$a['ts']) <=> ((int)$b['ts']));
-
-        if ($candles === []) {
-            $this->stats['micro_data_missing_total']++;
-            return ['candles' => [], 'source' => 'none', 'missing_reason' => 'parser2_history_missing'];
-        }
-
-        $this->cache[$cacheKey] = $candles;
+        $this->cache[$filteredCacheKey] = $candles;
         return ['candles' => $candles, 'source' => $source, 'missing_reason' => null];
     }
 
@@ -100,6 +140,7 @@ final class DlMarketData
         $interval = (string)($this->cfg['bybit_kline_interval'] ?? '1');
 
         $this->stats['bybit_kline_requests_total']++;
+        $this->stats['bybit_kline_unique_fetch_total']++;
 
         $url = $baseUrl . '/v5/market/kline?' . http_build_query([
             'category' => 'linear',

@@ -134,6 +134,9 @@ final class DynamicLearningService
             'bybit_kline_success_total' => 0,
             'bybit_kline_error_total' => 0,
             'bybit_kline_cache_hit_total' => 0,
+            'bybit_kline_unique_fetch_total' => 0,
+            'bybit_kline_reused_window_total' => 0,
+            'bybit_kline_fetch_cache_key_mode' => 'symbol_entry_interval_limit',
             'parser2_fallback_used_total' => 0,
             'micro_data_missing_total' => 0,
             'micro_impulse_shape_counts' => [],
@@ -156,6 +159,14 @@ final class DynamicLearningService
             'auto_not_worse_than_default' => false,
             'auto_improvement_score' => null,
             'auto_comparison_reason' => null,
+            'micro_learning_epoch_enabled' => false,
+            'micro_learning_epoch_id' => null,
+            'micro_learning_epoch_start_at' => null,
+            'legacy_outcomes_total' => 0,
+            'epoch_outcomes_total' => 0,
+            'outcomes_excluded_by_epoch_total' => 0,
+            'epoch_start_source' => null,
+            'epoch_start_missing_reason' => null,
             'storage_pruned_total' => 0,
             'storage_size_estimate_mb' => null,
             'storage_prune_examples' => [],
@@ -257,6 +268,9 @@ final class DynamicLearningService
             $result['bybit_kline_success_total'] = (int)($featureResult['bybit_kline_success_total'] ?? 0);
             $result['bybit_kline_error_total'] = (int)($featureResult['bybit_kline_error_total'] ?? 0);
             $result['bybit_kline_cache_hit_total'] = (int)($featureResult['bybit_kline_cache_hit_total'] ?? 0);
+            $result['bybit_kline_unique_fetch_total'] = (int)($featureResult['bybit_kline_unique_fetch_total'] ?? 0);
+            $result['bybit_kline_reused_window_total'] = (int)($featureResult['bybit_kline_reused_window_total'] ?? 0);
+            $result['bybit_kline_fetch_cache_key_mode'] = (string)($featureResult['bybit_kline_fetch_cache_key_mode'] ?? 'symbol_entry_interval_limit');
             $result['parser2_fallback_used_total'] = (int)($featureResult['parser2_fallback_used_total'] ?? 0);
             $result['micro_data_missing_total'] = (int)($featureResult['micro_data_missing_total'] ?? 0);
             $result['micro_impulse_shape_counts'] = (array)($featureResult['micro_impulse_shape_counts'] ?? []);
@@ -271,15 +285,33 @@ final class DynamicLearningService
             $result['weighted_score_calculated_total'] = $featureResult['weighted_score_calculated_total'];
         }
 
+        // 4b. Micro-learning epoch filter — exclude pre-epoch outcomes from profile/pattern mining
+        $epochFilter = $this->applyMicroLearningEpoch($cfg, $outcomes);
+        $result['micro_learning_epoch_enabled'] = (bool)($epochFilter['epoch_enabled'] ?? false);
+        $result['micro_learning_epoch_id'] = $epochFilter['epoch_id'] ?? null;
+        $result['micro_learning_epoch_start_at'] = $epochFilter['epoch_start_at'] ?? null;
+        $result['legacy_outcomes_total'] = (int)($epochFilter['legacy_outcomes_total'] ?? 0);
+        $result['epoch_outcomes_total'] = (int)($epochFilter['epoch_outcomes_total'] ?? 0);
+        $result['outcomes_excluded_by_epoch_total'] = (int)($epochFilter['outcomes_excluded_by_epoch_total'] ?? 0);
+        $result['epoch_start_source'] = $epochFilter['epoch_start_source'] ?? null;
+        $result['epoch_start_missing_reason'] = $epochFilter['epoch_start_missing_reason'] ?? null;
+        $patternMiningOutcomes = $epochFilter['pattern_mining'];
+
         // 5. Pattern mining
-        $patterns = PatternMiner::mine($outcomes['pattern_mining'], $cfg, (array)($featureResult['feature_by_snapshot'] ?? []));
+        $patterns = PatternMiner::mine($patternMiningOutcomes, $cfg, (array)($featureResult['feature_by_snapshot'] ?? []));
         $this->writeJson($this->storagePath('patterns/bad_patterns.json'), $patterns['bad_patterns']);
         $this->writeJson($this->storagePath('patterns/pattern_stats.json'), $patterns['all']);
         $result['bad_patterns_total'] = count($patterns['all']);
         $result['top_bad_pattern_examples'] = array_slice($patterns['all'], 0, 10);
 
         // 6. Profile building
-        $profile = ProfileBuilder::build($cfg, $outcomes['pattern_mining'], $patterns['all'], fn(string $f): string => $this->storagePath($f));
+        $epochMeta = [
+            'micro_learning_epoch_id' => $epochFilter['epoch_id'] ?? null,
+            'micro_learning_epoch_start_at' => $epochFilter['epoch_start_at'] ?? null,
+            'legacy_outcomes_total' => (int)($epochFilter['legacy_outcomes_total'] ?? 0),
+            'outcomes_excluded_by_epoch_total' => (int)($epochFilter['outcomes_excluded_by_epoch_total'] ?? 0),
+        ];
+        $profile = ProfileBuilder::build($cfg, $patternMiningOutcomes, $patterns['all'], fn(string $f): string => $this->storagePath($f), $epochMeta);
         $result['profile_generated'] = true;
         $result['profile_id'] = $profile['profile_id'];
         $result['profile_rules_total'] = count($profile['rules']);
@@ -1214,6 +1246,138 @@ final class DynamicLearningService
         return $tb - $ta;
     }
 
+    /**
+     * Filter pattern-mining outcomes by micro-learning epoch.
+     *
+     * When micro_learning_epoch_enabled + micro_learning_ignore_legacy_outcomes_before_epoch are set:
+     *   - Outcomes with opened_at < epoch_start_at are counted as legacy and excluded from
+     *     pattern mining / profile building. They remain in storage (closed_outcomes.json) untouched.
+     *
+     * Epoch start is derived (in order):
+     *   1. micro_learning_epoch_start_at config (explicit timestamp/iso)
+     *   2. reset_marker.json reset_at
+     *   3. manual_reset_epoch config
+     *   4. Missing → no exclusion, epoch_start_missing_reason set.
+     *
+     * @param array<string,mixed> $cfg
+     * @param array{pattern_mining:list<array<string,mixed>>,...} $outcomes
+     * @return array{epoch_enabled:bool,epoch_id:?string,epoch_start_at:?string,legacy_outcomes_total:int,epoch_outcomes_total:int,outcomes_excluded_by_epoch_total:int,epoch_start_source:string,epoch_start_missing_reason:?string,pattern_mining:list<array<string,mixed>>}
+     */
+    private function applyMicroLearningEpoch(array $cfg, array $outcomes): array
+    {
+        $patternMining = $outcomes['pattern_mining'] ?? [];
+        $noFilter = [
+            'epoch_enabled' => false,
+            'epoch_id' => null,
+            'epoch_start_at' => null,
+            'legacy_outcomes_total' => 0,
+            'epoch_outcomes_total' => count($patternMining),
+            'outcomes_excluded_by_epoch_total' => 0,
+            'epoch_start_source' => 'not_enabled',
+            'epoch_start_missing_reason' => null,
+            'pattern_mining' => $patternMining,
+        ];
+
+        if (!(bool)($cfg['micro_learning_epoch_enabled'] ?? false)) {
+            return $noFilter;
+        }
+        if (!(bool)($cfg['micro_learning_ignore_legacy_outcomes_before_epoch'] ?? true)) {
+            return $noFilter + ['epoch_enabled' => true, 'epoch_start_source' => 'ignore_disabled'];
+        }
+
+        // Determine epoch start timestamp
+        $epochStartTs = 0;
+        $epochStartSource = 'config';
+
+        $configuredEpoch = $cfg['micro_learning_epoch_start_at'] ?? null;
+        if ($configuredEpoch !== null && $configuredEpoch !== '') {
+            if (is_numeric($configuredEpoch)) {
+                $ts = (float)$configuredEpoch;
+                if ($ts > 1_000_000_000_000) {
+                    $ts /= 1000.0;
+                }
+                $epochStartTs = (int)round($ts);
+            } else {
+                $epochStartTs = strtotime((string)$configuredEpoch) ?: 0;
+            }
+            $epochStartSource = 'config';
+        }
+
+        if ($epochStartTs <= 0) {
+            $markerRel = trim((string)($cfg['storage_reset_marker_file'] ?? 'storage/reset_marker.json'));
+            $markerPath = str_starts_with($markerRel, '/')
+                ? $markerRel
+                : $this->moduleDir . '/' . ltrim($markerRel, '/');
+            $marker = (array)$this->readJson($markerPath, []);
+            $markerResetAt = strtotime((string)($marker['reset_at'] ?? '')) ?: 0;
+            if ($markerResetAt > 0) {
+                $epochStartTs = $markerResetAt;
+                $epochStartSource = 'reset_marker';
+            }
+        }
+
+        if ($epochStartTs <= 0) {
+            $manualEpoch = $cfg['manual_reset_epoch'] ?? null;
+            if (is_numeric($manualEpoch) && (float)$manualEpoch > 0) {
+                $ts = (float)$manualEpoch;
+                if ($ts > 1_000_000_000_000) {
+                    $ts /= 1000.0;
+                }
+                $epochStartTs = (int)round($ts);
+                $epochStartSource = 'manual_reset_epoch_config';
+            }
+        }
+
+        if ($epochStartTs <= 0) {
+            return [
+                'epoch_enabled' => true,
+                'epoch_id' => null,
+                'epoch_start_at' => null,
+                'legacy_outcomes_total' => 0,
+                'epoch_outcomes_total' => count($patternMining),
+                'outcomes_excluded_by_epoch_total' => 0,
+                'epoch_start_source' => 'epoch_start_missing',
+                'epoch_start_missing_reason' => 'no_epoch_start_derivable',
+                'pattern_mining' => $patternMining,
+            ];
+        }
+
+        // Derive epoch_id
+        $epochIdConfig = trim((string)($cfg['micro_learning_epoch_id'] ?? 'auto'));
+        if ($epochIdConfig === '' || $epochIdConfig === 'auto' || $epochIdConfig === 'auto_from_reset_or_manual') {
+            $epochId = 'epoch_' . gmdate('Ymd_His', $epochStartTs);
+        } else {
+            $epochId = $epochIdConfig;
+        }
+
+        $epochStartIso = gmdate('c', $epochStartTs);
+
+        // Partition outcomes into epoch and legacy
+        $epochOutcomes = [];
+        $legacyCount = 0;
+        foreach ($patternMining as $o) {
+            $openedAtStr = (string)($o['opened_at'] ?? $o['learning_opened_at'] ?? '');
+            $openedAtTs = $openedAtStr !== '' ? (strtotime($openedAtStr) ?: 0) : 0;
+            if ($openedAtTs === 0 || $openedAtTs >= $epochStartTs) {
+                $epochOutcomes[] = $o;
+            } else {
+                $legacyCount++;
+            }
+        }
+
+        return [
+            'epoch_enabled' => true,
+            'epoch_id' => $epochId,
+            'epoch_start_at' => $epochStartIso,
+            'legacy_outcomes_total' => $legacyCount,
+            'epoch_outcomes_total' => count($epochOutcomes),
+            'outcomes_excluded_by_epoch_total' => $legacyCount,
+            'epoch_start_source' => $epochStartSource,
+            'epoch_start_missing_reason' => null,
+            'pattern_mining' => $epochOutcomes,
+        ];
+    }
+
     private function isEigl(array $row, string $strategyId): bool
     {
         $sid = strtolower(trim((string)($row['strategy_id'] ?? $row['owner_strategy'] ?? '')));
@@ -1546,6 +1710,9 @@ final class DynamicLearningService
         $result['bybit_kline_success_total'] = (int)($mdStats['bybit_kline_success_total'] ?? 0);
         $result['bybit_kline_error_total'] = (int)($mdStats['bybit_kline_error_total'] ?? 0);
         $result['bybit_kline_cache_hit_total'] = (int)($mdStats['bybit_kline_cache_hit_total'] ?? 0);
+        $result['bybit_kline_unique_fetch_total'] = (int)($mdStats['bybit_kline_unique_fetch_total'] ?? 0);
+        $result['bybit_kline_reused_window_total'] = (int)($mdStats['bybit_kline_reused_window_total'] ?? 0);
+        $result['bybit_kline_fetch_cache_key_mode'] = (string)($mdStats['bybit_kline_fetch_cache_key_mode'] ?? 'symbol_entry_interval_limit');
         $result['parser2_fallback_used_total'] = (int)($mdStats['parser2_fallback_used_total'] ?? 0);
         $result['micro_data_missing_total'] = (int)($mdStats['micro_data_missing_total'] ?? 0);
 

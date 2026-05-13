@@ -80,6 +80,12 @@ return [
     'dump_micro_lookback_minutes' => 60,
     'dump_micro_min_candles' => 10,
 
+    // Micro-learning epoch: separate pre-reset outcomes from new post-reset micro features
+    'micro_learning_epoch_enabled' => true,
+    'micro_learning_epoch_id' => 'auto',
+    'micro_learning_ignore_legacy_outcomes_before_epoch' => true,
+    'micro_learning_epoch_start_at' => null,
+
     // Supported strategies
     'supported_strategy_ids' => ['early_impulse_growth_long'],
     'active_strategy_id' => 'early_impulse_growth_long',

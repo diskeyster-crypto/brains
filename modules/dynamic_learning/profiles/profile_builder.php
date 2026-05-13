@@ -18,12 +18,13 @@ final class ProfileBuilder
      * Build a candidate profile and write it to storage.
      *
      * @param array<string,mixed> $cfg
-     * @param array<array<string,mixed>> $outcomes Pattern-mining-eligible outcomes
+     * @param array<array<string,mixed>> $outcomes Pattern-mining-eligible outcomes (epoch-filtered when epoch is enabled)
      * @param array<array<string,mixed>> $patterns Mined pattern rows
      * @param callable(string):string $storagePath Function to resolve storage paths
+     * @param array<string,mixed> $epochMeta Optional epoch metadata to embed in the profile
      * @return array{profile_id:string,rules:list<array<string,mixed>>,quarantined:list<array<string,mixed>>}
      */
-    public static function build(array $cfg, array $outcomes, array $patterns, callable $storagePath): array
+    public static function build(array $cfg, array $outcomes, array $patterns, callable $storagePath, array $epochMeta = []): array
     {
         $profileId = 'dl_eigl_' . gmdate('Ymd_His');
         $rules = [];
@@ -69,8 +70,12 @@ final class ProfileBuilder
             'profile_id' => $profileId,
             'strategy_id' => 'early_impulse_growth_long',
             'created_at' => date('c'),
+            'micro_learning_epoch_id' => $epochMeta['micro_learning_epoch_id'] ?? null,
+            'micro_learning_epoch_start_at' => $epochMeta['micro_learning_epoch_start_at'] ?? null,
             'source_window' => ['closed_outcomes_total' => count($outcomes)],
             'source_outcomes_total' => count($outcomes),
+            'legacy_outcomes_total' => (int)($epochMeta['legacy_outcomes_total'] ?? 0),
+            'outcomes_excluded_by_epoch_total' => (int)($epochMeta['outcomes_excluded_by_epoch_total'] ?? 0),
             'feature_records_total' => 0,
             'trades_total' => count($outcomes),
             'bad_entries_total' => count(array_filter($outcomes, static fn(array $o): bool => (string)($o['outcome_class'] ?? '') === 'bad_entry')),

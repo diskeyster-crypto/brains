@@ -127,8 +127,60 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-weight:600;"><?= $e((int)($run['bybit_kline_success_total'] ?? 0)) ?></div>
     </div>
     <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">bybit_kline_unique_fetch_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['bybit_kline_unique_fetch_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">bybit_kline_reused_window_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['bybit_kline_reused_window_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">bybit_kline_cache_hit_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['bybit_kline_cache_hit_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">bybit_kline_fetch_cache_key_mode</div>
+      <div style="font-weight:600;"><?= $e((string)($run['bybit_kline_fetch_cache_key_mode'] ?? 'n/a')) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">parser2_fallback_used_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['parser2_fallback_used_total'] ?? 0)) ?></div>
+    </div>
+  </div>
+
+  <!-- Micro-learning epoch diagnostics -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+    <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">micro_learning_epoch_enabled</div>
+      <div style="font-weight:600;"><?= $e((bool)($run['micro_learning_epoch_enabled'] ?? false) ? 'true' : 'false') ?></div>
+    </div>
+    <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">micro_learning_epoch_id</div>
+      <div style="font-weight:600;"><?= $e((string)($run['micro_learning_epoch_id'] ?? 'n/a')) ?></div>
+    </div>
+    <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">micro_learning_epoch_start_at</div>
+      <div style="font-weight:600;"><?= $e((string)($run['micro_learning_epoch_start_at'] ?? 'n/a')) ?></div>
+    </div>
+    <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">epoch_start_source</div>
+      <div style="font-weight:600;"><?= $e((string)($run['epoch_start_source'] ?? 'n/a')) ?></div>
+    </div>
+    <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">epoch_start_missing_reason</div>
+      <div style="font-weight:600;"><?= $e((string)($run['epoch_start_missing_reason'] ?? 'none')) ?></div>
+    </div>
+    <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">legacy_outcomes_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['legacy_outcomes_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">epoch_outcomes_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['epoch_outcomes_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">outcomes_excluded_by_epoch_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['outcomes_excluded_by_epoch_total'] ?? 0)) ?></div>
     </div>
   </div>
 

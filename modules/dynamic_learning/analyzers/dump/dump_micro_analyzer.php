@@ -33,6 +33,9 @@ final class DumpMicroAnalyzer
         if (!$available) {
             return [
                 'dump_micro_available' => false,
+                'dump_micro_proxy_available' => false,
+                'dump_micro_real' => false,
+                'dump_source' => 'none',
                 'dump_depth_pct' => null,
                 'dump_duration_minutes' => null,
                 'dump_speed_pct_per_min' => null,
@@ -78,7 +81,9 @@ final class DumpMicroAnalyzer
         }
 
         return [
-            'dump_micro_available' => true,
+            'dump_micro_available' => false,
+            'dump_micro_proxy_available' => true,
+            'dump_micro_real' => false,
             'dump_depth_pct' => $dumpPct,
             'dump_duration_minutes' => null,
             'dump_speed_pct_per_min' => $dumpSpeed,
@@ -87,7 +92,7 @@ final class DumpMicroAnalyzer
             'dump_verticality_score' => $verticalityScore,
             'dump_rebound_risk_score' => $reboundRiskScore,
             'stabilization_after_dump_score' => $stabilizationScore,
-            'dump_source' => 'strategy_signal_context',
+            'dump_source' => 'strategy_signal_context_proxy',
         ];
     }
 }

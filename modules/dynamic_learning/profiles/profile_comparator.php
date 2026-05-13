@@ -39,7 +39,7 @@ final class ProfileComparator
                 'auto_improvement_score' => null,
                 'default_result_summary' => [],
                 'auto_candidate_result_summary' => [],
-                'comparison_note' => 'compare_auto_vs_default_enabled = false',
+                'comparison_note' => 'comparison_disabled',
             ];
         }
 
@@ -71,7 +71,7 @@ final class ProfileComparator
             'auto_improvement_score' => null,
             'default_result_summary' => $defaultSummary,
             'auto_candidate_result_summary' => $autoSummary,
-            'comparison_note' => 'scaffold_only_backtesting_required',
+            'comparison_note' => 'comparison_not_implemented',
         ];
     }
 }

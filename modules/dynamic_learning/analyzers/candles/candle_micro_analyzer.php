@@ -41,6 +41,9 @@ final class CandleMicroAnalyzer
         if (!$available) {
             return [
                 'micro_context_available' => false,
+                'micro_proxy_available' => false,
+                'candle_micro_real' => false,
+                'micro_source' => 'none',
                 'micro_window_minutes' => $microWindowMinutes,
                 'micro_candles_count' => null,
                 'micro_growth_total_pct' => null,
@@ -72,7 +75,9 @@ final class CandleMicroAnalyzer
         }
 
         return [
-            'micro_context_available' => true,
+            'micro_context_available' => false,
+            'micro_proxy_available' => true,
+            'candle_micro_real' => false,
             'micro_window_minutes' => $microWindowMinutes,
             'micro_candles_count' => null,
             'micro_growth_total_pct' => $smoothGrowthPct,
@@ -85,7 +90,7 @@ final class CandleMicroAnalyzer
             'micro_pullback_max_pct' => null,
             'micro_smoothness_score' => $smoothnessScore,
             'micro_impulse_birth_score' => $impulseScore,
-            'micro_source' => 'smooth_growth_proxy',
+            'micro_source' => 'strategy_signal_context_proxy',
         ];
     }
 }

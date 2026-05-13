@@ -115,6 +115,12 @@ final class DynamicLearningService
             'feature_time_invalid_examples' => [],
             'candle_micro_available_total' => 0,
             'dump_micro_available_total' => 0,
+            'candle_micro_real_available_total' => 0,
+            'candle_micro_proxy_available_total' => 0,
+            'candle_micro_missing_total' => 0,
+            'dump_micro_real_available_total' => 0,
+            'dump_micro_proxy_available_total' => 0,
+            'dump_micro_missing_total' => 0,
             'weighted_score_calculated_total' => 0,
             'bad_patterns_total' => 0,
             'profile_generated' => false,
@@ -125,9 +131,14 @@ final class DynamicLearningService
             'profile_compared_to_default' => false,
             'auto_not_worse_than_default' => false,
             'auto_improvement_score' => null,
+            'auto_comparison_reason' => null,
             'storage_pruned_total' => 0,
             'storage_size_estimate_mb' => null,
             'storage_prune_examples' => [],
+            'storage_prune_reason_counts' => [],
+            'cycle_history_compact_enabled' => true,
+            'cycle_history_last_line_bytes' => 0,
+            'cycle_history_pruned_total' => 0,
             'dynamic_filter_available' => is_file($this->repoRoot . '/modules/filter_engine/filters/dynamic_learning_filter.php'),
             'apply_learning_to_strategy_enabled' => (bool)$cfg['apply_learning_to_strategy_enabled'],
             'apply_learning_to_live_enabled' => (bool)$cfg['apply_learning_to_live_enabled'],
@@ -142,7 +153,7 @@ final class DynamicLearningService
 
         if (!(bool)$cfg['enabled']) {
             $this->writeJson($this->storagePath('last_run.json'), $result);
-            $this->appendNdjson($this->storagePath('cycle_history.ndjson'), $result);
+            $this->appendCycleHistoryCompact($result);
             return $result;
         }
 
@@ -197,6 +208,12 @@ final class DynamicLearningService
             $result['feature_time_invalid_examples'] = $featureResult['time_invalid_examples'];
             $result['candle_micro_available_total'] = $featureResult['candle_micro_available_total'];
             $result['dump_micro_available_total'] = $featureResult['dump_micro_available_total'];
+            $result['candle_micro_real_available_total'] = $featureResult['candle_micro_real_available_total'];
+            $result['candle_micro_proxy_available_total'] = $featureResult['candle_micro_proxy_available_total'];
+            $result['candle_micro_missing_total'] = $featureResult['candle_micro_missing_total'];
+            $result['dump_micro_real_available_total'] = $featureResult['dump_micro_real_available_total'];
+            $result['dump_micro_proxy_available_total'] = $featureResult['dump_micro_proxy_available_total'];
+            $result['dump_micro_missing_total'] = $featureResult['dump_micro_missing_total'];
             $result['weighted_score_calculated_total'] = $featureResult['weighted_score_calculated_total'];
         }
 
@@ -222,15 +239,22 @@ final class DynamicLearningService
         $result['profile_compared_to_default'] = $comparison['compared_to_default'];
         $result['auto_not_worse_than_default'] = $comparison['auto_not_worse_than_default'];
         $result['auto_improvement_score'] = $comparison['auto_improvement_score'];
+        $result['auto_comparison_reason'] = $comparison['comparison_note'] ?? null;
+        $this->enrichCurrentProfileMetadata($cfg, $result, $comparison);
 
         // 8. Storage pruning
         $prune = $this->pruneStorage($cfg, $snapshots['all']);
         $result['storage_pruned_total'] = $prune['pruned_total'];
         $result['storage_size_estimate_mb'] = $prune['size_estimate_mb'];
         $result['storage_prune_examples'] = $prune['prune_examples'];
+        $result['storage_prune_reason_counts'] = $prune['prune_reason_counts'];
+        $result['cycle_history_pruned_total'] = (int)($prune['cycle_history_pruned_total'] ?? 0);
+
+        $cycleHistoryWrite = $this->appendCycleHistoryCompact($result);
+        $result['cycle_history_compact_enabled'] = true;
+        $result['cycle_history_last_line_bytes'] = (int)($cycleHistoryWrite['last_line_bytes'] ?? 0);
 
         $this->writeJson($this->storagePath('last_run.json'), $result);
-        $this->appendNdjson($this->storagePath('cycle_history.ndjson'), $result);
         return $result;
     }
 
@@ -241,6 +265,75 @@ final class DynamicLearningService
         $profilePath = $this->storagePath('profiles/early_impulse_growth_long/current_profile.json');
         $profile = (array)$this->readJson($profilePath, []);
         return DynamicLearningDecision::evaluate($strategyId, $signalPacket, $cfg, $profile !== [] ? $profile : null);
+    }
+
+    /** @param array<string,mixed> $comparison */
+    private function enrichCurrentProfileMetadata(array $cfg, array $result, array $comparison): void
+    {
+        $profilePath = $this->storagePath('profiles/early_impulse_growth_long/current_profile.json');
+        $profile = (array)$this->readJson($profilePath, []);
+        if ($profile === []) {
+            return;
+        }
+
+        $comparisonReason = (string)($comparison['comparison_note'] ?? '');
+        $defaultSummary = (array)($comparison['default_result_summary'] ?? []);
+        $autoSummary = (array)($comparison['auto_candidate_result_summary'] ?? []);
+
+        $profile['source_outcomes_total'] = (int)($result['closed_outcomes_unique_total'] ?? 0);
+        $profile['feature_records_total'] = (int)($result['feature_records_total'] ?? 0);
+        $profile['bad_entries_total'] = (int)($result['bad_entry_total'] ?? ($profile['bad_entries_total'] ?? 0));
+        $profile['good_entries_total'] = (int)($result['good_or_do_not_touch_total'] ?? ($profile['good_entries_total'] ?? 0));
+        $profile['entry_ok_exit_issue_total'] = (int)($result['entry_ok_exit_issue_total'] ?? 0);
+        $profile['neutral_total'] = (int)($result['neutral_total'] ?? 0);
+        $profile['outcome_incomplete_total'] = (int)($result['outcome_incomplete_total'] ?? 0);
+        $profile['rules'] = array_values((array)($profile['rules'] ?? []));
+        $profile['weights'] = $this->diagnosticWeightsConfig();
+        $profile['status'] = 'candidate';
+        $profile['apply_mode'] = 'observe_only';
+        $profile['compared_to_default'] = (bool)($comparison['compared_to_default'] ?? false);
+        $profile['default_benchmark'] = $profile['compared_to_default'] ? $defaultSummary : null;
+        $profile['auto_benchmark'] = $profile['compared_to_default'] ? $autoSummary : null;
+        $profile['auto_not_worse_than_default'] = (bool)($comparison['auto_not_worse_than_default'] ?? false);
+        $profile['auto_improvement_score'] = $comparison['auto_improvement_score'] ?? null;
+
+        if (!$profile['compared_to_default']) {
+            $profile['auto_comparison_reason'] = $comparisonReason !== '' ? $comparisonReason : 'comparison_not_implemented';
+            if ($profile['default_benchmark'] === null) {
+                $profile['default_benchmark'] = null;
+            }
+            if ($profile['auto_benchmark'] === null) {
+                $profile['auto_benchmark'] = null;
+            }
+        }
+
+        $profile['compare_auto_vs_default_enabled'] = (bool)($cfg['compare_auto_vs_default_enabled'] ?? true);
+        $profile['auto_profile_requires_not_worse_than_default'] = (bool)($cfg['auto_profile_requires_not_worse_than_default'] ?? true);
+        $profile['auto_apply_enabled'] = (bool)($cfg['auto_apply_enabled'] ?? false);
+
+        $this->writeJson($profilePath, $profile);
+    }
+
+    /** @return array<string,mixed> */
+    private function diagnosticWeightsConfig(): array
+    {
+        return [
+            'version' => 'v1',
+            'source' => 'static_initial',
+            'status' => 'diagnostic_only',
+            'risk_components' => [
+                'micro_single_candle_dominance_high' => 20.0,
+                'fast_flip_chop' => 15.0,
+                'ask_wall_high' => 15.0,
+                'bid_support_weak' => 10.0,
+                'oi_not_confirmed' => 5.0,
+            ],
+            'quality_components' => [
+                'smooth_growth_sequence_good' => 15.0,
+                'bid_support_strong' => 10.0,
+                'context_quality_good' => 10.0,
+            ],
+        ];
     }
 
     /** @return array{all:list<array<string,mixed>>,index:array<string,array<string,mixed>>,new_total:int} */
@@ -874,6 +967,12 @@ final class DynamicLearningService
             'time_invalid_examples' => [],
             'candle_micro_available_total' => 0,
             'dump_micro_available_total' => 0,
+            'candle_micro_real_available_total' => 0,
+            'candle_micro_proxy_available_total' => 0,
+            'candle_micro_missing_total' => 0,
+            'dump_micro_real_available_total' => 0,
+            'dump_micro_proxy_available_total' => 0,
+            'dump_micro_missing_total' => 0,
             'weighted_score_calculated_total' => 0,
         ];
 
@@ -961,6 +1060,14 @@ final class DynamicLearningService
                 'nearest_ask_wall_notional' => $ob['nearest_ask_wall_notional'] ?? null,
                 'bid_support_quality' => $ob['bid_support_quality'] ?? null,
                 'bid_ask_notional_ratio' => $ob['bid_ask_notional_ratio'] ?? null,
+                'micro_context_available' => (bool)($candleMicro['micro_context_available'] ?? false),
+                'micro_proxy_available' => (bool)($candleMicro['micro_proxy_available'] ?? false),
+                'candle_micro_real' => (bool)($candleMicro['candle_micro_real'] ?? false),
+                'micro_source' => (string)($candleMicro['micro_source'] ?? 'none'),
+                'dump_micro_available' => (bool)($dumpMicro['dump_micro_available'] ?? false),
+                'dump_micro_proxy_available' => (bool)($dumpMicro['dump_micro_proxy_available'] ?? false),
+                'dump_micro_real' => (bool)($dumpMicro['dump_micro_real'] ?? false),
+                'dump_source' => (string)($dumpMicro['dump_source'] ?? 'none'),
                 'micro_candle' => $candleMicro,
                 'micro_dump' => $dumpMicro,
                 'micro_impulse' => $impulse,
@@ -992,10 +1099,20 @@ final class DynamicLearningService
             }
 
             if ((bool)($candleMicro['micro_context_available'] ?? false)) {
+                $result['candle_micro_real_available_total']++;
                 $result['candle_micro_available_total']++;
+            } elseif ((bool)($candleMicro['micro_proxy_available'] ?? false)) {
+                $result['candle_micro_proxy_available_total']++;
+            } else {
+                $result['candle_micro_missing_total']++;
             }
             if ((bool)($dumpMicro['dump_micro_available'] ?? false)) {
+                $result['dump_micro_real_available_total']++;
                 $result['dump_micro_available_total']++;
+            } elseif ((bool)($dumpMicro['dump_micro_proxy_available'] ?? false)) {
+                $result['dump_micro_proxy_available_total']++;
+            } else {
+                $result['dump_micro_missing_total']++;
             }
             if ($weightedScore !== null) {
                 $result['weighted_score_calculated_total']++;
@@ -1080,12 +1197,18 @@ final class DynamicLearningService
      * Prune old storage records to stay within configured limits.
      * Never deletes active position observations.
      *
-     * @return array{pruned_total:int,size_estimate_mb:float|null,prune_examples:list<string>}
+     * @return array{pruned_total:int,size_estimate_mb:float|null,prune_examples:list<string>,prune_reason_counts:array<string,int>,cycle_history_pruned_total:int}
      */
     private function pruneStorage(array $cfg, array $currentSnapshots): array
     {
         $prunedTotal = 0;
         $pruneExamples = [];
+        $reasonCounts = [];
+        $cycleHistoryPrunedTotal = 0;
+
+        $bump = static function (array &$map, string $reason, int $count = 1): void {
+            $map[$reason] = (int)($map[$reason] ?? 0) + $count;
+        };
 
         $maxSnapshots = max(100, (int)($cfg['max_entry_snapshots'] ?? 2000));
         if (count($currentSnapshots) > $maxSnapshots) {
@@ -1095,6 +1218,7 @@ final class DynamicLearningService
                 $trimCount = count($allSnaps) - $maxSnapshots;
                 $pruned = array_splice($allSnaps, 0, $trimCount);
                 $prunedTotal += $trimCount;
+                $bump($reasonCounts, 'entry_snapshots_limit', $trimCount);
                 foreach (array_slice($pruned, 0, 5) as $p) {
                     $pruneExamples[] = 'snapshot:' . (is_array($p) ? (string)($p['snapshot_id'] ?? '?') : '?');
                 }
@@ -1109,31 +1233,254 @@ final class DynamicLearningService
             $trimCount = count($allOutcomes) - $maxOutcomes;
             array_splice($allOutcomes, 0, $trimCount);
             $prunedTotal += $trimCount;
+            $bump($reasonCounts, 'closed_outcomes_limit', $trimCount);
             $pruneExamples[] = 'closed_outcomes:' . $trimCount . '_pruned';
             $this->writeJson($outcomesPath, array_values($allOutcomes));
         }
 
-        $sizeEstimateMb = null;
-        $storageDir = $this->moduleDir . '/storage';
-        if (is_dir($storageDir)) {
-            $total = 0;
-            try {
-                $iter = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($storageDir, \FilesystemIterator::SKIP_DOTS));
-                foreach ($iter as $file) {
-                    if ($file instanceof \SplFileInfo && $file->isFile()) {
-                        $total += $file->getSize();
-                    }
+        $maxFeatureRecords = max(100, (int)($cfg['max_feature_records'] ?? 2000));
+        $featureJsonPath = $this->storagePath('features/early_impulse_growth_long/features.json');
+        $featureNdjsonPath = $this->storagePath('features/early_impulse_growth_long/features.ndjson');
+        $allFeatures = (array)$this->readJson($featureJsonPath, []);
+        if (count($allFeatures) > $maxFeatureRecords) {
+            $trimCount = count($allFeatures) - $maxFeatureRecords;
+            array_splice($allFeatures, 0, $trimCount);
+            $prunedTotal += $trimCount;
+            $bump($reasonCounts, 'feature_records_limit', $trimCount);
+            $pruneExamples[] = 'features:' . $trimCount . '_pruned';
+            $this->writeJson($featureJsonPath, array_values($allFeatures));
+            $lines = '';
+            foreach ($allFeatures as $row) {
+                $line = json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                if (is_string($line)) {
+                    $lines .= $line . PHP_EOL;
                 }
-                $sizeEstimateMb = round($total / 1048576, 3);
-            } catch (\Throwable) {
-                // Ignore filesystem errors during size estimate
+            }
+            @file_put_contents($featureNdjsonPath, $lines, LOCK_EX);
+        }
+
+        $historyPrune = $this->pruneCycleHistoryFile(
+            max(100, (int)($cfg['max_cycle_history_lines'] ?? 1000)),
+            max(1.0, (float)($cfg['max_cycle_history_size_mb'] ?? 20.0))
+        );
+        if ($historyPrune['pruned_total'] > 0) {
+            $cycleHistoryPrunedTotal = $historyPrune['pruned_total'];
+            $prunedTotal += $historyPrune['pruned_total'];
+            $bump($reasonCounts, 'cycle_history_limit', $historyPrune['pruned_total']);
+            foreach (array_slice($historyPrune['examples'], 0, 5) as $ex) {
+                $pruneExamples[] = 'cycle_history:' . $ex;
             }
         }
 
+        $activeIds = [];
+        $snapshotIndex = [];
+        foreach ($currentSnapshots as $snap) {
+            if (!is_array($snap)) {
+                continue;
+            }
+            $sid = (string)($snap['snapshot_id'] ?? '');
+            if ($sid !== '') {
+                $snapshotIndex[$sid] = $snap;
+            }
+        }
+        $activeRows = (array)$this->readJson($this->repoRoot . '/modules/bot/storage/active_positions.json', []);
+        foreach ($activeRows as $row) {
+            if (!is_array($row) || !$this->isEigl($row, self::STRATEGY_ID)) {
+                continue;
+            }
+            $sid = $this->resolveSnapshotId($row, $snapshotIndex);
+            if ($sid !== null) {
+                $activeIds[$sid] = true;
+            }
+        }
+
+        $obsDir = $this->storagePath('active_observations');
+        $maxObsFiles = max(100, (int)($cfg['max_active_observation_files'] ?? 1000));
+        if (is_dir($obsDir)) {
+            $summaryFiles = glob($obsDir . '/*.json') ?: [];
+            if (count($summaryFiles) > $maxObsFiles) {
+                $candidates = [];
+                foreach ($summaryFiles as $file) {
+                    $sid = basename($file, '.json');
+                    if (isset($activeIds[$sid])) {
+                        continue;
+                    }
+                    $candidates[] = ['sid' => $sid, 'json' => $file, 'ndjson' => $obsDir . '/' . $sid . '.ndjson', 'mtime' => (int)@filemtime($file)];
+                }
+                usort($candidates, static fn(array $a, array $b): int => ($a['mtime'] <=> $b['mtime']));
+                $toDelete = max(0, count($summaryFiles) - $maxObsFiles);
+                $deleted = 0;
+                foreach ($candidates as $cand) {
+                    if ($deleted >= $toDelete) {
+                        break;
+                    }
+                    $removedOne = false;
+                    if (is_file($cand['json']) && @unlink($cand['json'])) {
+                        $removedOne = true;
+                    }
+                    if (is_file($cand['ndjson'])) {
+                        @unlink($cand['ndjson']);
+                    }
+                    if ($removedOne) {
+                        $deleted++;
+                        $pruneExamples[] = 'active_observation:' . $cand['sid'];
+                    }
+                }
+                if ($deleted > 0) {
+                    $prunedTotal += $deleted;
+                    $bump($reasonCounts, 'active_observation_files_limit', $deleted);
+                }
+            }
+        }
+
+        $sizeEstimateMb = $this->estimateStorageSizeMb();
+        $maxStorageSizeMb = max(50.0, (float)($cfg['max_storage_size_mb'] ?? 200.0));
+        if ($sizeEstimateMb !== null && $sizeEstimateMb > $maxStorageSizeMb && is_dir($obsDir)) {
+            $summaryFiles = glob($obsDir . '/*.json') ?: [];
+            $candidates = [];
+            foreach ($summaryFiles as $file) {
+                $sid = basename($file, '.json');
+                if (isset($activeIds[$sid])) {
+                    continue;
+                }
+                $nd = $obsDir . '/' . $sid . '.ndjson';
+                $bytes = (int)@filesize($file) + (is_file($nd) ? (int)@filesize($nd) : 0);
+                $candidates[] = ['sid' => $sid, 'json' => $file, 'ndjson' => $nd, 'bytes' => $bytes, 'mtime' => (int)@filemtime($file)];
+            }
+            usort($candidates, static fn(array $a, array $b): int => ($a['mtime'] <=> $b['mtime']));
+            foreach ($candidates as $cand) {
+                if ($sizeEstimateMb === null || $sizeEstimateMb <= $maxStorageSizeMb) {
+                    break;
+                }
+                $removed = false;
+                if (is_file($cand['json']) && @unlink($cand['json'])) {
+                    $removed = true;
+                }
+                if (is_file($cand['ndjson'])) {
+                    @unlink($cand['ndjson']);
+                }
+                if ($removed) {
+                    $prunedTotal++;
+                    $bump($reasonCounts, 'max_storage_size_mb', 1);
+                    $pruneExamples[] = 'size_prune_active_observation:' . $cand['sid'];
+                    $sizeEstimateMb = $this->estimateStorageSizeMb();
+                }
+            }
+        }
+
+        $sizeEstimateMb = $this->estimateStorageSizeMb();
         return [
             'pruned_total' => $prunedTotal,
             'size_estimate_mb' => $sizeEstimateMb,
             'prune_examples' => array_slice($pruneExamples, 0, 20),
+            'prune_reason_counts' => $reasonCounts,
+            'cycle_history_pruned_total' => $cycleHistoryPrunedTotal,
+        ];
+    }
+
+    /** @return array{pruned_total:int,examples:list<string>} */
+    private function pruneCycleHistoryFile(int $maxLines, float $maxSizeMb): array
+    {
+        $path = $this->storagePath('cycle_history.ndjson');
+        if (!is_file($path)) {
+            return ['pruned_total' => 0, 'examples' => []];
+        }
+        $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!is_array($lines)) {
+            return ['pruned_total' => 0, 'examples' => []];
+        }
+        $sizeBytes = (int)@filesize($path);
+        $maxSizeBytes = (int)round($maxSizeMb * 1048576);
+        $needByLines = max(0, count($lines) - $maxLines);
+        $needBySize = 0;
+        if ($sizeBytes > $maxSizeBytes) {
+            $bytesToDrop = $sizeBytes - $maxSizeBytes;
+            $acc = 0;
+            foreach ($lines as $line) {
+                $acc += strlen($line) + 1;
+                $needBySize++;
+                if ($acc >= $bytesToDrop) {
+                    break;
+                }
+            }
+        }
+        $toDrop = max($needByLines, $needBySize);
+        if ($toDrop <= 0) {
+            return ['pruned_total' => 0, 'examples' => []];
+        }
+        $droppedLines = array_slice($lines, 0, $toDrop);
+        $kept = array_slice($lines, $toDrop);
+        @file_put_contents($path, implode(PHP_EOL, $kept) . (count($kept) > 0 ? PHP_EOL : ''), LOCK_EX);
+        $examples = [];
+        foreach (array_slice($droppedLines, 0, 3) as $line) {
+            $decoded = json_decode((string)$line, true);
+            if (is_array($decoded)) {
+                $examples[] = (string)($decoded['created_at'] ?? 'unknown');
+            }
+        }
+        return ['pruned_total' => $toDrop, 'examples' => $examples];
+    }
+
+    private function estimateStorageSizeMb(): ?float
+    {
+        $storageDir = $this->moduleDir . '/storage';
+        if (!is_dir($storageDir)) {
+            return null;
+        }
+        $total = 0;
+        try {
+            $iter = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($storageDir, \FilesystemIterator::SKIP_DOTS));
+            foreach ($iter as $file) {
+                if ($file instanceof \SplFileInfo && $file->isFile()) {
+                    $total += $file->getSize();
+                }
+            }
+            return round($total / 1048576, 3);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /** @return array{last_line_bytes:int} */
+    private function appendCycleHistoryCompact(array $result): array
+    {
+        $compact = $this->buildCompactCycleHistoryRow($result);
+        $json = json_encode($compact, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($json)) {
+            return ['last_line_bytes' => 0];
+        }
+        $this->appendNdjson($this->storagePath('cycle_history.ndjson'), $compact);
+        return ['last_line_bytes' => strlen($json)];
+    }
+
+    /** @return array<string,mixed> */
+    private function buildCompactCycleHistoryRow(array $result): array
+    {
+        return [
+            'created_at' => (string)($result['created_at'] ?? date('c')),
+            'architecture_version' => (string)($result['architecture_version'] ?? 'analyzer_pipeline_v1'),
+            'entry_snapshots_total' => (int)($result['entry_snapshots_total'] ?? 0),
+            'entry_snapshots_new_total' => (int)($result['entry_snapshots_new_total'] ?? 0),
+            'active_positions_seen_total' => (int)($result['active_positions_seen_total'] ?? 0),
+            'observations_written_total' => (int)($result['observations_written_total'] ?? 0),
+            'closed_outcomes_unique_total' => (int)($result['closed_outcomes_unique_total'] ?? 0),
+            'bad_entry_total' => (int)($result['bad_entry_total'] ?? 0),
+            'good_or_do_not_touch_total' => (int)($result['good_or_do_not_touch_total'] ?? 0),
+            'entry_ok_exit_issue_total' => (int)($result['entry_ok_exit_issue_total'] ?? 0),
+            'neutral_total' => (int)($result['neutral_total'] ?? 0),
+            'outcome_incomplete_total' => (int)($result['outcome_incomplete_total'] ?? 0),
+            'feature_records_total' => (int)($result['feature_records_total'] ?? 0),
+            'feature_time_valid_total' => (int)($result['feature_time_valid_total'] ?? 0),
+            'candle_micro_real_available_total' => (int)($result['candle_micro_real_available_total'] ?? 0),
+            'candle_micro_proxy_available_total' => (int)($result['candle_micro_proxy_available_total'] ?? 0),
+            'dump_micro_real_available_total' => (int)($result['dump_micro_real_available_total'] ?? 0),
+            'dump_micro_proxy_available_total' => (int)($result['dump_micro_proxy_available_total'] ?? 0),
+            'weighted_score_calculated_total' => (int)($result['weighted_score_calculated_total'] ?? 0),
+            'profile_id' => $result['profile_id'] ?? null,
+            'profile_rules_total' => (int)($result['profile_rules_total'] ?? 0),
+            'apply_learning_to_strategy_enabled' => (bool)($result['apply_learning_to_strategy_enabled'] ?? false),
+            'apply_learning_to_live_enabled' => (bool)($result['apply_learning_to_live_enabled'] ?? false),
+            'storage_size_estimate_mb' => $result['storage_size_estimate_mb'] ?? null,
         ];
     }
 
@@ -1208,6 +1555,9 @@ final class DynamicLearningService
         $cfg['max_feature_records'] = max(100, (int)($cfg['max_feature_records'] ?? 2000));
         $cfg['max_closed_outcomes'] = max(100, (int)($cfg['max_closed_outcomes'] ?? 1000));
         $cfg['max_active_observation_files'] = max(100, (int)($cfg['max_active_observation_files'] ?? 1000));
+        $cfg['max_storage_size_mb'] = max(50.0, (float)($cfg['max_storage_size_mb'] ?? 200.0));
+        $cfg['max_cycle_history_lines'] = max(100, (int)($cfg['max_cycle_history_lines'] ?? 1000));
+        $cfg['max_cycle_history_size_mb'] = max(1.0, (float)($cfg['max_cycle_history_size_mb'] ?? 20.0));
         return $cfg;
     }
 

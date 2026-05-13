@@ -95,8 +95,24 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-weight:600;"><?= $e((int)($run['candle_micro_available_total'] ?? 0)) ?></div>
     </div>
     <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">candle_micro_real_available_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['candle_micro_real_available_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">candle_micro_proxy_available_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['candle_micro_proxy_available_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">dump_micro_available_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['dump_micro_available_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">dump_micro_real_available_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['dump_micro_real_available_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">dump_micro_proxy_available_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['dump_micro_proxy_available_total'] ?? 0)) ?></div>
     </div>
     <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">weighted_score_calculated_total</div>
@@ -126,6 +142,10 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-size:12px;opacity:.8;">auto_improvement_score</div>
       <div style="font-weight:600;"><?= $e($run['auto_improvement_score'] ?? 'n/a') ?></div>
     </div>
+    <div style="background:#14532d;color:#86efac;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">auto_comparison_reason</div>
+      <div style="font-weight:600;"><?= $e((string)($run['auto_comparison_reason'] ?? 'n/a')) ?></div>
+    </div>
   </div>
 
   <!-- Storage status -->
@@ -137,6 +157,14 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     <div style="background:#1c1917;color:#d6d3d1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">storage_pruned_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['storage_pruned_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1c1917;color:#d6d3d1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">cycle_history_compact_enabled</div>
+      <div style="font-weight:600;"><?= $e((bool)($run['cycle_history_compact_enabled'] ?? false) ? 'true' : 'false') ?></div>
+    </div>
+    <div style="background:#1c1917;color:#d6d3d1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">cycle_history_last_line_bytes</div>
+      <div style="font-weight:600;"><?= $e((int)($run['cycle_history_last_line_bytes'] ?? 0)) ?></div>
     </div>
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">apply_learning_to_strategy_enabled</div>

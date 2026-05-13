@@ -1703,18 +1703,28 @@ final class EarlyImpulseGrowthLongService
         $outcomeAnalyzerResult = $this->runOutcomeAnalyzer($config);
         $dynamicLearningResult = $this->runDynamicLearningModule();
 
-        // Compute counter mismatch: compare DL-checked count against bot_handoff_queue records
-        // that carry dynamic_learning_shadow_decision, to surface any remaining counter gaps.
+        // Compute counter mismatch: compare DL-checked count against current-run bot_handoff_queue records
+        // that carry dynamic_learning_shadow_decision (stored inside strategy_signal_context), to surface
+        // any remaining counter gaps.  Only current-run records are compared so TTL-valid older queue
+        // records from previous ticks do not inflate the mismatch counter.
         if ((bool)($config['dynamic_learning_enabled'] ?? false) && (string)($config['dynamic_learning_mode'] ?? 'shadow') === 'shadow') {
-            $queueWithDlDecision = array_values(array_filter(
+            $currentRunQueueWithDlDecision = array_values(array_filter(
                 $handoffQueue,
-                static fn(array $q): bool => isset($q['dynamic_learning_shadow_decision']) && (string)$q['dynamic_learning_shadow_decision'] !== ''
+                static function (array $q) use ($currentRunSignalIds): bool {
+                    $sid = trim((string)($q['signal_id'] ?? ''));
+                    if ($sid === '' || !isset($currentRunSignalIds[$sid])) {
+                        return false;
+                    }
+                    $ssc = is_array($q['strategy_signal_context'] ?? null) ? (array)$q['strategy_signal_context'] : [];
+                    $decision = $ssc['dynamic_learning_shadow_decision'] ?? $ssc['dynamic_learning_decision'] ?? null;
+                    return $decision !== null && (string)$decision !== '';
+                }
             ));
-            $queueDlCount = count($queueWithDlDecision);
-            if ($queueDlCount !== $diag['dynamic_learning_checked_total']) {
-                $mismatch = $queueDlCount - $diag['dynamic_learning_checked_total'];
+            $currentRunQueueDlCount = count($currentRunQueueWithDlDecision);
+            if ($currentRunQueueDlCount !== $diag['dynamic_learning_checked_total']) {
+                $mismatch = $currentRunQueueDlCount - $diag['dynamic_learning_checked_total'];
                 $diag['dynamic_learning_counter_mismatch_total'] = abs($mismatch);
-                foreach (array_slice($queueWithDlDecision, 0, 5) as $qRow) {
+                foreach (array_slice($currentRunQueueWithDlDecision, 0, 5) as $qRow) {
                     if (!isset($qRow['symbol'])) {
                         continue;
                     }
@@ -1727,9 +1737,10 @@ final class EarlyImpulseGrowthLongService
                         }
                     }
                     if (!$alreadyCounted) {
+                        $ssc = is_array($qRow['strategy_signal_context'] ?? null) ? (array)$qRow['strategy_signal_context'] : [];
                         $diag['dynamic_learning_counter_mismatch_examples'][] = [
                             'symbol' => $qRow['symbol'],
-                            'shadow_decision' => $qRow['dynamic_learning_shadow_decision'] ?? null,
+                            'shadow_decision' => $ssc['dynamic_learning_shadow_decision'] ?? $ssc['dynamic_learning_decision'] ?? null,
                         ];
                     }
                 }

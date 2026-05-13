@@ -88,12 +88,16 @@ final class DynamicLearningService
             'closed_trades_loaded_total' => 0,
             'closed_outcomes_matched_total' => 0,
             'closed_outcomes_raw_loaded_total' => 0,
+            'closed_outcomes_effective_total' => 0,
             'closed_outcomes_unique_total' => 0,
             'closed_outcomes_duplicates_skipped_total' => 0,
             'closed_outcomes_merged_total' => 0,
             'closed_outcomes_duplicate_examples' => [],
             'closed_outcomes_strong_link_total' => 0,
             'closed_outcomes_weak_link_skipped_total' => 0,
+            'closed_outcomes_preserved_due_empty_source_total' => 0,
+            'closed_outcomes_rebuilt_from_ndjson_total' => 0,
+            'closed_outcomes_rebuild_skipped_due_reset' => 0,
             'closed_outcomes_time_mismatch_total' => 0,
             'closed_outcomes_opened_at_corrected_total' => 0,
             'closed_outcomes_timing_low_confidence_total' => 0,
@@ -139,6 +143,10 @@ final class DynamicLearningService
             'cycle_history_compact_enabled' => true,
             'cycle_history_last_line_bytes' => 0,
             'cycle_history_pruned_total' => 0,
+            'active_observation_files_total' => 0,
+            'active_observation_files_pruned_total' => 0,
+            'reset_detected' => false,
+            'manual_reset_respected' => false,
             'dynamic_filter_available' => is_file($this->repoRoot . '/modules/filter_engine/filters/dynamic_learning_filter.php'),
             'apply_learning_to_strategy_enabled' => (bool)$cfg['apply_learning_to_strategy_enabled'],
             'apply_learning_to_live_enabled' => (bool)$cfg['apply_learning_to_live_enabled'],
@@ -171,15 +179,22 @@ final class DynamicLearningService
         $result['active_observation_examples'] = $obs['examples'];
 
         // 3. Link closed outcomes
-        $outcomes = $this->linkClosedOutcomes($cfg, $snapshots['index']);
+        $resetState = $this->detectManualReset($cfg);
+        $result['reset_detected'] = (bool)($resetState['reset_detected'] ?? false);
+        $result['manual_reset_respected'] = (bool)($resetState['manual_reset_respected'] ?? false);
+        $outcomes = $this->linkClosedOutcomes($cfg, $snapshots['index'], $resetState);
         $result['closed_trades_loaded_total'] = $outcomes['loaded_total'];
         $result['closed_outcomes_raw_loaded_total'] = $outcomes['raw_loaded_total'];
+        $result['closed_outcomes_effective_total'] = $outcomes['effective_total'];
         $result['closed_outcomes_unique_total'] = $outcomes['unique_total'];
         $result['closed_outcomes_duplicates_skipped_total'] = $outcomes['duplicates_skipped_total'];
         $result['closed_outcomes_merged_total'] = $outcomes['merged_total'];
         $result['closed_outcomes_duplicate_examples'] = $outcomes['duplicate_examples'];
         $result['closed_outcomes_strong_link_total'] = $outcomes['strong_link_total'];
         $result['closed_outcomes_weak_link_skipped_total'] = $outcomes['weak_link_skipped_total'];
+        $result['closed_outcomes_preserved_due_empty_source_total'] = $outcomes['preserved_due_empty_source_total'];
+        $result['closed_outcomes_rebuilt_from_ndjson_total'] = $outcomes['rebuilt_from_ndjson_total'];
+        $result['closed_outcomes_rebuild_skipped_due_reset'] = $outcomes['rebuild_skipped_due_reset_total'];
         $result['closed_outcomes_time_mismatch_total'] = $outcomes['time_mismatch_total'];
         $result['closed_outcomes_opened_at_corrected_total'] = $outcomes['opened_at_corrected_total'];
         $result['closed_outcomes_timing_low_confidence_total'] = $outcomes['timing_low_confidence_total'];
@@ -249,11 +264,14 @@ final class DynamicLearningService
         $result['storage_prune_examples'] = $prune['prune_examples'];
         $result['storage_prune_reason_counts'] = $prune['prune_reason_counts'];
         $result['cycle_history_pruned_total'] = (int)($prune['cycle_history_pruned_total'] ?? 0);
+        $result['active_observation_files_total'] = (int)($prune['active_observation_files_total'] ?? 0);
+        $result['active_observation_files_pruned_total'] = (int)($prune['active_observation_files_pruned_total'] ?? 0);
 
         $cycleHistoryWrite = $this->appendCycleHistoryCompact($result);
         $result['cycle_history_compact_enabled'] = true;
         $result['cycle_history_last_line_bytes'] = (int)($cycleHistoryWrite['last_line_bytes'] ?? 0);
 
+        $result = $this->limitLastRunExamples($result, max(1, (int)($cfg['max_examples_per_last_run_section'] ?? 10)));
         $this->writeJson($this->storagePath('last_run.json'), $result);
         return $result;
     }
@@ -510,8 +528,8 @@ final class DynamicLearningService
         ];
     }
 
-    /** @return array{all:list<array<string,mixed>>,pattern_mining:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,unique_total:int,duplicates_skipped_total:int,merged_total:int,duplicate_examples:list<array<string,mixed>>,strong_link_total:int,weak_link_skipped_total:int,time_mismatch_total:int,opened_at_corrected_total:int,timing_low_confidence_total:int,time_mismatch_examples:list<array<string,mixed>>,mfe_normalized_total:int,mae_normalized_total:int,roi_normalization_examples:list<array<string,mixed>>,excluded_from_pattern_mining_total:int,excluded_reasons:array<string,int>} */
-    private function linkClosedOutcomes(array $cfg, array $snapshotIndex): array
+    /** @return array{all:list<array<string,mixed>>,pattern_mining:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,effective_total:int,unique_total:int,duplicates_skipped_total:int,merged_total:int,duplicate_examples:list<array<string,mixed>>,strong_link_total:int,weak_link_skipped_total:int,preserved_due_empty_source_total:int,rebuilt_from_ndjson_total:int,rebuild_skipped_due_reset_total:int,time_mismatch_total:int,opened_at_corrected_total:int,timing_low_confidence_total:int,time_mismatch_examples:list<array<string,mixed>>,mfe_normalized_total:int,mae_normalized_total:int,roi_normalization_examples:list<array<string,mixed>>,excluded_from_pattern_mining_total:int,excluded_reasons:array<string,int>} */
+    private function linkClosedOutcomes(array $cfg, array $snapshotIndex, array $resetState): array
     {
         $stored = $this->readJson($this->storagePath('closed_outcomes.json'), []);
         $existingIndex = [];
@@ -521,22 +539,18 @@ final class DynamicLearningService
             }
         }
 
+        $resetDetected = (bool)($resetState['reset_detected'] ?? false);
+        $preserveWhenSourceEmpty = (bool)($cfg['preserve_outcomes_when_source_empty'] ?? true);
+        $rebuildFromNdjsonEnabled = (bool)($cfg['rebuild_closed_outcomes_from_ndjson_enabled'] ?? true);
+
         $rawLoadedTotal = 0;
-        $uniqueMap = [];
+        $sourceUniqueMap = [];
         $duplicatesSkippedTotal = 0;
         $mergedTotal = 0;
         $duplicateExamples = [];
-        $strongLinkTotal = 0;
-        $weakLinkSkippedTotal = 0;
-        $timeMismatchTotal = 0;
-        $openedAtCorrectedTotal = 0;
-        $timingLowConfidenceTotal = 0;
-        $timeMismatchExamples = [];
-        $mfeNormalizedTotal = 0;
-        $maeNormalizedTotal = 0;
-        $roiNormalizationExamples = [];
-        $excludedFromPatternMiningTotal = 0;
-        $excludedReasons = [];
+        $preservedDueEmptySourceTotal = 0;
+        $rebuiltFromNdjsonTotal = 0;
+        $rebuildSkippedDueResetTotal = 0;
 
         foreach ([
             $this->repoRoot . '/modules/bot/storage/trades/closed_trades.json',
@@ -553,9 +567,9 @@ final class DynamicLearningService
 
                 $rawLoadedTotal++;
                 $identity = $this->buildClosedTradeIdentity($row);
-                $existing = $uniqueMap[$identity] ?? null;
+                $existing = $sourceUniqueMap[$identity] ?? null;
                 if ($existing === null) {
-                    $uniqueMap[$identity] = $row;
+                    $sourceUniqueMap[$identity] = $row;
                     continue;
                 }
 
@@ -572,7 +586,6 @@ final class DynamicLearningService
                     ];
                 }
 
-                // Merge: use richer as base, fill missing fields from secondary
                 $scoreRow = $this->closedTradeRichnessScore($row);
                 $scoreExisting = $this->closedTradeRichnessScore((array)$existing);
                 [$primary, $secondary] = $scoreRow >= $scoreExisting
@@ -582,19 +595,71 @@ final class DynamicLearningService
                 if ($this->closedTradeRichnessScore($merged) > $this->closedTradeRichnessScore($primary)) {
                     $mergedTotal++;
                 }
-                $uniqueMap[$identity] = $merged;
+                $sourceUniqueMap[$identity] = $merged;
+            }
+        }
+
+        $sourceHasRows = count($sourceUniqueMap) > 0;
+        $effectiveRows = [];
+        if ($resetDetected) {
+            $effectiveRows = $sourceHasRows ? array_values($sourceUniqueMap) : [];
+            if ($rebuildFromNdjsonEnabled) {
+                $rebuildSkippedDueResetTotal = $this->countNdjsonLines($this->storagePath('closed_outcomes.ndjson'));
+            }
+        } elseif ($sourceHasRows) {
+            $effectiveRows = array_values($sourceUniqueMap);
+        } elseif ($preserveWhenSourceEmpty && is_array($stored) && count($stored) > 0) {
+            $effectiveRows = array_values(array_filter((array)$stored, static fn(mixed $r): bool => is_array($r)));
+            $preservedDueEmptySourceTotal = count($effectiveRows);
+        } elseif ($rebuildFromNdjsonEnabled) {
+            $rebuilt = $this->rebuildOutcomesFromNdjson();
+            if ($rebuilt !== []) {
+                $effectiveRows = $rebuilt;
+                $rebuiltFromNdjsonTotal = count($rebuilt);
             }
         }
 
         $all = [];
+        if ($sourceHasRows || $resetDetected) {
+            foreach ($effectiveRows as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $identity = trim((string)($row['_dl_identity'] ?? ''));
+                if ($identity === '') {
+                    $identity = $this->buildClosedTradeIdentity($row);
+                }
+                $row['_dl_identity'] = $identity;
+                $outcome = $this->makeOutcome($row, $cfg, $snapshotIndex);
+                $all[] = $outcome;
+                if (!isset($existingIndex[(string)($outcome['outcome_key'] ?? '')])) {
+                    $this->appendNdjson($this->storagePath('closed_outcomes.ndjson'), $outcome);
+                }
+            }
+        } else {
+            foreach ($effectiveRows as $row) {
+                if (is_array($row)) {
+                    $all[] = $row;
+                }
+            }
+        }
+
+        $strongLinkTotal = 0;
+        $weakLinkSkippedTotal = 0;
+        $timeMismatchTotal = 0;
+        $openedAtCorrectedTotal = 0;
+        $timingLowConfidenceTotal = 0;
+        $timeMismatchExamples = [];
+        $mfeNormalizedTotal = 0;
+        $maeNormalizedTotal = 0;
+        $roiNormalizationExamples = [];
+        $excludedFromPatternMiningTotal = 0;
+        $excludedReasons = [];
         $patternMining = [];
-        foreach ($uniqueMap as $identity => $row) {
-            if (!is_array($row)) {
+        foreach ($all as $outcome) {
+            if (!is_array($outcome)) {
                 continue;
             }
-            $row['_dl_identity'] = $identity;
-            $outcome = $this->makeOutcome($row, $cfg, $snapshotIndex);
-            $all[] = $outcome;
             if ((string)($outcome['link_strength'] ?? '') === 'strong') {
                 $strongLinkTotal++;
             }
@@ -646,9 +711,6 @@ final class DynamicLearningService
                 $reason = (string)($outcome['pattern_mining_exclude_reason'] ?? 'unknown');
                 $excludedReasons[$reason] = (int)($excludedReasons[$reason] ?? 0) + 1;
             }
-            if (!isset($existingIndex[(string)$outcome['outcome_key']])) {
-                $this->appendNdjson($this->storagePath('closed_outcomes.ndjson'), $outcome);
-            }
         }
 
         usort($all, static fn(array $a, array $b): int => strcmp((string)($b['closed_at'] ?? ''), (string)($a['closed_at'] ?? '')));
@@ -664,12 +726,16 @@ final class DynamicLearningService
             'incomplete' => $pick('outcome_incomplete'),
             'loaded_total' => $rawLoadedTotal,
             'raw_loaded_total' => $rawLoadedTotal,
+            'effective_total' => count($all),
             'unique_total' => count($all),
             'duplicates_skipped_total' => $duplicatesSkippedTotal,
             'merged_total' => $mergedTotal,
             'duplicate_examples' => $duplicateExamples,
             'strong_link_total' => $strongLinkTotal,
             'weak_link_skipped_total' => $weakLinkSkippedTotal,
+            'preserved_due_empty_source_total' => $preservedDueEmptySourceTotal,
+            'rebuilt_from_ndjson_total' => $rebuiltFromNdjsonTotal,
+            'rebuild_skipped_due_reset_total' => $rebuildSkippedDueResetTotal,
             'time_mismatch_total' => $timeMismatchTotal,
             'opened_at_corrected_total' => $openedAtCorrectedTotal,
             'timing_low_confidence_total' => $timingLowConfidenceTotal,
@@ -680,6 +746,164 @@ final class DynamicLearningService
             'excluded_from_pattern_mining_total' => $excludedFromPatternMiningTotal,
             'excluded_reasons' => $excludedReasons,
         ];
+    }
+
+    /** @return array{reset_detected:bool,manual_reset_respected:bool} */
+    private function detectManualReset(array $cfg): array
+    {
+        $respectReset = (bool)($cfg['respect_manual_storage_reset'] ?? true);
+        if (!$respectReset) {
+            return ['reset_detected' => false, 'manual_reset_respected' => false];
+        }
+
+        $resetDetected = false;
+        $markerRel = trim((string)($cfg['storage_reset_marker_file'] ?? 'storage/reset_marker.json'));
+        $markerPath = str_starts_with($markerRel, '/')
+            ? $markerRel
+            : $this->moduleDir . '/' . ltrim($markerRel, '/');
+        $outcomeNdjsonPath = $this->storagePath('closed_outcomes.ndjson');
+        $marker = (array)$this->readJson($markerPath, []);
+        $markerResetAt = strtotime((string)($marker['reset_at'] ?? '')) ?: 0;
+        $outcomeNdjsonMtime = is_file($outcomeNdjsonPath) ? (int)@filemtime($outcomeNdjsonPath) : 0;
+        if ($markerResetAt > 0 && $markerResetAt > $outcomeNdjsonMtime) {
+            $resetDetected = true;
+        }
+
+        if (!$resetDetected) {
+            $closedOutcomes = (array)$this->readJson($this->storagePath('closed_outcomes.json'), []);
+            $entrySnapshots = (array)$this->readJson($this->storagePath('entry_snapshots.json'), []);
+            $obsDir = $this->storagePath('active_observations');
+            $obsFiles = is_dir($obsDir) ? (glob($obsDir . '/*.json') ?: []) : [];
+            if ($closedOutcomes === [] && $entrySnapshots === [] && count($obsFiles) === 0) {
+                $resetDetected = true;
+            }
+        }
+
+        if (!$resetDetected) {
+            $manualResetEpoch = $cfg['manual_reset_epoch'] ?? null;
+            $manualResetEpochTs = is_numeric($manualResetEpoch) ? (int)round((float)$manualResetEpoch) : 0;
+            if ($manualResetEpochTs > 0) {
+                $persistedNewestTs = 0;
+                foreach ((array)$this->readJson($this->storagePath('closed_outcomes.json'), []) as $row) {
+                    if (!is_array($row)) {
+                        continue;
+                    }
+                    $ts = strtotime((string)($row['closed_at'] ?? $row['created_at'] ?? '')) ?: 0;
+                    if ($ts > $persistedNewestTs) {
+                        $persistedNewestTs = $ts;
+                    }
+                }
+                if ($manualResetEpochTs > $persistedNewestTs) {
+                    $resetDetected = true;
+                }
+            }
+        }
+
+        return [
+            'reset_detected' => $resetDetected,
+            'manual_reset_respected' => $resetDetected,
+        ];
+    }
+
+    /** @return list<array<string,mixed>> */
+    private function rebuildOutcomesFromNdjson(): array
+    {
+        $path = $this->storagePath('closed_outcomes.ndjson');
+        if (!is_file($path)) {
+            return [];
+        }
+        $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!is_array($lines) || $lines === []) {
+            return [];
+        }
+        $rows = [];
+        foreach ($lines as $line) {
+            $decoded = json_decode((string)$line, true);
+            if (is_array($decoded)) {
+                $rows[] = $decoded;
+            }
+        }
+        usort($rows, static fn(array $a, array $b): int => strcmp((string)($b['closed_at'] ?? ''), (string)($a['closed_at'] ?? '')));
+        return $rows;
+    }
+
+    private function countNdjsonLines(string $path): int
+    {
+        if (!is_file($path)) {
+            return 0;
+        }
+        $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        return is_array($lines) ? count($lines) : 0;
+    }
+
+    /** @return array{pruned_lines:int} */
+    private function compactObservationNdjson(string $path, int $maxPerPosition): array
+    {
+        if (!is_file($path)) {
+            return ['pruned_lines' => 0];
+        }
+        $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!is_array($lines) || count($lines) <= $maxPerPosition) {
+            return ['pruned_lines' => 0];
+        }
+
+        $rows = [];
+        foreach ($lines as $line) {
+            $decoded = json_decode((string)$line, true);
+            if (is_array($decoded)) {
+                $rows[] = $decoded;
+            }
+        }
+        if (count($rows) <= $maxPerPosition) {
+            return ['pruned_lines' => 0];
+        }
+
+        $first = $rows[0];
+        $lastRows = array_slice($rows, -max(1, $maxPerPosition - 2));
+        $minRoi = null;
+        $maxRoi = null;
+        foreach ($rows as $row) {
+            $roi = is_numeric($row['roi_now'] ?? null) ? (float)$row['roi_now'] : null;
+            if ($roi === null) {
+                continue;
+            }
+            $minRoi = $minRoi === null ? $roi : min($minRoi, $roi);
+            $maxRoi = $maxRoi === null ? $roi : max($maxRoi, $roi);
+        }
+        $summary = [
+            'ts' => time(),
+            'observation_compact_summary' => true,
+            'min_roi_now' => $minRoi,
+            'max_roi_now' => $maxRoi,
+            'bid_support_quality' => $lastRows[count($lastRows) - 1]['bid_support_quality'] ?? null,
+            'ask_wall_risk' => $lastRows[count($lastRows) - 1]['ask_wall_risk'] ?? null,
+            'open_interest_change_since_entry_pct' => $lastRows[count($lastRows) - 1]['open_interest_change_since_entry_pct'] ?? null,
+        ];
+        $kept = array_merge([$first], [$summary], $lastRows);
+
+        $out = '';
+        foreach ($kept as $row) {
+            $line = json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (is_string($line)) {
+                $out .= $line . PHP_EOL;
+            }
+        }
+        @file_put_contents($path, $out, LOCK_EX);
+        return ['pruned_lines' => max(0, count($rows) - count($kept))];
+    }
+
+    private function limitLastRunExamples(array $result, int $maxExamples): array
+    {
+        foreach ($result as $key => $value) {
+            if (!is_array($value)) {
+                continue;
+            }
+            if (!str_ends_with((string)$key, '_examples')) {
+                continue;
+            }
+            $result[$key] = array_slice(array_values($value), 0, $maxExamples);
+        }
+        return $result;
     }
 
     /** @return array<string,mixed> */
@@ -1197,7 +1421,7 @@ final class DynamicLearningService
      * Prune old storage records to stay within configured limits.
      * Never deletes active position observations.
      *
-     * @return array{pruned_total:int,size_estimate_mb:float|null,prune_examples:list<string>,prune_reason_counts:array<string,int>,cycle_history_pruned_total:int}
+     * @return array{pruned_total:int,size_estimate_mb:float|null,prune_examples:list<string>,prune_reason_counts:array<string,int>,cycle_history_pruned_total:int,active_observation_files_total:int,active_observation_files_pruned_total:int}
      */
     private function pruneStorage(array $cfg, array $currentSnapshots): array
     {
@@ -1205,18 +1429,68 @@ final class DynamicLearningService
         $pruneExamples = [];
         $reasonCounts = [];
         $cycleHistoryPrunedTotal = 0;
+        $activeObservationFilesTotal = 0;
+        $activeObservationFilesPrunedTotal = 0;
 
         $bump = static function (array &$map, string $reason, int $count = 1): void {
             $map[$reason] = (int)($map[$reason] ?? 0) + $count;
         };
+
+        $activeIds = [];
+        $snapshotIndex = [];
+        foreach ($currentSnapshots as $snap) {
+            if (!is_array($snap)) {
+                continue;
+            }
+            $sid = (string)($snap['snapshot_id'] ?? '');
+            if ($sid !== '') {
+                $snapshotIndex[$sid] = $snap;
+            }
+        }
+        $activeRows = (array)$this->readJson($this->repoRoot . '/modules/bot/storage/active_positions.json', []);
+        foreach ($activeRows as $row) {
+            if (!is_array($row) || !$this->isEigl($row, self::STRATEGY_ID)) {
+                continue;
+            }
+            $sid = $this->resolveSnapshotId($row, $snapshotIndex);
+            if ($sid !== null) {
+                $activeIds[$sid] = true;
+            }
+        }
+        $patternSnapshotIds = [];
+        foreach ((array)$this->readJson($this->storagePath('closed_outcomes.json'), []) as $row) {
+            if (!is_array($row) || !(bool)($row['used_for_pattern_mining'] ?? false)) {
+                continue;
+            }
+            $sid = trim((string)($row['snapshot_id'] ?? ''));
+            if ($sid !== '') {
+                $patternSnapshotIds[$sid] = true;
+            }
+        }
+        $protectedSnapshotIds = $activeIds + $patternSnapshotIds;
 
         $maxSnapshots = max(100, (int)($cfg['max_entry_snapshots'] ?? 2000));
         if (count($currentSnapshots) > $maxSnapshots) {
             $snapshotPath = $this->storagePath('entry_snapshots.json');
             $allSnaps = (array)$this->readJson($snapshotPath, []);
             if (count($allSnaps) > $maxSnapshots) {
-                $trimCount = count($allSnaps) - $maxSnapshots;
-                $pruned = array_splice($allSnaps, 0, $trimCount);
+                $protected = [];
+                $unprotected = [];
+                foreach ($allSnaps as $snap) {
+                    if (!is_array($snap)) {
+                        continue;
+                    }
+                    $sid = trim((string)($snap['snapshot_id'] ?? ''));
+                    if ($sid !== '' && isset($protectedSnapshotIds[$sid])) {
+                        $protected[] = $snap;
+                    } else {
+                        $unprotected[] = $snap;
+                    }
+                }
+                $slots = max(0, $maxSnapshots - count($protected));
+                $allSnaps = array_merge($protected, array_slice($unprotected, 0, $slots));
+                $pruned = array_slice($unprotected, $slots);
+                $trimCount = count($pruned);
                 $prunedTotal += $trimCount;
                 $bump($reasonCounts, 'entry_snapshots_limit', $trimCount);
                 foreach (array_slice($pruned, 0, 5) as $p) {
@@ -1243,8 +1517,22 @@ final class DynamicLearningService
         $featureNdjsonPath = $this->storagePath('features/early_impulse_growth_long/features.ndjson');
         $allFeatures = (array)$this->readJson($featureJsonPath, []);
         if (count($allFeatures) > $maxFeatureRecords) {
-            $trimCount = count($allFeatures) - $maxFeatureRecords;
-            array_splice($allFeatures, 0, $trimCount);
+            $protectedFeatures = [];
+            $unprotectedFeatures = [];
+            foreach ($allFeatures as $row) {
+                if (!is_array($row)) {
+                    continue;
+                }
+                $sid = trim((string)($row['snapshot_id'] ?? ''));
+                if ($sid !== '' && isset($protectedSnapshotIds[$sid])) {
+                    $protectedFeatures[] = $row;
+                } else {
+                    $unprotectedFeatures[] = $row;
+                }
+            }
+            $slots = max(0, $maxFeatureRecords - count($protectedFeatures));
+            $allFeatures = array_merge($protectedFeatures, array_slice($unprotectedFeatures, 0, $slots));
+            $trimCount = max(0, count($unprotectedFeatures) - $slots);
             $prunedTotal += $trimCount;
             $bump($reasonCounts, 'feature_records_limit', $trimCount);
             $pruneExamples[] = 'features:' . $trimCount . '_pruned';
@@ -1272,32 +1560,21 @@ final class DynamicLearningService
             }
         }
 
-        $activeIds = [];
-        $snapshotIndex = [];
-        foreach ($currentSnapshots as $snap) {
-            if (!is_array($snap)) {
-                continue;
-            }
-            $sid = (string)($snap['snapshot_id'] ?? '');
-            if ($sid !== '') {
-                $snapshotIndex[$sid] = $snap;
-            }
-        }
-        $activeRows = (array)$this->readJson($this->repoRoot . '/modules/bot/storage/active_positions.json', []);
-        foreach ($activeRows as $row) {
-            if (!is_array($row) || !$this->isEigl($row, self::STRATEGY_ID)) {
-                continue;
-            }
-            $sid = $this->resolveSnapshotId($row, $snapshotIndex);
-            if ($sid !== null) {
-                $activeIds[$sid] = true;
-            }
-        }
-
         $obsDir = $this->storagePath('active_observations');
-        $maxObsFiles = max(100, (int)($cfg['max_active_observation_files'] ?? 1000));
+        $maxObsFiles = max(100, (int)($cfg['max_active_observation_files'] ?? 500));
+        $maxObsPerPosition = max(1, (int)($cfg['max_observations_per_position'] ?? 40));
         if (is_dir($obsDir)) {
             $summaryFiles = glob($obsDir . '/*.json') ?: [];
+            $activeObservationFilesTotal = count($summaryFiles);
+            foreach ($summaryFiles as $file) {
+                $sid = basename($file, '.json');
+                $compact = $this->compactObservationNdjson($obsDir . '/' . $sid . '.ndjson', $maxObsPerPosition);
+                if ($compact['pruned_lines'] > 0) {
+                    $prunedTotal += $compact['pruned_lines'];
+                    $bump($reasonCounts, 'max_observations_per_position', $compact['pruned_lines']);
+                    $pruneExamples[] = 'observation_lines:' . $sid;
+                }
+            }
             if (count($summaryFiles) > $maxObsFiles) {
                 $candidates = [];
                 foreach ($summaryFiles as $file) {
@@ -1327,6 +1604,7 @@ final class DynamicLearningService
                     }
                 }
                 if ($deleted > 0) {
+                    $activeObservationFilesPrunedTotal += $deleted;
                     $prunedTotal += $deleted;
                     $bump($reasonCounts, 'active_observation_files_limit', $deleted);
                 }
@@ -1334,7 +1612,7 @@ final class DynamicLearningService
         }
 
         $sizeEstimateMb = $this->estimateStorageSizeMb();
-        $maxStorageSizeMb = max(50.0, (float)($cfg['max_storage_size_mb'] ?? 200.0));
+        $maxStorageSizeMb = max(50.0, (float)($cfg['max_storage_size_mb'] ?? 150.0));
         if ($sizeEstimateMb !== null && $sizeEstimateMb > $maxStorageSizeMb && is_dir($obsDir)) {
             $summaryFiles = glob($obsDir . '/*.json') ?: [];
             $candidates = [];
@@ -1375,6 +1653,8 @@ final class DynamicLearningService
             'prune_examples' => array_slice($pruneExamples, 0, 20),
             'prune_reason_counts' => $reasonCounts,
             'cycle_history_pruned_total' => $cycleHistoryPrunedTotal,
+            'active_observation_files_total' => $activeObservationFilesTotal,
+            'active_observation_files_pruned_total' => $activeObservationFilesPrunedTotal,
         ];
     }
 
@@ -1460,17 +1740,13 @@ final class DynamicLearningService
             'created_at' => (string)($result['created_at'] ?? date('c')),
             'architecture_version' => (string)($result['architecture_version'] ?? 'analyzer_pipeline_v1'),
             'entry_snapshots_total' => (int)($result['entry_snapshots_total'] ?? 0),
-            'entry_snapshots_new_total' => (int)($result['entry_snapshots_new_total'] ?? 0),
             'active_positions_seen_total' => (int)($result['active_positions_seen_total'] ?? 0),
             'observations_written_total' => (int)($result['observations_written_total'] ?? 0),
-            'closed_outcomes_unique_total' => (int)($result['closed_outcomes_unique_total'] ?? 0),
+            'closed_outcomes_effective_total' => (int)($result['closed_outcomes_effective_total'] ?? 0),
             'bad_entry_total' => (int)($result['bad_entry_total'] ?? 0),
             'good_or_do_not_touch_total' => (int)($result['good_or_do_not_touch_total'] ?? 0),
             'entry_ok_exit_issue_total' => (int)($result['entry_ok_exit_issue_total'] ?? 0),
-            'neutral_total' => (int)($result['neutral_total'] ?? 0),
-            'outcome_incomplete_total' => (int)($result['outcome_incomplete_total'] ?? 0),
             'feature_records_total' => (int)($result['feature_records_total'] ?? 0),
-            'feature_time_valid_total' => (int)($result['feature_time_valid_total'] ?? 0),
             'candle_micro_real_available_total' => (int)($result['candle_micro_real_available_total'] ?? 0),
             'candle_micro_proxy_available_total' => (int)($result['candle_micro_proxy_available_total'] ?? 0),
             'dump_micro_real_available_total' => (int)($result['dump_micro_real_available_total'] ?? 0),
@@ -1544,6 +1820,11 @@ final class DynamicLearningService
         $cfg['profile_history_enabled'] = (bool)($cfg['profile_history_enabled'] ?? true);
         $cfg['compare_auto_vs_default_enabled'] = (bool)($cfg['compare_auto_vs_default_enabled'] ?? true);
         $cfg['auto_apply_enabled'] = (bool)($cfg['auto_apply_enabled'] ?? false);
+        $cfg['preserve_outcomes_when_source_empty'] = (bool)($cfg['preserve_outcomes_when_source_empty'] ?? true);
+        $cfg['rebuild_closed_outcomes_from_ndjson_enabled'] = (bool)($cfg['rebuild_closed_outcomes_from_ndjson_enabled'] ?? true);
+        $cfg['respect_manual_storage_reset'] = (bool)($cfg['respect_manual_storage_reset'] ?? true);
+        $cfg['storage_reset_marker_file'] = trim((string)($cfg['storage_reset_marker_file'] ?? 'storage/reset_marker.json'));
+        $cfg['manual_reset_epoch'] = is_numeric($cfg['manual_reset_epoch'] ?? null) ? (float)$cfg['manual_reset_epoch'] : null;
         $cfg['feature_pipeline_enabled'] = (bool)($cfg['feature_pipeline_enabled'] ?? true);
         $cfg['candle_micro_analyzer_enabled'] = (bool)($cfg['candle_micro_analyzer_enabled'] ?? true);
         $cfg['dump_micro_analyzer_enabled'] = (bool)($cfg['dump_micro_analyzer_enabled'] ?? true);
@@ -1554,10 +1835,11 @@ final class DynamicLearningService
         $cfg['max_entry_snapshots'] = max(100, (int)($cfg['max_entry_snapshots'] ?? 2000));
         $cfg['max_feature_records'] = max(100, (int)($cfg['max_feature_records'] ?? 2000));
         $cfg['max_closed_outcomes'] = max(100, (int)($cfg['max_closed_outcomes'] ?? 1000));
-        $cfg['max_active_observation_files'] = max(100, (int)($cfg['max_active_observation_files'] ?? 1000));
-        $cfg['max_storage_size_mb'] = max(50.0, (float)($cfg['max_storage_size_mb'] ?? 200.0));
+        $cfg['max_active_observation_files'] = max(100, (int)($cfg['max_active_observation_files'] ?? 500));
+        $cfg['max_storage_size_mb'] = max(50.0, (float)($cfg['max_storage_size_mb'] ?? 150.0));
         $cfg['max_cycle_history_lines'] = max(100, (int)($cfg['max_cycle_history_lines'] ?? 1000));
         $cfg['max_cycle_history_size_mb'] = max(1.0, (float)($cfg['max_cycle_history_size_mb'] ?? 20.0));
+        $cfg['max_examples_per_last_run_section'] = max(1, (int)($cfg['max_examples_per_last_run_section'] ?? 10));
         return $cfg;
     }
 

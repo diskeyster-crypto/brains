@@ -48,6 +48,13 @@ return [
     'auto_profile_requires_not_worse_than_default' => true,
     'auto_apply_enabled' => false,
 
+    // Reset-aware persistence
+    'preserve_outcomes_when_source_empty' => true,
+    'rebuild_closed_outcomes_from_ndjson_enabled' => true,
+    'respect_manual_storage_reset' => true,
+    'storage_reset_marker_file' => 'storage/reset_marker.json',
+    'manual_reset_epoch' => null,
+
     // Feature pipeline
     'feature_pipeline_enabled' => true,
     'candle_micro_analyzer_enabled' => true,
@@ -62,8 +69,12 @@ return [
     'active_strategy_id' => 'early_impulse_growth_long',
 
     // Storage limits
+    'max_storage_size_mb' => 150,
+    'max_cycle_history_lines' => 1000,
+    'max_cycle_history_size_mb' => 20,
     'max_entry_snapshots' => 2000,
     'max_feature_records' => 2000,
     'max_closed_outcomes' => 1000,
-    'max_active_observation_files' => 1000,
+    'max_active_observation_files' => 500,
+    'max_examples_per_last_run_section' => 10,
 ];

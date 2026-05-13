@@ -72,6 +72,7 @@ final class ProfileBuilder
             'created_at' => date('c'),
             'micro_learning_epoch_id' => $epochMeta['micro_learning_epoch_id'] ?? null,
             'micro_learning_epoch_start_at' => $epochMeta['micro_learning_epoch_start_at'] ?? null,
+            'epoch_start_source' => $epochMeta['epoch_start_source'] ?? null,
             'source_window' => ['closed_outcomes_total' => count($outcomes)],
             'source_outcomes_total' => count($outcomes),
             'legacy_outcomes_total' => (int)($epochMeta['legacy_outcomes_total'] ?? 0),

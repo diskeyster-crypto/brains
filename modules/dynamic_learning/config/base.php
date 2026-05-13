@@ -79,6 +79,7 @@ return [
     'bybit_micro_fetch_only_for_strategy' => 'early_impulse_growth_long',
     'dump_micro_lookback_minutes' => 60,
     'dump_micro_min_candles' => 10,
+    'micro_primary_window' => 'micro_window_10m',
 
     // Micro-learning epoch: separate pre-reset outcomes from new post-reset micro features
     'micro_learning_epoch_enabled' => true,

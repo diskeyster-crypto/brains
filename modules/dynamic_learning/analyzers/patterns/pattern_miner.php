@@ -61,7 +61,7 @@ final class PatternMiner
             [
                 'id' => 'single_candle_dominance_ge_65',
                 'label' => 'single_candle_dominance >= 65',
-                'f' => 'micro_single_candle_dominance_pct',
+                'f' => 'single_candle_dominance_pct',
                 'op' => 'gte',
                 'v' => 65,
             ],
@@ -72,11 +72,11 @@ final class PatternMiner
             ['id' => 'micro_growth_distribution_distributed', 'label' => 'micro_growth_distribution = distributed', 'f' => 'micro_growth_distribution', 'op' => 'eq', 'v' => 'distributed'],
             ['id' => 'micro_entry_timing_after_spike', 'label' => 'micro_entry_timing = after_spike', 'f' => 'micro_entry_timing', 'op' => 'eq', 'v' => 'after_spike'],
             ['id' => 'micro_rejection_risk_high', 'label' => 'micro_rejection_risk = high', 'f' => 'micro_rejection_risk', 'op' => 'eq', 'v' => 'high'],
-            ['id' => 'largest_candle_share_ge_70', 'label' => 'largest_candle_share_pct >= 70', 'f' => 'micro_largest_candle_share_pct', 'op' => 'gte', 'v' => 70],
-            ['id' => 'higher_close_count_ge_3', 'label' => 'higher_close_count >= 3', 'f' => 'micro_higher_close_count', 'op' => 'gte', 'v' => 3],
-            ['id' => 'higher_low_count_ge_2', 'label' => 'higher_low_count >= 2', 'f' => 'micro_higher_low_count', 'op' => 'gte', 'v' => 2],
-            ['id' => 'pullback_max_pct_ge_0_8', 'label' => 'pullback_max_pct >= 0.8', 'f' => 'micro_pullback_max_pct', 'op' => 'gte', 'v' => 0.8],
-            ['id' => 'direction_flip_count_ge_3', 'label' => 'direction_flip_count >= 3', 'f' => 'micro_direction_flip_count', 'op' => 'gte', 'v' => 3],
+            ['id' => 'largest_candle_share_ge_70', 'label' => 'largest_candle_share_pct >= 70', 'f' => 'largest_candle_share_pct', 'op' => 'gte', 'v' => 70],
+            ['id' => 'higher_close_count_ge_3', 'label' => 'higher_close_count >= 3', 'f' => 'higher_close_count', 'op' => 'gte', 'v' => 3],
+            ['id' => 'higher_low_count_ge_2', 'label' => 'higher_low_count >= 2', 'f' => 'higher_low_count', 'op' => 'gte', 'v' => 2],
+            ['id' => 'pullback_max_pct_ge_0_8', 'label' => 'pullback_max_pct >= 0.8', 'f' => 'pullback_max_pct', 'op' => 'gte', 'v' => 0.8],
+            ['id' => 'direction_flip_count_ge_3', 'label' => 'direction_flip_count >= 3', 'f' => 'direction_flip_count', 'op' => 'gte', 'v' => 3],
             ['id' => 'dump_shape_vertical_liquidation', 'label' => 'dump_shape = vertical_liquidation', 'f' => 'dump_shape', 'op' => 'eq', 'v' => 'vertical_liquidation'],
             ['id' => 'dump_shape_choppy_dump', 'label' => 'dump_shape = choppy_dump', 'f' => 'dump_shape', 'op' => 'eq', 'v' => 'choppy_dump'],
             ['id' => 'dump_shape_controlled_dump', 'label' => 'dump_shape = controlled_dump', 'f' => 'dump_shape', 'op' => 'eq', 'v' => 'controlled_dump'],
@@ -97,7 +97,7 @@ final class PatternMiner
             ['id' => 'combo_single_spike_ask_wall_high', 'label' => 'single_spike + ask_wall_risk_high', 'combo' => [['f' => 'micro_impulse_shape', 'op' => 'eq', 'v' => 'single_spike'], ['f' => 'ask_wall_risk', 'op' => 'eq', 'v' => 'high']]],
             ['id' => 'combo_concentrated_fast_flip_chop', 'label' => 'concentrated_growth + fast_flip_chop', 'combo' => [['f' => 'micro_growth_distribution', 'op' => 'eq', 'v' => 'concentrated'], ['f' => 'wave_regime', 'op' => 'eq', 'v' => 'fast_flip_chop']]],
             ['id' => 'combo_after_spike_oi_not_confirmed', 'label' => 'after_spike + oi_not_confirmed', 'combo' => [['f' => 'micro_entry_timing', 'op' => 'eq', 'v' => 'after_spike'], ['f' => 'open_interest_confirmed', 'op' => 'eq', 'v' => false]]],
-            ['id' => 'combo_knife_bounce_high_single_candle_dominance', 'label' => 'knife_bounce + high_single_candle_dominance', 'combo' => [['f' => 'post_dump_state', 'op' => 'eq', 'v' => 'knife_bounce'], ['f' => 'micro_single_candle_dominance_pct', 'op' => 'gte', 'v' => 65]]],
+            ['id' => 'combo_knife_bounce_high_single_candle_dominance', 'label' => 'knife_bounce + high_single_candle_dominance', 'combo' => [['f' => 'post_dump_state', 'op' => 'eq', 'v' => 'knife_bounce'], ['f' => 'single_candle_dominance_pct', 'op' => 'gte', 'v' => 65]]],
             ['id' => 'combo_smooth_birth_bid_support_strong', 'label' => 'smooth_birth + bid_support_strong', 'combo' => [['f' => 'micro_impulse_shape', 'op' => 'eq', 'v' => 'smooth_birth'], ['f' => 'bid_support_quality', 'op' => 'in', 'v' => ['strong', 'medium']]]],
             ['id' => 'combo_controlled_dump_smooth_birth', 'label' => 'controlled_dump + smooth_birth', 'combo' => [['f' => 'dump_shape', 'op' => 'eq', 'v' => 'controlled_dump'], ['f' => 'micro_impulse_shape', 'op' => 'eq', 'v' => 'smooth_birth']]],
             ['id' => 'combo_choppy_dump_fast_flip_chop', 'label' => 'choppy_dump + fast_flip_chop', 'combo' => [['f' => 'dump_shape', 'op' => 'eq', 'v' => 'choppy_dump'], ['f' => 'wave_regime', 'op' => 'eq', 'v' => 'fast_flip_chop']]],
@@ -199,6 +199,24 @@ final class PatternMiner
             $f = array_merge($f, (array)$featureBySnapshot[$sid]);
         }
         if ($f !== []) {
+            if (!array_key_exists('single_candle_dominance_pct', $f) && array_key_exists('micro_single_candle_dominance_pct', $f)) {
+                $f['single_candle_dominance_pct'] = $f['micro_single_candle_dominance_pct'];
+            }
+            if (!array_key_exists('largest_candle_share_pct', $f) && array_key_exists('micro_largest_candle_share_pct', $f)) {
+                $f['largest_candle_share_pct'] = $f['micro_largest_candle_share_pct'];
+            }
+            if (!array_key_exists('higher_close_count', $f) && array_key_exists('micro_higher_close_count', $f)) {
+                $f['higher_close_count'] = $f['micro_higher_close_count'];
+            }
+            if (!array_key_exists('higher_low_count', $f) && array_key_exists('micro_higher_low_count', $f)) {
+                $f['higher_low_count'] = $f['micro_higher_low_count'];
+            }
+            if (!array_key_exists('pullback_max_pct', $f) && array_key_exists('micro_pullback_max_pct', $f)) {
+                $f['pullback_max_pct'] = $f['micro_pullback_max_pct'];
+            }
+            if (!array_key_exists('direction_flip_count', $f) && array_key_exists('micro_direction_flip_count', $f)) {
+                $f['direction_flip_count'] = $f['micro_direction_flip_count'];
+            }
             return $f;
         }
         $ctx = (array)($o['entry_snapshot']['strategy_signal_context'] ?? []);

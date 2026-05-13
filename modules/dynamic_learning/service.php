@@ -77,6 +77,7 @@ final class DynamicLearningService
     public function runCycle(): array
     {
         $cfg = $this->loadConfig();
+        $runStartedAt = date('c');
         $result = [
             'architecture_version' => 'analyzer_pipeline_v1',
             'enabled' => (bool)$cfg['enabled'],
@@ -148,6 +149,9 @@ final class DynamicLearningService
             'post_dump_impulse_type_counts' => [],
             'micro_pattern_examples' => [],
             'micro_bad_good_overlap_examples' => [],
+            'micro_primary_window' => (string)($cfg['micro_primary_window'] ?? 'micro_window_10m'),
+            'micro_primary_summary_available_total' => 0,
+            'micro_primary_summary_missing_total' => 0,
             'weighted_score_calculated_total' => 0,
             'bad_patterns_total' => 0,
             'profile_generated' => false,
@@ -187,7 +191,7 @@ final class DynamicLearningService
             'good_entry_examples' => [],
             'top_bad_pattern_examples' => [],
             'quarantined_rule_examples' => [],
-            'created_at' => date('c'),
+            'created_at' => $runStartedAt,
         ];
 
         if (!(bool)$cfg['enabled']) {
@@ -282,11 +286,20 @@ final class DynamicLearningService
             $result['post_dump_impulse_type_counts'] = (array)($featureResult['post_dump_impulse_type_counts'] ?? []);
             $result['micro_pattern_examples'] = (array)($featureResult['micro_pattern_examples'] ?? []);
             $result['micro_bad_good_overlap_examples'] = (array)($featureResult['micro_bad_good_overlap_examples'] ?? []);
+            $result['micro_primary_window'] = (string)($featureResult['micro_primary_window'] ?? ($cfg['micro_primary_window'] ?? 'micro_window_10m'));
+            $result['micro_primary_summary_available_total'] = (int)($featureResult['micro_primary_summary_available_total'] ?? 0);
+            $result['micro_primary_summary_missing_total'] = (int)($featureResult['micro_primary_summary_missing_total'] ?? 0);
             $result['weighted_score_calculated_total'] = $featureResult['weighted_score_calculated_total'];
         }
 
         // 4b. Micro-learning epoch filter — exclude pre-epoch outcomes from profile/pattern mining
-        $epochFilter = $this->applyMicroLearningEpoch($cfg, $outcomes);
+        $epochFilter = $this->applyMicroLearningEpoch(
+            $cfg,
+            $outcomes,
+            $snapshots['all'],
+            (array)($featureResult['feature_by_snapshot'] ?? []),
+            $runStartedAt
+        );
         $result['micro_learning_epoch_enabled'] = (bool)($epochFilter['epoch_enabled'] ?? false);
         $result['micro_learning_epoch_id'] = $epochFilter['epoch_id'] ?? null;
         $result['micro_learning_epoch_start_at'] = $epochFilter['epoch_start_at'] ?? null;
@@ -308,6 +321,7 @@ final class DynamicLearningService
         $epochMeta = [
             'micro_learning_epoch_id' => $epochFilter['epoch_id'] ?? null,
             'micro_learning_epoch_start_at' => $epochFilter['epoch_start_at'] ?? null,
+            'epoch_start_source' => $epochFilter['epoch_start_source'] ?? null,
             'legacy_outcomes_total' => (int)($epochFilter['legacy_outcomes_total'] ?? 0),
             'outcomes_excluded_by_epoch_total' => (int)($epochFilter['outcomes_excluded_by_epoch_total'] ?? 0),
         ];
@@ -1256,14 +1270,17 @@ final class DynamicLearningService
      * Epoch start is derived (in order):
      *   1. micro_learning_epoch_start_at config (explicit timestamp/iso)
      *   2. reset_marker.json reset_at
-     *   3. manual_reset_epoch config
-     *   4. Missing → no exclusion, epoch_start_missing_reason set.
+     *   3. first real micro feature learning_opened_at
+     *   4. first entry snapshot opened_at/detected_at
+     *   5. current run started_at fallback
      *
      * @param array<string,mixed> $cfg
      * @param array{pattern_mining:list<array<string,mixed>>,...} $outcomes
+     * @param list<array<string,mixed>> $snapshots
+     * @param array<string,array<string,mixed>> $featureBySnapshot
      * @return array{epoch_enabled:bool,epoch_id:?string,epoch_start_at:?string,legacy_outcomes_total:int,epoch_outcomes_total:int,outcomes_excluded_by_epoch_total:int,epoch_start_source:string,epoch_start_missing_reason:?string,pattern_mining:list<array<string,mixed>>}
      */
-    private function applyMicroLearningEpoch(array $cfg, array $outcomes): array
+    private function applyMicroLearningEpoch(array $cfg, array $outcomes, array $snapshots = [], array $featureBySnapshot = [], ?string $runStartedAt = null): array
     {
         $patternMining = $outcomes['pattern_mining'] ?? [];
         $noFilter = [
@@ -1281,9 +1298,7 @@ final class DynamicLearningService
         if (!(bool)($cfg['micro_learning_epoch_enabled'] ?? false)) {
             return $noFilter;
         }
-        if (!(bool)($cfg['micro_learning_ignore_legacy_outcomes_before_epoch'] ?? true)) {
-            return $noFilter + ['epoch_enabled' => true, 'epoch_start_source' => 'ignore_disabled'];
-        }
+        $excludeLegacyByEpoch = (bool)($cfg['micro_learning_ignore_legacy_outcomes_before_epoch'] ?? true);
 
         // Determine epoch start timestamp
         $epochStartTs = 0;
@@ -1317,14 +1332,63 @@ final class DynamicLearningService
         }
 
         if ($epochStartTs <= 0) {
-            $manualEpoch = $cfg['manual_reset_epoch'] ?? null;
-            if (is_numeric($manualEpoch) && (float)$manualEpoch > 0) {
-                $ts = (float)$manualEpoch;
-                if ($ts > 1_000_000_000_000) {
-                    $ts /= 1000.0;
+            $firstRealMicroTs = 0;
+            foreach ($featureBySnapshot as $f) {
+                if (!is_array($f)) {
+                    continue;
                 }
-                $epochStartTs = (int)round($ts);
-                $epochStartSource = 'manual_reset_epoch_config';
+                $isRealMicro = (bool)($f['candle_micro_real'] ?? false) || (bool)($f['micro_context_available'] ?? false);
+                if (!$isRealMicro) {
+                    continue;
+                }
+                $ts = strtotime((string)($f['learning_opened_at'] ?? '')) ?: 0;
+                if ($ts <= 0) {
+                    continue;
+                }
+                if ($firstRealMicroTs <= 0 || $ts < $firstRealMicroTs) {
+                    $firstRealMicroTs = $ts;
+                }
+            }
+            if ($firstRealMicroTs > 0) {
+                $epochStartTs = $firstRealMicroTs;
+                $epochStartSource = 'first_real_micro_feature';
+            }
+        }
+
+        if ($epochStartTs <= 0) {
+            $firstSnapshotTs = 0;
+            foreach ($snapshots as $snap) {
+                if (!is_array($snap)) {
+                    continue;
+                }
+                $openedTs = strtotime((string)($snap['opened_at'] ?? '')) ?: 0;
+                $detectedTs = strtotime((string)($snap['detected_at'] ?? '')) ?: 0;
+                $candidateTs = 0;
+                if ($openedTs > 0 && $detectedTs > 0) {
+                    $candidateTs = min($openedTs, $detectedTs);
+                } elseif ($openedTs > 0) {
+                    $candidateTs = $openedTs;
+                } elseif ($detectedTs > 0) {
+                    $candidateTs = $detectedTs;
+                }
+                if ($candidateTs <= 0) {
+                    continue;
+                }
+                if ($firstSnapshotTs <= 0 || $candidateTs < $firstSnapshotTs) {
+                    $firstSnapshotTs = $candidateTs;
+                }
+            }
+            if ($firstSnapshotTs > 0) {
+                $epochStartTs = $firstSnapshotTs;
+                $epochStartSource = 'first_entry_snapshot';
+            }
+        }
+
+        if ($epochStartTs <= 0) {
+            $runStartedTs = strtotime((string)$runStartedAt) ?: 0;
+            if ($runStartedTs > 0) {
+                $epochStartTs = $runStartedTs;
+                $epochStartSource = 'current_run_started_at';
             }
         }
 
@@ -1343,13 +1407,7 @@ final class DynamicLearningService
         }
 
         // Derive epoch_id
-        $epochIdConfig = trim((string)($cfg['micro_learning_epoch_id'] ?? 'auto'));
-        if ($epochIdConfig === '' || $epochIdConfig === 'auto' || $epochIdConfig === 'auto_from_reset_or_manual') {
-            $epochId = 'epoch_' . gmdate('Ymd_His', $epochStartTs);
-        } else {
-            $epochId = $epochIdConfig;
-        }
-
+        $epochId = 'eigl_micro_' . gmdate('Ymd_His', $epochStartTs);
         $epochStartIso = gmdate('c', $epochStartTs);
 
         // Partition outcomes into epoch and legacy
@@ -1358,7 +1416,7 @@ final class DynamicLearningService
         foreach ($patternMining as $o) {
             $openedAtStr = (string)($o['opened_at'] ?? $o['learning_opened_at'] ?? '');
             $openedAtTs = $openedAtStr !== '' ? (strtotime($openedAtStr) ?: 0) : 0;
-            if ($openedAtTs === 0 || $openedAtTs >= $epochStartTs) {
+            if (!$excludeLegacyByEpoch || $openedAtTs === 0 || $openedAtTs >= $epochStartTs) {
                 $epochOutcomes[] = $o;
             } else {
                 $legacyCount++;
@@ -1428,6 +1486,9 @@ final class DynamicLearningService
             'post_dump_impulse_type_counts' => [],
             'micro_pattern_examples' => [],
             'micro_bad_good_overlap_examples' => [],
+            'micro_primary_window' => (string)($cfg['micro_primary_window'] ?? 'micro_window_10m'),
+            'micro_primary_summary_available_total' => 0,
+            'micro_primary_summary_missing_total' => 0,
             'feature_by_snapshot' => [],
             'weighted_score_calculated_total' => 0,
         ];
@@ -1574,7 +1635,37 @@ final class DynamicLearningService
                 'micro_entry_timing' => (string)($candleMicro['micro_entry_timing'] ?? 'unknown'),
                 'micro_growth_distribution' => (string)($candleMicro['micro_growth_distribution'] ?? 'unknown'),
                 'micro_rejection_risk' => (string)($candleMicro['micro_rejection_risk'] ?? 'unknown'),
-                'micro_direction_flip_count' => (int)(((array)($candleMicro['candle_micro_windows']['micro_window_15m'] ?? []))['direction_flip_count'] ?? 0),
+                'micro_primary_window' => (string)($candleMicro['micro_primary_window'] ?? ($cfg['micro_primary_window'] ?? 'micro_window_10m')),
+                'micro_primary_candles_count' => (int)($candleMicro['micro_primary_candles_count'] ?? 0),
+                'micro_total_change_pct' => $candleMicro['micro_total_change_pct'] ?? null,
+                'single_candle_dominance_pct' => $candleMicro['single_candle_dominance_pct'] ?? ($candleMicro['micro_single_candle_dominance_pct'] ?? null),
+                'largest_candle_share_pct' => $candleMicro['largest_candle_share_pct'] ?? ($candleMicro['micro_largest_candle_share_pct'] ?? null),
+                'largest_candle_change_pct' => $candleMicro['largest_candle_change_pct'] ?? null,
+                'higher_close_count' => (int)($candleMicro['higher_close_count'] ?? ($candleMicro['micro_higher_close_count'] ?? 0)),
+                'higher_low_count' => (int)($candleMicro['higher_low_count'] ?? ($candleMicro['micro_higher_low_count'] ?? 0)),
+                'lower_close_count' => (int)($candleMicro['lower_close_count'] ?? 0),
+                'lower_low_count' => (int)($candleMicro['lower_low_count'] ?? 0),
+                'direction_flip_count' => (int)($candleMicro['direction_flip_count'] ?? 0),
+                'pullback_max_pct' => $candleMicro['pullback_max_pct'] ?? ($candleMicro['micro_pullback_max_pct'] ?? null),
+                'pullback_count' => (int)($candleMicro['pullback_count'] ?? 0),
+                'avg_body_pct' => $candleMicro['avg_body_pct'] ?? null,
+                'avg_upper_wick_pct' => $candleMicro['avg_upper_wick_pct'] ?? null,
+                'avg_lower_wick_pct' => $candleMicro['avg_lower_wick_pct'] ?? null,
+                'max_upper_wick_pct' => $candleMicro['max_upper_wick_pct'] ?? null,
+                'max_lower_wick_pct' => $candleMicro['max_lower_wick_pct'] ?? null,
+                'smoothness_score' => $candleMicro['smoothness_score'] ?? null,
+                'acceleration_score' => $candleMicro['acceleration_score'] ?? null,
+                'impulse_birth_score' => $candleMicro['impulse_birth_score'] ?? null,
+                'late_spike_risk_score' => $candleMicro['late_spike_risk_score'] ?? null,
+                'micro_higher_close_count' => (int)($candleMicro['micro_higher_close_count'] ?? ($candleMicro['higher_close_count'] ?? 0)),
+                'micro_higher_low_count' => (int)($candleMicro['micro_higher_low_count'] ?? ($candleMicro['higher_low_count'] ?? 0)),
+                'micro_largest_candle_share_pct' => $candleMicro['micro_largest_candle_share_pct'] ?? ($candleMicro['largest_candle_share_pct'] ?? null),
+                'micro_single_candle_dominance_pct' => $candleMicro['micro_single_candle_dominance_pct'] ?? ($candleMicro['single_candle_dominance_pct'] ?? null),
+                'micro_pullback_max_pct' => $candleMicro['micro_pullback_max_pct'] ?? ($candleMicro['pullback_max_pct'] ?? null),
+                'micro_smoothness_score' => $candleMicro['micro_smoothness_score'] ?? ($candleMicro['smoothness_score'] ?? null),
+                'micro_impulse_birth_score' => $candleMicro['micro_impulse_birth_score'] ?? ($candleMicro['impulse_birth_score'] ?? null),
+                'micro_late_spike_risk_score' => $candleMicro['micro_late_spike_risk_score'] ?? ($candleMicro['late_spike_risk_score'] ?? null),
+                'micro_direction_flip_count' => (int)($candleMicro['direction_flip_count'] ?? 0),
                 'dump_micro_available' => (bool)($dumpMicro['dump_micro_available'] ?? false),
                 'dump_micro_proxy_available' => (bool)($dumpMicro['dump_micro_proxy_available'] ?? false),
                 'dump_micro_real' => (bool)($dumpMicro['dump_micro_real'] ?? false),
@@ -1643,6 +1734,18 @@ final class DynamicLearningService
             $countMap($result['post_dump_state_counts'], (string)($featureRecord['post_dump_state'] ?? 'unknown'));
             $countMap($result['post_dump_impulse_type_counts'], (string)($featureRecord['post_dump_impulse_type'] ?? 'unknown'));
 
+            $primarySummaryAvailable = (int)($featureRecord['micro_primary_candles_count'] ?? 0) > 0
+                && (
+                    is_numeric($featureRecord['single_candle_dominance_pct'] ?? null)
+                    || is_numeric($featureRecord['higher_close_count'] ?? null)
+                    || is_numeric($featureRecord['higher_low_count'] ?? null)
+                );
+            if ($primarySummaryAvailable) {
+                $result['micro_primary_summary_available_total']++;
+            } else {
+                $result['micro_primary_summary_missing_total']++;
+            }
+
             if (count($result['micro_pattern_examples']) < 12) {
                 $out = is_array($outcomeBySnapshot[(string)($featureRecord['snapshot_id'] ?? '')] ?? null)
                     ? (array)$outcomeBySnapshot[(string)$featureRecord['snapshot_id']]
@@ -1655,10 +1758,11 @@ final class DynamicLearningService
                     'micro_impulse_shape' => $featureRecord['micro_impulse_shape'] ?? null,
                     'micro_entry_timing' => $featureRecord['micro_entry_timing'] ?? null,
                     'micro_growth_distribution' => $featureRecord['micro_growth_distribution'] ?? null,
-                    'single_candle_dominance_pct' => $featureRecord['micro_single_candle_dominance_pct'] ?? null,
-                    'largest_candle_share_pct' => $featureRecord['micro_largest_candle_share_pct'] ?? null,
-                    'higher_close_count' => $featureRecord['micro_higher_close_count'] ?? null,
-                    'higher_low_count' => $featureRecord['micro_higher_low_count'] ?? null,
+                    'micro_primary_window' => $featureRecord['micro_primary_window'] ?? null,
+                    'single_candle_dominance_pct' => $featureRecord['single_candle_dominance_pct'] ?? ($featureRecord['micro_single_candle_dominance_pct'] ?? null),
+                    'largest_candle_share_pct' => $featureRecord['largest_candle_share_pct'] ?? ($featureRecord['micro_largest_candle_share_pct'] ?? null),
+                    'higher_close_count' => $featureRecord['higher_close_count'] ?? ($featureRecord['micro_higher_close_count'] ?? null),
+                    'higher_low_count' => $featureRecord['higher_low_count'] ?? ($featureRecord['micro_higher_low_count'] ?? null),
                     'dump_shape' => $featureRecord['dump_shape'] ?? null,
                     'post_dump_state' => $featureRecord['post_dump_state'] ?? null,
                     'post_dump_impulse_type' => $featureRecord['post_dump_impulse_type'] ?? null,
@@ -2269,6 +2373,10 @@ final class DynamicLearningService
         $cfg['bybit_micro_fetch_only_for_strategy'] = (string)($cfg['bybit_micro_fetch_only_for_strategy'] ?? self::STRATEGY_ID);
         $cfg['dump_micro_lookback_minutes'] = max(15, (int)($cfg['dump_micro_lookback_minutes'] ?? 60));
         $cfg['dump_micro_min_candles'] = max(3, (int)($cfg['dump_micro_min_candles'] ?? 10));
+        $cfg['micro_primary_window'] = strtolower(trim((string)($cfg['micro_primary_window'] ?? 'micro_window_10m')));
+        if (!in_array($cfg['micro_primary_window'], ['micro_window_5m', 'micro_window_10m', 'micro_window_15m'], true)) {
+            $cfg['micro_primary_window'] = 'micro_window_10m';
+        }
         $cfg['max_entry_snapshots'] = max(100, (int)($cfg['max_entry_snapshots'] ?? 2000));
         $cfg['max_feature_records'] = max(100, (int)($cfg['max_feature_records'] ?? 2000));
         $cfg['max_closed_outcomes'] = max(100, (int)($cfg['max_closed_outcomes'] ?? 1000));

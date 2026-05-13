@@ -62,6 +62,7 @@ return [
     'bybit_micro_fetch_only_for_strategy' => 'string',
     'dump_micro_lookback_minutes' => 'int',
     'dump_micro_min_candles' => 'int',
+    'micro_primary_window' => 'string',
     'micro_learning_epoch_enabled' => 'bool',
     'micro_learning_epoch_id' => 'string',
     'micro_learning_ignore_legacy_outcomes_before_epoch' => 'bool',

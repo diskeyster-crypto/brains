@@ -20,6 +20,7 @@ final class CandleMicroAnalyzer
         $windowStats = [];
         $source = 'none';
         $realAvailable = false;
+        $primaryWindowKey = self::normalizePrimaryWindowKey((string)($cfg['micro_primary_window'] ?? 'micro_window_10m'));
 
         foreach ($windows as $minutes) {
             $res = $marketData->getCandlesBeforeEntry($symbol, $entryTs, $minutes, max(3, min(10, $minutes)));
@@ -35,7 +36,7 @@ final class CandleMicroAnalyzer
         }
 
         if ($realAvailable) {
-            $primary = (array)($windowStats['micro_window_15m'] ?? self::emptyWindowStats());
+            $primary = (array)($windowStats[$primaryWindowKey] ?? self::emptyWindowStats());
             [$shape, $timing, $distribution, $rejection] = self::deriveLabels($primary);
             return [
                 'micro_context_available' => true,
@@ -44,23 +45,46 @@ final class CandleMicroAnalyzer
                 'candle_micro_real' => true,
                 'candle_micro_source' => $source === 'cache' ? 'bybit' : $source,
                 'candle_micro_windows' => $windowStats,
+                'micro_primary_window' => $primaryWindowKey,
+                'micro_primary_candles_count' => $primary['candles_count'] ?? 0,
+                'micro_total_change_pct' => $primary['total_change_pct'] ?? null,
+                'single_candle_dominance_pct' => $primary['single_candle_dominance_pct'] ?? null,
+                'largest_candle_share_pct' => $primary['largest_candle_share_pct'] ?? null,
+                'largest_candle_change_pct' => $primary['largest_candle_change_pct'] ?? null,
+                'higher_close_count' => $primary['higher_close_count'] ?? 0,
+                'higher_low_count' => $primary['higher_low_count'] ?? 0,
+                'lower_close_count' => $primary['lower_close_count'] ?? 0,
+                'lower_low_count' => $primary['lower_low_count'] ?? 0,
+                'direction_flip_count' => $primary['direction_flip_count'] ?? 0,
+                'pullback_max_pct' => $primary['pullback_max_pct'] ?? null,
+                'pullback_count' => $primary['pullback_count'] ?? 0,
+                'avg_body_pct' => $primary['avg_body_pct'] ?? null,
+                'avg_upper_wick_pct' => $primary['avg_upper_wick_pct'] ?? null,
+                'avg_lower_wick_pct' => $primary['avg_lower_wick_pct'] ?? null,
+                'max_upper_wick_pct' => $primary['max_upper_wick_pct'] ?? null,
+                'max_lower_wick_pct' => $primary['max_lower_wick_pct'] ?? null,
+                'smoothness_score' => $primary['smoothness_score'] ?? null,
+                'acceleration_score' => $primary['acceleration_score'] ?? null,
+                'impulse_birth_score' => $primary['impulse_birth_score'] ?? null,
+                'late_spike_risk_score' => $primary['late_spike_risk_score'] ?? null,
                 'micro_impulse_shape' => $shape,
                 'micro_entry_timing' => $timing,
                 'micro_growth_distribution' => $distribution,
                 'micro_rejection_risk' => $rejection,
-                'micro_higher_close_count' => $primary['higher_close_count'],
-                'micro_higher_low_count' => $primary['higher_low_count'],
-                'micro_largest_candle_share_pct' => $primary['largest_candle_share_pct'],
-                'micro_single_candle_dominance_pct' => $primary['single_candle_dominance_pct'],
-                'micro_pullback_max_pct' => $primary['pullback_max_pct'],
-                'micro_smoothness_score' => $primary['smoothness_score'],
-                'micro_impulse_birth_score' => $primary['impulse_birth_score'],
-                'micro_late_spike_risk_score' => $primary['late_spike_risk_score'],
+                'micro_higher_close_count' => $primary['higher_close_count'] ?? 0,
+                'micro_higher_low_count' => $primary['higher_low_count'] ?? 0,
+                'micro_largest_candle_share_pct' => $primary['largest_candle_share_pct'] ?? null,
+                'micro_single_candle_dominance_pct' => $primary['single_candle_dominance_pct'] ?? null,
+                'micro_pullback_max_pct' => $primary['pullback_max_pct'] ?? null,
+                'micro_smoothness_score' => $primary['smoothness_score'] ?? null,
+                'micro_impulse_birth_score' => $primary['impulse_birth_score'] ?? null,
+                'micro_late_spike_risk_score' => $primary['late_spike_risk_score'] ?? null,
             ];
         }
 
         $proxy = self::buildProxyFallback($ctx);
         $proxy['micro_missing_reason'] = 'parser2_history_missing';
+        $proxy['micro_primary_window'] = $primaryWindowKey;
         $proxy['candle_micro_windows'] = [
             'micro_window_5m' => self::emptyWindowStats(),
             'micro_window_10m' => self::emptyWindowStats(),
@@ -372,6 +396,27 @@ final class CandleMicroAnalyzer
             'micro_proxy_available' => true,
             'candle_micro_real' => false,
             'candle_micro_source' => 'strategy_signal_context_proxy',
+            'micro_primary_candles_count' => 0,
+            'micro_total_change_pct' => self::round($growth),
+            'single_candle_dominance_pct' => self::round($dominance),
+            'largest_candle_share_pct' => null,
+            'largest_candle_change_pct' => null,
+            'higher_close_count' => $higherClose,
+            'higher_low_count' => $higherLow,
+            'lower_close_count' => 0,
+            'lower_low_count' => 0,
+            'direction_flip_count' => null,
+            'pullback_max_pct' => null,
+            'pullback_count' => null,
+            'avg_body_pct' => null,
+            'avg_upper_wick_pct' => null,
+            'avg_lower_wick_pct' => null,
+            'max_upper_wick_pct' => null,
+            'max_lower_wick_pct' => null,
+            'smoothness_score' => $smooth,
+            'acceleration_score' => null,
+            'impulse_birth_score' => $growth !== null ? self::round(min(1.0, max(0.0, $growth / 3.0))) : null,
+            'late_spike_risk_score' => $dominance !== null ? self::round(min(1.0, $dominance / 100.0)) : null,
             'micro_impulse_shape' => $shape,
             'micro_entry_timing' => 'unknown',
             'micro_growth_distribution' => $distribution,
@@ -385,6 +430,21 @@ final class CandleMicroAnalyzer
             'micro_impulse_birth_score' => $growth !== null ? self::round(min(1.0, max(0.0, $growth / 3.0))) : null,
             'micro_late_spike_risk_score' => $dominance !== null ? self::round(min(1.0, $dominance / 100.0)) : null,
         ];
+    }
+
+    private static function normalizePrimaryWindowKey(string $window): string
+    {
+        $w = strtolower(trim($window));
+        if ($w === '') {
+            return 'micro_window_10m';
+        }
+        if (preg_match('/^micro_window_(5|10|15)m$/', $w) === 1) {
+            return $w;
+        }
+        if (in_array($w, ['5m', '10m', '15m'], true)) {
+            return 'micro_window_' . str_replace('m', '', $w) . 'm';
+        }
+        return 'micro_window_10m';
     }
 
     private static function round(?float $v): ?float

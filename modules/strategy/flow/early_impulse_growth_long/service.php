@@ -1703,11 +1703,26 @@ final class EarlyImpulseGrowthLongService
         $outcomeAnalyzerResult = $this->runOutcomeAnalyzer($config);
         $dynamicLearningResult = $this->runDynamicLearningModule();
 
-        // Compute counter mismatch: compare DL-checked count against current-run bot_handoff_queue records
-        // that carry dynamic_learning_shadow_decision (stored inside strategy_signal_context), to surface
-        // any remaining counter gaps.  Only current-run records are compared so TTL-valid older queue
-        // records from previous ticks do not inflate the mismatch counter.
+        // Compute counter mismatch using current-run evaluated packets and current-run queue records only.
+        // Dynamic fields are read from strategy_signal_context to avoid top-level queue-row mismatches.
         if ((bool)($config['dynamic_learning_enabled'] ?? false) && (string)($config['dynamic_learning_mode'] ?? 'shadow') === 'shadow') {
+            $currentRunEvaluatedWithDecision = array_values(array_filter(
+                $newEvaluated,
+                static function (array $c): bool {
+                    $decision = $c['dynamic_learning_shadow_decision'] ?? $c['dynamic_learning_decision'] ?? null;
+                    return $decision !== null && trim((string)$decision) !== '';
+                }
+            ));
+
+            $evaluatedDecisionBySignalId = [];
+            foreach ($currentRunEvaluatedWithDecision as $row) {
+                $sid = trim((string)($row['signal_id'] ?? ''));
+                if ($sid === '') {
+                    continue;
+                }
+                $evaluatedDecisionBySignalId[$sid] = strtolower(trim((string)($row['dynamic_learning_shadow_decision'] ?? $row['dynamic_learning_decision'] ?? '')));
+            }
+
             $currentRunQueueWithDlDecision = array_values(array_filter(
                 $handoffQueue,
                 static function (array $q) use ($currentRunSignalIds): bool {
@@ -1720,30 +1735,47 @@ final class EarlyImpulseGrowthLongService
                     return $decision !== null && (string)$decision !== '';
                 }
             ));
-            $currentRunQueueDlCount = count($currentRunQueueWithDlDecision);
-            if ($currentRunQueueDlCount !== $diag['dynamic_learning_checked_total']) {
-                $mismatch = $currentRunQueueDlCount - $diag['dynamic_learning_checked_total'];
-                $diag['dynamic_learning_counter_mismatch_total'] = abs($mismatch);
-                foreach (array_slice($currentRunQueueWithDlDecision, 0, 5) as $qRow) {
-                    if (!isset($qRow['symbol'])) {
-                        continue;
-                    }
-                    // Only add as mismatch example if symbol is not already in dynamic_learning_examples
-                    $alreadyCounted = false;
-                    foreach ($diag['dynamic_learning_examples'] as $ex) {
-                        if ((string)($ex['symbol'] ?? '') === (string)$qRow['symbol']) {
-                            $alreadyCounted = true;
-                            break;
-                        }
-                    }
-                    if (!$alreadyCounted) {
-                        $ssc = is_array($qRow['strategy_signal_context'] ?? null) ? (array)$qRow['strategy_signal_context'] : [];
-                        $diag['dynamic_learning_counter_mismatch_examples'][] = [
-                            'symbol' => $qRow['symbol'],
-                            'shadow_decision' => $ssc['dynamic_learning_shadow_decision'] ?? $ssc['dynamic_learning_decision'] ?? null,
-                        ];
-                    }
+
+            foreach ($currentRunQueueWithDlDecision as $qRow) {
+                $sid = trim((string)($qRow['signal_id'] ?? ''));
+                if ($sid === '' || !isset($evaluatedDecisionBySignalId[$sid])) {
+                    continue;
                 }
+                $ssc = is_array($qRow['strategy_signal_context'] ?? null) ? (array)$qRow['strategy_signal_context'] : [];
+                $queueDecision = strtolower(trim((string)($ssc['dynamic_learning_shadow_decision'] ?? $ssc['dynamic_learning_decision'] ?? '')));
+                if ($queueDecision !== '' && $queueDecision !== $evaluatedDecisionBySignalId[$sid]) {
+                    $diag['dynamic_learning_counter_mismatch_examples'][] = [
+                        'symbol' => $qRow['symbol'] ?? null,
+                        'signal_id' => $sid,
+                        'evaluated_decision' => $evaluatedDecisionBySignalId[$sid],
+                        'queue_decision' => $queueDecision,
+                    ];
+                }
+            }
+
+            $evaluatedCheckedTotal = count($currentRunEvaluatedWithDecision);
+            $evaluatedPassTotal = 0;
+            $evaluatedNoProfileTotal = 0;
+            foreach ($currentRunEvaluatedWithDecision as $row) {
+                $decision = strtolower(trim((string)($row['dynamic_learning_shadow_decision'] ?? $row['dynamic_learning_decision'] ?? '')));
+                if ($decision === '' || $decision === 'pass') {
+                    $evaluatedPassTotal++;
+                }
+                if ($decision === 'no_profile') {
+                    $evaluatedNoProfileTotal++;
+                }
+            }
+
+            $countsMatchCurrentRun = $diag['dynamic_learning_checked_total'] === $evaluatedCheckedTotal
+                && $diag['dynamic_learning_pass_total'] === $evaluatedPassTotal
+                && $diag['dynamic_learning_no_profile_total'] === $evaluatedNoProfileTotal;
+
+            if ($diag['dynamic_learning_counter_mismatch_examples'] === [] && $countsMatchCurrentRun) {
+                $diag['dynamic_learning_counter_mismatch_total'] = 0;
+            } else {
+                $countGap = abs($diag['dynamic_learning_checked_total'] - $evaluatedCheckedTotal);
+                $diag['dynamic_learning_counter_mismatch_total'] = max($countGap, count($diag['dynamic_learning_counter_mismatch_examples']));
+                $diag['dynamic_learning_counter_mismatch_examples'] = array_slice($diag['dynamic_learning_counter_mismatch_examples'], 0, 5);
             }
         }
 

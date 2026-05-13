@@ -21,6 +21,7 @@ return [
     'bad_drawdown_roi_threshold' => 'float',
     'good_close_roi_threshold' => 'float',
     'good_max_profit_roi_threshold' => 'float',
+    'outcome_classification_profile' => 'string',
     'neutral_close_roi_min' => 'float',
     'neutral_close_roi_max' => 'float',
     'min_closed_outcomes_for_profile' => 'int',

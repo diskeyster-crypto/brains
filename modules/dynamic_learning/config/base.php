@@ -25,6 +25,7 @@ return [
     'bad_drawdown_roi_threshold' => -10.0,
     'good_close_roi_threshold' => 5.0,
     'good_max_profit_roi_threshold' => 5.0,
+    'outcome_classification_profile' => 'fast_demo_stop_5',
     'neutral_close_roi_min' => -2.0,
     'neutral_close_roi_max' => 2.0,
 

@@ -110,6 +110,13 @@ final class DynamicLearningService
             'entry_ok_exit_issue_total' => 0,
             'neutral_total' => 0,
             'outcome_incomplete_total' => 0,
+            'outcome_classification_profile' => (string)($cfg['outcome_classification_profile'] ?? 'standard_stop_10'),
+            'effective_bad_drawdown_roi_threshold' => (float)($cfg['bad_drawdown_roi_threshold'] ?? -10.0),
+            'effective_good_close_roi_threshold' => (float)($cfg['good_close_roi_threshold'] ?? 5.0),
+            'effective_good_max_profit_roi_threshold' => (float)($cfg['good_max_profit_roi_threshold'] ?? 5.0),
+            'stop_profile_alignment' => (string)($cfg['stop_profile_alignment'] ?? ($cfg['outcome_classification_profile'] ?? 'standard_stop_10')),
+            'outcomes_reclassified_total' => 0,
+            'outcomes_reclassified_examples' => [],
             'outcome_mfe_normalized_total' => 0,
             'outcome_mae_normalized_total' => 0,
             'outcome_roi_normalization_examples' => [],
@@ -243,6 +250,8 @@ final class DynamicLearningService
         $result['outcome_mfe_normalized_total'] = $outcomes['mfe_normalized_total'];
         $result['outcome_mae_normalized_total'] = $outcomes['mae_normalized_total'];
         $result['outcome_roi_normalization_examples'] = $outcomes['roi_normalization_examples'];
+        $result['outcomes_reclassified_total'] = (int)($outcomes['reclassified_total'] ?? 0);
+        $result['outcomes_reclassified_examples'] = (array)($outcomes['reclassified_examples'] ?? []);
         $result['outcome_excluded_from_pattern_mining_total'] = $outcomes['excluded_from_pattern_mining_total'];
         $result['outcome_excluded_reasons'] = $outcomes['excluded_reasons'];
         $result['bad_entry_examples'] = array_slice($outcomes['bad'], 0, 6);
@@ -623,7 +632,7 @@ final class DynamicLearningService
         ];
     }
 
-    /** @return array{all:list<array<string,mixed>>,pattern_mining:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,effective_total:int,unique_total:int,duplicates_skipped_total:int,merged_total:int,duplicate_examples:list<array<string,mixed>>,strong_link_total:int,weak_link_skipped_total:int,preserved_due_empty_source_total:int,rebuilt_from_ndjson_total:int,rebuild_skipped_due_reset_total:int,time_mismatch_total:int,opened_at_corrected_total:int,timing_low_confidence_total:int,time_mismatch_examples:list<array<string,mixed>>,mfe_normalized_total:int,mae_normalized_total:int,roi_normalization_examples:list<array<string,mixed>>,excluded_from_pattern_mining_total:int,excluded_reasons:array<string,int>} */
+    /** @return array{all:list<array<string,mixed>>,pattern_mining:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,effective_total:int,unique_total:int,duplicates_skipped_total:int,merged_total:int,duplicate_examples:list<array<string,mixed>>,strong_link_total:int,weak_link_skipped_total:int,preserved_due_empty_source_total:int,rebuilt_from_ndjson_total:int,rebuild_skipped_due_reset_total:int,time_mismatch_total:int,opened_at_corrected_total:int,timing_low_confidence_total:int,time_mismatch_examples:list<array<string,mixed>>,mfe_normalized_total:int,mae_normalized_total:int,roi_normalization_examples:list<array<string,mixed>>,excluded_from_pattern_mining_total:int,excluded_reasons:array<string,int>,reclassified_total:int,reclassified_examples:list<array<string,mixed>>} */
     private function linkClosedOutcomes(array $cfg, array $snapshotIndex, array $resetState): array
     {
         $stored = $this->readJson($this->storagePath('closed_outcomes.json'), []);
@@ -714,6 +723,8 @@ final class DynamicLearningService
             }
         }
 
+        $reclassifiedTotal = 0;
+        $reclassifiedExamples = [];
         $all = [];
         if ($sourceHasRows || $resetDetected) {
             foreach ($effectiveRows as $row) {
@@ -734,7 +745,26 @@ final class DynamicLearningService
         } else {
             foreach ($effectiveRows as $row) {
                 if (is_array($row)) {
-                    $all[] = $row;
+                    $oldClass = (string)($row['outcome_class'] ?? '');
+                    $oldReason = (string)($row['classification_reason'] ?? '');
+                    $reclassified = $this->reclassifyStoredOutcome($row, $cfg);
+                    $newClass = (string)($reclassified['outcome_class'] ?? '');
+                    $newReason = (string)($reclassified['classification_reason'] ?? '');
+                    if ($oldClass !== $newClass || $oldReason !== $newReason) {
+                        $reclassifiedTotal++;
+                        if (count($reclassifiedExamples) < 20) {
+                            $reclassifiedExamples[] = [
+                                'symbol' => (string)($reclassified['symbol'] ?? ''),
+                                'old_class' => $oldClass,
+                                'new_class' => $newClass,
+                                'close_roi' => $reclassified['close_roi'] ?? null,
+                                'max_drawdown_roi' => $reclassified['max_drawdown_roi'] ?? ($reclassified['raw_max_drawdown_roi'] ?? null),
+                                'max_profit_roi' => $reclassified['max_profit_roi'] ?? ($reclassified['raw_max_profit_roi'] ?? null),
+                                'close_reason' => (string)($reclassified['close_reason'] ?? ''),
+                            ];
+                        }
+                    }
+                    $all[] = $reclassified;
                 }
             }
         }
@@ -840,6 +870,8 @@ final class DynamicLearningService
             'roi_normalization_examples' => $roiNormalizationExamples,
             'excluded_from_pattern_mining_total' => $excludedFromPatternMiningTotal,
             'excluded_reasons' => $excludedReasons,
+            'reclassified_total' => $reclassifiedTotal,
+            'reclassified_examples' => $reclassifiedExamples,
         ];
     }
 
@@ -1056,6 +1088,40 @@ final class DynamicLearningService
             'used_for_pattern_mining' => $featureCheck['used_for_pattern_mining'],
             'pattern_mining_exclude_reason' => $featureCheck['exclude_reason'],
         ];
+    }
+
+    /** @return array<string,mixed> */
+    private function reclassifyStoredOutcome(array $row, array $cfg): array
+    {
+        $closeRoi = DlHelpers::toFloat($row['close_roi'] ?? $row['roi'] ?? null);
+        $rawMaxDd = DlHelpers::toFloat($row['raw_max_drawdown_roi'] ?? $row['max_drawdown_roi'] ?? $row['normalized_max_drawdown_roi'] ?? null);
+        $rawMaxProfit = DlHelpers::toFloat($row['raw_max_profit_roi'] ?? $row['max_profit_roi'] ?? $row['normalized_max_profit_roi'] ?? null);
+        $normalizedMaxDd = DlHelpers::toFloat($row['normalized_max_drawdown_roi'] ?? null);
+        $normalizedMaxProfit = DlHelpers::toFloat($row['normalized_max_profit_roi'] ?? null);
+        if ($normalizedMaxDd === null) {
+            $normalizedMaxDd = ($rawMaxDd !== null && $closeRoi !== null) ? min($rawMaxDd, $closeRoi) : $rawMaxDd;
+        }
+        if ($normalizedMaxProfit === null) {
+            $normalizedMaxProfit = ($rawMaxProfit !== null && $closeRoi !== null) ? max($rawMaxProfit, $closeRoi) : $rawMaxProfit;
+        }
+
+        [$class, $reason] = OutcomeClassifier::classify($closeRoi, $normalizedMaxDd, $normalizedMaxProfit, $cfg);
+        $row['close_roi'] = $closeRoi;
+        if (array_key_exists('raw_max_drawdown_roi', $row)) {
+            $row['raw_max_drawdown_roi'] = $rawMaxDd;
+        }
+        if (array_key_exists('raw_max_profit_roi', $row)) {
+            $row['raw_max_profit_roi'] = $rawMaxProfit;
+        }
+        if (array_key_exists('normalized_max_drawdown_roi', $row)) {
+            $row['normalized_max_drawdown_roi'] = $normalizedMaxDd;
+        }
+        if (array_key_exists('normalized_max_profit_roi', $row)) {
+            $row['normalized_max_profit_roi'] = $normalizedMaxProfit;
+        }
+        $row['outcome_class'] = $class;
+        $row['classification_reason'] = $reason;
+        return $row;
     }
 
     private function buildClosedTradeIdentity(array $row): string
@@ -2327,9 +2393,27 @@ final class DynamicLearningService
         $cfg['apply_learning_to_demo_enabled'] = (bool)($cfg['apply_learning_to_demo_enabled'] ?? false);
         $cfg['observation_interval_seconds'] = max(5, (int)($cfg['observation_interval_seconds'] ?? 30));
         $cfg['max_observations_per_position'] = max(1, (int)($cfg['max_observations_per_position'] ?? 40));
-        $cfg['bad_drawdown_roi_threshold'] = (float)($cfg['bad_drawdown_roi_threshold'] ?? -10.0);
-        $cfg['good_close_roi_threshold'] = (float)($cfg['good_close_roi_threshold'] ?? 5.0);
-        $cfg['good_max_profit_roi_threshold'] = (float)($cfg['good_max_profit_roi_threshold'] ?? 5.0);
+        $cfg['outcome_classification_profile'] = strtolower(trim((string)($cfg['outcome_classification_profile'] ?? 'standard_stop_10')));
+        if (!in_array($cfg['outcome_classification_profile'], ['standard_stop_10', 'fast_demo_stop_5', 'custom'], true)) {
+            $cfg['outcome_classification_profile'] = 'standard_stop_10';
+        }
+        $customBadDrawdown = (float)($cfg['bad_drawdown_roi_threshold'] ?? -10.0);
+        $customGoodClose = (float)($cfg['good_close_roi_threshold'] ?? 5.0);
+        $customGoodMaxProfit = (float)($cfg['good_max_profit_roi_threshold'] ?? 5.0);
+        if ($cfg['outcome_classification_profile'] === 'standard_stop_10') {
+            $cfg['bad_drawdown_roi_threshold'] = -10.0;
+            $cfg['good_close_roi_threshold'] = 5.0;
+            $cfg['good_max_profit_roi_threshold'] = 5.0;
+        } elseif ($cfg['outcome_classification_profile'] === 'fast_demo_stop_5') {
+            $cfg['bad_drawdown_roi_threshold'] = -5.0;
+            $cfg['good_close_roi_threshold'] = 5.0;
+            $cfg['good_max_profit_roi_threshold'] = 5.0;
+        } else {
+            $cfg['bad_drawdown_roi_threshold'] = $customBadDrawdown;
+            $cfg['good_close_roi_threshold'] = $customGoodClose;
+            $cfg['good_max_profit_roi_threshold'] = $customGoodMaxProfit;
+        }
+        $cfg['stop_profile_alignment'] = (string)$cfg['outcome_classification_profile'];
         $cfg['neutral_close_roi_min'] = (float)($cfg['neutral_close_roi_min'] ?? -2.0);
         $cfg['neutral_close_roi_max'] = (float)($cfg['neutral_close_roi_max'] ?? 2.0);
         $cfg['outcome_opened_at_mismatch_tolerance_minutes'] = max(1, (int)($cfg['outcome_opened_at_mismatch_tolerance_minutes'] ?? 15));

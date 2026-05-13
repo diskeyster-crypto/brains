@@ -350,6 +350,11 @@ final class ProfManagerService
             $roiSamplesDedupedTotal      = 0;
             $roiSamplesDuplicateExamples = [];
 
+            // Fast-demo PM profile diagnostic counters (long only)
+            $longAbove5RoiTotal       = 0;
+            $longPmEligibleTotal      = 0;
+            $longPmSkippedBelow5Total = 0;
+
             $trendBirthCfgDiag = $this->resolveTrendBirthConfigDiagnostics();
             $trendBirthConfigEnabled = (bool)($trendBirthCfgDiag['trend_birth_config_enabled'] ?? true);
             $trendBirthDisabledByActiveConfig = (bool)($trendBirthCfgDiag['trend_birth_disabled_by_active_config'] ?? false);
@@ -622,6 +627,18 @@ final class ProfManagerService
 
                 // ── Long-profile impulse / grace diagnostic tracking ───────────
                 if ($side === 'long') {
+                    // Fast-demo PM profile counters
+                    $_longRoi = $profileResult['roi'] ?? null;
+                    if ($_longRoi !== null && (float)$_longRoi >= 5.0) {
+                        $longAbove5RoiTotal++;
+                    }
+                    $_longSkipReason = $profileResult['skip_reason'] ?? null;
+                    if ($_longSkipReason === 'below_activation_roi' || $_longSkipReason === 'below_init_roi') {
+                        $longPmSkippedBelow5Total++;
+                    } else {
+                        $longPmEligibleTotal++;
+                    }
+
                     $impulseClass   = $profileResult['impulse_class']   ?? null;
                     $impulseBroken  = !empty($profileResult['momentum_broken']);
                     $overrideAction = $profileResult['lock_touch_override_action'] ?? null;
@@ -1316,6 +1333,13 @@ final class ProfManagerService
                 'pm_floor_sync_skipped_examples'         => $floorSyncResult['pm_floor_sync_skipped_examples'],
                 'pm_floor_sync_failed_examples'          => $floorSyncResult['pm_floor_sync_failed_examples'],
                 'live_profit_floor_sync_skipped_disabled'=> $floorSyncResult['live_profit_floor_sync_skipped_disabled'] ?? false,
+                // Fast-demo PM profile diagnostics (long)
+                'fast_demo_pm_profile_enabled'           => true,
+                'fast_demo_pm_activation_roi'            => 5.0,
+                'fast_demo_pm_stop_pairing'              => 'long_stop_-5',
+                'long_positions_above_5_roi_total'       => $longAbove5RoiTotal,
+                'long_positions_pm_eligible_total'       => $longPmEligibleTotal,
+                'long_positions_pm_skipped_below_5_total'=> $longPmSkippedBelow5Total,
             ], $configSnapshot);
 
             $this->store->writeLastRun($result);

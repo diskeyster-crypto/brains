@@ -245,6 +245,114 @@ final class EarlyImpulseGrowthLongService
         ];
         $recheckProcessedSymbols = [];
 
+        $diag = [
+            'insufficient_data_total' => 0,
+            'stale_data_total' => 0,
+            'data_source_error_total' => 0,
+            'dump_detected_total' => 0,
+            'stabilization_detected_total' => 0,
+            'smooth_growth_detected_total' => 0,
+            'early_entry_candidates_total' => 0,
+            'stabilizing_candidates_total' => 0,
+            'confirmed_later_candidates_total' => 0,
+            'late_spike_candidates_total' => 0,
+            'extended_candidates_total' => 0,
+            'early_entry_handoff_ready_total' => 0,
+            'non_early_handoff_blocked_total' => 0,
+            'late_spike_handoff_blocked_total' => 0,
+            'extended_handoff_blocked_total' => 0,
+            'prior_decline_passed_total' => 0,
+            'recovery_growth_passed_total' => 0,
+            'open_interest_growth_passed_total' => 0,
+            'oi_missing_allowed_total' => 0,
+            'oi_missing_blocked_total' => 0,
+            'current_acceleration_diagnostic_total' => 0,
+            'too_early_no_structure_total' => 0,
+            'late_spike_detected_total' => 0,
+            'recovery_structure_too_weak_total' => 0,
+            'recovery_phase_valid_recovery_total' => 0,
+            'fast_spike_detected_total' => 0,
+            'raw_strategy_passed_total' => 0,
+            'raw_strategy_rejected_total' => 0,
+            'filter_engine_checked_total' => 0,
+            'filter_engine_blocked_total' => 0,
+            'filter_engine_diagnostic_only_total' => 0,
+            'coin_context_checked_total' => 0,
+            'coin_context_available_total' => 0,
+            'coin_context_missing_total' => 0,
+            'coin_context_error_counts' => [],
+            'coin_context_phase_counts' => [],
+            'coin_context_trend_1h_counts' => [],
+            'coin_context_quality_counts' => [],
+            'coin_context_wave_available_total' => 0,
+            'coin_context_wave_regime_counts' => [],
+            'coin_context_fast_flip_chop_total' => 0,
+            'coin_context_narrow_chop_total' => 0,
+            'coin_context_stable_recovery_total' => 0,
+            'coin_context_examples' => [],
+            'wave_quality_filter_checked_total' => 0,
+            'wave_quality_filter_blocked_total' => 0,
+            'wave_quality_filter_passed_total' => 0,
+            'wave_quality_filter_warning_total' => 0,
+            'wave_quality_filter_generic_chaotic_warning_total' => 0,
+            'wave_quality_filter_examples' => [],
+            'orderbook_context_checked_total' => 0,
+            'orderbook_context_available_total' => 0,
+            'orderbook_context_missing_total' => 0,
+            'orderbook_context_error_counts' => [],
+            'orderbook_ask_wall_detected_total' => 0,
+            'orderbook_ask_wall_high_risk_total' => 0,
+            'orderbook_bid_support_strong_total' => 0,
+            'orderbook_filter_checked_total' => 0,
+            'orderbook_filter_blocked_total' => 0,
+            'orderbook_filter_passed_total' => 0,
+            'orderbook_filter_missing_allowed_total' => 0,
+            'orderbook_filter_examples' => [],
+            'chaotic_context_quality_downgraded_total' => 0,
+            'downtrend_context_quality_downgraded_total' => 0,
+            'spike_context_quality_downgraded_total' => 0,
+            'open_interest_missing_examples' => [],
+            'reject_reason_counts' => [],
+            'filter_engine_results_by_filter' => [],
+            'phase_evaluated_total' => 0,
+            'phase_failed_total' => 0,
+            'phase_dump_only_total' => 0,
+            'phase_stabilizing_total' => 0,
+            'phase_early_entry_total' => 0,
+            'phase_confirmed_later_total' => 0,
+            'phase_late_spike_total' => 0,
+            'phase_extended_total' => 0,
+            'handoff_candidates_before_filters_total' => 0,
+            'handoff_blocked_by_phase_total' => 0,
+            'handoff_blocked_by_filter_total' => 0,
+            'handoff_blocked_by_filter_reason_counts' => [],
+            'handoff_blocked_by_phase_reason_counts' => [],
+            'handoff_blocked_by_quality_guard_total' => 0,
+            'handoff_blocked_by_quality_guard_examples' => [],
+            'quality_guard_existing_ready_checked_total' => 0,
+            'quality_guard_existing_ready_withdrawn_total' => 0,
+            'quality_guard_existing_ready_withdrawn_examples' => [],
+            'early_entry_price_phase_total' => 0,
+            'early_entry_oi_confirmed_total' => 0,
+            'early_entry_oi_unconfirmed_total' => 0,
+            'early_entry_wave_soft_block_total' => 0,
+            'early_entry_orderbook_hard_block_total' => 0,
+            'early_entry_handoff_written_total' => 0,
+            'early_entry_handoff_cap_skipped_total' => 0,
+            'early_entry_handoff_examples' => [],
+            'early_entry_oi_warning_examples' => [],
+            'early_entry_wave_warning_examples' => [],
+            'dynamic_learning_checked_total' => 0,
+            'dynamic_learning_pass_total' => 0,
+            'dynamic_learning_block_total' => 0,
+            'dynamic_learning_shadow_block_total' => 0,
+            'dynamic_learning_no_profile_total' => 0,
+            'dynamic_learning_examples' => [],
+            'dynamic_learning_counter_source' => 'evaluated_packets',
+            'dynamic_learning_counter_mismatch_total' => 0,
+            'dynamic_learning_counter_mismatch_examples' => [],
+        ];
+
         if ((bool)($config['watch_recheck_enabled'] ?? true)) {
             $watchRecheckDiag['watch_recheck_enabled'] = true;
             $recheckNow = time();
@@ -357,6 +465,45 @@ final class EarlyImpulseGrowthLongService
                 $rc = $res['candidate'];
                 $newPhase = (string)($rc['recovery_phase'] ?? '');
 
+                // Accumulate dynamic_learning counters for watch-recheck processed symbols.
+                // Without this, symbols processed here and skipped in the main batch loop
+                // would be missing from the DL counters (e.g. NILUSDT-style under-count).
+                $rcDlMetrics = $res['metrics'];
+                if ($rcDlMetrics['dynamic_learning_checked'] ?? false) {
+                    $diag['dynamic_learning_checked_total']++;
+                    $rcDecision = strtolower(trim((string)($rc['dynamic_learning_decision'] ?? $rc['dynamic_learning_shadow_decision'] ?? 'pass')));
+                    if ($rcDecision === '') {
+                        $rcDecision = 'pass';
+                    }
+                    if ($rcDecision === 'pass') {
+                        $diag['dynamic_learning_pass_total']++;
+                    } elseif ($rcDlMetrics['dynamic_learning_blocked'] ?? false) {
+                        $diag['dynamic_learning_block_total']++;
+                    }
+                    if ($rcDlMetrics['dynamic_learning_shadow_blocked'] ?? false) {
+                        $diag['dynamic_learning_shadow_block_total']++;
+                    }
+                    if ($rcDlMetrics['dynamic_learning_no_profile'] ?? false || $rcDecision === 'no_profile') {
+                        $diag['dynamic_learning_no_profile_total']++;
+                    }
+                    if (count($diag['dynamic_learning_examples']) < 20) {
+                        $diag['dynamic_learning_examples'][] = [
+                            'symbol' => $rc['symbol'] ?? null,
+                            'mode' => $rc['dynamic_learning_mode'] ?? ($config['dynamic_learning_mode'] ?? 'shadow'),
+                            'decision' => $rc['dynamic_learning_decision'] ?? null,
+                            'shadow_decision' => $rc['dynamic_learning_shadow_decision'] ?? null,
+                            'shadow_would_block' => (bool)($rc['dynamic_learning_shadow_would_block'] ?? false),
+                            'blocked' => (bool)($rcDlMetrics['dynamic_learning_blocked'] ?? false),
+                            'reason' => $rc['dynamic_learning_reason'] ?? null,
+                            'profile_id' => $rc['dynamic_learning_profile_id'] ?? null,
+                            'profile_status' => $rc['dynamic_learning_profile_status'] ?? null,
+                            'handoff_ready' => (bool)($rc['handoff_ready'] ?? false),
+                            'handoff_block_reason' => $rc['handoff_block_reason'] ?? null,
+                            'counter_source' => 'watch_recheck',
+                        ];
+                    }
+                }
+
                 $updatedWc = array_merge((array)$prevWc, [
                     'last_rechecked_at' => date('c', $recheckNow),
                     'last_seen_at' => date('c', $recheckNow),
@@ -427,111 +574,6 @@ final class EarlyImpulseGrowthLongService
                 }
             }
         }
-
-        $diag = [
-            'insufficient_data_total' => 0,
-            'stale_data_total' => 0,
-            'data_source_error_total' => 0,
-            'dump_detected_total' => 0,
-            'stabilization_detected_total' => 0,
-            'smooth_growth_detected_total' => 0,
-            'early_entry_candidates_total' => 0,
-            'stabilizing_candidates_total' => 0,
-            'confirmed_later_candidates_total' => 0,
-            'late_spike_candidates_total' => 0,
-            'extended_candidates_total' => 0,
-            'early_entry_handoff_ready_total' => 0,
-            'non_early_handoff_blocked_total' => 0,
-            'late_spike_handoff_blocked_total' => 0,
-            'extended_handoff_blocked_total' => 0,
-            'prior_decline_passed_total' => 0,
-            'recovery_growth_passed_total' => 0,
-            'open_interest_growth_passed_total' => 0,
-            'oi_missing_allowed_total' => 0,
-            'oi_missing_blocked_total' => 0,
-            'current_acceleration_diagnostic_total' => 0,
-            'too_early_no_structure_total' => 0,
-            'late_spike_detected_total' => 0,
-            'recovery_structure_too_weak_total' => 0,
-            'recovery_phase_valid_recovery_total' => 0,
-            'fast_spike_detected_total' => 0,
-            'raw_strategy_passed_total' => 0,
-            'raw_strategy_rejected_total' => 0,
-            'filter_engine_checked_total' => 0,
-            'filter_engine_blocked_total' => 0,
-            'filter_engine_diagnostic_only_total' => 0,
-            'coin_context_checked_total' => 0,
-            'coin_context_available_total' => 0,
-            'coin_context_missing_total' => 0,
-            'coin_context_error_counts' => [],
-            'coin_context_phase_counts' => [],
-            'coin_context_trend_1h_counts' => [],
-            'coin_context_quality_counts' => [],
-            'coin_context_wave_available_total' => 0,
-            'coin_context_wave_regime_counts' => [],
-            'coin_context_fast_flip_chop_total' => 0,
-            'coin_context_narrow_chop_total' => 0,
-            'coin_context_stable_recovery_total' => 0,
-            'coin_context_examples' => [],
-            'wave_quality_filter_checked_total' => 0,
-            'wave_quality_filter_blocked_total' => 0,
-            'wave_quality_filter_passed_total' => 0,
-            'wave_quality_filter_warning_total' => 0,
-            'wave_quality_filter_generic_chaotic_warning_total' => 0,
-            'wave_quality_filter_examples' => [],
-            'orderbook_context_checked_total' => 0,
-            'orderbook_context_available_total' => 0,
-            'orderbook_context_missing_total' => 0,
-            'orderbook_context_error_counts' => [],
-            'orderbook_ask_wall_detected_total' => 0,
-            'orderbook_ask_wall_high_risk_total' => 0,
-            'orderbook_bid_support_strong_total' => 0,
-            'orderbook_filter_checked_total' => 0,
-            'orderbook_filter_blocked_total' => 0,
-            'orderbook_filter_passed_total' => 0,
-            'orderbook_filter_missing_allowed_total' => 0,
-            'orderbook_filter_examples' => [],
-            'chaotic_context_quality_downgraded_total' => 0,
-            'downtrend_context_quality_downgraded_total' => 0,
-            'spike_context_quality_downgraded_total' => 0,
-            'open_interest_missing_examples' => [],
-            'reject_reason_counts' => [],
-            'filter_engine_results_by_filter' => [],
-            'phase_evaluated_total' => 0,
-            'phase_failed_total' => 0,
-            'phase_dump_only_total' => 0,
-            'phase_stabilizing_total' => 0,
-            'phase_early_entry_total' => 0,
-            'phase_confirmed_later_total' => 0,
-            'phase_late_spike_total' => 0,
-            'phase_extended_total' => 0,
-            'handoff_candidates_before_filters_total' => 0,
-            'handoff_blocked_by_phase_total' => 0,
-            'handoff_blocked_by_filter_total' => 0,
-            'handoff_blocked_by_filter_reason_counts' => [],
-            'handoff_blocked_by_phase_reason_counts' => [],
-            'handoff_blocked_by_quality_guard_total' => 0,
-            'handoff_blocked_by_quality_guard_examples' => [],
-            'quality_guard_existing_ready_checked_total' => 0,
-            'quality_guard_existing_ready_withdrawn_total' => 0,
-            'quality_guard_existing_ready_withdrawn_examples' => [],
-            'early_entry_price_phase_total' => 0,
-            'early_entry_oi_confirmed_total' => 0,
-            'early_entry_oi_unconfirmed_total' => 0,
-            'early_entry_wave_soft_block_total' => 0,
-            'early_entry_orderbook_hard_block_total' => 0,
-            'early_entry_handoff_written_total' => 0,
-            'early_entry_handoff_cap_skipped_total' => 0,
-            'early_entry_handoff_examples' => [],
-            'early_entry_oi_warning_examples' => [],
-            'early_entry_wave_warning_examples' => [],
-            'dynamic_learning_checked_total' => 0,
-            'dynamic_learning_pass_total' => 0,
-            'dynamic_learning_block_total' => 0,
-            'dynamic_learning_shadow_block_total' => 0,
-            'dynamic_learning_no_profile_total' => 0,
-            'dynamic_learning_examples' => [],
-        ];
 
         foreach ($batchSymbols as $symbol) {
             if (isset($recheckProcessedSymbols[strtolower((string)$symbol)])) {
@@ -1661,6 +1703,39 @@ final class EarlyImpulseGrowthLongService
         $outcomeAnalyzerResult = $this->runOutcomeAnalyzer($config);
         $dynamicLearningResult = $this->runDynamicLearningModule();
 
+        // Compute counter mismatch: compare DL-checked count against bot_handoff_queue records
+        // that carry dynamic_learning_shadow_decision, to surface any remaining counter gaps.
+        if ((bool)($config['dynamic_learning_enabled'] ?? false) && (string)($config['dynamic_learning_mode'] ?? 'shadow') === 'shadow') {
+            $queueWithDlDecision = array_values(array_filter(
+                $handoffQueue,
+                static fn(array $q): bool => isset($q['dynamic_learning_shadow_decision']) && (string)$q['dynamic_learning_shadow_decision'] !== ''
+            ));
+            $queueDlCount = count($queueWithDlDecision);
+            if ($queueDlCount !== $diag['dynamic_learning_checked_total']) {
+                $mismatch = $queueDlCount - $diag['dynamic_learning_checked_total'];
+                $diag['dynamic_learning_counter_mismatch_total'] = abs($mismatch);
+                foreach (array_slice($queueWithDlDecision, 0, 5) as $qRow) {
+                    if (!isset($qRow['symbol'])) {
+                        continue;
+                    }
+                    // Only add as mismatch example if symbol is not already in dynamic_learning_examples
+                    $alreadyCounted = false;
+                    foreach ($diag['dynamic_learning_examples'] as $ex) {
+                        if ((string)($ex['symbol'] ?? '') === (string)$qRow['symbol']) {
+                            $alreadyCounted = true;
+                            break;
+                        }
+                    }
+                    if (!$alreadyCounted) {
+                        $diag['dynamic_learning_counter_mismatch_examples'][] = [
+                            'symbol' => $qRow['symbol'],
+                            'shadow_decision' => $qRow['dynamic_learning_shadow_decision'] ?? null,
+                        ];
+                    }
+                }
+            }
+        }
+
         $lastRun = [
             'strategy_id' => self::STRATEGY_ID,
             'status' => $statusDone ? 'done' : 'running',
@@ -1731,6 +1806,9 @@ final class EarlyImpulseGrowthLongService
             'dynamic_learning_shadow_block_total' => $diag['dynamic_learning_shadow_block_total'],
             'dynamic_learning_no_profile_total' => $diag['dynamic_learning_no_profile_total'],
             'dynamic_learning_examples' => $diag['dynamic_learning_examples'],
+            'dynamic_learning_counter_source' => $diag['dynamic_learning_counter_source'],
+            'dynamic_learning_counter_mismatch_total' => $diag['dynamic_learning_counter_mismatch_total'],
+            'dynamic_learning_counter_mismatch_examples' => $diag['dynamic_learning_counter_mismatch_examples'],
 
             // Filter engine
             'filter_engine_enabled' => (bool)$config['filter_engine_enabled'],

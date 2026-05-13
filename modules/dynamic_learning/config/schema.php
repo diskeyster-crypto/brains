@@ -43,6 +43,7 @@ return [
     'max_entry_snapshots' => 'int',
     'max_feature_records' => 'int',
     'max_closed_outcomes' => 'int',
+    'max_observations_per_position' => 'int',
     'max_active_observation_files' => 'int',
     'max_examples_per_last_run_section' => 'int',
 ];

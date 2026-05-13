@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Modules\DynamicLearning;
 
 require_once __DIR__ . '/analyzers/dl_helpers.php';
+require_once __DIR__ . '/analyzers/dl_market_data.php';
 require_once __DIR__ . '/analyzers/outcome/outcome_classifier.php';
 require_once __DIR__ . '/analyzers/patterns/pattern_miner.php';
 require_once __DIR__ . '/analyzers/candles/candle_micro_analyzer.php';
@@ -17,6 +18,7 @@ require_once __DIR__ . '/profiles/profile_comparator.php';
 require_once __DIR__ . '/decision/dynamic_learning_decision.php';
 
 use Modules\DynamicLearning\Analyzers\DlHelpers;
+use Modules\DynamicLearning\Analyzers\DlMarketData;
 use Modules\DynamicLearning\Analyzers\Outcome\OutcomeClassifier;
 use Modules\DynamicLearning\Analyzers\Patterns\PatternMiner;
 use Modules\DynamicLearning\Analyzers\Candles\CandleMicroAnalyzer;
@@ -125,6 +127,24 @@ final class DynamicLearningService
             'dump_micro_real_available_total' => 0,
             'dump_micro_proxy_available_total' => 0,
             'dump_micro_missing_total' => 0,
+            'clean_learning_start_enabled' => false,
+            'legacy_proxy_features_total' => 0,
+            'new_micro_features_total' => 0,
+            'bybit_kline_requests_total' => 0,
+            'bybit_kline_success_total' => 0,
+            'bybit_kline_error_total' => 0,
+            'bybit_kline_cache_hit_total' => 0,
+            'parser2_fallback_used_total' => 0,
+            'micro_data_missing_total' => 0,
+            'micro_impulse_shape_counts' => [],
+            'micro_entry_timing_counts' => [],
+            'micro_growth_distribution_counts' => [],
+            'micro_rejection_risk_counts' => [],
+            'dump_shape_counts' => [],
+            'post_dump_state_counts' => [],
+            'post_dump_impulse_type_counts' => [],
+            'micro_pattern_examples' => [],
+            'micro_bad_good_overlap_examples' => [],
             'weighted_score_calculated_total' => 0,
             'bad_patterns_total' => 0,
             'profile_generated' => false,
@@ -214,6 +234,7 @@ final class DynamicLearningService
         $result['good_entry_examples'] = array_slice($outcomes['good'], 0, 6);
 
         // 4. Feature extraction pipeline
+        $featureResult = ['feature_by_snapshot' => []];
         if ((bool)($cfg['feature_pipeline_enabled'] ?? true)) {
             $featureResult = $this->runFeaturePipeline($cfg, $snapshots['all']);
             $result['feature_records_total'] = $featureResult['records_total'];
@@ -229,11 +250,29 @@ final class DynamicLearningService
             $result['dump_micro_real_available_total'] = $featureResult['dump_micro_real_available_total'];
             $result['dump_micro_proxy_available_total'] = $featureResult['dump_micro_proxy_available_total'];
             $result['dump_micro_missing_total'] = $featureResult['dump_micro_missing_total'];
+            $result['clean_learning_start_enabled'] = (bool)($featureResult['clean_learning_start_enabled'] ?? false);
+            $result['legacy_proxy_features_total'] = (int)($featureResult['legacy_proxy_features_total'] ?? 0);
+            $result['new_micro_features_total'] = (int)($featureResult['new_micro_features_total'] ?? 0);
+            $result['bybit_kline_requests_total'] = (int)($featureResult['bybit_kline_requests_total'] ?? 0);
+            $result['bybit_kline_success_total'] = (int)($featureResult['bybit_kline_success_total'] ?? 0);
+            $result['bybit_kline_error_total'] = (int)($featureResult['bybit_kline_error_total'] ?? 0);
+            $result['bybit_kline_cache_hit_total'] = (int)($featureResult['bybit_kline_cache_hit_total'] ?? 0);
+            $result['parser2_fallback_used_total'] = (int)($featureResult['parser2_fallback_used_total'] ?? 0);
+            $result['micro_data_missing_total'] = (int)($featureResult['micro_data_missing_total'] ?? 0);
+            $result['micro_impulse_shape_counts'] = (array)($featureResult['micro_impulse_shape_counts'] ?? []);
+            $result['micro_entry_timing_counts'] = (array)($featureResult['micro_entry_timing_counts'] ?? []);
+            $result['micro_growth_distribution_counts'] = (array)($featureResult['micro_growth_distribution_counts'] ?? []);
+            $result['micro_rejection_risk_counts'] = (array)($featureResult['micro_rejection_risk_counts'] ?? []);
+            $result['dump_shape_counts'] = (array)($featureResult['dump_shape_counts'] ?? []);
+            $result['post_dump_state_counts'] = (array)($featureResult['post_dump_state_counts'] ?? []);
+            $result['post_dump_impulse_type_counts'] = (array)($featureResult['post_dump_impulse_type_counts'] ?? []);
+            $result['micro_pattern_examples'] = (array)($featureResult['micro_pattern_examples'] ?? []);
+            $result['micro_bad_good_overlap_examples'] = (array)($featureResult['micro_bad_good_overlap_examples'] ?? []);
             $result['weighted_score_calculated_total'] = $featureResult['weighted_score_calculated_total'];
         }
 
         // 5. Pattern mining
-        $patterns = PatternMiner::mine($outcomes['pattern_mining'], $cfg);
+        $patterns = PatternMiner::mine($outcomes['pattern_mining'], $cfg, (array)($featureResult['feature_by_snapshot'] ?? []));
         $this->writeJson($this->storagePath('patterns/bad_patterns.json'), $patterns['bad_patterns']);
         $this->writeJson($this->storagePath('patterns/pattern_stats.json'), $patterns['all']);
         $result['bad_patterns_total'] = count($patterns['all']);
@@ -340,16 +379,26 @@ final class DynamicLearningService
             'source' => 'static_initial',
             'status' => 'diagnostic_only',
             'risk_components' => [
-                'micro_single_candle_dominance_high' => 20.0,
+                'single_candle_dominance_high' => 20.0,
+                'micro_entry_after_spike' => 15.0,
+                'concentrated_growth' => 12.0,
+                'high_rejection_wick' => 10.0,
+                'knife_bounce' => 10.0,
+                'choppy_dump' => 8.0,
                 'fast_flip_chop' => 15.0,
                 'ask_wall_high' => 15.0,
                 'bid_support_weak' => 10.0,
                 'oi_not_confirmed' => 5.0,
             ],
             'quality_components' => [
-                'smooth_growth_sequence_good' => 15.0,
+                'smooth_birth' => 18.0,
+                'distributed_growth' => 14.0,
+                'controlled_dump' => 10.0,
+                'post_dump_stabilized' => 10.0,
+                'higher_close_sequence' => 12.0,
+                'higher_low_sequence' => 10.0,
                 'bid_support_strong' => 10.0,
-                'context_quality_good' => 10.0,
+                'oi_confirmed' => 6.0,
             ],
         ];
     }
@@ -1197,10 +1246,67 @@ final class DynamicLearningService
             'dump_micro_real_available_total' => 0,
             'dump_micro_proxy_available_total' => 0,
             'dump_micro_missing_total' => 0,
+            'clean_learning_start_enabled' => (bool)($cfg['clean_learning_start_enabled'] ?? false),
+            'legacy_proxy_features_total' => 0,
+            'new_micro_features_total' => 0,
+            'bybit_kline_requests_total' => 0,
+            'bybit_kline_success_total' => 0,
+            'bybit_kline_error_total' => 0,
+            'bybit_kline_cache_hit_total' => 0,
+            'parser2_fallback_used_total' => 0,
+            'micro_data_missing_total' => 0,
+            'micro_impulse_shape_counts' => [],
+            'micro_entry_timing_counts' => [],
+            'micro_growth_distribution_counts' => [],
+            'micro_rejection_risk_counts' => [],
+            'dump_shape_counts' => [],
+            'post_dump_state_counts' => [],
+            'post_dump_impulse_type_counts' => [],
+            'micro_pattern_examples' => [],
+            'micro_bad_good_overlap_examples' => [],
+            'feature_by_snapshot' => [],
             'weighted_score_calculated_total' => 0,
         ];
 
+        $featureJsonPath = $this->storagePath('features/early_impulse_growth_long/features.json');
+        $existingFeatures = (array)$this->readJson($featureJsonPath, []);
+        foreach ($existingFeatures as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $isLegacyProxy = (bool)($row['legacy_proxy_feature'] ?? false)
+                || (
+                    ((bool)($row['candle_micro_real'] ?? false) === false)
+                    && ((bool)($row['dump_micro_real'] ?? false) === false)
+                    && (((bool)($row['micro_proxy_available'] ?? false) === true) || ((bool)($row['dump_micro_proxy_available'] ?? false) === true))
+                );
+            if ($isLegacyProxy) {
+                $result['legacy_proxy_features_total']++;
+            }
+        }
+
+        $marketData = new DlMarketData($this->repoRoot, $cfg);
         $records = [];
+        $outcomeRows = (array)$this->readJson($this->storagePath('closed_outcomes.json'), []);
+        $outcomeBySnapshot = [];
+        foreach ($outcomeRows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $sid = trim((string)($row['snapshot_id'] ?? ''));
+            if ($sid !== '') {
+                $outcomeBySnapshot[$sid] = $row;
+            }
+        }
+
+        $countMap = static function (array &$map, string $value): void {
+            $v = trim($value);
+            if ($v === '') {
+                $v = 'unknown';
+            }
+            $map[$v] = (int)($map[$v] ?? 0) + 1;
+        };
+
         foreach ($snapshots as $snap) {
             if (!is_array($snap)) {
                 continue;
@@ -1214,14 +1320,21 @@ final class DynamicLearningService
                 $featureTimeWarning = 'feature_source_unknown_timing_unproven';
             }
 
+            $entryTimeIso = $this->normalizeTimestamp($snap['opened_at'] ?? $snap['detected_at'] ?? '');
+            $entryTs = strtotime($entryTimeIso);
+            if ($entryTs === false) {
+                $entryTs = time();
+            }
+            $symbol = strtoupper(trim((string)($snap['symbol'] ?? '')));
+
             $candleMicro = (bool)($cfg['candle_micro_analyzer_enabled'] ?? true)
-                ? CandleMicroAnalyzer::analyze($ctx)
+                ? CandleMicroAnalyzer::analyze($ctx, $symbol, (int)$entryTs, $marketData, $cfg)
                 : ['micro_context_available' => false];
             $dumpMicro = (bool)($cfg['dump_micro_analyzer_enabled'] ?? true)
-                ? DumpMicroAnalyzer::analyze($ctx)
+                ? DumpMicroAnalyzer::analyze($ctx, $symbol, (int)$entryTs, $marketData, $cfg)
                 : ['dump_micro_available' => false];
             $impulse = (bool)($cfg['impulse_birth_analyzer_enabled'] ?? true)
-                ? ImpulseBirthAnalyzer::analyze($ctx)
+                ? ImpulseBirthAnalyzer::analyze($ctx, $candleMicro, $dumpMicro)
                 : ['impulse_birth_available' => false];
             $trend = (bool)($cfg['trend_context_analyzer_enabled'] ?? true)
                 ? TrendContextAnalyzer::analyze($ctx)
@@ -1238,6 +1351,7 @@ final class DynamicLearningService
                     is_array($snap['entry_features'] ?? null) ? (array)$snap['entry_features'] : OutcomeClassifier::extractEntryFeatures($ctx),
                     $candleMicro,
                     $dumpMicro,
+                    $impulse,
                     $ob
                 );
                 [$weightedScore, $riskComponents, $qualityComponents] = $this->computeWeightedScore($featuresForScore);
@@ -1256,6 +1370,7 @@ final class DynamicLearningService
                 'signal_id' => $snap['signal_id'] ?? null,
                 'entry_price' => $snap['entry_price'] ?? null,
                 'learning_opened_at' => $snap['opened_at'] ?? null,
+                'entry_time' => $entryTimeIso,
                 'feature_source' => $featureSource,
                 'feature_time_valid' => $featureTimeValid,
                 'feature_time_warning' => $featureTimeWarning,
@@ -1268,6 +1383,7 @@ final class DynamicLearningService
                 'smooth_growth_higher_low_count' => $g('smooth_growth_higher_low_count'),
                 'smooth_growth_single_candle_dominance_pct' => $g('smooth_growth_single_candle_dominance_pct'),
                 'open_interest_growth_pct' => $g('open_interest_growth_pct'),
+                'open_interest_confirmed' => $g('open_interest_confirmed'),
                 'recovery_phase' => $g('recovery_phase'),
                 'entry_timing' => $g('entry_timing'),
                 'context_phase' => $trend['context_phase'] ?? $g('context_phase'),
@@ -1287,11 +1403,26 @@ final class DynamicLearningService
                 'micro_context_available' => (bool)($candleMicro['micro_context_available'] ?? false),
                 'micro_proxy_available' => (bool)($candleMicro['micro_proxy_available'] ?? false),
                 'candle_micro_real' => (bool)($candleMicro['candle_micro_real'] ?? false),
-                'micro_source' => (string)($candleMicro['micro_source'] ?? 'none'),
+                'micro_source' => (string)($candleMicro['candle_micro_source'] ?? $candleMicro['micro_source'] ?? 'none'),
+                'candle_micro_source' => (string)($candleMicro['candle_micro_source'] ?? $candleMicro['micro_source'] ?? 'none'),
+                'candle_micro_windows' => (array)($candleMicro['candle_micro_windows'] ?? []),
+                'micro_impulse_shape' => (string)($candleMicro['micro_impulse_shape'] ?? 'unknown'),
+                'micro_entry_timing' => (string)($candleMicro['micro_entry_timing'] ?? 'unknown'),
+                'micro_growth_distribution' => (string)($candleMicro['micro_growth_distribution'] ?? 'unknown'),
+                'micro_rejection_risk' => (string)($candleMicro['micro_rejection_risk'] ?? 'unknown'),
+                'micro_direction_flip_count' => (int)(((array)($candleMicro['candle_micro_windows']['micro_window_15m'] ?? []))['direction_flip_count'] ?? 0),
                 'dump_micro_available' => (bool)($dumpMicro['dump_micro_available'] ?? false),
                 'dump_micro_proxy_available' => (bool)($dumpMicro['dump_micro_proxy_available'] ?? false),
                 'dump_micro_real' => (bool)($dumpMicro['dump_micro_real'] ?? false),
                 'dump_source' => (string)($dumpMicro['dump_source'] ?? 'none'),
+                'dump_micro_source' => (string)($dumpMicro['dump_source'] ?? 'none'),
+                'dump_shape' => (string)($dumpMicro['dump_shape'] ?? 'unknown'),
+                'post_dump_state' => (string)($dumpMicro['post_dump_state'] ?? 'unknown'),
+                'post_dump_impulse_type' => (string)($impulse['post_dump_impulse_type'] ?? 'unknown'),
+                'impulse_birth_after_dump_score' => $impulse['impulse_birth_after_dump_score'] ?? $dumpMicro['impulse_birth_after_dump_score'] ?? null,
+                'bounce_only_risk_score' => $impulse['bounce_only_risk_score'] ?? $dumpMicro['bounce_only_risk_score'] ?? null,
+                'entry_quality_micro_score' => $impulse['entry_quality_micro_score'] ?? null,
+                'legacy_proxy_feature' => false,
                 'micro_candle' => $candleMicro,
                 'micro_dump' => $dumpMicro,
                 'micro_impulse' => $impulse,
@@ -1325,6 +1456,7 @@ final class DynamicLearningService
             if ((bool)($candleMicro['micro_context_available'] ?? false)) {
                 $result['candle_micro_real_available_total']++;
                 $result['candle_micro_available_total']++;
+                $result['new_micro_features_total']++;
             } elseif ((bool)($candleMicro['micro_proxy_available'] ?? false)) {
                 $result['candle_micro_proxy_available_total']++;
             } else {
@@ -1338,16 +1470,63 @@ final class DynamicLearningService
             } else {
                 $result['dump_micro_missing_total']++;
             }
+
+            $countMap($result['micro_impulse_shape_counts'], (string)($featureRecord['micro_impulse_shape'] ?? 'unknown'));
+            $countMap($result['micro_entry_timing_counts'], (string)($featureRecord['micro_entry_timing'] ?? 'unknown'));
+            $countMap($result['micro_growth_distribution_counts'], (string)($featureRecord['micro_growth_distribution'] ?? 'unknown'));
+            $countMap($result['micro_rejection_risk_counts'], (string)($featureRecord['micro_rejection_risk'] ?? 'unknown'));
+            $countMap($result['dump_shape_counts'], (string)($featureRecord['dump_shape'] ?? 'unknown'));
+            $countMap($result['post_dump_state_counts'], (string)($featureRecord['post_dump_state'] ?? 'unknown'));
+            $countMap($result['post_dump_impulse_type_counts'], (string)($featureRecord['post_dump_impulse_type'] ?? 'unknown'));
+
+            if (count($result['micro_pattern_examples']) < 12) {
+                $out = is_array($outcomeBySnapshot[(string)($featureRecord['snapshot_id'] ?? '')] ?? null)
+                    ? (array)$outcomeBySnapshot[(string)$featureRecord['snapshot_id']]
+                    : [];
+                $result['micro_pattern_examples'][] = [
+                    'symbol' => $featureRecord['symbol'] ?? '',
+                    'outcome_class' => $out['outcome_class'] ?? null,
+                    'close_roi' => $out['close_roi'] ?? null,
+                    'max_drawdown_roi' => $out['max_drawdown_roi'] ?? null,
+                    'micro_impulse_shape' => $featureRecord['micro_impulse_shape'] ?? null,
+                    'micro_entry_timing' => $featureRecord['micro_entry_timing'] ?? null,
+                    'micro_growth_distribution' => $featureRecord['micro_growth_distribution'] ?? null,
+                    'single_candle_dominance_pct' => $featureRecord['micro_single_candle_dominance_pct'] ?? null,
+                    'largest_candle_share_pct' => $featureRecord['micro_largest_candle_share_pct'] ?? null,
+                    'higher_close_count' => $featureRecord['micro_higher_close_count'] ?? null,
+                    'higher_low_count' => $featureRecord['micro_higher_low_count'] ?? null,
+                    'dump_shape' => $featureRecord['dump_shape'] ?? null,
+                    'post_dump_state' => $featureRecord['post_dump_state'] ?? null,
+                    'post_dump_impulse_type' => $featureRecord['post_dump_impulse_type'] ?? null,
+                    'ask_wall_risk' => $featureRecord['ask_wall_risk'] ?? null,
+                    'wave_regime' => $featureRecord['wave_regime'] ?? null,
+                    'oi_confirmed' => $ctx['open_interest_confirmed'] ?? null,
+                ];
+            }
+
             if ($weightedScore !== null) {
                 $result['weighted_score_calculated_total']++;
             }
+
+            $sid = trim((string)($featureRecord['snapshot_id'] ?? ''));
+            if ($sid !== '') {
+                $result['feature_by_snapshot'][$sid] = $featureRecord;
+            }
         }
 
-        $featureJsonPath = $this->storagePath('features/early_impulse_growth_long/features.json');
         $featureNdjsonPath = $this->storagePath('features/early_impulse_growth_long/features.ndjson');
         $featureDir = dirname($featureJsonPath);
         if (!is_dir($featureDir)) {
             @mkdir($featureDir, 0755, true);
+        }
+        if ((bool)($cfg['clean_learning_start_enabled'] ?? false) && !(bool)($cfg['clear_dynamic_learning_features_on_clean_start'] ?? true)) {
+            foreach ($existingFeatures as $oldRow) {
+                if (!is_array($oldRow)) {
+                    continue;
+                }
+                $oldRow['legacy_proxy_feature'] = (bool)($oldRow['legacy_proxy_feature'] ?? true);
+                $records[] = $oldRow;
+            }
         }
         $json = json_encode($records, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if (is_string($json)) {
@@ -1361,6 +1540,41 @@ final class DynamicLearningService
             }
         }
         @file_put_contents($featureNdjsonPath, $ndjsonContent, LOCK_EX);
+
+        $mdStats = $marketData->getStats();
+        $result['bybit_kline_requests_total'] = (int)($mdStats['bybit_kline_requests_total'] ?? 0);
+        $result['bybit_kline_success_total'] = (int)($mdStats['bybit_kline_success_total'] ?? 0);
+        $result['bybit_kline_error_total'] = (int)($mdStats['bybit_kline_error_total'] ?? 0);
+        $result['bybit_kline_cache_hit_total'] = (int)($mdStats['bybit_kline_cache_hit_total'] ?? 0);
+        $result['parser2_fallback_used_total'] = (int)($mdStats['parser2_fallback_used_total'] ?? 0);
+        $result['micro_data_missing_total'] = (int)($mdStats['micro_data_missing_total'] ?? 0);
+
+        $overlap = [];
+        foreach ($outcomeRows as $o) {
+            if (!is_array($o)) {
+                continue;
+            }
+            $sid = trim((string)($o['snapshot_id'] ?? ''));
+            if ($sid === '' || !isset($result['feature_by_snapshot'][$sid])) {
+                continue;
+            }
+            $fr = (array)$result['feature_by_snapshot'][$sid];
+            $key = implode('|', [
+                (string)($fr['micro_impulse_shape'] ?? 'unknown'),
+                (string)($fr['micro_growth_distribution'] ?? 'unknown'),
+                (string)($fr['dump_shape'] ?? 'unknown'),
+            ]);
+            $cls = (string)($o['outcome_class'] ?? 'unknown');
+            $overlap[$key][$cls] = (int)($overlap[$key][$cls] ?? 0) + 1;
+        }
+        foreach ($overlap as $k => $classes) {
+            if (count($result['micro_bad_good_overlap_examples']) >= 12) {
+                break;
+            }
+            if ((int)($classes['bad_entry'] ?? 0) > 0 && (int)($classes['good_or_do_not_touch'] ?? 0) > 0) {
+                $result['micro_bad_good_overlap_examples'][] = ['bucket' => $k, 'counts' => $classes];
+            }
+        }
 
         return $result;
     }
@@ -1379,7 +1593,27 @@ final class DynamicLearningService
 
         if ((string)($f['micro_single_candle_dominance_pct'] ?? '') !== '' && is_numeric($f['micro_single_candle_dominance_pct'] ?? null) && (float)$f['micro_single_candle_dominance_pct'] >= 65) {
             $riskScore += 20.0;
-            $riskComponents['micro_single_candle_dominance_high'] = 20.0;
+            $riskComponents['single_candle_dominance_high'] = 20.0;
+        }
+        if ((string)($f['micro_entry_timing'] ?? '') === 'after_spike') {
+            $riskScore += 15.0;
+            $riskComponents['micro_entry_after_spike'] = 15.0;
+        }
+        if ((string)($f['micro_growth_distribution'] ?? '') === 'concentrated') {
+            $riskScore += 12.0;
+            $riskComponents['concentrated_growth'] = 12.0;
+        }
+        if ((string)($f['micro_rejection_risk'] ?? '') === 'high') {
+            $riskScore += 10.0;
+            $riskComponents['high_rejection_wick'] = 10.0;
+        }
+        if ((string)($f['post_dump_state'] ?? '') === 'knife_bounce') {
+            $riskScore += 10.0;
+            $riskComponents['knife_bounce'] = 10.0;
+        }
+        if ((string)($f['dump_shape'] ?? '') === 'choppy_dump') {
+            $riskScore += 8.0;
+            $riskComponents['choppy_dump'] = 8.0;
         }
         if ((string)($f['wave_regime'] ?? '') === 'fast_flip_chop') {
             $riskScore += 15.0;
@@ -1397,17 +1631,37 @@ final class DynamicLearningService
             $riskScore += 5.0;
             $riskComponents['oi_not_confirmed'] = 5.0;
         }
-        if (is_numeric($f['smooth_growth_higher_close_count'] ?? null) && (int)$f['smooth_growth_higher_close_count'] >= 3) {
-            $qualityScore += 15.0;
-            $qualityComponents['smooth_growth_sequence_good'] = 15.0;
+        if ((string)($f['micro_impulse_shape'] ?? '') === 'smooth_birth') {
+            $qualityScore += 18.0;
+            $qualityComponents['smooth_birth'] = 18.0;
+        }
+        if ((string)($f['micro_growth_distribution'] ?? '') === 'distributed') {
+            $qualityScore += 14.0;
+            $qualityComponents['distributed_growth'] = 14.0;
+        }
+        if ((string)($f['dump_shape'] ?? '') === 'controlled_dump') {
+            $qualityScore += 10.0;
+            $qualityComponents['controlled_dump'] = 10.0;
+        }
+        if ((string)($f['post_dump_state'] ?? '') === 'stabilized') {
+            $qualityScore += 10.0;
+            $qualityComponents['post_dump_stabilized'] = 10.0;
+        }
+        if (is_numeric($f['micro_higher_close_count'] ?? null) && (int)$f['micro_higher_close_count'] >= 3) {
+            $qualityScore += 12.0;
+            $qualityComponents['higher_close_sequence'] = 12.0;
+        }
+        if (is_numeric($f['micro_higher_low_count'] ?? null) && (int)$f['micro_higher_low_count'] >= 2) {
+            $qualityScore += 10.0;
+            $qualityComponents['higher_low_sequence'] = 10.0;
         }
         if (in_array(strtolower((string)($f['bid_support_quality'] ?? '')), ['strong', 'medium'], true)) {
             $qualityScore += 10.0;
             $qualityComponents['bid_support_strong'] = 10.0;
         }
-        if ((string)($f['context_quality'] ?? '') === 'good') {
-            $qualityScore += 10.0;
-            $qualityComponents['context_quality_good'] = 10.0;
+        if ($f['open_interest_confirmed'] === true || $f['open_interest_confirmed'] === 'true') {
+            $qualityScore += 6.0;
+            $qualityComponents['oi_confirmed'] = 6.0;
         }
 
         return [
@@ -1832,6 +2086,22 @@ final class DynamicLearningService
         $cfg['trend_context_analyzer_enabled'] = (bool)($cfg['trend_context_analyzer_enabled'] ?? true);
         $cfg['orderbook_snapshot_analyzer_enabled'] = (bool)($cfg['orderbook_snapshot_analyzer_enabled'] ?? true);
         $cfg['weighted_scoring_enabled'] = (bool)($cfg['weighted_scoring_enabled'] ?? true);
+        $cfg['clean_learning_start_enabled'] = (bool)($cfg['clean_learning_start_enabled'] ?? true);
+        $cfg['clear_strategy_runtime_on_clean_start'] = (bool)($cfg['clear_strategy_runtime_on_clean_start'] ?? false);
+        $cfg['clear_dynamic_learning_outcomes_on_clean_start'] = (bool)($cfg['clear_dynamic_learning_outcomes_on_clean_start'] ?? false);
+        $cfg['clear_dynamic_learning_features_on_clean_start'] = (bool)($cfg['clear_dynamic_learning_features_on_clean_start'] ?? true);
+        $cfg['clear_dynamic_learning_snapshots_on_clean_start'] = (bool)($cfg['clear_dynamic_learning_snapshots_on_clean_start'] ?? false);
+        $cfg['clear_dynamic_learning_observations_on_clean_start'] = (bool)($cfg['clear_dynamic_learning_observations_on_clean_start'] ?? false);
+        $cfg['micro_data_source_primary'] = strtolower((string)($cfg['micro_data_source_primary'] ?? 'bybit'));
+        $cfg['micro_data_source_fallback'] = strtolower((string)($cfg['micro_data_source_fallback'] ?? 'parser2'));
+        $cfg['bybit_base_url'] = (string)($cfg['bybit_base_url'] ?? 'https://api.bybit.com');
+        $cfg['bybit_timeout_sec'] = max(3, (int)($cfg['bybit_timeout_sec'] ?? 6));
+        $cfg['bybit_kline_interval'] = (string)($cfg['bybit_kline_interval'] ?? '1');
+        $cfg['bybit_kline_limit'] = max(20, min(1000, (int)($cfg['bybit_kline_limit'] ?? 120)));
+        $cfg['bybit_micro_fetch_enabled'] = (bool)($cfg['bybit_micro_fetch_enabled'] ?? true);
+        $cfg['bybit_micro_fetch_only_for_strategy'] = (string)($cfg['bybit_micro_fetch_only_for_strategy'] ?? self::STRATEGY_ID);
+        $cfg['dump_micro_lookback_minutes'] = max(15, (int)($cfg['dump_micro_lookback_minutes'] ?? 60));
+        $cfg['dump_micro_min_candles'] = max(3, (int)($cfg['dump_micro_min_candles'] ?? 10));
         $cfg['max_entry_snapshots'] = max(100, (int)($cfg['max_entry_snapshots'] ?? 2000));
         $cfg['max_feature_records'] = max(100, (int)($cfg['max_feature_records'] ?? 2000));
         $cfg['max_closed_outcomes'] = max(100, (int)($cfg['max_closed_outcomes'] ?? 1000));

@@ -118,6 +118,33 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-size:12px;opacity:.8;">weighted_score_calculated_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['weighted_score_calculated_total'] ?? 0)) ?></div>
     </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">bybit_kline_requests_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['bybit_kline_requests_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">bybit_kline_success_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['bybit_kline_success_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#1e293b;color:#93c5fd;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">parser2_fallback_used_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['parser2_fallback_used_total'] ?? 0)) ?></div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">micro_impulse_shape_counts</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_impulse_shape_counts'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">dump_shape_counts</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['dump_shape_counts'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">micro_bad_good_overlap_examples</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_bad_good_overlap_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
   </div>
 
   <!-- Profile and comparison status -->

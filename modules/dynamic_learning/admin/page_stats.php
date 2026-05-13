@@ -16,6 +16,7 @@ $svc = \Modules\DynamicLearning\DynamicLearningService::instance($moduleDir);
 $patterns = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/pattern_stats.json'), true);
 $outcomes = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/closed_outcomes.json'), true);
 $quarantine = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/quarantine/rejected_rules.json'), true);
+$run = $svc->getLastRun();
 $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 ?>
 <div style="max-width:1200px;display:grid;gap:12px;">
@@ -23,5 +24,25 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
   <div><strong>Closed outcomes:</strong> <?= $e(count($outcomes)) ?></div>
   <div><strong>Pattern rows:</strong> <?= $e(count($patterns)) ?></div>
   <div><strong>Quarantined rules:</strong> <?= $e(count($quarantine)) ?></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">micro shape counts</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_impulse_shape_counts'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">dump shape counts</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['dump_shape_counts'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">good vs bad overlap by micro features</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_bad_good_overlap_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">top micro bad/good pattern examples</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_pattern_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+  </div>
   <pre style="margin:0;background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;overflow:auto;"><?= $e(json_encode(array_slice($patterns, 0, 30), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
 </div>

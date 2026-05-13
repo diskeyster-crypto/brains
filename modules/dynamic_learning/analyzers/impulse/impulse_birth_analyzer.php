@@ -18,9 +18,11 @@ final class ImpulseBirthAnalyzer
      * Analyze impulse birth structure from context.
      *
      * @param array<string,mixed> $ctx strategy_signal_context
+     * @param array<string,mixed> $candleMicro
+     * @param array<string,mixed> $dumpMicro
      * @return array<string,mixed>
      */
-    public static function analyze(array $ctx): array
+    public static function analyze(array $ctx, array $candleMicro = [], array $dumpMicro = []): array
     {
         $smoothGrowthPct = DlHelpers::toFloat($ctx['smooth_growth_pct'] ?? null);
         $smoothGrowthDuration = DlHelpers::toFloat($ctx['smooth_growth_duration_minutes'] ?? null);
@@ -57,6 +59,41 @@ final class ImpulseBirthAnalyzer
             $structureScore = round(max(0.0, min(100.0, ($hc + $hl) * 10.0 - $dominancePenalty * 50.0)), 2);
         }
 
+        $microShape = (string)($candleMicro['micro_impulse_shape'] ?? 'unknown');
+        $microTiming = (string)($candleMicro['micro_entry_timing'] ?? 'unknown');
+        $growthDist = (string)($candleMicro['micro_growth_distribution'] ?? 'unknown');
+        $dumpShape = (string)($dumpMicro['dump_shape'] ?? 'unknown');
+        $postDumpState = (string)($dumpMicro['post_dump_state'] ?? 'unknown');
+        $dumpBounceRisk = DlHelpers::toFloat($dumpMicro['bounce_only_risk_score'] ?? null) ?? 0.0;
+        $lateSpikeRisk = DlHelpers::toFloat($candleMicro['micro_late_spike_risk_score'] ?? null) ?? 0.0;
+        $smoothness = DlHelpers::toFloat($candleMicro['micro_smoothness_score'] ?? null) ?? 0.0;
+        $impulseBirth = DlHelpers::toFloat($candleMicro['micro_impulse_birth_score'] ?? null) ?? 0.0;
+
+        $softGrowthAfterDumpScore = max(
+            0.0,
+            min(
+                1.0,
+                ($impulseBirth * 0.45)
+                + ($smoothness * 0.3)
+                + (($growthDist === 'distributed' ? 1.0 : 0.0) * 0.15)
+                + (($postDumpState === 'stabilized' ? 1.0 : 0.0) * 0.1)
+            )
+        );
+        $bounceOnlyRiskScore = max(0.0, min(1.0, max($dumpBounceRisk, $lateSpikeRisk)));
+        $impulseBirthAfterDumpScore = max(0.0, min(1.0, ($softGrowthAfterDumpScore * 0.6) + ((1.0 - $bounceOnlyRiskScore) * 0.4)));
+        $entryQualityMicroScore = max(0.0, min(1.0, ($impulseBirthAfterDumpScore * 0.65) + ((1.0 - $bounceOnlyRiskScore) * 0.35)));
+
+        $postDumpImpulseType = 'unknown';
+        if ($microShape === 'smooth_birth' && $dumpShape === 'controlled_dump' && $postDumpState === 'stabilized') {
+            $postDumpImpulseType = 'real_impulse_birth';
+        } elseif ($microShape === 'single_spike' || $microTiming === 'after_spike') {
+            $postDumpImpulseType = 'late_spike';
+        } elseif ($postDumpState === 'knife_bounce' || $bounceOnlyRiskScore >= 0.65) {
+            $postDumpImpulseType = 'technical_bounce';
+        } elseif ($microShape === 'choppy_birth' || $dumpShape === 'choppy_dump') {
+            $postDumpImpulseType = 'choppy_rebound';
+        }
+
         return [
             'impulse_birth_available' => true,
             'impulse_growth_pct' => $smoothGrowthPct,
@@ -70,6 +107,11 @@ final class ImpulseBirthAnalyzer
             'impulse_oi_growth_pct' => $oiGrowthPct,
             'impulse_oi_confirmed' => $oiConfirmed,
             'impulse_source' => 'strategy_signal_context',
+            'soft_growth_after_dump_score' => round($softGrowthAfterDumpScore, 6),
+            'impulse_birth_after_dump_score' => round($impulseBirthAfterDumpScore, 6),
+            'bounce_only_risk_score' => round($bounceOnlyRiskScore, 6),
+            'entry_quality_micro_score' => round($entryQualityMicroScore, 6),
+            'post_dump_impulse_type' => $postDumpImpulseType,
         ];
     }
 }

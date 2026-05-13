@@ -61,10 +61,29 @@ final class PatternMiner
             [
                 'id' => 'single_candle_dominance_ge_65',
                 'label' => 'single_candle_dominance >= 65',
-                'f' => 'smooth_growth_single_candle_dominance_pct',
+                'f' => 'micro_single_candle_dominance_pct',
                 'op' => 'gte',
                 'v' => 65,
             ],
+            ['id' => 'micro_impulse_shape_single_spike', 'label' => 'micro_impulse_shape = single_spike', 'f' => 'micro_impulse_shape', 'op' => 'eq', 'v' => 'single_spike'],
+            ['id' => 'micro_impulse_shape_smooth_birth', 'label' => 'micro_impulse_shape = smooth_birth', 'f' => 'micro_impulse_shape', 'op' => 'eq', 'v' => 'smooth_birth'],
+            ['id' => 'micro_impulse_shape_choppy_birth', 'label' => 'micro_impulse_shape = choppy_birth', 'f' => 'micro_impulse_shape', 'op' => 'eq', 'v' => 'choppy_birth'],
+            ['id' => 'micro_growth_distribution_concentrated', 'label' => 'micro_growth_distribution = concentrated', 'f' => 'micro_growth_distribution', 'op' => 'eq', 'v' => 'concentrated'],
+            ['id' => 'micro_growth_distribution_distributed', 'label' => 'micro_growth_distribution = distributed', 'f' => 'micro_growth_distribution', 'op' => 'eq', 'v' => 'distributed'],
+            ['id' => 'micro_entry_timing_after_spike', 'label' => 'micro_entry_timing = after_spike', 'f' => 'micro_entry_timing', 'op' => 'eq', 'v' => 'after_spike'],
+            ['id' => 'micro_rejection_risk_high', 'label' => 'micro_rejection_risk = high', 'f' => 'micro_rejection_risk', 'op' => 'eq', 'v' => 'high'],
+            ['id' => 'largest_candle_share_ge_70', 'label' => 'largest_candle_share_pct >= 70', 'f' => 'micro_largest_candle_share_pct', 'op' => 'gte', 'v' => 70],
+            ['id' => 'higher_close_count_ge_3', 'label' => 'higher_close_count >= 3', 'f' => 'micro_higher_close_count', 'op' => 'gte', 'v' => 3],
+            ['id' => 'higher_low_count_ge_2', 'label' => 'higher_low_count >= 2', 'f' => 'micro_higher_low_count', 'op' => 'gte', 'v' => 2],
+            ['id' => 'pullback_max_pct_ge_0_8', 'label' => 'pullback_max_pct >= 0.8', 'f' => 'micro_pullback_max_pct', 'op' => 'gte', 'v' => 0.8],
+            ['id' => 'direction_flip_count_ge_3', 'label' => 'direction_flip_count >= 3', 'f' => 'micro_direction_flip_count', 'op' => 'gte', 'v' => 3],
+            ['id' => 'dump_shape_vertical_liquidation', 'label' => 'dump_shape = vertical_liquidation', 'f' => 'dump_shape', 'op' => 'eq', 'v' => 'vertical_liquidation'],
+            ['id' => 'dump_shape_choppy_dump', 'label' => 'dump_shape = choppy_dump', 'f' => 'dump_shape', 'op' => 'eq', 'v' => 'choppy_dump'],
+            ['id' => 'dump_shape_controlled_dump', 'label' => 'dump_shape = controlled_dump', 'f' => 'dump_shape', 'op' => 'eq', 'v' => 'controlled_dump'],
+            ['id' => 'post_dump_state_knife_bounce', 'label' => 'post_dump_state = knife_bounce', 'f' => 'post_dump_state', 'op' => 'eq', 'v' => 'knife_bounce'],
+            ['id' => 'post_dump_state_stabilized', 'label' => 'post_dump_state = stabilized', 'f' => 'post_dump_state', 'op' => 'eq', 'v' => 'stabilized'],
+            ['id' => 'bounce_only_risk_score_ge_0_65', 'label' => 'bounce_only_risk_score >= 0.65', 'f' => 'bounce_only_risk_score', 'op' => 'gte', 'v' => 0.65],
+            ['id' => 'impulse_birth_after_dump_score_ge_0_60', 'label' => 'impulse_birth_after_dump_score >= 0.60', 'f' => 'impulse_birth_after_dump_score', 'op' => 'gte', 'v' => 0.60],
             [
                 'id' => 'combo_bad_context_high_ask_wall',
                 'label' => 'context_quality bad + ask_wall_risk high',
@@ -75,6 +94,13 @@ final class PatternMiner
                 'label' => 'wave fast_flip_chop + bid weak/none',
                 'combo' => [['f' => 'wave_regime', 'op' => 'eq', 'v' => 'fast_flip_chop'], ['f' => 'bid_support_quality', 'op' => 'in', 'v' => ['weak', 'none']]],
             ],
+            ['id' => 'combo_single_spike_ask_wall_high', 'label' => 'single_spike + ask_wall_risk_high', 'combo' => [['f' => 'micro_impulse_shape', 'op' => 'eq', 'v' => 'single_spike'], ['f' => 'ask_wall_risk', 'op' => 'eq', 'v' => 'high']]],
+            ['id' => 'combo_concentrated_fast_flip_chop', 'label' => 'concentrated_growth + fast_flip_chop', 'combo' => [['f' => 'micro_growth_distribution', 'op' => 'eq', 'v' => 'concentrated'], ['f' => 'wave_regime', 'op' => 'eq', 'v' => 'fast_flip_chop']]],
+            ['id' => 'combo_after_spike_oi_not_confirmed', 'label' => 'after_spike + oi_not_confirmed', 'combo' => [['f' => 'micro_entry_timing', 'op' => 'eq', 'v' => 'after_spike'], ['f' => 'open_interest_confirmed', 'op' => 'eq', 'v' => false]]],
+            ['id' => 'combo_knife_bounce_high_single_candle_dominance', 'label' => 'knife_bounce + high_single_candle_dominance', 'combo' => [['f' => 'post_dump_state', 'op' => 'eq', 'v' => 'knife_bounce'], ['f' => 'micro_single_candle_dominance_pct', 'op' => 'gte', 'v' => 65]]],
+            ['id' => 'combo_smooth_birth_bid_support_strong', 'label' => 'smooth_birth + bid_support_strong', 'combo' => [['f' => 'micro_impulse_shape', 'op' => 'eq', 'v' => 'smooth_birth'], ['f' => 'bid_support_quality', 'op' => 'in', 'v' => ['strong', 'medium']]]],
+            ['id' => 'combo_controlled_dump_smooth_birth', 'label' => 'controlled_dump + smooth_birth', 'combo' => [['f' => 'dump_shape', 'op' => 'eq', 'v' => 'controlled_dump'], ['f' => 'micro_impulse_shape', 'op' => 'eq', 'v' => 'smooth_birth']]],
+            ['id' => 'combo_choppy_dump_fast_flip_chop', 'label' => 'choppy_dump + fast_flip_chop', 'combo' => [['f' => 'dump_shape', 'op' => 'eq', 'v' => 'choppy_dump'], ['f' => 'wave_regime', 'op' => 'eq', 'v' => 'fast_flip_chop']]],
         ];
     }
 
@@ -82,10 +108,11 @@ final class PatternMiner
      * Mine patterns from eligible outcomes.
      *
      * @param array<array<string,mixed>> $outcomes Pattern-mining-eligible outcome records
+     * @param array<string,array<string,mixed>> $featureBySnapshot
      * @param array<string,mixed> $cfg Dynamic learning config
      * @return array{all:list<array<string,mixed>>,bad_patterns:list<array<string,mixed>>}
      */
-    public static function mine(array $outcomes, array $cfg): array
+    public static function mine(array $outcomes, array $cfg, array $featureBySnapshot = []): array
     {
         $rows = [];
         foreach (self::definitions() as $d) {
@@ -97,7 +124,7 @@ final class PatternMiner
             $goodClose = [];
 
             foreach ($outcomes as $o) {
-                $f = self::extractFeaturesFromOutcome($o);
+                $f = self::extractFeaturesFromOutcome($o, $featureBySnapshot);
                 $match = isset($d['combo'])
                     ? DlHelpers::matchCombo($f, (array)$d['combo'])
                     : DlHelpers::cond($f[$d['f']] ?? null, (string)$d['op'], $d['v']);
@@ -164,9 +191,13 @@ final class PatternMiner
     }
 
     /** @return array<string,mixed> */
-    private static function extractFeaturesFromOutcome(array $o): array
+    private static function extractFeaturesFromOutcome(array $o, array $featureBySnapshot): array
     {
         $f = (array)($o['entry_snapshot']['entry_features'] ?? []);
+        $sid = trim((string)($o['snapshot_id'] ?? $o['entry_snapshot']['snapshot_id'] ?? ''));
+        if ($sid !== '' && isset($featureBySnapshot[$sid]) && is_array($featureBySnapshot[$sid])) {
+            $f = array_merge($f, (array)$featureBySnapshot[$sid]);
+        }
         if ($f !== []) {
             return $f;
         }

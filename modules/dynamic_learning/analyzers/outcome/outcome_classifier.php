@@ -27,20 +27,24 @@ final class OutcomeClassifier
         if ($closeRoi === null) {
             return ['outcome_incomplete', 'close_roi_missing'];
         }
-        if ($closeRoi >= (float)$cfg['good_close_roi_threshold']) {
-            return ['good_or_do_not_touch', 'close_roi_good'];
+        $goodCloseThreshold = (float)$cfg['good_close_roi_threshold'];
+        $goodMaxProfitThreshold = (float)$cfg['good_max_profit_roi_threshold'];
+        $badDrawdownThreshold = (float)$cfg['bad_drawdown_roi_threshold'];
+
+        if ($closeRoi >= $goodCloseThreshold) {
+            return ['good_or_do_not_touch', 'close_roi_reached_learning_threshold'];
         }
-        if ($normalizedMaxProfit !== null && $normalizedMaxProfit >= (float)$cfg['good_max_profit_roi_threshold']) {
-            return ['entry_ok_exit_issue', 'max_profit_good_but_close_bad'];
+        if ($normalizedMaxProfit !== null && $normalizedMaxProfit >= $goodMaxProfitThreshold) {
+            return ['entry_ok_exit_issue', 'max_profit_reached_learning_threshold_but_close_failed'];
         }
         if ($normalizedMaxDd === null) {
             return ['outcome_incomplete', 'max_drawdown_missing'];
         }
-        if ($normalizedMaxDd <= (float)$cfg['bad_drawdown_roi_threshold']
-            && $closeRoi < (float)$cfg['good_close_roi_threshold']
-            && ($normalizedMaxProfit === null || $normalizedMaxProfit < (float)$cfg['good_max_profit_roi_threshold'])
+        if ($normalizedMaxDd <= $badDrawdownThreshold
+            && $closeRoi < $goodCloseThreshold
+            && ($normalizedMaxProfit === null || $normalizedMaxProfit < $goodMaxProfitThreshold)
         ) {
-            return ['bad_entry', 'deep_drawdown_and_bad_close'];
+            return ['bad_entry', 'learning_corridor_bad_drawdown_without_recovery'];
         }
         if ($closeRoi >= (float)$cfg['neutral_close_roi_min'] && $closeRoi <= (float)$cfg['neutral_close_roi_max']) {
             return ['neutral', 'close_roi_neutral_range'];

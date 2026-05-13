@@ -351,9 +351,11 @@ final class ProfManagerService
             $roiSamplesDuplicateExamples = [];
 
             // Fast-demo PM profile diagnostic counters (long only)
-            $longAbove5RoiTotal       = 0;
-            $longPmEligibleTotal      = 0;
-            $longPmSkippedBelow5Total = 0;
+            $longCfg = $this->longProfile->getConfig();
+            $fastDemoActivationRoi = (float)($longCfg['activation_roi'] ?? 3.0);
+            $longPositionsAboveActivationTotal = 0;
+            $longPmEligibleTotal = 0;
+            $longPmSkippedBelowActivationTotal = 0;
 
             $trendBirthCfgDiag = $this->resolveTrendBirthConfigDiagnostics();
             $trendBirthConfigEnabled = (bool)($trendBirthCfgDiag['trend_birth_config_enabled'] ?? true);
@@ -629,12 +631,12 @@ final class ProfManagerService
                 if ($side === 'long') {
                     // Fast-demo PM profile counters
                     $_longRoi = $profileResult['roi'] ?? null;
-                    if ($_longRoi !== null && (float)$_longRoi >= 5.0) {
-                        $longAbove5RoiTotal++;
+                    if ($_longRoi !== null && (float)$_longRoi >= $fastDemoActivationRoi) {
+                        $longPositionsAboveActivationTotal++;
                     }
                     $_longSkipReason = $profileResult['skip_reason'] ?? null;
                     if ($_longSkipReason === 'below_activation_roi' || $_longSkipReason === 'below_init_roi') {
-                        $longPmSkippedBelow5Total++;
+                        $longPmSkippedBelowActivationTotal++;
                     } else {
                         $longPmEligibleTotal++;
                     }
@@ -1335,11 +1337,11 @@ final class ProfManagerService
                 'live_profit_floor_sync_skipped_disabled'=> $floorSyncResult['live_profit_floor_sync_skipped_disabled'] ?? false,
                 // Fast-demo PM profile diagnostics (long)
                 'fast_demo_pm_profile_enabled'           => true,
-                'fast_demo_pm_activation_roi'            => 5.0,
+                'fast_demo_pm_activation_roi'            => $fastDemoActivationRoi,
                 'fast_demo_pm_stop_pairing'              => 'long_stop_-5',
-                'long_positions_above_5_roi_total'       => $longAbove5RoiTotal,
+                'long_positions_above_3_roi_total'       => $longPositionsAboveActivationTotal,
                 'long_positions_pm_eligible_total'       => $longPmEligibleTotal,
-                'long_positions_pm_skipped_below_5_total'=> $longPmSkippedBelow5Total,
+                'long_positions_pm_skipped_below_3_total'=> $longPmSkippedBelowActivationTotal,
             ], $configSnapshot);
 
             $this->store->writeLastRun($result);
@@ -1749,6 +1751,25 @@ final class ProfManagerService
             'long_activation_roi'    => (float) ($lc['activation_roi'] ?? 10.0),
             'long_step_roi'          => (float) ($lc['step_roi']       ?? 3.0),
             'long_lock_floor_roi'    => (float) ($lc['lock_floor_roi'] ?? 5.0),
+            'long_roi_staircase_enabled' => (bool)($lc['roi_staircase_enabled'] ?? false),
+            'long_roi_staircase_min_peak_roi' => (float)($lc['roi_staircase_min_peak_roi'] ?? 10.0),
+            'long_roi_staircase_base_floor_roi' => (float)($lc['roi_staircase_base_floor_roi'] ?? 5.0),
+            'long_roi_staircase_step_roi' => (float)($lc['roi_staircase_step_roi'] ?? 5.0),
+            'long_roi_staircase_floor_buffer_roi' => (float)($lc['roi_staircase_floor_buffer_roi'] ?? 3.0),
+            'long_hybrid_enabled' => (bool)($lc['hybrid_enabled'] ?? false),
+            'long_hybrid_min_close_roi' => (float)($lc['hybrid_min_close_roi'] ?? 5.0),
+            'long_chop_exit_enabled' => (bool)($lc['chop_exit_enabled'] ?? false),
+            'long_chop_exit_min_peak_roi' => (float)($lc['chop_exit_min_peak_roi'] ?? 8.0),
+            'long_chop_exit_min_close_roi' => (float)($lc['chop_exit_min_close_roi'] ?? 4.0),
+            'long_trend_birth_hold_enabled' => (bool)($lc['trend_birth_hold_enabled'] ?? false),
+            'long_trend_birth_min_peak_roi' => (float)($lc['trend_birth_min_peak_roi'] ?? 8.0),
+            'long_trend_birth_min_current_roi' => (float)($lc['trend_birth_min_current_roi'] ?? 4.0),
+            'long_trend_birth_hard_floor_roi' => (float)($lc['trend_birth_hard_floor_roi'] ?? 3.0),
+            'long_impulse_hold_min_roi' => (float)($lc['impulse_hold_min_roi'] ?? 8.0),
+            'pm_exchange_profit_floor_sync_enabled' => (bool)($this->config['pm_exchange_profit_floor_sync_enabled'] ?? false),
+            'pm_exchange_profit_floor_min_roi' => (float)($this->config['pm_exchange_profit_floor_min_roi'] ?? 8.0),
+            'pm_exchange_profit_floor_buffer_roi' => (float)($this->config['pm_exchange_profit_floor_buffer_roi'] ?? 3.0),
+            'pm_exchange_profit_floor_min_improvement_roi' => (float)($this->config['pm_exchange_profit_floor_min_improvement_roi'] ?? 2.0),
             'short_profile'          => 'baseline_short_lock',
             'short_profile_enabled'  => true,
             'short_init_roi'         => (float) ($sc['init_roi']       ?? 2.0),

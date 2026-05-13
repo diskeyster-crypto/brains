@@ -34,6 +34,54 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">risk_profile_mode</div>
+      <div style="font-weight:600;"><?= $e((string)($run['risk_profile_mode'] ?? 'n/a')) ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">outcome_classification_profile</div>
+      <div style="font-weight:600;"><?= $e((string)($run['outcome_classification_profile'] ?? 'n/a')) ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">bad learning ROI</div>
+      <div style="font-weight:600;"><?= $e((float)($run['bad_learning_zone_roi'] ?? 0.0)) ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">hard stop reference ROI</div>
+      <div style="font-weight:600;"><?= $e((float)($run['hard_stop_reference_roi'] ?? 0.0)) ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">stop slippage buffer ROI</div>
+      <div style="font-weight:600;"><?= $e((float)($run['stop_slippage_buffer_roi'] ?? 0.0)) ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">good learning ROI</div>
+      <div style="font-weight:600;"><?= $e((float)($run['good_learning_threshold_roi'] ?? 0.0)) ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">bad_entry_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['bad_entry_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">good_or_do_not_touch_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['good_or_do_not_touch_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">neutral_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['neutral_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">outcomes_reclassified_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['outcomes_reclassified_total'] ?? 0)) ?></div>
+    </div>
+  </div>
+
+  <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+    <div style="font-size:12px;opacity:.8;margin-bottom:8px;">outcomes_reclassified_examples</div>
+    <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['outcomes_reclassified_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">closed_outcomes_raw_loaded_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_raw_loaded_total'] ?? 0)) ?></div>

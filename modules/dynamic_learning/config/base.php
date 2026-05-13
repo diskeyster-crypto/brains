@@ -22,10 +22,13 @@ return [
     'observe_open_interest_enabled' => true,
     'observe_price_enabled' => true,
 
-    'bad_drawdown_roi_threshold' => -10.0,
-    'good_close_roi_threshold' => 5.0,
-    'good_max_profit_roi_threshold' => 5.0,
-    'outcome_classification_profile' => 'fast_demo_stop_5',
+    'risk_profile_mode' => 'fast_demo',
+    'bad_drawdown_roi_threshold' => -2.5,
+    'hard_stop_reference_roi' => -5.0,
+    'good_close_roi_threshold' => 3.0,
+    'good_max_profit_roi_threshold' => 3.0,
+    'stop_slippage_buffer_roi' => 2.5,
+    'outcome_classification_profile' => 'fast_demo_corridor_3_5',
     'neutral_close_roi_min' => -2.0,
     'neutral_close_roi_max' => 2.0,
 

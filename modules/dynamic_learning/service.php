@@ -110,11 +110,17 @@ final class DynamicLearningService
             'entry_ok_exit_issue_total' => 0,
             'neutral_total' => 0,
             'outcome_incomplete_total' => 0,
+            'risk_profile_mode' => (string)($cfg['risk_profile_mode'] ?? 'fast_demo'),
             'outcome_classification_profile' => (string)($cfg['outcome_classification_profile'] ?? 'standard_stop_10'),
             'effective_bad_drawdown_roi_threshold' => (float)($cfg['bad_drawdown_roi_threshold'] ?? -10.0),
             'effective_good_close_roi_threshold' => (float)($cfg['good_close_roi_threshold'] ?? 5.0),
             'effective_good_max_profit_roi_threshold' => (float)($cfg['good_max_profit_roi_threshold'] ?? 5.0),
+            'hard_stop_reference_roi' => (float)($cfg['hard_stop_reference_roi'] ?? -10.0),
+            'stop_slippage_buffer_roi' => (float)($cfg['stop_slippage_buffer_roi'] ?? 2.0),
             'stop_profile_alignment' => (string)($cfg['stop_profile_alignment'] ?? ($cfg['outcome_classification_profile'] ?? 'standard_stop_10')),
+            'learning_corridor_enabled' => (bool)($cfg['learning_corridor_enabled'] ?? false),
+            'bad_learning_zone_roi' => (float)($cfg['bad_drawdown_roi_threshold'] ?? -10.0),
+            'good_learning_threshold_roi' => (float)($cfg['good_close_roi_threshold'] ?? 5.0),
             'outcomes_reclassified_total' => 0,
             'outcomes_reclassified_examples' => [],
             'outcome_mfe_normalized_total' => 0,
@@ -737,6 +743,28 @@ final class DynamicLearningService
                 }
                 $row['_dl_identity'] = $identity;
                 $outcome = $this->makeOutcome($row, $cfg, $snapshotIndex);
+                $existingOutcome = $existingIndex[(string)($outcome['outcome_key'] ?? '')] ?? null;
+                if (is_array($existingOutcome)) {
+                    $oldClass = (string)($existingOutcome['outcome_class'] ?? '');
+                    $oldReason = (string)($existingOutcome['classification_reason'] ?? '');
+                    $newClass = (string)($outcome['outcome_class'] ?? '');
+                    $newReason = (string)($outcome['classification_reason'] ?? '');
+                    if ($oldClass !== $newClass || $oldReason !== $newReason) {
+                        $reclassifiedTotal++;
+                        if (count($reclassifiedExamples) < 20) {
+                            $reclassifiedExamples[] = [
+                                'symbol' => (string)($outcome['symbol'] ?? ''),
+                                'old_class' => $oldClass,
+                                'new_class' => $newClass,
+                                'close_roi' => $outcome['close_roi'] ?? null,
+                                'normalized_max_drawdown_roi' => $outcome['normalized_max_drawdown_roi'] ?? null,
+                                'normalized_max_profit_roi' => $outcome['normalized_max_profit_roi'] ?? null,
+                                'close_reason' => (string)($outcome['close_reason'] ?? ''),
+                                'classification_reason' => $newReason,
+                            ];
+                        }
+                    }
+                }
                 $all[] = $outcome;
                 if (!isset($existingIndex[(string)($outcome['outcome_key'] ?? '')])) {
                     $this->appendNdjson($this->storagePath('closed_outcomes.ndjson'), $outcome);
@@ -758,9 +786,10 @@ final class DynamicLearningService
                                 'old_class' => $oldClass,
                                 'new_class' => $newClass,
                                 'close_roi' => $reclassified['close_roi'] ?? null,
-                                'max_drawdown_roi' => $reclassified['max_drawdown_roi'] ?? ($reclassified['raw_max_drawdown_roi'] ?? null),
-                                'max_profit_roi' => $reclassified['max_profit_roi'] ?? ($reclassified['raw_max_profit_roi'] ?? null),
+                                'normalized_max_drawdown_roi' => $reclassified['normalized_max_drawdown_roi'] ?? null,
+                                'normalized_max_profit_roi' => $reclassified['normalized_max_profit_roi'] ?? null,
                                 'close_reason' => (string)($reclassified['close_reason'] ?? ''),
+                                'classification_reason' => $newReason,
                             ];
                         }
                     }
@@ -2393,27 +2422,40 @@ final class DynamicLearningService
         $cfg['apply_learning_to_demo_enabled'] = (bool)($cfg['apply_learning_to_demo_enabled'] ?? false);
         $cfg['observation_interval_seconds'] = max(5, (int)($cfg['observation_interval_seconds'] ?? 30));
         $cfg['max_observations_per_position'] = max(1, (int)($cfg['max_observations_per_position'] ?? 40));
-        $cfg['outcome_classification_profile'] = strtolower(trim((string)($cfg['outcome_classification_profile'] ?? 'standard_stop_10')));
-        if (!in_array($cfg['outcome_classification_profile'], ['standard_stop_10', 'fast_demo_stop_5', 'custom'], true)) {
-            $cfg['outcome_classification_profile'] = 'standard_stop_10';
+        $cfg['risk_profile_mode'] = strtolower(trim((string)($cfg['risk_profile_mode'] ?? 'fast_demo')));
+        if (!in_array($cfg['risk_profile_mode'], ['fast_demo', 'working_normal', 'custom'], true)) {
+            $cfg['risk_profile_mode'] = 'fast_demo';
+        }
+        $cfg['outcome_classification_profile'] = strtolower(trim((string)($cfg['outcome_classification_profile'] ?? 'fast_demo_corridor_3_5')));
+        if (!in_array($cfg['outcome_classification_profile'], ['fast_demo_corridor_3_5', 'working_normal_8_10', 'custom'], true)) {
+            $cfg['outcome_classification_profile'] = 'fast_demo_corridor_3_5';
         }
         $customBadDrawdown = (float)($cfg['bad_drawdown_roi_threshold'] ?? -10.0);
+        $customHardStopReference = (float)($cfg['hard_stop_reference_roi'] ?? -10.0);
         $customGoodClose = (float)($cfg['good_close_roi_threshold'] ?? 5.0);
         $customGoodMaxProfit = (float)($cfg['good_max_profit_roi_threshold'] ?? 5.0);
-        if ($cfg['outcome_classification_profile'] === 'standard_stop_10') {
-            $cfg['bad_drawdown_roi_threshold'] = -10.0;
-            $cfg['good_close_roi_threshold'] = 5.0;
-            $cfg['good_max_profit_roi_threshold'] = 5.0;
-        } elseif ($cfg['outcome_classification_profile'] === 'fast_demo_stop_5') {
-            $cfg['bad_drawdown_roi_threshold'] = -5.0;
-            $cfg['good_close_roi_threshold'] = 5.0;
-            $cfg['good_max_profit_roi_threshold'] = 5.0;
+        $customStopSlippageBuffer = (float)($cfg['stop_slippage_buffer_roi'] ?? 2.0);
+        if ($cfg['outcome_classification_profile'] === 'fast_demo_corridor_3_5') {
+            $cfg['bad_drawdown_roi_threshold'] = -2.5;
+            $cfg['hard_stop_reference_roi'] = -5.0;
+            $cfg['good_close_roi_threshold'] = 3.0;
+            $cfg['good_max_profit_roi_threshold'] = 3.0;
+            $cfg['stop_slippage_buffer_roi'] = 2.5;
+        } elseif ($cfg['outcome_classification_profile'] === 'working_normal_8_10') {
+            $cfg['bad_drawdown_roi_threshold'] = -8.0;
+            $cfg['hard_stop_reference_roi'] = -10.0;
+            $cfg['good_close_roi_threshold'] = 8.0;
+            $cfg['good_max_profit_roi_threshold'] = 8.0;
+            $cfg['stop_slippage_buffer_roi'] = 2.0;
         } else {
             $cfg['bad_drawdown_roi_threshold'] = $customBadDrawdown;
+            $cfg['hard_stop_reference_roi'] = $customHardStopReference;
             $cfg['good_close_roi_threshold'] = $customGoodClose;
             $cfg['good_max_profit_roi_threshold'] = $customGoodMaxProfit;
+            $cfg['stop_slippage_buffer_roi'] = $customStopSlippageBuffer;
         }
-        $cfg['stop_profile_alignment'] = (string)$cfg['outcome_classification_profile'];
+        $cfg['learning_corridor_enabled'] = $cfg['outcome_classification_profile'] === 'fast_demo_corridor_3_5';
+        $cfg['stop_profile_alignment'] = (string)$cfg['risk_profile_mode'];
         $cfg['neutral_close_roi_min'] = (float)($cfg['neutral_close_roi_min'] ?? -2.0);
         $cfg['neutral_close_roi_max'] = (float)($cfg['neutral_close_roi_max'] ?? 2.0);
         $cfg['outcome_opened_at_mismatch_tolerance_minutes'] = max(1, (int)($cfg['outcome_opened_at_mismatch_tolerance_minutes'] ?? 15));

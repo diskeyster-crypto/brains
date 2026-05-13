@@ -40,7 +40,8 @@ if ($action === 'save_config') {
         'collect_entry_snapshots_enabled', 'observe_active_positions_enabled', 'analyze_closed_outcomes_enabled', 'build_dynamic_profile_enabled',
         'apply_learning_to_strategy_enabled', 'apply_learning_to_live_enabled', 'apply_learning_to_demo_enabled',
         'observation_interval_seconds', 'max_observations_per_position',
-        'bad_drawdown_roi_threshold', 'good_close_roi_threshold', 'good_max_profit_roi_threshold', 'neutral_close_roi_min', 'neutral_close_roi_max',
+        'risk_profile_mode', 'outcome_classification_profile',
+        'bad_drawdown_roi_threshold', 'hard_stop_reference_roi', 'good_close_roi_threshold', 'good_max_profit_roi_threshold', 'stop_slippage_buffer_roi', 'neutral_close_roi_min', 'neutral_close_roi_max',
         'min_closed_outcomes_for_profile', 'min_bad_entries_for_rule', 'min_bad_blocked_for_rule', 'max_good_blocked_for_rule', 'min_rule_net_score',
         'rollback_guard_enabled', 'rollback_drawdown_pct', 'rollback_bad_trade_streak', 'profile_history_enabled',
     ];

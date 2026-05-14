@@ -76,6 +76,10 @@ if ($action === 'save_config') {
             $out[$k] = trim((string)($_POST[$k] ?? $default));
         }
     }
+    $out['apply_learning_to_strategy_enabled'] = isset($_POST['apply_learning_to_strategy_enabled']) && (string)$_POST['apply_learning_to_strategy_enabled'] === '1';
+    $out['apply_learning_to_live_enabled'] = isset($_POST['apply_learning_to_live_enabled']) && (string)$_POST['apply_learning_to_live_enabled'] === '1';
+    $out['auto_apply_to_demo_enabled'] = isset($_POST['auto_apply_to_demo_enabled']) && (string)$_POST['auto_apply_to_demo_enabled'] === '1';
+    $out['auto_apply_to_live_enabled'] = false;
     $php = "<?php\n\ndeclare(strict_types=1);\n\nreturn " . var_export($out, true) . ";\n";
     @file_put_contents($activePath, $php, LOCK_EX);
     $jsonOut(true, ['saved' => true]);

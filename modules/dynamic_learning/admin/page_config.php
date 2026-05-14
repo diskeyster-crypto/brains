@@ -15,6 +15,8 @@ require_once $moduleDir . '/service.php';
 $svc = \Modules\DynamicLearning\DynamicLearningService::instance($moduleDir);
 $cfg = $svc->getConfig();
 $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+$autoApplyDemoEnabled = filter_var($cfg['auto_apply_to_demo_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+$autoApplyDemoEnabled = $autoApplyDemoEnabled ?? false;
 $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
 ?>
 <div style="max-width:900px;display:grid;gap:12px;">
@@ -175,8 +177,8 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
       <label>auto_apply_to_demo_enabled
         <select name="auto_apply_to_demo_enabled" class="form-control">
-          <option value="0" <?= empty($cfg['auto_apply_to_demo_enabled']) ? 'selected' : '' ?>>false</option>
-          <option value="1" <?= !empty($cfg['auto_apply_to_demo_enabled']) ? 'selected' : '' ?>>true</option>
+          <option value="0" <?= !$autoApplyDemoEnabled ? 'selected' : '' ?>>false</option>
+          <option value="1" <?= $autoApplyDemoEnabled ? 'selected' : '' ?>>true</option>
         </select>
       </label>
       <label>auto_apply_to_live_enabled <span style="color:#f85149;font-size:11px;">(always false)</span>

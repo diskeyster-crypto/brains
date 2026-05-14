@@ -16,6 +16,10 @@ $svc = \Modules\DynamicLearning\DynamicLearningService::instance($moduleDir);
 $patterns = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/pattern_stats.json'), true);
 $outcomes = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/closed_outcomes.json'), true);
 $quarantine = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/quarantine/rejected_rules.json'), true);
+$microDistributions = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/micro_feature_distributions.json'), true);
+$microLabelPurity = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/micro_label_purity.json'), true);
+$microThresholdCandidates = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/micro_threshold_candidates.json'), true);
+$suspiciousMicroLabels = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/suspicious_micro_labels.json'), true);
 $run = $svc->getLastRun();
 $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 ?>
@@ -35,12 +39,51 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
     exit_issue=<?= $e((int)($run['entry_ok_exit_issue_total'] ?? 0)) ?> /
     neutral=<?= $e((int)($run['neutral_total'] ?? 0)) ?>
   </div>
+  <div><strong>micro_separability_enabled:</strong> <?= $e((bool)($run['micro_separability_enabled'] ?? false) ? 'true' : 'false') ?></div>
+  <div><strong>micro_numeric_features_analyzed_total:</strong> <?= $e((int)($run['micro_numeric_features_analyzed_total'] ?? 0)) ?></div>
+  <div><strong>micro_label_values_analyzed_total:</strong> <?= $e((int)($run['micro_label_values_analyzed_total'] ?? 0)) ?></div>
+  <div><strong>micro_high_separation_features_total:</strong> <?= $e((int)($run['micro_high_separation_features_total'] ?? 0)) ?></div>
+  <div><strong>micro_medium_separation_features_total:</strong> <?= $e((int)($run['micro_medium_separation_features_total'] ?? 0)) ?></div>
+  <div><strong>micro_mixed_labels_total:</strong> <?= $e((int)($run['micro_mixed_labels_total'] ?? 0)) ?></div>
+  <div><strong>micro_suspicious_labels_total:</strong> <?= $e((int)($run['micro_suspicious_labels_total'] ?? 0)) ?></div>
   <div><strong>outcomes_reclassified_total:</strong> <?= $e((int)($run['outcomes_reclassified_total'] ?? 0)) ?></div>
   <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
     <div style="font-size:12px;opacity:.8;margin-bottom:8px;">closed_outcomes_near_time_duplicate_examples</div>
     <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['closed_outcomes_near_time_duplicate_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">top micro bad separators</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['top_micro_bad_separators'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">top micro good separators</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['top_micro_good_separators'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">mixed labels (do not hard-block)</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_mixed_label_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">suspicious labels</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_suspicious_label_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">threshold candidates (observe_only)</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($microThresholdCandidates['candidates'] ?? []), 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">top numeric separability features</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($microDistributions['features'] ?? []), 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">top label purity rows</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($microLabelPurity['labels'] ?? []), 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">suspicious labels with examples</div>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($suspiciousMicroLabels['labels'] ?? []), 0, 10), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+    </div>
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;margin-bottom:8px;">micro shape counts</div>
       <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_impulse_shape_counts'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>

@@ -171,6 +171,17 @@ final class DynamicLearningService
             'micro_primary_summary_missing_total' => 0,
             'weighted_score_calculated_total' => 0,
             'bad_patterns_total' => 0,
+            'micro_separability_enabled' => true,
+            'micro_numeric_features_analyzed_total' => 0,
+            'micro_label_values_analyzed_total' => 0,
+            'micro_high_separation_features_total' => 0,
+            'micro_medium_separation_features_total' => 0,
+            'micro_mixed_labels_total' => 0,
+            'micro_suspicious_labels_total' => 0,
+            'top_micro_bad_separators' => [],
+            'top_micro_good_separators' => [],
+            'micro_mixed_label_examples' => [],
+            'micro_suspicious_label_examples' => [],
             'profile_generated' => false,
             'profile_id' => null,
             'profile_rules_total' => 0,
@@ -335,8 +346,23 @@ final class DynamicLearningService
         $patterns = PatternMiner::mine($patternMiningOutcomes, $cfg, (array)($featureResult['feature_by_snapshot'] ?? []));
         $this->writeJson($this->storagePath('patterns/bad_patterns.json'), $patterns['bad_patterns']);
         $this->writeJson($this->storagePath('patterns/pattern_stats.json'), $patterns['all']);
+        $this->writeJson($this->storagePath('patterns/micro_feature_distributions.json'), (array)($patterns['micro_feature_distributions'] ?? []));
+        $this->writeJson($this->storagePath('patterns/micro_label_purity.json'), (array)($patterns['micro_label_purity'] ?? []));
+        $this->writeJson($this->storagePath('patterns/micro_threshold_candidates.json'), (array)($patterns['micro_threshold_candidates'] ?? []));
+        $this->writeJson($this->storagePath('patterns/suspicious_micro_labels.json'), (array)($patterns['suspicious_micro_labels'] ?? []));
         $result['bad_patterns_total'] = count($patterns['all']);
         $result['top_bad_pattern_examples'] = array_slice($patterns['all'], 0, 10);
+        $result['micro_separability_enabled'] = true;
+        $result['micro_numeric_features_analyzed_total'] = (int)($patterns['micro_numeric_features_analyzed_total'] ?? 0);
+        $result['micro_label_values_analyzed_total'] = (int)($patterns['micro_label_values_analyzed_total'] ?? 0);
+        $result['micro_high_separation_features_total'] = (int)($patterns['micro_high_separation_features_total'] ?? 0);
+        $result['micro_medium_separation_features_total'] = (int)($patterns['micro_medium_separation_features_total'] ?? 0);
+        $result['micro_mixed_labels_total'] = (int)($patterns['micro_mixed_labels_total'] ?? 0);
+        $result['micro_suspicious_labels_total'] = (int)($patterns['micro_suspicious_labels_total'] ?? 0);
+        $result['top_micro_bad_separators'] = array_slice((array)($patterns['top_micro_bad_separators'] ?? []), 0, 10);
+        $result['top_micro_good_separators'] = array_slice((array)($patterns['top_micro_good_separators'] ?? []), 0, 10);
+        $result['micro_mixed_label_examples'] = array_slice((array)($patterns['micro_mixed_label_examples'] ?? []), 0, 10);
+        $result['micro_suspicious_label_examples'] = array_slice((array)($patterns['micro_suspicious_label_examples'] ?? []), 0, 10);
 
         // 6. Profile building
         $epochMeta = [

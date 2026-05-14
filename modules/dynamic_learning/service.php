@@ -274,8 +274,13 @@ final class DynamicLearningService
             'replay_bad_capture_rate_pct' => null,
             'replay_good_block_rate_pct' => null,
             'replay_net_score' => null,
+            'replay_score_scale' => 'percent_of_max_matched_weight',
+            'replay_risk_threshold_block_candidate' => 60.0,
+            'replay_demo_only_threshold_candidate' => 30.0,
             'replay_expected_good_kept_total' => 0,
             'replay_expected_bad_avoided_total' => 0,
+            'auto_apply_safety_blocked' => true,
+            'auto_apply_safety_reason' => 'candidate_not_eligible_for_demo_apply',
             'candidate_bad_entry_rate_delta_pct' => null,
             'candidate_good_capture_delta_pct' => null,
             'candidate_avg_roi_delta_pct' => null,
@@ -512,6 +517,8 @@ final class DynamicLearningService
         $result['candidate_status'] = $rollingGuard['candidate_status'];
         $result['promotion_decision'] = $rollingGuard['promotion_decision'];
         $result['promotion_reason'] = $rollingGuard['promotion_reason'];
+        $result['auto_apply_safety_blocked'] = (bool)($rollingGuard['auto_apply_safety_blocked'] ?? true);
+        $result['auto_apply_safety_reason'] = $rollingGuard['auto_apply_safety_reason'] ?? null;
         $result['auto_apply_to_demo_enabled'] = $rollingGuard['auto_apply_to_demo_enabled'];
         $result['auto_apply_to_live_enabled'] = $rollingGuard['auto_apply_to_live_enabled'];
         $result['require_not_worse_than_default'] = $rollingGuard['require_not_worse_than_default'];
@@ -546,8 +553,13 @@ final class DynamicLearningService
         $result['replay_bad_capture_rate_pct'] = $candidateReplay['replay_bad_capture_rate_pct'] ?? null;
         $result['replay_good_block_rate_pct'] = $candidateReplay['replay_good_block_rate_pct'] ?? null;
         $result['replay_net_score'] = $candidateReplay['replay_net_score'] ?? null;
+        $result['replay_score_scale'] = (string)($candidateReplay['score_scale'] ?? 'percent_of_max_matched_weight');
+        $result['replay_risk_threshold_block_candidate'] = (float)($candidateReplay['risk_threshold_block_candidate'] ?? 60.0);
+        $result['replay_demo_only_threshold_candidate'] = (float)($candidateReplay['demo_only_threshold_candidate'] ?? 30.0);
         $result['replay_expected_good_kept_total'] = (int)($candidateReplay['replay_expected_good_kept_total'] ?? 0);
         $result['replay_expected_bad_avoided_total'] = (int)($candidateReplay['replay_expected_bad_avoided_total'] ?? 0);
+        $result['auto_apply_safety_blocked'] = (bool)($candidateReplay['auto_apply_safety_blocked'] ?? true);
+        $result['auto_apply_safety_reason'] = $candidateReplay['auto_apply_safety_reason'] ?? null;
         $result['candidate_bad_entry_rate_delta_pct'] = $candidateReplay['candidate_bad_entry_rate_delta_pct'] ?? null;
         $result['candidate_good_capture_delta_pct'] = $candidateReplay['candidate_good_capture_delta_pct'] ?? null;
         $result['candidate_avg_roi_delta_pct'] = $candidateReplay['candidate_avg_roi_delta_pct'] ?? null;
@@ -721,6 +733,8 @@ final class DynamicLearningService
         $profile['candidate_status']           = $guardResult['candidate_status']   ?? 'pending';
         $profile['promotion_decision']         = $guardResult['promotion_decision'] ?? 'none';
         $profile['promotion_reason']           = $guardResult['promotion_reason']   ?? null;
+        $profile['auto_apply_safety_blocked'] = (bool)($guardResult['auto_apply_safety_blocked'] ?? true);
+        $profile['auto_apply_safety_reason']  = $guardResult['auto_apply_safety_reason'] ?? null;
         $profile['rollback_guard_enabled']     = $guardResult['rollback_guard_enabled'];
         $profile['rollback_required']          = $guardResult['rollback_required'];
         $profile['rollback_reason']            = $guardResult['rollback_reason']    ?? null;
@@ -755,11 +769,15 @@ final class DynamicLearningService
             $profile['candidate_replay_summary'] = $candidateReplay['replay_summary'] ?? null;
             $profile['default_quality_score'] = $candidateReplay['default_quality_score'] ?? $guardResult['default_quality_score'] ?? null;
             $profile['candidate_quality_score'] = $replayCandScore;
+            $profile['auto_apply_safety_blocked'] = (bool)($candidateReplay['auto_apply_safety_blocked'] ?? true);
+            $profile['auto_apply_safety_reason'] = $candidateReplay['auto_apply_safety_reason'] ?? null;
         } else {
             $profile['candidate_replay_summary'] = null;
             $profile['default_quality_score'] = $guardResult['default_quality_score'] ?? null;
             $profile['candidate_quality_score'] = $guardResult['candidate_quality_score'] ?? null;
             $profile['candidate_vs_default_delta_pct'] = $guardResult['candidate_vs_default_delta_pct'] ?? null;
+            $profile['auto_apply_safety_blocked'] = true;
+            $profile['auto_apply_safety_reason'] = 'candidate_not_eligible_for_demo_apply';
         }
 
         // Derive status from final candidate_status
@@ -964,6 +982,8 @@ final class DynamicLearningService
             'candidate_status' => 'pending',
             'promotion_decision' => 'none',
             'promotion_reason' => null,
+            'auto_apply_safety_blocked' => true,
+            'auto_apply_safety_reason' => 'candidate_not_eligible_for_demo_apply',
             'auto_apply_to_demo_enabled' => $autoApplyDemo,
             'auto_apply_to_live_enabled' => $autoApplyLive,
             'require_not_worse_than_default' => $requireNotWorse,
@@ -1135,12 +1155,21 @@ final class DynamicLearningService
 
         // Eligible for demo apply
         $guardResult['candidate_status'] = 'eligible_for_demo_apply';
-        if ($autoApplyDemo) {
+        if ($autoApplyDemo && (bool)($cfg['apply_learning_to_strategy_enabled'] ?? false)) {
             $guardResult['promotion_decision'] = 'promote_candidate_demo';
             $guardResult['promotion_reason'] = 'candidate_passes_all_checks';
+            $guardResult['auto_apply_safety_blocked'] = false;
+            $guardResult['auto_apply_safety_reason'] = null;
+        } elseif ($autoApplyDemo) {
+            $guardResult['promotion_decision'] = 'candidate_ready_but_apply_disabled';
+            $guardResult['promotion_reason'] = 'apply_learning_to_strategy_enabled_is_false';
+            $guardResult['auto_apply_safety_blocked'] = true;
+            $guardResult['auto_apply_safety_reason'] = 'apply_learning_to_strategy_enabled_is_false';
         } else {
             $guardResult['promotion_decision'] = 'candidate_ready_but_apply_disabled';
             $guardResult['promotion_reason'] = 'auto_apply_to_demo_enabled_is_false';
+            $guardResult['auto_apply_safety_blocked'] = true;
+            $guardResult['auto_apply_safety_reason'] = 'auto_apply_to_demo_enabled_is_false';
         }
 
         $this->appendCandidateHistory($guardResult, $maxCandHistory);
@@ -1169,6 +1198,8 @@ final class DynamicLearningService
             'candidate_status' => $guardResult['candidate_status'] ?? 'unknown',
             'promotion_decision' => $guardResult['promotion_decision'] ?? 'none',
             'promotion_reason' => $guardResult['promotion_reason'] ?? null,
+            'auto_apply_safety_blocked' => (bool)($guardResult['auto_apply_safety_blocked'] ?? true),
+            'auto_apply_safety_reason' => $guardResult['auto_apply_safety_reason'] ?? null,
             'default_quality_score' => $guardResult['default_quality_score'] ?? null,
             'candidate_quality_score' => $guardResult['candidate_quality_score'] ?? null,
             'candidate_vs_default_delta_pct' => $guardResult['candidate_vs_default_delta_pct'] ?? null,
@@ -1387,6 +1418,7 @@ final class DynamicLearningService
             'version'                      => 'v1',
             'source'                       => 'micro_separability',
             'status'                       => 'diagnostic_only',
+            'score_scale'                  => 'percent_of_max_matched_weight',
             'risk_components'              => $riskComponents,
             'quality_components'           => $qualityComponents,
             'risk_threshold_block_candidate' => 60.0,
@@ -1408,6 +1440,7 @@ final class DynamicLearningService
             'source_entry_ok_exit_issue_total' => $totalExit,
             'source_neutral_total'          => $totalNeutral,
             'rules'                         => $selectedRules,
+            'score_scale'                   => 'percent_of_max_matched_weight',
             'weights'                       => $compositeScoreConfig,
             'composite_score_config'        => $compositeScoreConfig,
             'excluded_rules_total'          => array_sum($excludedReasons),
@@ -1468,8 +1501,13 @@ final class DynamicLearningService
             'source_entry_ok_exit_issue_total' => $totalExit,
             'source_neutral_total'          => $totalNeutral,
             'rules'                         => [],
+            'score_scale'                   => 'percent_of_max_matched_weight',
             'weights'                       => [],
-            'composite_score_config'        => [],
+            'composite_score_config'        => [
+                'score_scale' => 'percent_of_max_matched_weight',
+                'risk_threshold_block_candidate' => 60.0,
+                'demo_only_threshold_candidate' => 30.0,
+            ],
             'status'                        => 'insufficient_data',
             'apply_mode'                    => 'observe_only',
             'candidate_profile_available'   => false,
@@ -1517,6 +1555,7 @@ final class DynamicLearningService
         $minImprovementPct = (float)($cfg['min_candidate_improvement_pct']      ?? 7.0);
         $noChangeBandPct   = (float)($cfg['no_change_band_pct']                 ?? 5.0);
         $autoApplyDemo     = (bool)($cfg['auto_apply_to_demo_enabled']          ?? false);
+        $applyLearningToStrategy = (bool)($cfg['apply_learning_to_strategy_enabled'] ?? false);
         $maxCandHistory    = max(1, (int)($cfg['max_candidate_history_records'] ?? 200));
 
         $rules          = (array)($candidateProfile['rules'] ?? []);
@@ -1600,16 +1639,24 @@ final class DynamicLearningService
                 $featMicroMissing++;
             }
 
-            $riskScore = $this->computeCandidateRiskScore($features, $rules);
+            $riskScoreDetails = $this->computeCandidateRiskScoreDetails($features, $rules);
+            $riskScoreRaw = (float)($riskScoreDetails['risk_score_raw'] ?? 0.0);
+            $riskScoreMax = (float)($riskScoreDetails['risk_score_max'] ?? 0.0);
+            $riskScorePct = (float)($riskScoreDetails['risk_score_pct'] ?? 0.0);
+            $matchedRules = (array)($riskScoreDetails['matched_rules'] ?? []);
             $cls       = (string)($o['outcome_class'] ?? '');
-            $decision  = $riskScore >= $blockThreshold ? 'would_block' : ($riskScore >= $demoThreshold ? 'demo_only' : 'pass');
+            $decision  = $riskScorePct >= $blockThreshold ? 'would_block' : ($riskScorePct >= $demoThreshold ? 'demo_only' : 'pass');
 
             $ex = [
                 'symbol'       => (string)($o['symbol'] ?? ''),
                 'outcome_class' => $cls,
                 'close_roi'    => $o['close_roi'] ?? null,
                 'max_drawdown_roi' => $o['normalized_max_drawdown_roi'] ?? $o['max_drawdown_roi'] ?? null,
-                'risk_score'   => $riskScore,
+                'risk_score'   => $riskScorePct,
+                'risk_score_raw' => $riskScoreRaw,
+                'risk_score_max' => $riskScoreMax,
+                'risk_score_pct' => $riskScorePct,
+                'matched_rules'  => $matchedRules,
                 'decision'     => $decision,
                 'replay_feature_quality' => $extracted['feature_quality'],
             ];
@@ -1684,12 +1731,31 @@ final class DynamicLearningService
             $maxGoodBlockPct,
             $noChangeBandPct,
             $minImprovementPct,
-            $autoApplyDemo
+            $autoApplyDemo,
+            $applyLearningToStrategy
         );
+
+        $replayPassedGuards = $candidateStatus === 'eligible_for_demo_apply';
+        $autoApplySafetyBlocked = !($autoApplyDemo && $applyLearningToStrategy && $replayPassedGuards);
+        $autoApplySafetyReason = null;
+        if ($autoApplySafetyBlocked) {
+            if (!$autoApplyDemo) {
+                $autoApplySafetyReason = 'auto_apply_to_demo_enabled_is_false';
+            } elseif (!$applyLearningToStrategy) {
+                $autoApplySafetyReason = 'apply_learning_to_strategy_enabled_is_false';
+            } elseif (!$replayPassedGuards) {
+                $autoApplySafetyReason = 'candidate_not_eligible_for_demo_apply';
+            } else {
+                $autoApplySafetyReason = 'auto_apply_safety_conditions_not_met';
+            }
+        }
 
         $result = [
             'candidate_replay_enabled'              => true,
             'replay_generated_at'                   => date('c'),
+            'score_scale'                           => 'percent_of_max_matched_weight',
+            'risk_threshold_block_candidate'        => $blockThreshold,
+            'demo_only_threshold_candidate'         => $demoThreshold,
             'rules_used_total'                      => count($rules),
             'replay_trades_total'                   => $total,
             'replay_bad_entries_total'              => $totalBad,
@@ -1715,6 +1781,8 @@ final class DynamicLearningService
             'candidate_status'                      => $candidateStatus,
             'promotion_decision'                    => $promotionDecision,
             'promotion_reason'                      => $promotionReason,
+            'auto_apply_safety_blocked'             => $autoApplySafetyBlocked,
+            'auto_apply_safety_reason'              => $autoApplySafetyReason,
             'blocked_bad_examples'                  => $blockedBadEx,
             'blocked_good_examples'                 => $blockedGoodEx,
             'kept_bad_examples'                     => $keptBadEx,
@@ -1732,9 +1800,11 @@ final class DynamicLearningService
                 'good_blocked'           => $goodBlocked,
                 'bad_capture_rate_pct'   => $badCapturePct,
                 'good_block_rate_pct'    => $goodBlockPct,
+                'replay_net_score'       => $netScore,
                 'default_quality_score'  => $defaultScore,
                 'candidate_quality_score' => $candScore,
                 'delta'                  => $delta,
+                'candidate_vs_default_delta_pct' => $delta,
                 'candidate_status'       => $candidateStatus,
                 'promotion_decision'     => $promotionDecision,
             ],
@@ -1758,6 +1828,9 @@ final class DynamicLearningService
         return [
             'candidate_replay_enabled'              => true,
             'replay_generated_at'                   => date('c'),
+            'score_scale'                           => 'percent_of_max_matched_weight',
+            'risk_threshold_block_candidate'        => 60.0,
+            'demo_only_threshold_candidate'         => 30.0,
             'rules_used_total'                      => $rulesTotal,
             'replay_trades_total'                   => $total,
             'replay_bad_entries_total'              => $totalBad,
@@ -1783,6 +1856,8 @@ final class DynamicLearningService
             'candidate_status'                      => $status,
             'promotion_decision'                    => 'keep_current',
             'promotion_reason'                      => $reason,
+            'auto_apply_safety_blocked'             => true,
+            'auto_apply_safety_reason'              => 'candidate_not_eligible_for_demo_apply',
             'blocked_bad_examples'                  => [],
             'blocked_good_examples'                 => [],
             'kept_bad_examples'                     => [],
@@ -1824,7 +1899,8 @@ final class DynamicLearningService
         float $maxGoodBlockPct,
         float $noChangeBandPct,
         float $minImprovementPct,
-        bool $autoApplyDemo
+        bool $autoApplyDemo,
+        bool $applyLearningToStrategy
     ): array {
         if ($keptTotal === 0) {
             return ['rejected', 'reject_candidate', 'all_outcomes_blocked'];
@@ -1844,8 +1920,15 @@ final class DynamicLearningService
         if ($delta !== null && $delta < $minImprovementPct) {
             return ['below_improvement_threshold', 'reject_candidate', 'candidate_delta_below_min_improvement'];
         }
-        $decision = $autoApplyDemo ? 'promote_candidate_demo' : 'candidate_ready_but_apply_disabled';
-        $reason   = $autoApplyDemo ? 'candidate_passes_all_checks' : 'auto_apply_to_demo_enabled_is_false';
+        $decision = 'candidate_ready_but_apply_disabled';
+        $reason   = 'auto_apply_to_demo_enabled_is_false';
+        if ($autoApplyDemo && $applyLearningToStrategy) {
+            $decision = 'promote_candidate_demo';
+            $reason   = 'candidate_passes_all_checks';
+        } elseif ($autoApplyDemo && !$applyLearningToStrategy) {
+            $decision = 'candidate_ready_but_apply_disabled';
+            $reason   = 'apply_learning_to_strategy_enabled_is_false';
+        }
         return ['eligible_for_demo_apply', $decision, $reason];
     }
 
@@ -2060,7 +2143,7 @@ final class DynamicLearningService
     }
 
     /**
-     * Compute composite risk score using candidate rules.
+     * Compute normalized composite risk score (percent of max matched weight).
      * Supports dot-notation feature paths (e.g. micro_window_10m.single_candle_dominance_pct).
      *
      * @param array<string,mixed>        $features
@@ -2068,7 +2151,20 @@ final class DynamicLearningService
      */
     private function computeCandidateRiskScore(array $features, array $rules): float
     {
-        $score = 0.0;
+        $details = $this->computeCandidateRiskScoreDetails($features, $rules);
+        return (float)($details['risk_score_pct'] ?? 0.0);
+    }
+
+    /**
+     * @param array<string,mixed>        $features
+     * @param list<array<string,mixed>>  $rules
+     * @return array{risk_score_raw:float,risk_score_max:float,risk_score_pct:float,matched_rules:list<array<string,mixed>>}
+     */
+    private function computeCandidateRiskScoreDetails(array $features, array $rules): array
+    {
+        $rawScore = 0.0;
+        $maxScore = 0.0;
+        $matchedRules = [];
         foreach ($rules as $rule) {
             if (!is_array($rule)) {
                 continue;
@@ -2082,6 +2178,7 @@ final class DynamicLearningService
                 continue;
             }
 
+            $maxScore += $weight;
             $value = $this->getFeatureDotPath($features, $feature);
             if ($value === null || !is_numeric($value)) {
                 continue;
@@ -2092,10 +2189,24 @@ final class DynamicLearningService
                 : (float)$value <= (float)$threshold;
 
             if ($matches) {
-                $score += $weight;
+                $rawScore += $weight;
+                $matchedRules[] = [
+                    'rule_id'   => $rule['rule_id'] ?? null,
+                    'feature'   => $feature,
+                    'op'        => $op,
+                    'threshold' => (float)$threshold,
+                    'value'     => (float)$value,
+                    'weight'    => $weight,
+                ];
             }
         }
-        return round($score, 4);
+        $scorePct = $maxScore > 0.0 ? ($rawScore / $maxScore) * 100.0 : 0.0;
+        return [
+            'risk_score_raw' => round($rawScore, 4),
+            'risk_score_max' => round($maxScore, 4),
+            'risk_score_pct' => round($scorePct, 4),
+            'matched_rules'  => $matchedRules,
+        ];
     }
 
     /**

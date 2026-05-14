@@ -492,6 +492,14 @@ final class DynamicLearningService
         $result['rollback_cooldown_until'] = $rollingGuard['rollback_cooldown_until'];
         $result['rollback_action'] = $rollingGuard['rollback_action'];
 
+        // 7c. Sync rolling guard results into current_profile.json
+        $profileFileAvailability = $this->syncRollingGuardToCurrentProfile($cfg, $rollingGuard);
+        $result['active_profile_available']              = $profileFileAvailability['active_profile_available'];
+        $result['active_profile_missing_reason']         = $profileFileAvailability['active_profile_missing_reason'];
+        $result['previous_good_profile_available']       = $profileFileAvailability['previous_good_profile_available'];
+        $result['previous_good_profile_missing_reason']  = $profileFileAvailability['previous_good_profile_missing_reason'];
+        $result['rollback_history_available']            = $profileFileAvailability['rollback_history_available'];
+
         // 8. Storage pruning
         $prune = $this->pruneStorage($cfg, $snapshots['all']);
         $result['storage_pruned_total'] = $prune['pruned_total'];
@@ -571,6 +579,99 @@ final class DynamicLearningService
         $profile['auto_apply_enabled'] = (bool)($cfg['auto_apply_enabled'] ?? false);
 
         $this->writeJson($profilePath, $profile);
+    }
+
+    /**
+     * Sync rolling quality guard results into current_profile.json.
+     * Called after runRollingQualityGuard() so the profile file always
+     * reflects the latest guard decision.
+     *
+     * Also probes the availability of active_profile.json,
+     * previous_good_profile.json, and rollback_history.ndjson,
+     * writing availability flags into the profile and returning them
+     * for inclusion in last_run.
+     *
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed> $guardResult
+     * @return array<string,mixed> Availability flags for last_run
+     */
+    private function syncRollingGuardToCurrentProfile(array $cfg, array $guardResult): array
+    {
+        $profilesDir   = $this->storagePath('profiles/early_impulse_growth_long');
+        $profilePath   = $profilesDir . '/current_profile.json';
+        $activeFile    = $profilesDir . '/active_profile.json';
+        $prevGoodFile  = $profilesDir . '/previous_good_profile.json';
+        $rollbackFile  = $profilesDir . '/rollback_history.ndjson';
+
+        $activeAvailable   = is_file($activeFile);
+        $prevGoodAvailable = is_file($prevGoodFile);
+        $rollbackAvailable = is_file($rollbackFile);
+
+        $activeMissingReason   = $activeAvailable   ? null : 'auto_apply_disabled_or_no_active_profile_yet';
+        $prevGoodMissingReason = $prevGoodAvailable ? null : 'no_previous_good_profile_yet';
+
+        $availability = [
+            'active_profile_available'             => $activeAvailable,
+            'active_profile_missing_reason'        => $activeMissingReason,
+            'previous_good_profile_available'      => $prevGoodAvailable,
+            'previous_good_profile_missing_reason' => $prevGoodMissingReason,
+            'rollback_history_available'           => $rollbackAvailable,
+        ];
+
+        $profile = (array)$this->readJson($profilePath, []);
+        if ($profile === []) {
+            // No profile exists yet — nothing to sync into
+            return $availability;
+        }
+
+        // Rolling guard fields
+        $profile['quality_score']              = $guardResult['candidate_quality_score']  ?? ($guardResult['default_quality_score'] ?? null);
+        $profile['default_benchmark']          = $guardResult['default_result_summary']   ?? null;
+        $profile['active_dynamic_benchmark']   = $guardResult['active_dynamic_result_summary'] ?? null;
+        $profile['candidate_benchmark']        = $guardResult['candidate_result_summary'] ?? null;
+        $profile['compared_to_default']        = $guardResult['default_result_summary'] !== null;
+        $profile['auto_not_worse_than_default'] = (bool)($cfg['require_not_worse_than_default'] ?? true);
+        $profile['no_change_band_pct']         = $guardResult['no_change_band_pct'];
+        $profile['min_candidate_improvement_pct'] = $guardResult['min_candidate_improvement_pct'];
+        $profile['candidate_status']           = $guardResult['candidate_status']   ?? 'pending';
+        $profile['promotion_decision']         = $guardResult['promotion_decision'] ?? 'none';
+        $profile['promotion_reason']           = $guardResult['promotion_reason']   ?? null;
+        $profile['rollback_guard_enabled']     = $guardResult['rollback_guard_enabled'];
+        $profile['rollback_required']          = $guardResult['rollback_required'];
+        $profile['rollback_reason']            = $guardResult['rollback_reason']    ?? null;
+        $profile['rollback_cooldown_until']    = $guardResult['rollback_cooldown_until'] ?? null;
+        $profile['apply_mode']                 = 'observe_only';
+
+        // Derive status from guard decision
+        $candidateStatus = (string)($guardResult['candidate_status'] ?? 'pending');
+        if ($candidateStatus === 'eligible_for_demo_apply') {
+            $profile['status'] = 'eligible_for_demo_apply';
+        } elseif (in_array($candidateStatus, ['insufficient_data', 'pending', 'no_score'], true)) {
+            $profile['status'] = 'observe_only';
+        } elseif (in_array($candidateStatus, ['rejected_worse_than_default', 'below_improvement_threshold', 'no_material_improvement'], true)) {
+            $profile['status'] = 'rejected';
+        } else {
+            $profile['status'] = 'observe_only';
+        }
+
+        // If candidate_benchmark is null, explain why
+        if ($profile['candidate_benchmark'] === null) {
+            $missingReason = (string)($guardResult['promotion_reason'] ?? 'insufficient_rolling_window_data');
+            $profile['candidate_benchmark'] = [
+                'benchmark_available'        => false,
+                'benchmark_missing_reason'   => $missingReason,
+            ];
+        }
+
+        // Profile file availability
+        $profile['active_profile_available']             = $activeAvailable;
+        $profile['active_profile_missing_reason']        = $activeMissingReason;
+        $profile['previous_good_profile_available']      = $prevGoodAvailable;
+        $profile['previous_good_profile_missing_reason'] = $prevGoodMissingReason;
+        $profile['rollback_history_available']           = $rollbackAvailable;
+
+        $this->writeJson($profilePath, $profile);
+        return $availability;
     }
 
     /**

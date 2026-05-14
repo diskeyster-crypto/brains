@@ -2486,7 +2486,7 @@ ROWS;
     $dlStale          = $dlLastRunTs !== null && (time() - $dlLastRunTs) > $dlFreshnessLimit;
 
     if ($dlLastRun === [] || $dlLastRunTs === null) {
-        $scDlState  = 'OFF';
+        $scDlState  = 'WARN';
         $scDlReason = 'last_run missing';
     } elseif ($dlRollbackReq) {
         $scDlState  = 'WARN';

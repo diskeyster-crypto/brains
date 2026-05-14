@@ -131,6 +131,14 @@ return [
     'rollback_cooldown_minutes' => 120,
     'rollback_to' => 'previous_good_or_default',
 
+    // Candidate profile builder + replay evaluator
+    'candidate_min_separation_score' => 0.20,
+    'candidate_max_good_block_rate_pct' => 20.0,
+    'candidate_min_bad_capture_rate_pct' => 20.0,
+    'candidate_max_rules' => 10,
+    'candidate_allow_broad_features' => false,
+    'candidate_replay_enabled' => true,
+
     // Apply guard
     'auto_apply_to_demo_enabled' => false,
     'auto_apply_to_live_enabled' => false,

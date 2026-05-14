@@ -189,6 +189,52 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
   </div>
   <?php endif; ?>
 
+  <!-- ── Candidate Profile & Replay (compact) ───────────────────────────── -->
+  <?php
+  $cpId      = (string)($run['candidate_profile_id']    ?? '—');
+  $cpStatus  = (string)($run['candidate_status']         ?? '—');
+  $cpRules   = (int)($run['candidate_rules_total']       ?? 0);
+  $cpComps   = (int)($run['candidate_weighted_components_total'] ?? 0);
+  $cpReplay  = (bool)($run['candidate_replay_enabled']   ?? false);
+  ?>
+  <div style="border:1px solid #93c5fd44;border-radius:8px;padding:12px;background:rgba(147,197,253,.03);">
+    <div style="font-size:12px;font-weight:700;color:#93c5fd;margin-bottom:8px;">
+      <i class="bi bi-cpu" style="margin-right:5px;"></i>Candidate Profile &amp; Replay
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px;font-size:12px;">
+      <div><strong>candidate_profile_id:</strong> <span style="color:#93c5fd;word-break:break-all;"><?= $e($cpId) ?></span></div>
+      <div><strong>candidate_status:</strong> <span style="color:#c4b5fd;"><?= $e($cpStatus) ?></span></div>
+      <div><strong>rules_total:</strong> <?= $e($cpRules) ?></div>
+      <div><strong>risk_components:</strong> <?= $e($cpComps) ?></div>
+      <div><strong>candidate_replay_enabled:</strong> <?= $e($cpReplay ? 'true' : 'false') ?></div>
+      <div><strong>default_score:</strong> <?= $e($run['default_quality_score'] ?? 'n/a') ?></div>
+      <div><strong>candidate_score:</strong> <?= $e($run['candidate_quality_score'] ?? 'n/a') ?></div>
+      <div><strong>delta:</strong>
+        <?php $dv = $run['candidate_vs_default_delta_pct'] ?? null; ?>
+        <span style="color:<?= $dv !== null && (float)$dv > 0 ? '#86efac' : '#f87171' ?>;">
+          <?= $e($dv !== null ? (((float)$dv >= 0 ? '+' : '') . round((float)$dv, 2)) : 'n/a') ?>
+        </span>
+      </div>
+      <div><strong>bad_blocked:</strong> <?= $e((int)($run['replay_bad_blocked_total'] ?? 0)) ?></div>
+      <div><strong>good_blocked:</strong> <?= $e((int)($run['replay_good_blocked_total'] ?? 0)) ?></div>
+      <div><strong>bad_capture_rate:</strong> <?= $e($run['replay_bad_capture_rate_pct'] !== null ? round((float)$run['replay_bad_capture_rate_pct'], 1) . '%' : 'n/a') ?></div>
+      <div><strong>good_block_rate:</strong> <?= $e($run['replay_good_block_rate_pct']  !== null ? round((float)$run['replay_good_block_rate_pct'],  1) . '%' : 'n/a') ?></div>
+      <div><strong>promotion_decision:</strong>
+        <?php
+        $pd  = (string)($run['promotion_decision'] ?? '—');
+        $pdc = match($pd) {
+            'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#86efac',
+            'reject_candidate' => '#f87171',
+            'keep_current' => '#fcd34d',
+            default => '#94a3b8',
+        };
+        ?>
+        <span style="color:<?= $pdc ?>;"><?= $e($pd) ?></span>
+      </div>
+      <div><strong>promotion_reason:</strong> <span style="color:#94a3b8;"><?= $e((string)($run['promotion_reason'] ?? '—')) ?></span></div>
+    </div>
+  </div>
+
   <div><strong>micro_separability_enabled:</strong> <?= $e((bool)($run['micro_separability_enabled'] ?? false) ? 'true' : 'false') ?></div>
   <div><strong>micro_numeric_features_analyzed_total:</strong> <?= $e((int)($run['micro_numeric_features_analyzed_total'] ?? 0)) ?></div>
   <div><strong>micro_label_values_analyzed_total:</strong> <?= $e((int)($run['micro_label_values_analyzed_total'] ?? 0)) ?></div>

@@ -255,6 +255,35 @@ final class DynamicLearningService
             'rollback_reason' => null,
             'rollback_cooldown_until' => null,
             'rollback_action' => null,
+            // Candidate profile builder defaults
+            'candidate_profile_generated' => false,
+            'candidate_profile_id' => null,
+            'candidate_rules_total' => 0,
+            'candidate_weighted_components_total' => 0,
+            'candidate_profile_available' => false,
+            'candidate_profile_missing_reason' => null,
+            // Candidate replay defaults
+            'candidate_replay_enabled' => false,
+            'replay_trades_total' => 0,
+            'replay_bad_entries_total' => 0,
+            'replay_good_entries_total' => 0,
+            'replay_bad_blocked_total' => 0,
+            'replay_good_blocked_total' => 0,
+            'replay_entry_ok_exit_issue_blocked_total' => 0,
+            'replay_neutral_blocked_total' => 0,
+            'replay_bad_capture_rate_pct' => null,
+            'replay_good_block_rate_pct' => null,
+            'replay_net_score' => null,
+            'replay_expected_good_kept_total' => 0,
+            'replay_expected_bad_avoided_total' => 0,
+            'candidate_bad_entry_rate_delta_pct' => null,
+            'candidate_good_capture_delta_pct' => null,
+            'candidate_avg_roi_delta_pct' => null,
+            'candidate_drawdown_delta_pct' => null,
+            'candidate_blocked_bad_examples' => [],
+            'candidate_blocked_good_examples' => [],
+            'candidate_kept_bad_examples' => [],
+            'candidate_kept_good_examples' => [],
             'created_at' => $runStartedAt,
         ];
 
@@ -492,8 +521,54 @@ final class DynamicLearningService
         $result['rollback_cooldown_until'] = $rollingGuard['rollback_cooldown_until'];
         $result['rollback_action'] = $rollingGuard['rollback_action'];
 
-        // 7c. Sync rolling guard results into current_profile.json
-        $profileFileAvailability = $this->syncRollingGuardToCurrentProfile($cfg, $rollingGuard);
+        // 7c. Candidate profile builder from micro separability diagnostics
+        $candidateBuild = $this->buildCandidateProfileFromSeparability($cfg, $patternMiningOutcomes, $patterns, $epochMeta);
+        $result['candidate_profile_generated'] = $candidateBuild['available'];
+        $result['candidate_profile_id'] = $candidateBuild['profile_id'];
+        $result['candidate_rules_total'] = $candidateBuild['rules_total'];
+        $result['candidate_weighted_components_total'] = $candidateBuild['components_total'];
+        $result['candidate_profile_available'] = $candidateBuild['available'];
+        $result['candidate_profile_missing_reason'] = $candidateBuild['missing_reason'];
+
+        // 7d. Candidate replay evaluator — observe-only, never applies
+        $candidateReplay = ['candidate_replay_enabled' => false];
+        if ((bool)($cfg['candidate_replay_enabled'] ?? true)) {
+            $candidateReplay = $this->replayCandidateProfile($cfg, $candidateBuild['profile'], $patternMiningOutcomes);
+        }
+        $result['candidate_replay_enabled'] = (bool)($candidateReplay['candidate_replay_enabled'] ?? false);
+        $result['replay_trades_total'] = (int)($candidateReplay['replay_trades_total'] ?? 0);
+        $result['replay_bad_entries_total'] = (int)($candidateReplay['replay_bad_entries_total'] ?? 0);
+        $result['replay_good_entries_total'] = (int)($candidateReplay['replay_good_entries_total'] ?? 0);
+        $result['replay_bad_blocked_total'] = (int)($candidateReplay['replay_bad_blocked_total'] ?? 0);
+        $result['replay_good_blocked_total'] = (int)($candidateReplay['replay_good_blocked_total'] ?? 0);
+        $result['replay_entry_ok_exit_issue_blocked_total'] = (int)($candidateReplay['replay_entry_ok_exit_issue_blocked_total'] ?? 0);
+        $result['replay_neutral_blocked_total'] = (int)($candidateReplay['replay_neutral_blocked_total'] ?? 0);
+        $result['replay_bad_capture_rate_pct'] = $candidateReplay['replay_bad_capture_rate_pct'] ?? null;
+        $result['replay_good_block_rate_pct'] = $candidateReplay['replay_good_block_rate_pct'] ?? null;
+        $result['replay_net_score'] = $candidateReplay['replay_net_score'] ?? null;
+        $result['replay_expected_good_kept_total'] = (int)($candidateReplay['replay_expected_good_kept_total'] ?? 0);
+        $result['replay_expected_bad_avoided_total'] = (int)($candidateReplay['replay_expected_bad_avoided_total'] ?? 0);
+        $result['candidate_bad_entry_rate_delta_pct'] = $candidateReplay['candidate_bad_entry_rate_delta_pct'] ?? null;
+        $result['candidate_good_capture_delta_pct'] = $candidateReplay['candidate_good_capture_delta_pct'] ?? null;
+        $result['candidate_avg_roi_delta_pct'] = $candidateReplay['candidate_avg_roi_delta_pct'] ?? null;
+        $result['candidate_drawdown_delta_pct'] = $candidateReplay['candidate_drawdown_delta_pct'] ?? null;
+        $result['candidate_blocked_bad_examples'] = (array)($candidateReplay['blocked_bad_examples'] ?? []);
+        $result['candidate_blocked_good_examples'] = (array)($candidateReplay['blocked_good_examples'] ?? []);
+        $result['candidate_kept_bad_examples'] = (array)($candidateReplay['kept_bad_examples'] ?? []);
+        $result['candidate_kept_good_examples'] = (array)($candidateReplay['kept_good_examples'] ?? []);
+
+        // If replay produced a meaningful candidate decision, override rolling guard's candidate fields
+        if ((bool)($candidateReplay['candidate_replay_enabled'] ?? false) && $candidateReplay['candidate_quality_score'] !== null) {
+            $result['candidate_quality_score'] = $candidateReplay['candidate_quality_score'];
+            $result['candidate_result_summary'] = $candidateReplay['candidate_result'] ?? $result['candidate_result_summary'];
+            $result['candidate_vs_default_delta_pct'] = $candidateReplay['candidate_vs_default_delta_pct'] ?? $result['candidate_vs_default_delta_pct'];
+            $result['candidate_status'] = (string)($candidateReplay['candidate_status'] ?? $result['candidate_status']);
+            $result['promotion_decision'] = (string)($candidateReplay['promotion_decision'] ?? $result['promotion_decision']);
+            $result['promotion_reason'] = $candidateReplay['promotion_reason'] ?? $result['promotion_reason'];
+        }
+
+        // 7e. Sync rolling guard + replay into current_profile.json
+        $profileFileAvailability = $this->syncRollingGuardToCurrentProfile($cfg, $rollingGuard, $candidateBuild, $candidateReplay);
         $result['active_profile_available']              = $profileFileAvailability['active_profile_available'];
         $result['active_profile_missing_reason']         = $profileFileAvailability['active_profile_missing_reason'];
         $result['previous_good_profile_available']       = $profileFileAvailability['previous_good_profile_available'];
@@ -593,9 +668,11 @@ final class DynamicLearningService
      *
      * @param array<string,mixed> $cfg
      * @param array<string,mixed> $guardResult
+     * @param array<string,mixed> $candidateBuild  From buildCandidateProfileFromSeparability()
+     * @param array<string,mixed> $candidateReplay  From replayCandidateProfile()
      * @return array<string,mixed> Availability flags for last_run
      */
-    private function syncRollingGuardToCurrentProfile(array $cfg, array $guardResult): array
+    private function syncRollingGuardToCurrentProfile(array $cfg, array $guardResult, array $candidateBuild = [], array $candidateReplay = []): array
     {
         $profilesDir   = $this->storagePath('profiles/early_impulse_growth_long');
         $profilePath   = $profilesDir . '/current_profile.json';
@@ -642,13 +719,48 @@ final class DynamicLearningService
         $profile['rollback_cooldown_until']    = $guardResult['rollback_cooldown_until'] ?? null;
         $profile['apply_mode']                 = 'observe_only';
 
-        // Derive status from guard decision
-        $candidateStatus = (string)($guardResult['candidate_status'] ?? 'pending');
+        // Candidate profile + replay fields (overrides guard where replay has data)
+        $replayAvailable = (bool)($candidateReplay['candidate_replay_enabled'] ?? false);
+        $profile['candidate_profile_id'] = $candidateBuild['profile_id'] ?? null;
+        $profile['candidate_profile_available'] = $candidateBuild['available'] ?? false;
+        $profile['candidate_profile_missing_reason'] = ($candidateBuild['available'] ?? false)
+            ? null
+            : ($candidateBuild['missing_reason'] ?? 'not_generated');
+        $profile['candidate_rules_total'] = (int)($candidateBuild['rules_total'] ?? 0);
+        $profile['compared_to_default'] = true;
+
+        if ($replayAvailable) {
+            $replayCandScore = $candidateReplay['candidate_quality_score'] ?? null;
+            if ($replayCandScore !== null) {
+                $profile['quality_score'] = $replayCandScore;
+                $profile['candidate_benchmark'] = $candidateReplay['candidate_result'] ?? $profile['candidate_benchmark'];
+            }
+            $profile['default_benchmark'] = $candidateReplay['default_baseline'] ?? $profile['default_benchmark'];
+            $profile['candidate_status'] = (string)($candidateReplay['candidate_status'] ?? $profile['candidate_status']);
+            $profile['promotion_decision'] = (string)($candidateReplay['promotion_decision'] ?? $profile['promotion_decision']);
+            $profile['promotion_reason'] = $candidateReplay['promotion_reason'] ?? $profile['promotion_reason'];
+            $profile['candidate_vs_default_delta_pct'] = $candidateReplay['candidate_vs_default_delta_pct'] ?? null;
+            $profile['candidate_bad_entry_rate_delta_pct'] = $candidateReplay['candidate_bad_entry_rate_delta_pct'] ?? null;
+            $profile['candidate_good_capture_delta_pct'] = $candidateReplay['candidate_good_capture_delta_pct'] ?? null;
+            $profile['candidate_avg_roi_delta_pct'] = $candidateReplay['candidate_avg_roi_delta_pct'] ?? null;
+            $profile['candidate_drawdown_delta_pct'] = $candidateReplay['candidate_drawdown_delta_pct'] ?? null;
+            $profile['candidate_replay_summary'] = $candidateReplay['replay_summary'] ?? null;
+            $profile['default_quality_score'] = $candidateReplay['default_quality_score'] ?? $guardResult['default_quality_score'] ?? null;
+            $profile['candidate_quality_score'] = $replayCandScore;
+        } else {
+            $profile['candidate_replay_summary'] = null;
+            $profile['default_quality_score'] = $guardResult['default_quality_score'] ?? null;
+            $profile['candidate_quality_score'] = $guardResult['candidate_quality_score'] ?? null;
+            $profile['candidate_vs_default_delta_pct'] = $guardResult['candidate_vs_default_delta_pct'] ?? null;
+        }
+
+        // Derive status from final candidate_status
+        $candidateStatus = (string)($profile['candidate_status'] ?? 'pending');
         if ($candidateStatus === 'eligible_for_demo_apply') {
             $profile['status'] = 'eligible_for_demo_apply';
-        } elseif (in_array($candidateStatus, ['insufficient_data', 'pending', 'no_score'], true)) {
+        } elseif (in_array($candidateStatus, ['insufficient_data', 'insufficient_bad_capture', 'pending', 'no_score'], true)) {
             $profile['status'] = 'observe_only';
-        } elseif (in_array($candidateStatus, ['rejected_worse_than_default', 'below_improvement_threshold', 'no_material_improvement'], true)) {
+        } elseif (in_array($candidateStatus, ['rejected', 'rejected_worse_than_default', 'below_improvement_threshold', 'no_material_improvement'], true)) {
             $profile['status'] = 'rejected';
         } else {
             $profile['status'] = 'observe_only';
@@ -656,7 +768,7 @@ final class DynamicLearningService
 
         // If candidate_benchmark is null, explain why
         if ($profile['candidate_benchmark'] === null) {
-            $missingReason = (string)($guardResult['promotion_reason'] ?? 'insufficient_rolling_window_data');
+            $missingReason = (string)($profile['promotion_reason'] ?? 'insufficient_data');
             $profile['candidate_benchmark'] = [
                 'benchmark_available'        => false,
                 'benchmark_missing_reason'   => $missingReason,
@@ -1032,8 +1144,10 @@ final class DynamicLearningService
      * Keeps the file bounded to $maxRecords lines.
      *
      * @param array<string,mixed> $guardResult
+     * @param int $maxRecords
+     * @param string $source  'rolling_guard' or 'replay_evaluator'
      */
-    private function appendCandidateHistory(array $guardResult, int $maxRecords): void
+    private function appendCandidateHistory(array $guardResult, int $maxRecords, string $source = 'rolling_guard'): void
     {
         $histPath = $this->storagePath('profiles/early_impulse_growth_long/candidate_history.ndjson');
         $dir = dirname($histPath);
@@ -1043,6 +1157,7 @@ final class DynamicLearningService
 
         $entry = [
             'recorded_at' => date('c'),
+            'source' => $source,
             'candidate_status' => $guardResult['candidate_status'] ?? 'unknown',
             'promotion_decision' => $guardResult['promotion_decision'] ?? 'none',
             'promotion_reason' => $guardResult['promotion_reason'] ?? null,
@@ -1102,6 +1217,704 @@ final class DynamicLearningService
                 'oi_confirmed' => 6.0,
             ],
         ];
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Candidate profile builder from micro separability diagnostics
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Build a candidate profile using micro separability diagnostics
+     * produced by PatternMiner.  Diagnostic / observe-only — never applied.
+     *
+     * @param array<string,mixed>         $cfg
+     * @param array<array<string,mixed>>  $patternMiningOutcomes  Active-epoch outcomes
+     * @param array<string,mixed>         $patternResult          PatternMiner::mine() output
+     * @param array<string,mixed>         $epochMeta
+     * @return array{profile:array<string,mixed>,profile_id:string,rules_total:int,components_total:int,available:bool,missing_reason:string|null}
+     */
+    private function buildCandidateProfileFromSeparability(
+        array $cfg,
+        array $patternMiningOutcomes,
+        array $patternResult,
+        array $epochMeta
+    ): array {
+        $minSepScore    = (float)($cfg['candidate_min_separation_score']     ?? 0.20);
+        $maxGoodBlock   = (float)($cfg['candidate_max_good_block_rate_pct']  ?? 20.0);
+        $minBadCapture  = (float)($cfg['candidate_min_bad_capture_rate_pct'] ?? 20.0);
+        $maxRules       = max(1, (int)($cfg['candidate_max_rules']           ?? 10));
+        $allowBroad     = (bool)($cfg['candidate_allow_broad_features']      ?? false);
+        $minBadEntries  = max(1, (int)($cfg['rolling_min_bad_entries']       ?? 3));
+
+        // Broad feature base names — excluded unless allowed
+        $broadBases = ['context_phase', 'wave_regime', 'ask_wall_risk', 'open_interest_confirmed'];
+
+        // Count outcome classes
+        $totalBad = $totalGood = $totalExit = $totalNeutral = 0;
+        foreach ($patternMiningOutcomes as $o) {
+            if (!is_array($o)) {
+                continue;
+            }
+            switch ((string)($o['outcome_class'] ?? '')) {
+                case 'bad_entry':             $totalBad++;     break;
+                case 'good_or_do_not_touch':  $totalGood++;    break;
+                case 'entry_ok_exit_issue':   $totalExit++;    break;
+                default:                      $totalNeutral++; break;
+            }
+        }
+
+        $totalOutcomes = count($patternMiningOutcomes);
+        if ($totalOutcomes === 0) {
+            return $this->makeCandidateProfileEmpty($cfg, $epochMeta, $totalBad, $totalGood, $totalExit, $totalNeutral, 'no_epoch_outcomes');
+        }
+
+        // Index separation scores by feature from micro_feature_distributions
+        $sepByFeature = [];
+        foreach ((array)(($patternResult['micro_feature_distributions'] ?? [])['features'] ?? []) as $fd) {
+            if (is_array($fd) && isset($fd['feature'])) {
+                $sepByFeature[(string)$fd['feature']] = $fd;
+            }
+        }
+
+        $selectedRules    = [];
+        $excludedReasons  = [];
+
+        foreach ((array)(($patternResult['micro_threshold_candidates'] ?? [])['candidates'] ?? []) as $tc) {
+            if (!is_array($tc)) {
+                continue;
+            }
+
+            $feature    = (string)($tc['feature']              ?? '');
+            $confidence = (string)($tc['confidence']           ?? 'low');
+            $direction  = (string)($tc['direction']            ?? 'unclear');
+            $badCount   = (int)($tc['bad_captured_count']      ?? 0);
+            $goodCount  = (int)($tc['good_blocked_count']      ?? 0);
+            $netScore   = (float)($tc['net_score']             ?? 0.0);
+            $threshold  = $tc['candidate_threshold']           ?? null;
+
+            if ($feature === '') {
+                continue;
+            }
+            if ($confidence === 'low') {
+                $excludedReasons['low_confidence'] = ($excludedReasons['low_confidence'] ?? 0) + 1;
+                continue;
+            }
+            if ($direction === 'unclear' || $threshold === null) {
+                $excludedReasons['unclear_or_no_threshold'] = ($excludedReasons['unclear_or_no_threshold'] ?? 0) + 1;
+                continue;
+            }
+            if (!$allowBroad) {
+                $base = explode('.', $feature)[0];
+                if (in_array($base, $broadBases, true)) {
+                    $excludedReasons['broad_feature'] = ($excludedReasons['broad_feature'] ?? 0) + 1;
+                    continue;
+                }
+            }
+            if ($badCount < $minBadEntries) {
+                $excludedReasons['insufficient_bad_captured'] = ($excludedReasons['insufficient_bad_captured'] ?? 0) + 1;
+                continue;
+            }
+
+            $fd = $sepByFeature[$feature] ?? null;
+            $sep = $fd !== null ? (float)($fd['separation_score'] ?? 0.0) : null;
+            if ($sep !== null && $sep < $minSepScore) {
+                $excludedReasons['separation_below_threshold'] = ($excludedReasons['separation_below_threshold'] ?? 0) + 1;
+                continue;
+            }
+
+            $goodBlockPct = $totalGood > 0 ? round($goodCount / $totalGood * 100.0, 2) : 0.0;
+            if ($goodBlockPct > $maxGoodBlock) {
+                $excludedReasons['too_much_good_overlap'] = ($excludedReasons['too_much_good_overlap'] ?? 0) + 1;
+                continue;
+            }
+
+            $badCapturePct = $totalBad > 0 ? round($badCount / $totalBad * 100.0, 2) : 0.0;
+            if ($badCapturePct < $minBadCapture) {
+                $excludedReasons['insufficient_bad_capture_rate'] = ($excludedReasons['insufficient_bad_capture_rate'] ?? 0) + 1;
+                continue;
+            }
+
+            $op     = $direction === 'higher_bad_risk' ? 'gte' : 'lte';
+            $weight = round(max(5.0, min(25.0, $netScore > 0 ? $netScore * 2.5 : 5.0)), 1);
+
+            $selectedRules[] = [
+                'rule_id'              => 'sep_' . substr(sha1($feature . '|' . $op . '|' . (string)$threshold), 0, 12),
+                'feature'              => $feature,
+                'direction'            => $direction,
+                'op'                   => $op,
+                'threshold'            => $threshold,
+                'weight'               => $weight,
+                'bad_captured_count'   => $badCount,
+                'good_blocked_count'   => $goodCount,
+                'bad_capture_rate_pct' => $badCapturePct,
+                'good_block_rate_pct'  => $goodBlockPct,
+                'net_score'            => round($netScore, 4),
+                'confidence'           => $confidence,
+                'separation_score'     => $sep,
+                'action'               => 'observe_only',
+                'scope'                => 'demo_only',
+                'status'               => 'candidate',
+            ];
+        }
+
+        // Sort by net_score descending, cap
+        usort($selectedRules, static fn(array $a, array $b): int => ((float)($b['net_score'] ?? 0.0) <=> (float)($a['net_score'] ?? 0.0)));
+        $selectedRules = array_slice($selectedRules, 0, $maxRules);
+
+        // Build composite score config
+        $riskComponents = [];
+        foreach ($selectedRules as $rule) {
+            $key = str_replace(['.', ' '], '_', (string)($rule['feature'] ?? ''));
+            $riskComponents[$key] = (float)($rule['weight'] ?? 10.0);
+        }
+        $qualityComponents = [
+            'smooth_birth_entry'    => 15.0,
+            'distributed_growth'    => 12.0,
+            'controlled_dump'       => 10.0,
+            'post_dump_stabilized'  => 10.0,
+            'bid_support_strong'    => 8.0,
+            'oi_confirmed'          => 5.0,
+        ];
+        $compositeScoreConfig = [
+            'version'                      => 'v1',
+            'source'                       => 'micro_separability',
+            'status'                       => 'diagnostic_only',
+            'risk_components'              => $riskComponents,
+            'quality_components'           => $qualityComponents,
+            'risk_threshold_block_candidate' => 60.0,
+            'demo_only_threshold_candidate'  => 30.0,
+        ];
+
+        $profileId = 'dl_cand_' . gmdate('Ymd_His');
+        $profile = [
+            'profile_id'                    => $profileId,
+            'strategy_id'                   => self::STRATEGY_ID,
+            'created_at'                    => date('c'),
+            'risk_profile_mode'             => (string)($cfg['risk_profile_mode'] ?? 'working_real'),
+            'outcome_classification_profile' => (string)($cfg['outcome_classification_profile'] ?? 'working_real_8_15'),
+            'source_epoch_id'               => $epochMeta['real_learning_epoch_id'] ?? null,
+            'source_window_minutes'         => (int)($cfg['rolling_learning_window_minutes'] ?? 120),
+            'source_outcomes_total'         => $totalOutcomes,
+            'source_bad_entries_total'      => $totalBad,
+            'source_good_entries_total'     => $totalGood,
+            'source_entry_ok_exit_issue_total' => $totalExit,
+            'source_neutral_total'          => $totalNeutral,
+            'rules'                         => $selectedRules,
+            'weights'                       => $compositeScoreConfig,
+            'composite_score_config'        => $compositeScoreConfig,
+            'excluded_rules_total'          => array_sum($excludedReasons),
+            'excluded_reason_counts'        => $excludedReasons,
+            'status'                        => count($selectedRules) > 0 ? 'candidate' : 'insufficient_data',
+            'apply_mode'                    => 'observe_only',
+        ];
+
+        // Persist candidate_profile.json
+        $profilePath = $this->storagePath('profiles/early_impulse_growth_long/candidate_profile.json');
+        $profileDir  = dirname($profilePath);
+        if (!is_dir($profileDir)) {
+            @mkdir($profileDir, 0755, true);
+        }
+        $jsonStr = json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (is_string($jsonStr)) {
+            @file_put_contents($profilePath, $jsonStr, LOCK_EX);
+        }
+
+        $available = count($selectedRules) > 0;
+        return [
+            'profile'          => $profile,
+            'profile_id'       => $profileId,
+            'rules_total'      => count($selectedRules),
+            'components_total' => count($riskComponents),
+            'available'        => $available,
+            'missing_reason'   => $available ? null : 'no_rules_passed_selection_criteria',
+        ];
+    }
+
+    /**
+     * Return a minimal empty candidate profile result when there is no data.
+     *
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed> $epochMeta
+     * @return array{profile:array<string,mixed>,profile_id:string,rules_total:int,components_total:int,available:bool,missing_reason:string}
+     */
+    private function makeCandidateProfileEmpty(
+        array $cfg,
+        array $epochMeta,
+        int $totalBad,
+        int $totalGood,
+        int $totalExit,
+        int $totalNeutral,
+        string $missingReason
+    ): array {
+        $profileId = 'dl_cand_empty_' . gmdate('Ymd_His');
+        $profile = [
+            'profile_id'                    => $profileId,
+            'strategy_id'                   => self::STRATEGY_ID,
+            'created_at'                    => date('c'),
+            'risk_profile_mode'             => (string)($cfg['risk_profile_mode'] ?? 'working_real'),
+            'outcome_classification_profile' => (string)($cfg['outcome_classification_profile'] ?? 'working_real_8_15'),
+            'source_epoch_id'               => $epochMeta['real_learning_epoch_id'] ?? null,
+            'source_outcomes_total'         => 0,
+            'source_bad_entries_total'      => $totalBad,
+            'source_good_entries_total'     => $totalGood,
+            'source_entry_ok_exit_issue_total' => $totalExit,
+            'source_neutral_total'          => $totalNeutral,
+            'rules'                         => [],
+            'weights'                       => [],
+            'composite_score_config'        => [],
+            'status'                        => 'insufficient_data',
+            'apply_mode'                    => 'observe_only',
+            'candidate_profile_available'   => false,
+            'candidate_profile_missing_reason' => $missingReason,
+        ];
+
+        $profilePath = $this->storagePath('profiles/early_impulse_growth_long/candidate_profile.json');
+        $profileDir  = dirname($profilePath);
+        if (!is_dir($profileDir)) {
+            @mkdir($profileDir, 0755, true);
+        }
+        $jsonStr = json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (is_string($jsonStr)) {
+            @file_put_contents($profilePath, $jsonStr, LOCK_EX);
+        }
+
+        return [
+            'profile'          => $profile,
+            'profile_id'       => $profileId,
+            'rules_total'      => 0,
+            'components_total' => 0,
+            'available'        => false,
+            'missing_reason'   => $missingReason,
+        ];
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Candidate replay evaluator
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Replay candidate profile against epoch outcomes.
+     * Simulates which trades would be blocked and computes quality of kept trades.
+     * Diagnostic / observe-only — never blocks real signals.
+     *
+     * @param array<string,mixed>         $cfg
+     * @param array<string,mixed>         $candidateProfile  From buildCandidateProfileFromSeparability()
+     * @param array<array<string,mixed>>  $epochOutcomes     Active-epoch outcomes
+     * @return array<string,mixed>
+     */
+    private function replayCandidateProfile(array $cfg, array $candidateProfile, array $epochOutcomes): array
+    {
+        $minBadCapturePct  = (float)($cfg['candidate_min_bad_capture_rate_pct'] ?? 20.0);
+        $maxGoodBlockPct   = (float)($cfg['candidate_max_good_block_rate_pct']  ?? 20.0);
+        $minImprovementPct = (float)($cfg['min_candidate_improvement_pct']      ?? 7.0);
+        $noChangeBandPct   = (float)($cfg['no_change_band_pct']                 ?? 5.0);
+        $autoApplyDemo     = (bool)($cfg['auto_apply_to_demo_enabled']          ?? false);
+        $maxCandHistory    = max(1, (int)($cfg['max_candidate_history_records'] ?? 200));
+
+        $rules          = (array)($candidateProfile['rules'] ?? []);
+        $scoreCfg       = (array)($candidateProfile['composite_score_config'] ?? []);
+        $blockThreshold = (float)($scoreCfg['risk_threshold_block_candidate'] ?? 60.0);
+        $demoThreshold  = (float)($scoreCfg['demo_only_threshold_candidate']  ?? 30.0);
+
+        $weights = [
+            'quality_weight_good_capture'       => (float)($cfg['quality_weight_good_capture']       ?? 1.0),
+            'quality_weight_avg_roi'            => (float)($cfg['quality_weight_avg_roi']            ?? 1.0),
+            'quality_weight_bad_entry'          => (float)($cfg['quality_weight_bad_entry']          ?? 1.5),
+            'quality_weight_drawdown'           => (float)($cfg['quality_weight_drawdown']           ?? 1.0),
+            'quality_weight_entry_ok_exit_issue' => (float)($cfg['quality_weight_entry_ok_exit_issue'] ?? 0.5),
+        ];
+
+        $total = count($epochOutcomes);
+        $totalBad = $totalGood = 0;
+        foreach ($epochOutcomes as $o) {
+            if (!is_array($o)) {
+                continue;
+            }
+            $cls = (string)($o['outcome_class'] ?? '');
+            if ($cls === 'bad_entry') {
+                $totalBad++;
+            } elseif ($cls === 'good_or_do_not_touch') {
+                $totalGood++;
+            }
+        }
+
+        // Default baseline: all outcomes pass — use computeQualityMetrics on all
+        $defaultMetrics = $this->computeQualityMetrics($epochOutcomes, $weights);
+        $defaultScore   = ($defaultMetrics['benchmark_available'] ?? false) ? (float)$defaultMetrics['quality_score'] : null;
+
+        // If no rules, candidate = default (nothing blocked)
+        if ($total === 0 || count($rules) === 0) {
+            $result = $this->buildReplayResultNoRules($total, $totalBad, $totalGood, $defaultMetrics, $defaultScore, count($rules));
+            $this->writeReplayToFile($result, $cfg);
+            $this->appendCandidateHistory($result, $maxCandHistory, 'replay_evaluator');
+            return $result;
+        }
+
+        // Simulate replay
+        $keptOutcomes      = [];
+        $badBlocked = $goodBlocked = $exitIssueBlocked = $neutralBlocked = 0;
+        $blockedBadEx = $blockedGoodEx = $keptBadEx = $keptGoodEx = [];
+
+        foreach ($epochOutcomes as $o) {
+            if (!is_array($o)) {
+                continue;
+            }
+            $features  = $this->extractFeaturesFromOutcomeForReplay($o);
+            $riskScore = $this->computeCandidateRiskScore($features, $rules);
+            $cls       = (string)($o['outcome_class'] ?? '');
+            $decision  = $riskScore >= $blockThreshold ? 'would_block' : ($riskScore >= $demoThreshold ? 'demo_only' : 'pass');
+
+            $ex = [
+                'symbol'       => (string)($o['symbol'] ?? ''),
+                'outcome_class' => $cls,
+                'close_roi'    => $o['close_roi'] ?? null,
+                'max_drawdown_roi' => $o['normalized_max_drawdown_roi'] ?? $o['max_drawdown_roi'] ?? null,
+                'risk_score'   => $riskScore,
+                'decision'     => $decision,
+            ];
+
+            if ($decision === 'would_block') {
+                switch ($cls) {
+                    case 'bad_entry':
+                        $badBlocked++;
+                        if (count($blockedBadEx) < 20) {
+                            $blockedBadEx[] = $ex;
+                        }
+                        break;
+                    case 'good_or_do_not_touch':
+                        $goodBlocked++;
+                        if (count($blockedGoodEx) < 20) {
+                            $blockedGoodEx[] = $ex;
+                        }
+                        break;
+                    case 'entry_ok_exit_issue': $exitIssueBlocked++; break;
+                    default:                    $neutralBlocked++;   break;
+                }
+            } else {
+                $keptOutcomes[] = $o;
+                if ($cls === 'bad_entry' && count($keptBadEx) < 20) {
+                    $keptBadEx[] = $ex;
+                } elseif ($cls === 'good_or_do_not_touch' && count($keptGoodEx) < 20) {
+                    $keptGoodEx[] = $ex;
+                }
+            }
+        }
+
+        $keptTotal      = count($keptOutcomes);
+        $candMetrics    = $keptTotal > 0
+            ? $this->computeQualityMetrics($keptOutcomes, $weights)
+            : ['benchmark_available' => false, 'benchmark_missing_reason' => 'all_outcomes_blocked', 'trades_total' => 0];
+        $candScore      = ($candMetrics['benchmark_available'] ?? false) ? (float)$candMetrics['quality_score'] : null;
+
+        $badCapturePct  = $totalBad  > 0 ? round($badBlocked  / $totalBad  * 100.0, 2) : 0.0;
+        $goodBlockPct   = $totalGood > 0 ? round($goodBlocked / $totalGood * 100.0, 2) : 0.0;
+        $netScore       = round(($badBlocked * 1.0) - ($goodBlocked * 1.5), 4);
+
+        $delta = $badRateDelta = $goodCapDelta = $avgRoiDelta = $ddDelta = null;
+        if ($defaultScore !== null && $candScore !== null) {
+            $delta        = round($candScore - $defaultScore, 4);
+            $badRateDelta = round(
+                ((float)($candMetrics['bad_entry_rate_pct'] ?? 0.0)) - ((float)($defaultMetrics['bad_entry_rate_pct'] ?? 0.0)),
+                2
+            );
+            $goodCapDelta = round(
+                ((float)($candMetrics['good_capture_rate_pct'] ?? 0.0)) - ((float)($defaultMetrics['good_capture_rate_pct'] ?? 0.0)),
+                2
+            );
+            $avgRoiDelta  = round(
+                ((float)($candMetrics['avg_close_roi'] ?? 0.0)) - ((float)($defaultMetrics['avg_close_roi'] ?? 0.0)),
+                4
+            );
+            $ddDelta      = round(
+                abs((float)($candMetrics['avg_max_drawdown_roi'] ?? 0.0)) - abs((float)($defaultMetrics['avg_max_drawdown_roi'] ?? 0.0)),
+                4
+            );
+        }
+
+        // Candidate decision
+        [$candidateStatus, $promotionDecision, $promotionReason] = $this->evaluateCandidateDecision(
+            $keptTotal,
+            $candScore,
+            $defaultScore,
+            $badCapturePct,
+            $goodBlockPct,
+            $delta,
+            $minBadCapturePct,
+            $maxGoodBlockPct,
+            $noChangeBandPct,
+            $minImprovementPct,
+            $autoApplyDemo
+        );
+
+        $result = [
+            'candidate_replay_enabled'              => true,
+            'replay_generated_at'                   => date('c'),
+            'rules_used_total'                      => count($rules),
+            'replay_trades_total'                   => $total,
+            'replay_bad_entries_total'              => $totalBad,
+            'replay_good_entries_total'             => $totalGood,
+            'replay_bad_blocked_total'              => $badBlocked,
+            'replay_good_blocked_total'             => $goodBlocked,
+            'replay_entry_ok_exit_issue_blocked_total' => $exitIssueBlocked,
+            'replay_neutral_blocked_total'          => $neutralBlocked,
+            'replay_bad_capture_rate_pct'           => $badCapturePct,
+            'replay_good_block_rate_pct'            => $goodBlockPct,
+            'replay_net_score'                      => $netScore,
+            'replay_expected_good_kept_total'       => $totalGood - $goodBlocked,
+            'replay_expected_bad_avoided_total'     => $badBlocked,
+            'default_quality_score'                 => $defaultScore,
+            'default_baseline'                      => $defaultMetrics,
+            'candidate_quality_score'               => $candScore,
+            'candidate_result'                      => $candMetrics,
+            'candidate_vs_default_delta_pct'        => $delta,
+            'candidate_bad_entry_rate_delta_pct'    => $badRateDelta,
+            'candidate_good_capture_delta_pct'      => $goodCapDelta,
+            'candidate_avg_roi_delta_pct'           => $avgRoiDelta,
+            'candidate_drawdown_delta_pct'          => $ddDelta,
+            'candidate_status'                      => $candidateStatus,
+            'promotion_decision'                    => $promotionDecision,
+            'promotion_reason'                      => $promotionReason,
+            'blocked_bad_examples'                  => $blockedBadEx,
+            'blocked_good_examples'                 => $blockedGoodEx,
+            'kept_bad_examples'                     => $keptBadEx,
+            'kept_good_examples'                    => $keptGoodEx,
+            'replay_summary' => [
+                'bad_blocked'            => $badBlocked,
+                'good_blocked'           => $goodBlocked,
+                'bad_capture_rate_pct'   => $badCapturePct,
+                'good_block_rate_pct'    => $goodBlockPct,
+                'default_quality_score'  => $defaultScore,
+                'candidate_quality_score' => $candScore,
+                'delta'                  => $delta,
+                'candidate_status'       => $candidateStatus,
+                'promotion_decision'     => $promotionDecision,
+            ],
+        ];
+
+        $this->writeReplayToFile($result, $cfg);
+        $this->appendCandidateHistory($result, $maxCandHistory, 'replay_evaluator');
+        return $result;
+    }
+
+    /**
+     * Build a replay result for the case where no rules are selected.
+     *
+     * @param array<string,mixed> $defaultMetrics
+     * @return array<string,mixed>
+     */
+    private function buildReplayResultNoRules(int $total, int $totalBad, int $totalGood, array $defaultMetrics, ?float $defaultScore, int $rulesTotal): array
+    {
+        $status = $rulesTotal === 0 ? 'insufficient_data' : 'no_score';
+        $reason = $rulesTotal === 0 ? 'no_candidate_rules_selected' : 'no_outcomes';
+        return [
+            'candidate_replay_enabled'              => true,
+            'replay_generated_at'                   => date('c'),
+            'rules_used_total'                      => $rulesTotal,
+            'replay_trades_total'                   => $total,
+            'replay_bad_entries_total'              => $totalBad,
+            'replay_good_entries_total'             => $totalGood,
+            'replay_bad_blocked_total'              => 0,
+            'replay_good_blocked_total'             => 0,
+            'replay_entry_ok_exit_issue_blocked_total' => 0,
+            'replay_neutral_blocked_total'          => 0,
+            'replay_bad_capture_rate_pct'           => 0.0,
+            'replay_good_block_rate_pct'            => 0.0,
+            'replay_net_score'                      => 0.0,
+            'replay_expected_good_kept_total'       => $totalGood,
+            'replay_expected_bad_avoided_total'     => 0,
+            'default_quality_score'                 => $defaultScore,
+            'default_baseline'                      => $defaultMetrics,
+            'candidate_quality_score'               => $defaultScore,
+            'candidate_result'                      => $defaultMetrics,
+            'candidate_vs_default_delta_pct'        => 0.0,
+            'candidate_bad_entry_rate_delta_pct'    => 0.0,
+            'candidate_good_capture_delta_pct'      => 0.0,
+            'candidate_avg_roi_delta_pct'           => 0.0,
+            'candidate_drawdown_delta_pct'          => 0.0,
+            'candidate_status'                      => $status,
+            'promotion_decision'                    => 'keep_current',
+            'promotion_reason'                      => $reason,
+            'blocked_bad_examples'                  => [],
+            'blocked_good_examples'                 => [],
+            'kept_bad_examples'                     => [],
+            'kept_good_examples'                    => [],
+            'replay_summary' => [
+                'bad_blocked'             => 0,
+                'good_blocked'            => 0,
+                'bad_capture_rate_pct'    => 0.0,
+                'good_block_rate_pct'     => 0.0,
+                'default_quality_score'   => $defaultScore,
+                'candidate_quality_score' => $defaultScore,
+                'delta'                   => 0.0,
+                'candidate_status'        => $status,
+                'promotion_decision'      => 'keep_current',
+            ],
+        ];
+    }
+
+    /**
+     * Determine candidate_status / promotion_decision / promotion_reason from replay metrics.
+     *
+     * @return array{0:string,1:string,2:string|null}
+     */
+    private function evaluateCandidateDecision(
+        int $keptTotal,
+        ?float $candScore,
+        ?float $defaultScore,
+        float $badCapturePct,
+        float $goodBlockPct,
+        ?float $delta,
+        float $minBadCapturePct,
+        float $maxGoodBlockPct,
+        float $noChangeBandPct,
+        float $minImprovementPct,
+        bool $autoApplyDemo
+    ): array {
+        if ($keptTotal === 0) {
+            return ['rejected', 'reject_candidate', 'all_outcomes_blocked'];
+        }
+        if ($candScore === null || $defaultScore === null) {
+            return ['no_score', 'keep_current', 'quality_score_unavailable'];
+        }
+        if ($badCapturePct < $minBadCapturePct) {
+            return ['insufficient_bad_capture', 'keep_current', 'bad_capture_rate_below_minimum'];
+        }
+        if ($goodBlockPct > $maxGoodBlockPct) {
+            return ['rejected', 'reject_candidate', 'too_much_good_overlap'];
+        }
+        if ($delta !== null && abs($delta) < $noChangeBandPct) {
+            return ['no_material_improvement', 'keep_current', 'improvement_inside_noise_band'];
+        }
+        if ($delta !== null && $delta < $minImprovementPct) {
+            return ['below_improvement_threshold', 'reject_candidate', 'candidate_delta_below_min_improvement'];
+        }
+        $decision = $autoApplyDemo ? 'promote_candidate_demo' : 'candidate_ready_but_apply_disabled';
+        $reason   = $autoApplyDemo ? 'candidate_passes_all_checks' : 'auto_apply_to_demo_enabled_is_false';
+        return ['eligible_for_demo_apply', $decision, $reason];
+    }
+
+    /**
+     * Extract entry features from a closed outcome for replay scoring.
+     * Mirrors PatternMiner::extractFeaturesFromOutcome logic.
+     *
+     * @param array<string,mixed> $outcome
+     * @return array<string,mixed>
+     */
+    private function extractFeaturesFromOutcomeForReplay(array $outcome): array
+    {
+        $f = (array)($outcome['entry_snapshot']['entry_features'] ?? []);
+        if ($f !== []) {
+            // Normalise micro-window dot-paths (candle_micro_windows sub-keys)
+            foreach ((array)($f['candle_micro_windows'] ?? []) as $window => $stats) {
+                if (is_array($stats)) {
+                    $f[(string)$window] = $stats;
+                }
+            }
+            // Field aliases
+            if (!array_key_exists('single_candle_dominance_pct', $f) && array_key_exists('micro_single_candle_dominance_pct', $f)) {
+                $f['single_candle_dominance_pct'] = $f['micro_single_candle_dominance_pct'];
+            }
+            return $f;
+        }
+
+        // Fall back to strategy_signal_context features
+        $ctx = (array)($outcome['entry_snapshot']['strategy_signal_context'] ?? []);
+        if ($ctx !== []) {
+            require_once $this->moduleDir . '/analyzers/outcome/outcome_classifier.php';
+            return \Modules\DynamicLearning\Analyzers\Outcome\OutcomeClassifier::extractEntryFeatures($ctx);
+        }
+        return [];
+    }
+
+    /**
+     * Compute composite risk score using candidate rules.
+     * Supports dot-notation feature paths (e.g. micro_window_10m.single_candle_dominance_pct).
+     *
+     * @param array<string,mixed>        $features
+     * @param list<array<string,mixed>>  $rules
+     */
+    private function computeCandidateRiskScore(array $features, array $rules): float
+    {
+        $score = 0.0;
+        foreach ($rules as $rule) {
+            if (!is_array($rule)) {
+                continue;
+            }
+            $feature   = (string)($rule['feature']    ?? '');
+            $threshold = $rule['threshold']            ?? null;
+            $op        = (string)($rule['op']          ?? 'gte');
+            $weight    = (float)($rule['weight']       ?? 10.0);
+
+            if ($feature === '' || $threshold === null) {
+                continue;
+            }
+
+            $value = $this->getFeatureDotPath($features, $feature);
+            if ($value === null || !is_numeric($value)) {
+                continue;
+            }
+
+            $matches = $op === 'gte'
+                ? (float)$value >= (float)$threshold
+                : (float)$value <= (float)$threshold;
+
+            if ($matches) {
+                $score += $weight;
+            }
+        }
+        return round($score, 4);
+    }
+
+    /**
+     * Navigate a nested array using a dot-notation path.
+     *
+     * @param array<string,mixed> $data
+     */
+    private function getFeatureDotPath(array $data, string $path): mixed
+    {
+        if ($path === '') {
+            return null;
+        }
+        if (array_key_exists($path, $data)) {
+            return $data[$path];
+        }
+        $parts = explode('.', $path);
+        $cur   = $data;
+        foreach ($parts as $part) {
+            if (!is_array($cur) || !array_key_exists($part, $cur)) {
+                return null;
+            }
+            $cur = $cur[$part];
+        }
+        return $cur;
+    }
+
+    /**
+     * Persist candidate replay result to candidate_replay.json.
+     *
+     * @param array<string,mixed> $result
+     * @param array<string,mixed> $cfg
+     */
+    private function writeReplayToFile(array $result, array $cfg): void
+    {
+        $maxEx = max(1, (int)($cfg['max_examples_per_last_run_section'] ?? 10));
+        $out   = $result;
+        $out['blocked_bad_examples']  = array_slice((array)($result['blocked_bad_examples']  ?? []), 0, $maxEx);
+        $out['blocked_good_examples'] = array_slice((array)($result['blocked_good_examples'] ?? []), 0, $maxEx);
+        $out['kept_bad_examples']     = array_slice((array)($result['kept_bad_examples']     ?? []), 0, $maxEx);
+        $out['kept_good_examples']    = array_slice((array)($result['kept_good_examples']    ?? []), 0, $maxEx);
+        // Trim large nested objects to avoid huge files
+        unset($out['default_baseline'], $out['candidate_result']);
+
+        $replayPath = $this->storagePath('profiles/early_impulse_growth_long/candidate_replay.json');
+        $dir        = dirname($replayPath);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+        $jsonStr = json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (is_string($jsonStr)) {
+            @file_put_contents($replayPath, $jsonStr, LOCK_EX);
+        }
     }
 
     /** @return array{all:list<array<string,mixed>>,index:array<string,array<string,mixed>>,new_total:int} */

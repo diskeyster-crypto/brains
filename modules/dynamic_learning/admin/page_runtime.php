@@ -415,6 +415,144 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     </div>
   </div>
 
+  <!-- ── Candidate Profile & Replay ──────────────────────────────────────── -->
+  <?php
+  $candProfileId     = (string)($run['candidate_profile_id']    ?? '—');
+  $candStatus        = (string)($run['candidate_status']         ?? '—');
+  $candRulesTotal    = (int)($run['candidate_rules_total']       ?? 0);
+  $candComponents    = (int)($run['candidate_weighted_components_total'] ?? 0);
+  $candReplayEnabled = (bool)($run['candidate_replay_enabled']   ?? false);
+  $rpDefaultScore    = $run['default_quality_score']             ?? null;
+  $rpCandScore       = $run['candidate_quality_score']           ?? null;
+  $rpDelta           = $run['candidate_vs_default_delta_pct']    ?? null;
+  $rpBadBlocked      = (int)($run['replay_bad_blocked_total']    ?? 0);
+  $rpGoodBlocked     = (int)($run['replay_good_blocked_total']   ?? 0);
+  $rpBadCapture      = $run['replay_bad_capture_rate_pct']       ?? null;
+  $rpGoodBlock       = $run['replay_good_block_rate_pct']        ?? null;
+  $rpNetScore        = $run['replay_net_score']                  ?? null;
+  $rpPromoDec        = (string)($run['promotion_decision']       ?? '—');
+  $rpPromoReason     = (string)($run['promotion_reason']         ?? '');
+
+  $candStatusColor = match($candStatus) {
+    'eligible_for_demo_apply'                          => '#86efac',
+    'insufficient_data', 'no_material_improvement',
+    'insufficient_bad_capture', 'no_score', 'pending'  => '#fcd34d',
+    'rejected', 'below_improvement_threshold'          => '#f87171',
+    default                                            => '#94a3b8',
+  };
+  $rpPromoColor = match($rpPromoDec) {
+    'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#86efac',
+    'reject_candidate'                                              => '#f87171',
+    'keep_current'                                                  => '#fcd34d',
+    default                                                         => '#94a3b8',
+  };
+  $rpPromoBg = match($rpPromoDec) {
+    'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#14532d',
+    'reject_candidate'                                              => '#450a0a',
+    'keep_current'                                                  => '#451a03',
+    default                                                         => '#0f172a',
+  };
+
+  $showWarn = in_array($candStatus, ['insufficient_data', 'no_material_improvement', 'insufficient_bad_capture'], true)
+              || ($rpGoodBlock !== null && (float)$rpGoodBlock > 20.0);
+  ?>
+  <div style="border:1px solid #93c5fd44;border-radius:10px;padding:14px;background:rgba(147,197,253,.04);margin-top:6px;">
+    <div style="font-size:13px;font-weight:700;color:#93c5fd;margin-bottom:10px;">
+      <i class="bi bi-cpu" style="margin-right:6px;"></i>Candidate Profile &amp; Replay
+      <?php if (!$candReplayEnabled): ?>
+        <span style="font-size:11px;color:#6b7280;font-weight:400;"> — replay not run yet this cycle</span>
+      <?php endif; ?>
+    </div>
+
+    <?php if ($showWarn): ?>
+    <div style="background:#451a03;color:#fcd34d;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:8px;">
+      ⚠&nbsp;<?php
+        if ($candStatus === 'insufficient_data') {
+            echo $e('Insufficient data — not enough outcomes for candidate evaluation.');
+        } elseif ($candStatus === 'no_material_improvement') {
+            echo $e('No material improvement — candidate inside no-change band.');
+        } elseif ($candStatus === 'insufficient_bad_capture') {
+            echo $e('Bad capture rate too low — candidate does not capture enough bad entries.');
+        } elseif ($rpGoodBlock !== null && (float)$rpGoodBlock > 20.0) {
+            echo $e('Too many good trades blocked — good_block_rate=' . round((float)$rpGoodBlock, 1) . '%');
+        }
+      ?>
+    </div>
+    <?php endif; ?>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:7px;">
+      <div style="background:#1e293b;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#94a3b8;">candidate_profile_id</div>
+        <div style="font-weight:600;font-size:11px;color:#93c5fd;word-break:break-all;"><?= $e($candProfileId) ?></div>
+      </div>
+      <div style="background:#1e293b;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#94a3b8;">candidate_status</div>
+        <div style="font-weight:600;color:<?= $candStatusColor ?>;"><?= $e($candStatus) ?></div>
+      </div>
+      <div style="background:#1e293b;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#94a3b8;">rules_total</div>
+        <div style="font-weight:600;color:#93c5fd;"><?= $e($candRulesTotal) ?></div>
+      </div>
+      <div style="background:#1e293b;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#94a3b8;">risk_components</div>
+        <div style="font-weight:600;color:#93c5fd;"><?= $e($candComponents) ?></div>
+      </div>
+      <div style="background:#14532d;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#86efac;">default_score</div>
+        <div style="font-weight:600;color:#86efac;"><?= $e($rpDefaultScore ?? 'n/a') ?></div>
+      </div>
+      <div style="background:#1e3a5f;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#93c5fd;">candidate_score</div>
+        <div style="font-weight:600;color:#93c5fd;"><?= $e($rpCandScore ?? 'n/a') ?></div>
+      </div>
+      <?php
+      $dv = $rpDelta !== null ? (float)$rpDelta : null;
+      $dvBg  = $dv === null ? '#111827' : ($dv > 0 ? '#14532d' : '#450a0a');
+      $dvClr = $dv === null ? '#6b7280'  : ($dv > 0 ? '#86efac' : '#f87171');
+      ?>
+      <div style="background:<?= $dvBg ?>;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:<?= $dvClr ?>;">delta</div>
+        <div style="font-weight:600;color:<?= $dvClr ?>;"><?= $e($dv !== null ? ($dv >= 0 ? '+' : '') . round($dv, 2) : 'n/a') ?></div>
+      </div>
+      <div style="background:#111827;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#94a3b8;">bad_blocked</div>
+        <div style="font-weight:600;color:#e5e7eb;"><?= $e($rpBadBlocked) ?></div>
+      </div>
+      <div style="background:#111827;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#94a3b8;">good_blocked</div>
+        <div style="font-weight:600;color:<?= $rpGoodBlocked > 0 ? '#fcd34d' : '#e5e7eb' ?>;"><?= $e($rpGoodBlocked) ?></div>
+      </div>
+      <?php
+      $capBg  = ($rpBadCapture !== null && (float)$rpBadCapture >= 20.0) ? '#14532d' : '#450a0a';
+      $capClr = ($rpBadCapture !== null && (float)$rpBadCapture >= 20.0) ? '#86efac' : '#f87171';
+      $blkBg  = ($rpGoodBlock  !== null && (float)$rpGoodBlock  <= 20.0) ? '#14532d' : '#450a0a';
+      $blkClr = ($rpGoodBlock  !== null && (float)$rpGoodBlock  <= 20.0) ? '#86efac' : '#f87171';
+      ?>
+      <div style="background:<?= $capBg ?>;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:<?= $capClr ?>;">bad_capture_rate</div>
+        <div style="font-weight:600;color:<?= $capClr ?>;"><?= $e($rpBadCapture !== null ? round((float)$rpBadCapture, 1) . '%' : 'n/a') ?></div>
+      </div>
+      <div style="background:<?= $blkBg ?>;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:<?= $blkClr ?>;">good_block_rate</div>
+        <div style="font-weight:600;color:<?= $blkClr ?>;"><?= $e($rpGoodBlock !== null ? round((float)$rpGoodBlock, 1) . '%' : 'n/a') ?></div>
+      </div>
+      <div style="background:<?= $rpPromoBg ?>;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:<?= $rpPromoColor ?>;">promotion_decision</div>
+        <div style="font-weight:600;font-size:11px;color:<?= $rpPromoColor ?>;"><?= $e($rpPromoDec) ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#94a3b8;">promotion_reason</div>
+        <div style="font-size:11px;color:#94a3b8;"><?= $e($rpPromoReason !== '' ? $rpPromoReason : '—') ?></div>
+      </div>
+      <?php if ($candReplayEnabled): ?>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#94a3b8;">replay_net_score</div>
+        <div style="font-weight:600;color:<?= ($rpNetScore !== null && (float)$rpNetScore > 0) ? '#86efac' : '#f87171' ?>;"><?= $e($rpNetScore ?? 'n/a') ?></div>
+      </div>
+      <?php endif; ?>
+    </div>
+  </div>
+
   <!-- Storage status -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
     <div style="background:#1c1917;color:#d6d3d1;border-radius:8px;padding:10px;">

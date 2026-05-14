@@ -103,4 +103,11 @@ return [
     'require_not_worse_than_default' => 'bool',
     'max_candidate_history_records' => 'int',
     'max_rollback_history_records' => 'int',
+    // Candidate profile builder + replay
+    'candidate_min_separation_score' => 'float',
+    'candidate_max_good_block_rate_pct' => 'float',
+    'candidate_min_bad_capture_rate_pct' => 'float',
+    'candidate_max_rules' => 'int',
+    'candidate_allow_broad_features' => 'bool',
+    'candidate_replay_enabled' => 'bool',
 ];

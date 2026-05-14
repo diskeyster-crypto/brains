@@ -95,7 +95,9 @@ final class DynamicLearningService
             'closed_outcomes_unique_total' => 0,
             'closed_outcomes_duplicates_skipped_total' => 0,
             'closed_outcomes_merged_total' => 0,
+            'closed_outcomes_near_time_duplicates_merged_total' => 0,
             'closed_outcomes_duplicate_examples' => [],
+            'closed_outcomes_near_time_duplicate_examples' => [],
             'closed_outcomes_strong_link_total' => 0,
             'closed_outcomes_weak_link_skipped_total' => 0,
             'closed_outcomes_preserved_due_empty_source_total' => 0,
@@ -112,6 +114,8 @@ final class DynamicLearningService
             'outcome_incomplete_total' => 0,
             'risk_profile_mode' => (string)($cfg['risk_profile_mode'] ?? 'fast_demo'),
             'outcome_classification_profile' => (string)($cfg['outcome_classification_profile'] ?? 'standard_stop_10'),
+            'closed_outcome_dedupe_closed_at_tolerance_seconds' => (int)($cfg['closed_outcome_dedupe_closed_at_tolerance_seconds'] ?? 0),
+            'closed_outcome_time_tolerance_enabled' => (bool)($cfg['closed_outcome_dedupe_use_time_tolerance'] ?? false),
             'effective_bad_drawdown_roi_threshold' => (float)($cfg['bad_drawdown_roi_threshold'] ?? -10.0),
             'effective_good_close_roi_threshold' => (float)($cfg['good_close_roi_threshold'] ?? 5.0),
             'effective_good_max_profit_roi_threshold' => (float)($cfg['good_max_profit_roi_threshold'] ?? 5.0),
@@ -237,7 +241,9 @@ final class DynamicLearningService
         $result['closed_outcomes_unique_total'] = $outcomes['unique_total'];
         $result['closed_outcomes_duplicates_skipped_total'] = $outcomes['duplicates_skipped_total'];
         $result['closed_outcomes_merged_total'] = $outcomes['merged_total'];
+        $result['closed_outcomes_near_time_duplicates_merged_total'] = $outcomes['near_time_duplicates_merged_total'];
         $result['closed_outcomes_duplicate_examples'] = $outcomes['duplicate_examples'];
+        $result['closed_outcomes_near_time_duplicate_examples'] = $outcomes['near_time_duplicate_examples'];
         $result['closed_outcomes_strong_link_total'] = $outcomes['strong_link_total'];
         $result['closed_outcomes_weak_link_skipped_total'] = $outcomes['weak_link_skipped_total'];
         $result['closed_outcomes_preserved_due_empty_source_total'] = $outcomes['preserved_due_empty_source_total'];
@@ -638,7 +644,7 @@ final class DynamicLearningService
         ];
     }
 
-    /** @return array{all:list<array<string,mixed>>,pattern_mining:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,effective_total:int,unique_total:int,duplicates_skipped_total:int,merged_total:int,duplicate_examples:list<array<string,mixed>>,strong_link_total:int,weak_link_skipped_total:int,preserved_due_empty_source_total:int,rebuilt_from_ndjson_total:int,rebuild_skipped_due_reset_total:int,time_mismatch_total:int,opened_at_corrected_total:int,timing_low_confidence_total:int,time_mismatch_examples:list<array<string,mixed>>,mfe_normalized_total:int,mae_normalized_total:int,roi_normalization_examples:list<array<string,mixed>>,excluded_from_pattern_mining_total:int,excluded_reasons:array<string,int>,reclassified_total:int,reclassified_examples:list<array<string,mixed>>} */
+    /** @return array{all:list<array<string,mixed>>,pattern_mining:list<array<string,mixed>>,bad:list<array<string,mixed>>,good:list<array<string,mixed>>,exit_issue:list<array<string,mixed>>,neutral:list<array<string,mixed>>,incomplete:list<array<string,mixed>>,loaded_total:int,raw_loaded_total:int,effective_total:int,unique_total:int,duplicates_skipped_total:int,merged_total:int,near_time_duplicates_merged_total:int,duplicate_examples:list<array<string,mixed>>,near_time_duplicate_examples:list<array<string,mixed>>,strong_link_total:int,weak_link_skipped_total:int,preserved_due_empty_source_total:int,rebuilt_from_ndjson_total:int,rebuild_skipped_due_reset_total:int,time_mismatch_total:int,opened_at_corrected_total:int,timing_low_confidence_total:int,time_mismatch_examples:list<array<string,mixed>>,mfe_normalized_total:int,mae_normalized_total:int,roi_normalization_examples:list<array<string,mixed>>,excluded_from_pattern_mining_total:int,excluded_reasons:array<string,int>,reclassified_total:int,reclassified_examples:list<array<string,mixed>>} */
     private function linkClosedOutcomes(array $cfg, array $snapshotIndex, array $resetState): array
     {
         $stored = $this->readJson($this->storagePath('closed_outcomes.json'), []);
@@ -654,13 +660,17 @@ final class DynamicLearningService
         $rebuildFromNdjsonEnabled = (bool)($cfg['rebuild_closed_outcomes_from_ndjson_enabled'] ?? true);
 
         $rawLoadedTotal = 0;
-        $sourceUniqueMap = [];
-        $duplicatesSkippedTotal = 0;
-        $mergedTotal = 0;
-        $duplicateExamples = [];
         $preservedDueEmptySourceTotal = 0;
         $rebuiltFromNdjsonTotal = 0;
         $rebuildSkippedDueResetTotal = 0;
+        $sourceRows = [];
+        $dedupeStats = [
+            'duplicates_skipped_total' => 0,
+            'merged_total' => 0,
+            'near_time_duplicates_merged_total' => 0,
+            'duplicate_examples' => [],
+            'near_time_duplicate_examples' => [],
+        ];
 
         foreach ([
             $this->repoRoot . '/modules/bot/storage/trades/closed_trades.json',
@@ -676,55 +686,39 @@ final class DynamicLearningService
                 }
 
                 $rawLoadedTotal++;
-                $identity = $this->buildClosedTradeIdentity($row);
-                $existing = $sourceUniqueMap[$identity] ?? null;
-                if ($existing === null) {
-                    $sourceUniqueMap[$identity] = $row;
-                    continue;
-                }
-
-                $duplicatesSkippedTotal++;
-                if (count($duplicateExamples) < 20) {
-                    $duplicateExamples[] = [
-                        'identity' => $identity,
-                        'symbol' => strtoupper((string)($row['symbol'] ?? '')),
-                        'side' => strtolower((string)($row['side'] ?? '')),
-                        'opened_at' => $this->extractOpenedAt($row),
-                        'closed_at' => $this->extractClosedAt($row),
-                        'close_roi_incoming' => $this->toFloat($row['close_roi'] ?? $row['roi'] ?? null),
-                        'close_roi_existing' => $this->toFloat(((array)$existing)['close_roi'] ?? ((array)$existing)['roi'] ?? null),
-                    ];
-                }
-
-                $scoreRow = $this->closedTradeRichnessScore($row);
-                $scoreExisting = $this->closedTradeRichnessScore((array)$existing);
-                [$primary, $secondary] = $scoreRow >= $scoreExisting
-                    ? [$row, (array)$existing]
-                    : [(array)$existing, $row];
-                $merged = $this->mergeClosedTradeRecords($primary, $secondary);
-                if ($this->closedTradeRichnessScore($merged) > $this->closedTradeRichnessScore($primary)) {
-                    $mergedTotal++;
-                }
-                $sourceUniqueMap[$identity] = $merged;
+                $sourceRows[] = $row;
             }
         }
 
-        $sourceHasRows = count($sourceUniqueMap) > 0;
+        $sourceHasRows = count($sourceRows) > 0;
         $effectiveRows = [];
         if ($resetDetected) {
-            $effectiveRows = $sourceHasRows ? array_values($sourceUniqueMap) : [];
+            if ($sourceHasRows) {
+                $dedupe = $this->dedupeClosedTradeRows($sourceRows, $cfg);
+                $effectiveRows = $dedupe['rows'];
+                $dedupeStats = $dedupe;
+            } else {
+                $effectiveRows = [];
+            }
             if ($rebuildFromNdjsonEnabled) {
                 $rebuildSkippedDueResetTotal = $this->countNdjsonLines($this->storagePath('closed_outcomes.ndjson'));
             }
         } elseif ($sourceHasRows) {
-            $effectiveRows = array_values($sourceUniqueMap);
+            $dedupe = $this->dedupeClosedTradeRows($sourceRows, $cfg);
+            $effectiveRows = $dedupe['rows'];
+            $dedupeStats = $dedupe;
         } elseif ($preserveWhenSourceEmpty && is_array($stored) && count($stored) > 0) {
-            $effectiveRows = array_values(array_filter((array)$stored, static fn(mixed $r): bool => is_array($r)));
+            $preservedRows = array_values(array_filter((array)$stored, static fn(mixed $r): bool => is_array($r)));
+            $dedupe = $this->dedupeClosedTradeRows($preservedRows, $cfg);
+            $effectiveRows = $dedupe['rows'];
+            $dedupeStats = $dedupe;
             $preservedDueEmptySourceTotal = count($effectiveRows);
         } elseif ($rebuildFromNdjsonEnabled) {
             $rebuilt = $this->rebuildOutcomesFromNdjson();
             if ($rebuilt !== []) {
-                $effectiveRows = $rebuilt;
+                $dedupe = $this->dedupeClosedTradeRows($rebuilt, $cfg);
+                $effectiveRows = $dedupe['rows'];
+                $dedupeStats = $dedupe;
                 $rebuiltFromNdjsonTotal = count($rebuilt);
             }
         }
@@ -882,9 +876,11 @@ final class DynamicLearningService
             'raw_loaded_total' => $rawLoadedTotal,
             'effective_total' => count($all),
             'unique_total' => count($all),
-            'duplicates_skipped_total' => $duplicatesSkippedTotal,
-            'merged_total' => $mergedTotal,
-            'duplicate_examples' => $duplicateExamples,
+            'duplicates_skipped_total' => (int)($dedupeStats['duplicates_skipped_total'] ?? 0),
+            'merged_total' => (int)($dedupeStats['merged_total'] ?? 0),
+            'near_time_duplicates_merged_total' => (int)($dedupeStats['near_time_duplicates_merged_total'] ?? 0),
+            'duplicate_examples' => (array)($dedupeStats['duplicate_examples'] ?? []),
+            'near_time_duplicate_examples' => (array)($dedupeStats['near_time_duplicate_examples'] ?? []),
             'strong_link_total' => $strongLinkTotal,
             'weak_link_skipped_total' => $weakLinkSkippedTotal,
             'preserved_due_empty_source_total' => $preservedDueEmptySourceTotal,
@@ -1112,6 +1108,8 @@ final class DynamicLearningService
             'duration_sec' => $timing['duration_sec'],
             'entry_snapshot' => $snapshot,
             'observation_summary' => $summary,
+            'duplicate_closed_at_values' => array_values((array)($row['duplicate_closed_at_values'] ?? [])),
+            'duplicate_sources_count' => max(1, (int)($row['duplicate_sources_count'] ?? 1)),
             'outcome_class' => $class,
             'classification_reason' => $reason,
             'used_for_pattern_mining' => $featureCheck['used_for_pattern_mining'],
@@ -1148,17 +1146,365 @@ final class DynamicLearningService
         if (array_key_exists('normalized_max_profit_roi', $row)) {
             $row['normalized_max_profit_roi'] = $normalizedMaxProfit;
         }
+        $row['duplicate_closed_at_values'] = array_values((array)($row['duplicate_closed_at_values'] ?? []));
+        $row['duplicate_sources_count'] = max(1, (int)($row['duplicate_sources_count'] ?? 1));
         $row['outcome_class'] = $class;
         $row['classification_reason'] = $reason;
         return $row;
     }
 
+    /**
+     * @param list<array<string,mixed>> $rows
+     * @return array{
+     *   rows:list<array<string,mixed>>,
+     *   duplicates_skipped_total:int,
+     *   merged_total:int,
+     *   near_time_duplicates_merged_total:int,
+     *   duplicate_examples:list<array<string,mixed>>,
+     *   near_time_duplicate_examples:list<array<string,mixed>>
+     * }
+     */
+    private function dedupeClosedTradeRows(array $rows, array $cfg): array
+    {
+        $mergedRows = [];
+        $duplicatesSkippedTotal = 0;
+        $mergedTotal = 0;
+        $nearTimeDuplicatesMergedTotal = 0;
+        $duplicateExamples = [];
+        $nearTimeDuplicateExamples = [];
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+
+            $row = $this->initializeClosedTradeDedupeMetadata($row);
+            $match = $this->findMatchingClosedTradeRowIndex($row, $mergedRows, $cfg);
+            if ($match === null) {
+                $mergedRows[] = $row;
+                continue;
+            }
+
+            $duplicatesSkippedTotal++;
+            $existing = (array)$mergedRows[$match['index']];
+            if (count($duplicateExamples) < 20) {
+                $duplicateExamples[] = [
+                    'symbol' => strtoupper((string)($row['symbol'] ?? $existing['symbol'] ?? '')),
+                    'signal_id' => (string)($row['signal_id'] ?? $existing['signal_id'] ?? ''),
+                    'learning_opened_at' => $this->extractOpenedAt($row) ?: $this->extractOpenedAt($existing),
+                    'close_roi' => DlHelpers::toFloat($row['close_roi'] ?? $row['roi'] ?? $existing['close_roi'] ?? $existing['roi'] ?? null),
+                    'closed_at_values' => $this->mergeTimestampValues(
+                        (array)($existing['duplicate_closed_at_values'] ?? []),
+                        [(string)$this->extractClosedAt($row)]
+                    ),
+                    'closed_at_delta_seconds' => $match['closed_at_delta_seconds'],
+                    'time_tolerance_match' => (bool)$match['near_time_duplicate'],
+                ];
+            }
+
+            if ((bool)$match['near_time_duplicate']) {
+                $nearTimeDuplicatesMergedTotal++;
+            }
+
+            $scoreRow = $this->closedTradeRichnessScore($row);
+            $scoreExisting = $this->closedTradeRichnessScore($existing);
+            [$primary, $secondary] = $scoreRow >= $scoreExisting
+                ? [$row, $existing]
+                : [$existing, $row];
+            $merged = $this->mergeClosedTradeRecords($primary, $secondary);
+            $merged = $this->mergeClosedTradeDuplicateMetadata($merged, $existing, $row, (bool)$match['near_time_duplicate'], $match['closed_at_delta_seconds']);
+
+            if ($this->closedTradeRichnessScore($merged) >= $this->closedTradeRichnessScore($primary)) {
+                $mergedTotal++;
+            }
+
+            $mergedRows[$match['index']] = $merged;
+        }
+
+        foreach ($mergedRows as &$row) {
+            $row = $this->finalizeClosedTradeDedupeRow($row);
+            if (!empty($row['_dl_near_time_example'])) {
+                $nearTimeDuplicateExamples[] = $this->formatNearTimeDuplicateExample($row);
+            }
+        }
+        unset($row);
+
+        usort($mergedRows, static fn(array $a, array $b): int => strcmp((string)($b['closed_at'] ?? ''), (string)($a['closed_at'] ?? '')));
+
+        return [
+            'rows' => array_values($mergedRows),
+            'duplicates_skipped_total' => $duplicatesSkippedTotal,
+            'merged_total' => $mergedTotal,
+            'near_time_duplicates_merged_total' => $nearTimeDuplicatesMergedTotal,
+            'duplicate_examples' => $duplicateExamples,
+            'near_time_duplicate_examples' => array_slice($nearTimeDuplicateExamples, 0, 20),
+        ];
+    }
+
+    /** @param list<array<string,mixed>> $mergedRows */
+    private function findMatchingClosedTradeRowIndex(array $candidate, array $mergedRows, array $cfg): ?array
+    {
+        $best = null;
+        foreach ($mergedRows as $index => $existing) {
+            $match = $this->closedTradeRowsMatch($candidate, (array)$existing, $cfg);
+            if (!(bool)($match['match'] ?? false)) {
+                continue;
+            }
+            if ($best === null) {
+                $best = $match + ['index' => $index];
+                continue;
+            }
+            $bestDelta = $best['closed_at_delta_seconds'] ?? PHP_INT_MAX;
+            $currentDelta = $match['closed_at_delta_seconds'] ?? PHP_INT_MAX;
+            if ($currentDelta < $bestDelta) {
+                $best = $match + ['index' => $index];
+            }
+        }
+        return $best;
+    }
+
+    /** @return array{match:bool,closed_at_delta_seconds:?int,near_time_duplicate:bool} */
+    private function closedTradeRowsMatch(array $candidate, array $existing, array $cfg): array
+    {
+        $signalIdCandidate = trim((string)($candidate['signal_id'] ?? ''));
+        $signalIdExisting = trim((string)($existing['signal_id'] ?? ''));
+        $sskCandidate = trim((string)($candidate['strategy_signal_key'] ?? ''));
+        $sskExisting = trim((string)($existing['strategy_signal_key'] ?? ''));
+        $positionIdCandidate = trim((string)($candidate['position_id'] ?? ''));
+        $positionIdExisting = trim((string)($existing['position_id'] ?? ''));
+        $closedTradeIdCandidate = trim((string)($candidate['closed_trade_id'] ?? $candidate['id'] ?? ''));
+        $closedTradeIdExisting = trim((string)($existing['closed_trade_id'] ?? $existing['id'] ?? ''));
+
+        if ($closedTradeIdCandidate !== '' && $closedTradeIdCandidate === $closedTradeIdExisting) {
+            $delta = $this->timestampDiffSeconds($this->extractClosedAt($candidate), $this->extractClosedAt($existing));
+            return ['match' => true, 'closed_at_delta_seconds' => $delta, 'near_time_duplicate' => $delta !== null && $delta > 0];
+        }
+        if ($positionIdCandidate !== '' && $positionIdCandidate === $positionIdExisting) {
+            $delta = $this->timestampDiffSeconds($this->extractClosedAt($candidate), $this->extractClosedAt($existing));
+            return ['match' => true, 'closed_at_delta_seconds' => $delta, 'near_time_duplicate' => $delta !== null && $delta > 0];
+        }
+
+        $symbolCandidate = strtoupper(trim((string)($candidate['symbol'] ?? '')));
+        $symbolExisting = strtoupper(trim((string)($existing['symbol'] ?? '')));
+        $sideCandidate = strtolower(trim((string)($candidate['side'] ?? '')));
+        $sideExisting = strtolower(trim((string)($existing['side'] ?? '')));
+        if ($symbolCandidate === '' || $symbolExisting === '' || $symbolCandidate !== $symbolExisting || $sideCandidate === '' || $sideExisting === '' || $sideCandidate !== $sideExisting) {
+            return ['match' => false, 'closed_at_delta_seconds' => null, 'near_time_duplicate' => false];
+        }
+
+        $closedAtMatch = $this->timestampsWithinTolerance($this->extractClosedAt($candidate), $this->extractClosedAt($existing), $cfg);
+        if (!(bool)($closedAtMatch['match'] ?? false)) {
+            return ['match' => false, 'closed_at_delta_seconds' => null, 'near_time_duplicate' => false];
+        }
+
+        $openedAtCandidate = $this->extractOpenedAt($candidate);
+        $openedAtExisting = $this->extractOpenedAt($existing);
+        if ($openedAtCandidate !== '' && $openedAtExisting !== '') {
+            $openedAtMatch = $this->timestampsWithinTolerance($openedAtCandidate, $openedAtExisting, $cfg);
+            if (!(bool)($openedAtMatch['match'] ?? false)) {
+                return ['match' => false, 'closed_at_delta_seconds' => null, 'near_time_duplicate' => false];
+            }
+        }
+
+        $closeRoiCandidate = DlHelpers::toFloat($candidate['close_roi'] ?? $candidate['roi'] ?? null);
+        $closeRoiExisting = DlHelpers::toFloat($existing['close_roi'] ?? $existing['roi'] ?? null);
+        if ($closeRoiCandidate !== null && $closeRoiExisting !== null && !$this->numericWithinTolerance($closeRoiCandidate, $closeRoiExisting, 0.0001)) {
+            return ['match' => false, 'closed_at_delta_seconds' => null, 'near_time_duplicate' => false];
+        }
+
+        $sameSignal = $signalIdCandidate !== '' && $signalIdCandidate === $signalIdExisting;
+        $sameSsk = $sskCandidate !== '' && $sskCandidate === $sskExisting;
+        if ($sameSignal || $sameSsk) {
+            return [
+                'match' => true,
+                'closed_at_delta_seconds' => $closedAtMatch['delta_seconds'],
+                'near_time_duplicate' => (bool)($closedAtMatch['near_time_duplicate'] ?? false),
+            ];
+        }
+
+        return ['match' => false, 'closed_at_delta_seconds' => null, 'near_time_duplicate' => false];
+    }
+
+    /** @return array{match:bool,delta_seconds:?int,near_time_duplicate:bool} */
+    private function timestampsWithinTolerance(string $a, string $b, array $cfg): array
+    {
+        if ($a === '' || $b === '') {
+            return ['match' => false, 'delta_seconds' => null, 'near_time_duplicate' => false];
+        }
+        $delta = $this->timestampDiffSeconds($a, $b);
+        if ($delta === null) {
+            return ['match' => false, 'delta_seconds' => null, 'near_time_duplicate' => false];
+        }
+
+        $toleranceEnabled = (bool)($cfg['closed_outcome_dedupe_use_time_tolerance'] ?? true);
+        $tolerance = max(0, (int)($cfg['closed_outcome_dedupe_closed_at_tolerance_seconds'] ?? 3));
+        $match = $toleranceEnabled ? $delta <= $tolerance : $delta === 0;
+
+        return [
+            'match' => $match,
+            'delta_seconds' => $delta,
+            'near_time_duplicate' => $match && $delta > 0,
+        ];
+    }
+
+    private function numericWithinTolerance(float $a, float $b, float $tolerance): bool
+    {
+        return abs($a - $b) <= $tolerance;
+    }
+
+    private function initializeClosedTradeDedupeMetadata(array $row): array
+    {
+        $row['_dl_identity_raw'] = trim((string)($row['_dl_identity_raw'] ?? $this->buildClosedTradeIdentity($row)));
+        $row['_dl_merged_identities'] = array_values(array_unique(array_filter(array_merge(
+            (array)($row['_dl_merged_identities'] ?? []),
+            [$row['_dl_identity_raw']]
+        ), static fn(mixed $value): bool => is_string($value) && trim($value) !== '')));
+        $row['duplicate_sources_count'] = max(1, (int)($row['duplicate_sources_count'] ?? 1));
+        $row['duplicate_closed_at_values'] = $this->mergeTimestampValues(
+            (array)($row['duplicate_closed_at_values'] ?? []),
+            [$this->extractClosedAt($row)]
+        );
+        return $row;
+    }
+
+    private function mergeClosedTradeDuplicateMetadata(array $merged, array $existing, array $incoming, bool $nearTimeDuplicate, ?int $closedAtDeltaSeconds): array
+    {
+        $merged['duplicate_sources_count'] = max(1, (int)($existing['duplicate_sources_count'] ?? 1))
+            + max(1, (int)($incoming['duplicate_sources_count'] ?? 1));
+        $merged['duplicate_closed_at_values'] = $this->mergeTimestampValues(
+            array_merge(
+                (array)($existing['duplicate_closed_at_values'] ?? []),
+                (array)($incoming['duplicate_closed_at_values'] ?? [])
+            ),
+            [$this->extractClosedAt($existing), $this->extractClosedAt($incoming)]
+        );
+        $merged['_dl_merged_identities'] = array_values(array_unique(array_filter(array_merge(
+            (array)($existing['_dl_merged_identities'] ?? []),
+            (array)($incoming['_dl_merged_identities'] ?? []),
+            [(string)($existing['_dl_identity_raw'] ?? ''), (string)($incoming['_dl_identity_raw'] ?? '')]
+        ), static fn(mixed $value): bool => is_string($value) && trim($value) !== '')));
+
+        if ($nearTimeDuplicate) {
+            $baseExample = is_array($existing['_dl_near_time_example'] ?? null) ? (array)$existing['_dl_near_time_example'] : [];
+            $baseMergedKeys = array_values(array_unique(array_filter(array_merge(
+                (array)($baseExample['merged_identities'] ?? []),
+                (array)($existing['_dl_merged_identities'] ?? []),
+                (array)($incoming['_dl_merged_identities'] ?? [])
+            ), static fn(mixed $value): bool => is_string($value) && trim($value) !== '')));
+            $merged['_dl_near_time_example'] = [
+                'symbol' => strtoupper((string)($merged['symbol'] ?? $existing['symbol'] ?? $incoming['symbol'] ?? '')),
+                'signal_id' => (string)($merged['signal_id'] ?? $existing['signal_id'] ?? $incoming['signal_id'] ?? ''),
+                'learning_opened_at' => $this->extractOpenedAt($merged) ?: $this->extractOpenedAt($existing) ?: $this->extractOpenedAt($incoming),
+                'close_roi' => DlHelpers::toFloat($merged['close_roi'] ?? $merged['roi'] ?? $existing['close_roi'] ?? $existing['roi'] ?? $incoming['close_roi'] ?? $incoming['roi'] ?? null),
+                'closed_at_values' => $merged['duplicate_closed_at_values'],
+                'closed_at_delta_seconds' => $closedAtDeltaSeconds,
+                'merged_identities' => $baseMergedKeys,
+            ];
+        }
+
+        return $merged;
+    }
+
+    private function finalizeClosedTradeDedupeRow(array $row): array
+    {
+        $closedAtValues = $this->mergeTimestampValues((array)($row['duplicate_closed_at_values'] ?? []), [$this->extractClosedAt($row)]);
+        if ($closedAtValues !== []) {
+            $row['duplicate_closed_at_values'] = $closedAtValues;
+            $canonicalClosedAt = $closedAtValues[0];
+            $row['closed_at'] = $canonicalClosedAt;
+            if (array_key_exists('close_time', $row)) {
+                $row['close_time'] = $canonicalClosedAt;
+            }
+            if (array_key_exists('closed_time', $row)) {
+                $row['closed_time'] = $canonicalClosedAt;
+            }
+        }
+
+        $openedAtValues = $this->mergeTimestampValues([], [$this->extractOpenedAt($row)]);
+        if ($openedAtValues !== []) {
+            $canonicalOpenedAt = $openedAtValues[0];
+            if (array_key_exists('learning_opened_at', $row) || array_key_exists('opened_at', $row)) {
+                $row['learning_opened_at'] = $canonicalOpenedAt;
+                $row['opened_at'] = $canonicalOpenedAt;
+            }
+        }
+
+        $row['duplicate_sources_count'] = max(1, (int)($row['duplicate_sources_count'] ?? 1));
+        $row['_dl_identity'] = $this->buildClosedTradeIdentity($row);
+        return $row;
+    }
+
+    /** @param array<int,string> $values */
+    private function mergeTimestampValues(array $values, array $moreValues): array
+    {
+        $merged = [];
+        foreach (array_merge($values, $moreValues) as $value) {
+            $normalized = $this->normalizeTimestamp($value);
+            if ($normalized !== '') {
+                $merged[$normalized] = true;
+            }
+        }
+        $timestamps = array_keys($merged);
+        usort($timestamps, static function (string $a, string $b): int {
+            $ta = strtotime($a);
+            $tb = strtotime($b);
+            if ($ta === false && $tb === false) {
+                return strcmp($a, $b);
+            }
+            if ($ta === false) {
+                return 1;
+            }
+            if ($tb === false) {
+                return -1;
+            }
+            return $ta <=> $tb;
+        });
+        return $timestamps;
+    }
+
+    /** @return array<string,mixed> */
+    private function formatNearTimeDuplicateExample(array $row): array
+    {
+        $example = (array)($row['_dl_near_time_example'] ?? []);
+        $keptIdentity = trim((string)($row['_dl_identity'] ?? $this->buildClosedTradeIdentity($row)));
+        $mergedIdentities = array_values(array_unique(array_filter(
+            (array)($example['merged_identities'] ?? []),
+            static fn(mixed $value): bool => is_string($value) && trim($value) !== '' && trim((string)$value) !== $keptIdentity
+        )));
+
+        return [
+            'symbol' => (string)($example['symbol'] ?? strtoupper((string)($row['symbol'] ?? ''))),
+            'signal_id' => (string)($example['signal_id'] ?? (string)($row['signal_id'] ?? '')),
+            'learning_opened_at' => (string)($example['learning_opened_at'] ?? $this->extractOpenedAt($row)),
+            'close_roi' => $example['close_roi'] ?? DlHelpers::toFloat($row['close_roi'] ?? $row['roi'] ?? null),
+            'closed_at_values' => array_values((array)($example['closed_at_values'] ?? $row['duplicate_closed_at_values'] ?? [])),
+            'closed_at_delta_seconds' => $example['closed_at_delta_seconds'] ?? null,
+            'kept_outcome_key' => $this->buildOutcomeKeyFromIdentity($keptIdentity),
+            'merged_outcome_keys' => array_values(array_map(fn(string $identity): string => $this->buildOutcomeKeyFromIdentity($identity), $mergedIdentities)),
+        ];
+    }
+
+    private function buildOutcomeKeyFromIdentity(string $identity): string
+    {
+        return 'out_' . substr(sha1($identity), 0, 20);
+    }
+
     private function buildClosedTradeIdentity(array $row): string
     {
+        $closedTradeId = trim((string)($row['closed_trade_id'] ?? $row['id'] ?? ''));
+        if ($closedTradeId !== '') {
+            return 'closed_trade_id|' . $closedTradeId;
+        }
+
+        $positionId = trim((string)($row['position_id'] ?? ''));
+        if ($positionId !== '') {
+            return 'position_id|' . $positionId;
+        }
+
         $signalId = trim((string)($row['signal_id'] ?? ''));
         $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
-        $openedAt = DlHelpers::extractOpenedAt($row);
-        $closedAt = DlHelpers::extractClosedAt($row);
+        $openedAt = $this->extractOpenedAt($row);
+        $closedAt = $this->extractClosedAt($row);
 
         if ($signalId !== '' && $openedAt !== '' && $closedAt !== '') {
             return 'signal_time|' . implode('|', [$signalId, $openedAt, $closedAt]);
@@ -1177,16 +1523,6 @@ final class DynamicLearningService
         $entryPrice = DlHelpers::toFloat($row['entry_price'] ?? null);
         if ($symbol !== '' && $side !== '' && $entryPrice !== null && $openedAt !== '' && $closedAt !== '') {
             return 'price_time|' . implode('|', [$symbol, $side, (string)round($entryPrice, 8), $openedAt, $closedAt]);
-        }
-
-        $positionId = trim((string)($row['position_id'] ?? ''));
-        if ($positionId !== '') {
-            return 'position_id|' . $positionId;
-        }
-
-        $closedTradeId = trim((string)($row['closed_trade_id'] ?? $row['id'] ?? ''));
-        if ($closedTradeId !== '') {
-            return 'closed_trade_id|' . $closedTradeId;
         }
 
         return 'fallback|' . substr(sha1(json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: ''), 0, 32);
@@ -1248,9 +1584,13 @@ final class DynamicLearningService
             'strategy_signal_key',
             'position_id',
             'closed_trade_id',
-            'opened_at', 'entry_time', 'created_at',
+            'opened_at', 'learning_opened_at', 'entry_time', 'created_at',
             'closed_at', 'close_time', 'closed_time',
             'entry_price',
+            'raw_max_drawdown_roi',
+            'raw_max_profit_roi',
+            'normalized_max_drawdown_roi',
+            'normalized_max_profit_roi',
         ];
         foreach ($fillFields as $field) {
             if (($merged[$field] ?? null) === null || (is_string($merged[$field]) && trim($merged[$field]) === '')) {
@@ -1269,12 +1609,22 @@ final class DynamicLearningService
             $merged['strategy_signal_context'] = $secondaryCtx;
         }
 
+        foreach (['entry_snapshot', 'observation_summary'] as $arrayField) {
+            $primaryArray = is_array($primary[$arrayField] ?? null) ? $primary[$arrayField] : null;
+            $secondaryArray = is_array($secondary[$arrayField] ?? null) ? $secondary[$arrayField] : null;
+            if ($primaryArray === null && $secondaryArray !== null) {
+                $merged[$arrayField] = $secondaryArray;
+            } elseif ($primaryArray !== null && $secondaryArray !== null && count($secondaryArray) > count($primaryArray)) {
+                $merged[$arrayField] = $secondaryArray;
+            }
+        }
+
         return $merged;
     }
 
     private function extractOpenedAt(array $row): string
     {
-        return $this->normalizeTimestamp($row['opened_at'] ?? $row['entry_time'] ?? $row['created_at'] ?? '');
+        return $this->normalizeTimestamp($row['learning_opened_at'] ?? $row['opened_at'] ?? $row['entry_time'] ?? $row['created_at'] ?? '');
     }
 
     private function extractClosedAt(array $row): string
@@ -2473,6 +2823,8 @@ final class DynamicLearningService
         $cfg['auto_apply_enabled'] = (bool)($cfg['auto_apply_enabled'] ?? false);
         $cfg['preserve_outcomes_when_source_empty'] = (bool)($cfg['preserve_outcomes_when_source_empty'] ?? true);
         $cfg['rebuild_closed_outcomes_from_ndjson_enabled'] = (bool)($cfg['rebuild_closed_outcomes_from_ndjson_enabled'] ?? true);
+        $cfg['closed_outcome_dedupe_use_time_tolerance'] = (bool)($cfg['closed_outcome_dedupe_use_time_tolerance'] ?? true);
+        $cfg['closed_outcome_dedupe_closed_at_tolerance_seconds'] = max(0, (int)($cfg['closed_outcome_dedupe_closed_at_tolerance_seconds'] ?? 3));
         $cfg['respect_manual_storage_reset'] = (bool)($cfg['respect_manual_storage_reset'] ?? true);
         $cfg['storage_reset_marker_file'] = trim((string)($cfg['storage_reset_marker_file'] ?? 'storage/reset_marker.json'));
         $cfg['manual_reset_epoch'] = is_numeric($cfg['manual_reset_epoch'] ?? null) ? (float)$cfg['manual_reset_epoch'] : null;

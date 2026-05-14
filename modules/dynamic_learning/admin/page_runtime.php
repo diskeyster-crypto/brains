@@ -74,6 +74,14 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-size:12px;opacity:.8;">outcomes_reclassified_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['outcomes_reclassified_total'] ?? 0)) ?></div>
     </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">closed_outcome_time_tolerance_enabled</div>
+      <div style="font-weight:600;"><?= $e((bool)($run['closed_outcome_time_tolerance_enabled'] ?? false) ? 'true' : 'false') ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">closed_outcome_dedupe_closed_at_tolerance_seconds</div>
+      <div style="font-weight:600;"><?= $e((int)($run['closed_outcome_dedupe_closed_at_tolerance_seconds'] ?? 0)) ?></div>
+    </div>
   </div>
 
   <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
@@ -97,6 +105,10 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">closed_outcomes_merged_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_merged_total'] ?? 0)) ?></div>
+    </div>
+    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">closed_outcomes_near_time_duplicates_merged_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['closed_outcomes_near_time_duplicates_merged_total'] ?? 0)) ?></div>
     </div>
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">closed_outcomes_strong_link_total</div>
@@ -339,6 +351,10 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
   <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
     <div style="font-size:12px;opacity:.8;margin-bottom:8px;">closed_outcomes_duplicate_examples</div>
     <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['closed_outcomes_duplicate_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+  </div>
+  <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
+    <div style="font-size:12px;opacity:.8;margin-bottom:8px;">closed_outcomes_near_time_duplicate_examples</div>
+    <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['closed_outcomes_near_time_duplicate_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
   </div>
   <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
     <div style="font-size:12px;opacity:.8;margin-bottom:8px;">closed_outcomes_time_mismatch_examples</div>

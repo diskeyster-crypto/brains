@@ -257,8 +257,10 @@ final class DynamicLearningService
             'rollback_action' => null,
             // Candidate profile builder defaults
             'candidate_profile_generated' => false,
+            'candidate_profile_written' => false,
             'candidate_profile_id' => null,
             'candidate_rules_total' => 0,
+            'candidate_rules_missing_reason' => null,
             'candidate_weighted_components_total' => 0,
             'candidate_profile_available' => false,
             'candidate_profile_missing_reason' => null,
@@ -289,6 +291,7 @@ final class DynamicLearningService
             'candidate_blocked_good_examples' => [],
             'candidate_kept_bad_examples' => [],
             'candidate_kept_good_examples' => [],
+            'replay_skipped_feature_link_reason' => null,
             'created_at' => $runStartedAt,
         ];
 
@@ -530,12 +533,18 @@ final class DynamicLearningService
 
         // 7c. Candidate profile builder from micro separability diagnostics
         $candidateBuild = $this->buildCandidateProfileFromSeparability($cfg, $patternMiningOutcomes, $patterns, $epochMeta);
-        $result['candidate_profile_generated'] = $candidateBuild['available'];
+        $result['candidate_profile_written'] = (bool)($candidateBuild['profile_written'] ?? false);
+        $result['candidate_profile_generated'] = (bool)($candidateBuild['profile_written'] ?? false);
         $result['candidate_profile_id'] = $candidateBuild['profile_id'];
         $result['candidate_rules_total'] = $candidateBuild['rules_total'];
+        $result['candidate_rules_missing_reason'] = ((int)($candidateBuild['rules_total'] ?? 0) > 0)
+            ? null
+            : $this->normalizeCandidateRulesMissingReason((string)($candidateBuild['missing_reason'] ?? ''));
         $result['candidate_weighted_components_total'] = $candidateBuild['components_total'];
         $result['candidate_profile_available'] = $candidateBuild['available'];
-        $result['candidate_profile_missing_reason'] = $candidateBuild['missing_reason'];
+        $result['candidate_profile_missing_reason'] = ((bool)($candidateBuild['profile_written'] ?? false))
+            ? null
+            : ($candidateBuild['missing_reason'] ?? 'candidate_profile_not_written');
 
         // 7d. Candidate replay evaluator — observe-only, never applies
         $candidateReplay = ['candidate_replay_enabled' => false];
@@ -576,6 +585,7 @@ final class DynamicLearningService
         $result['replay_features_micro_missing_total'] = (int)($candidateReplay['replay_features_micro_missing_total'] ?? 0);
         $result['replay_features_link_method_counts'] = (array)($candidateReplay['replay_features_link_method_counts'] ?? []);
         $result['replay_features_missing_examples'] = (array)($candidateReplay['replay_features_missing_examples'] ?? []);
+        $result['replay_skipped_feature_link_reason'] = $candidateReplay['replay_skipped_feature_link_reason'] ?? null;
 
         // If replay produced a meaningful candidate decision, override rolling guard's candidate fields
         if ((bool)($candidateReplay['candidate_replay_enabled'] ?? false) && $candidateReplay['candidate_quality_score'] !== null) {
@@ -744,11 +754,15 @@ final class DynamicLearningService
         // Candidate profile + replay fields (overrides guard where replay has data)
         $replayAvailable = (bool)($candidateReplay['candidate_replay_enabled'] ?? false);
         $profile['candidate_profile_id'] = $candidateBuild['profile_id'] ?? null;
+        $profile['candidate_profile_written'] = (bool)($candidateBuild['profile_written'] ?? false);
         $profile['candidate_profile_available'] = $candidateBuild['available'] ?? false;
-        $profile['candidate_profile_missing_reason'] = ($candidateBuild['available'] ?? false)
+        $profile['candidate_profile_missing_reason'] = ((bool)($candidateBuild['profile_written'] ?? false))
             ? null
-            : ($candidateBuild['missing_reason'] ?? 'not_generated');
+            : ($candidateBuild['missing_reason'] ?? 'candidate_profile_not_written');
         $profile['candidate_rules_total'] = (int)($candidateBuild['rules_total'] ?? 0);
+        $profile['candidate_rules_missing_reason'] = ((int)($candidateBuild['rules_total'] ?? 0) > 0)
+            ? null
+            : $this->normalizeCandidateRulesMissingReason((string)($candidateBuild['missing_reason'] ?? ''));
         $profile['compared_to_default'] = true;
 
         if ($replayAvailable) {
@@ -1270,7 +1284,7 @@ final class DynamicLearningService
      * @param array<array<string,mixed>>  $patternMiningOutcomes  Active-epoch outcomes
      * @param array<string,mixed>         $patternResult          PatternMiner::mine() output
      * @param array<string,mixed>         $epochMeta
-     * @return array{profile:array<string,mixed>,profile_id:string,rules_total:int,components_total:int,available:bool,missing_reason:string|null}
+     * @return array{profile:array<string,mixed>,profile_id:string,rules_total:int,components_total:int,available:bool,missing_reason:string|null,profile_written:bool}
      */
     private function buildCandidateProfileFromSeparability(
         array $cfg,
@@ -1304,7 +1318,7 @@ final class DynamicLearningService
 
         $totalOutcomes = count($patternMiningOutcomes);
         if ($totalOutcomes === 0) {
-            return $this->makeCandidateProfileEmpty($cfg, $epochMeta, $totalBad, $totalGood, $totalExit, $totalNeutral, 'no_epoch_outcomes');
+            return $this->makeCandidateProfileEmpty($cfg, $epochMeta, $totalBad, $totalGood, $totalExit, $totalNeutral, 'insufficient_data');
         }
 
         // Index separation scores by feature from micro_feature_distributions
@@ -1455,9 +1469,10 @@ final class DynamicLearningService
         if (!is_dir($profileDir)) {
             @mkdir($profileDir, 0755, true);
         }
+        $profileWritten = false;
         $jsonStr = json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if (is_string($jsonStr)) {
-            @file_put_contents($profilePath, $jsonStr, LOCK_EX);
+            $profileWritten = @file_put_contents($profilePath, $jsonStr, LOCK_EX) !== false;
         }
 
         $available = count($selectedRules) > 0;
@@ -1467,7 +1482,8 @@ final class DynamicLearningService
             'rules_total'      => count($selectedRules),
             'components_total' => count($riskComponents),
             'available'        => $available,
-            'missing_reason'   => $available ? null : 'no_rules_passed_selection_criteria',
+            'missing_reason'   => $available ? null : 'no_candidate_rules_selected',
+            'profile_written'  => $profileWritten,
         ];
     }
 
@@ -1476,7 +1492,7 @@ final class DynamicLearningService
      *
      * @param array<string,mixed> $cfg
      * @param array<string,mixed> $epochMeta
-     * @return array{profile:array<string,mixed>,profile_id:string,rules_total:int,components_total:int,available:bool,missing_reason:string}
+     * @return array{profile:array<string,mixed>,profile_id:string,rules_total:int,components_total:int,available:bool,missing_reason:string,profile_written:bool}
      */
     private function makeCandidateProfileEmpty(
         array $cfg,
@@ -1511,7 +1527,7 @@ final class DynamicLearningService
             'status'                        => 'insufficient_data',
             'apply_mode'                    => 'observe_only',
             'candidate_profile_available'   => false,
-            'candidate_profile_missing_reason' => $missingReason,
+            'candidate_profile_missing_reason' => null,
         ];
 
         $profilePath = $this->storagePath('profiles/early_impulse_growth_long/candidate_profile.json');
@@ -1519,9 +1535,10 @@ final class DynamicLearningService
         if (!is_dir($profileDir)) {
             @mkdir($profileDir, 0755, true);
         }
+        $profileWritten = false;
         $jsonStr = json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if (is_string($jsonStr)) {
-            @file_put_contents($profilePath, $jsonStr, LOCK_EX);
+            $profileWritten = @file_put_contents($profilePath, $jsonStr, LOCK_EX) !== false;
         }
 
         return [
@@ -1531,7 +1548,20 @@ final class DynamicLearningService
             'components_total' => 0,
             'available'        => false,
             'missing_reason'   => $missingReason,
+            'profile_written'  => $profileWritten,
         ];
+    }
+
+    private function normalizeCandidateRulesMissingReason(string $reason): string
+    {
+        $normalized = strtolower(trim($reason));
+        if ($normalized === '' || $normalized === 'insufficient_data' || $normalized === 'no_epoch_outcomes') {
+            return 'insufficient_data';
+        }
+        if (in_array($normalized, ['no_candidate_rules_selected', 'no_rules_passed_selection_criteria'], true)) {
+            return 'no_candidate_rules_selected';
+        }
+        return 'insufficient_data';
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1795,6 +1825,7 @@ final class DynamicLearningService
             'replay_features_micro_missing_total'   => $featMicroMissing,
             'replay_features_link_method_counts'    => $featLinkMethodCounts,
             'replay_features_missing_examples'      => $featMissingExamples,
+            'replay_skipped_feature_link_reason'    => null,
             'replay_summary' => [
                 'bad_blocked'            => $badBlocked,
                 'good_blocked'           => $goodBlocked,
@@ -1869,6 +1900,7 @@ final class DynamicLearningService
             'replay_features_micro_missing_total'   => 0,
             'replay_features_link_method_counts'    => [],
             'replay_features_missing_examples'      => [],
+            'replay_skipped_feature_link_reason'    => $rulesTotal === 0 ? 'no_candidate_rules' : null,
             'replay_summary' => [
                 'bad_blocked'             => 0,
                 'good_blocked'            => 0,

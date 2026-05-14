@@ -350,10 +350,11 @@ final class ProfManagerService
             $roiSamplesDedupedTotal      = 0;
             $roiSamplesDuplicateExamples = [];
 
-            // Fast-demo PM profile diagnostic counters (long only)
+            // Real PM profile diagnostic counters (long only)
             $longCfg = $this->longProfile->getConfig();
-            $fastDemoActivationRoi = (float)($longCfg['activation_roi'] ?? 3.0);
-            $longPositionsAboveActivationTotal = 0;
+            $realActivationRoi = (float)($longCfg['activation_roi'] ?? 10.0);
+            $longPositionsAbove8Total = 0;
+            $longPositionsAbove10Total = 0;
             $longPmEligibleTotal = 0;
             $longPmSkippedBelowActivationTotal = 0;
 
@@ -629,10 +630,13 @@ final class ProfManagerService
 
                 // ── Long-profile impulse / grace diagnostic tracking ───────────
                 if ($side === 'long') {
-                    // Fast-demo PM profile counters
+                    // Real PM profile counters
                     $_longRoi = $profileResult['roi'] ?? null;
-                    if ($_longRoi !== null && (float)$_longRoi >= $fastDemoActivationRoi) {
-                        $longPositionsAboveActivationTotal++;
+                    if ($_longRoi !== null && (float)$_longRoi >= 8.0) {
+                        $longPositionsAbove8Total++;
+                    }
+                    if ($_longRoi !== null && (float)$_longRoi >= $realActivationRoi) {
+                        $longPositionsAbove10Total++;
                     }
                     $_longSkipReason = $profileResult['skip_reason'] ?? null;
                     if ($_longSkipReason === 'below_activation_roi' || $_longSkipReason === 'below_init_roi') {
@@ -1335,13 +1339,14 @@ final class ProfManagerService
                 'pm_floor_sync_skipped_examples'         => $floorSyncResult['pm_floor_sync_skipped_examples'],
                 'pm_floor_sync_failed_examples'          => $floorSyncResult['pm_floor_sync_failed_examples'],
                 'live_profit_floor_sync_skipped_disabled'=> $floorSyncResult['live_profit_floor_sync_skipped_disabled'] ?? false,
-                // Fast-demo PM profile diagnostics (long)
-                'fast_demo_pm_profile_enabled'           => true,
-                'fast_demo_pm_activation_roi'            => $fastDemoActivationRoi,
-                'fast_demo_pm_stop_pairing'              => 'long_stop_-5',
-                'long_positions_above_3_roi_total'       => $longPositionsAboveActivationTotal,
+                // Real PM profile diagnostics (long)
+                'real_pm_profile_enabled'                => true,
+                'real_pm_activation_roi'                 => $realActivationRoi,
+                'real_pm_stop_pairing'                   => 'long_stop_-15',
+                'long_positions_above_8_roi_total'       => $longPositionsAbove8Total,
+                'long_positions_above_10_roi_total'      => $longPositionsAbove10Total,
                 'long_positions_pm_eligible_total'       => $longPmEligibleTotal,
-                'long_positions_pm_skipped_below_3_total'=> $longPmSkippedBelowActivationTotal,
+                'long_positions_pm_skipped_below_10_total'=> $longPmSkippedBelowActivationTotal,
             ], $configSnapshot);
 
             $this->store->writeLastRun($result);

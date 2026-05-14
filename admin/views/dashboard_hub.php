@@ -2711,6 +2711,34 @@ ROWS;
         }
     }
 
+    // ── Real PM profile diagnostics ──────────────────────────────────────
+    $_realPmEnabled       = (bool)($pmRawLastRun['real_pm_profile_enabled']              ?? false);
+    $_realPmActivRoi      = (float)($pmRawLastRun['real_pm_activation_roi']              ?? 10.0);
+    $_realPmStopPairing   = (string)($pmRawLastRun['real_pm_stop_pairing']               ?? 'long_stop_-15');
+    $_longAbove8          = (int)($pmRawLastRun['long_positions_above_8_roi_total']      ?? 0);
+    $_longAbove10         = (int)($pmRawLastRun['long_positions_above_10_roi_total']     ?? 0);
+    $_longPmEligible      = (int)($pmRawLastRun['long_positions_pm_eligible_total']      ?? 0);
+    $_longPmSkippedBelow10= (int)($pmRawLastRun['long_positions_pm_skipped_below_10_total'] ?? 0);
+
+    $_realPmEnabledHtml = $_realPmEnabled
+        ? '<span style="color:#3fb950;">активен</span>'
+        : '<span style="color:#8b949e;">н/д</span>';
+
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;padding-top:6px;"><strong style="font-size:11px;">Real PM profile</strong></td>'
+        . '<td style="padding-top:6px;">' . $_realPmEnabledHtml . '</td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">real_pm_activation_roi</td>'
+        . '<td><code style="color:#f0883e;">' . $e($_realPmActivRoi) . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">real_pm_stop_pairing</td>'
+        . '<td><code style="color:#f85149;">' . $e($_realPmStopPairing) . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long positions ≥8 ROI</td>'
+        . '<td><code>' . $_longAbove8 . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long positions ≥10 ROI</td>'
+        . '<td><code>' . $_longAbove10 . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">PM eligible</td>'
+        . '<td><code>' . $_longPmEligible . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">PM skipped below 10</td>'
+        . '<td><code>' . $_longPmSkippedBelow10 . '</code></td></tr>';
+
     // ── PM per-position runtime table HTML ───────────────────────────────
     $pmPositionsTable = '';
     if (!empty($pmPositionsRuntime)) {

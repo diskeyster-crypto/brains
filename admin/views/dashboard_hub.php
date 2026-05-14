@@ -2540,7 +2540,7 @@ ROWS;
         . '<span style="color:var(--ui-text-muted);font-size:18px;align-self:center;">→</span>'
         . $scBadge('Cron', $scCronState, $scCronReason, 'dh-ctrl')
         . '<span style="color:var(--ui-text-muted);font-size:12px;margin:0 6px;align-self:center;">·</span>'
-        . $scBadge('DL', $scDlState, $scDlReason)
+        . '<a href="' . htmlspecialchars(System::web('admin/dynamic_learning/runtime'), ENT_QUOTES, 'UTF-8') . '" style="text-decoration:none;" title="Dynamic Learning — открыть Runtime">' . $scBadge('DL', $scDlState, $scDlReason) . '</a>'
         . '</div>';
 
     // ── Mode mismatch warning ─────────────────────────────────────────────
@@ -5664,6 +5664,7 @@ BLCK;
 
 <!-- ── Overview pane (default) ─────────────────────────────────────── -->
 <div id="dh-overview" class="dh-pane dh-visible">
+  {$dlBlockHtml}
   <div class="card" style="margin-bottom:16px;">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
       <span><i class="bi bi-layers" style="margin-right:6px;"></i>Стратегии — сводка</span>
@@ -5687,7 +5688,6 @@ BLCK;
   {$stratQualHtml}
   {$overviewPositionsHtml}
   {$closedPositionsHtml}
-  {$dlBlockHtml}
   {$modStripHtml}
   <div style="padding:10px 14px;margin-bottom:16px;background:rgba(240,136,62,.07);border:1px solid #f0883e44;border-radius:8px;font-size:12px;color:#f0883e;">
     <i class="bi bi-info-circle" style="margin-right:5px;"></i>

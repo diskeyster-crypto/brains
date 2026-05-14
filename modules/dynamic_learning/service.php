@@ -556,6 +556,14 @@ final class DynamicLearningService
         $result['candidate_blocked_good_examples'] = (array)($candidateReplay['blocked_good_examples'] ?? []);
         $result['candidate_kept_bad_examples'] = (array)($candidateReplay['kept_bad_examples'] ?? []);
         $result['candidate_kept_good_examples'] = (array)($candidateReplay['kept_good_examples'] ?? []);
+        // Feature linking diagnostics
+        $result['replay_features_loaded_total'] = (int)($candidateReplay['replay_features_loaded_total'] ?? 0);
+        $result['replay_features_linked_total'] = (int)($candidateReplay['replay_features_linked_total'] ?? 0);
+        $result['replay_features_missing_total'] = (int)($candidateReplay['replay_features_missing_total'] ?? 0);
+        $result['replay_features_micro_available_total'] = (int)($candidateReplay['replay_features_micro_available_total'] ?? 0);
+        $result['replay_features_micro_missing_total'] = (int)($candidateReplay['replay_features_micro_missing_total'] ?? 0);
+        $result['replay_features_link_method_counts'] = (array)($candidateReplay['replay_features_link_method_counts'] ?? []);
+        $result['replay_features_missing_examples'] = (array)($candidateReplay['replay_features_missing_examples'] ?? []);
 
         // If replay produced a meaningful candidate decision, override rolling guard's candidate fields
         if ((bool)($candidateReplay['candidate_replay_enabled'] ?? false) && $candidateReplay['candidate_quality_score'] !== null) {
@@ -1550,16 +1558,48 @@ final class DynamicLearningService
             return $result;
         }
 
+        // Load and index feature records for micro-feature joining
+        $featureIndex = $this->buildFeatureIndexForReplay();
+
         // Simulate replay
         $keptOutcomes      = [];
         $badBlocked = $goodBlocked = $exitIssueBlocked = $neutralBlocked = 0;
         $blockedBadEx = $blockedGoodEx = $keptBadEx = $keptGoodEx = [];
 
+        // Feature linking diagnostics
+        $featLinked = $featMissing = $featMicroAvail = $featMicroMissing = 0;
+        $featLinkMethodCounts = [];
+        $featMissingExamples  = [];
+
         foreach ($epochOutcomes as $o) {
             if (!is_array($o)) {
                 continue;
             }
-            $features  = $this->extractFeaturesFromOutcomeForReplay($o);
+            $extracted = $this->extractFeaturesFromOutcomeForReplay($o, $featureIndex);
+            $features  = $extracted['features'];
+            $linkMethod = $extracted['link_method'];
+
+            if ($linkMethod !== 'none' && $linkMethod !== 'coarse_fallback') {
+                $featLinked++;
+            } else {
+                $featMissing++;
+                if (count($featMissingExamples) < 10) {
+                    $featMissingExamples[] = [
+                        'symbol'           => (string)($o['symbol'] ?? ''),
+                        'signal_id'        => (string)($o['signal_id'] ?? ''),
+                        'snapshot_id'      => (string)($o['snapshot_id'] ?? ''),
+                        'learning_opened_at' => (string)($o['learning_opened_at'] ?? $o['opened_at'] ?? ''),
+                        'reason'           => $linkMethod,
+                    ];
+                }
+            }
+            $featLinkMethodCounts[$linkMethod] = ($featLinkMethodCounts[$linkMethod] ?? 0) + 1;
+            if ($extracted['micro_available']) {
+                $featMicroAvail++;
+            } else {
+                $featMicroMissing++;
+            }
+
             $riskScore = $this->computeCandidateRiskScore($features, $rules);
             $cls       = (string)($o['outcome_class'] ?? '');
             $decision  = $riskScore >= $blockThreshold ? 'would_block' : ($riskScore >= $demoThreshold ? 'demo_only' : 'pass');
@@ -1571,6 +1611,7 @@ final class DynamicLearningService
                 'max_drawdown_roi' => $o['normalized_max_drawdown_roi'] ?? $o['max_drawdown_roi'] ?? null,
                 'risk_score'   => $riskScore,
                 'decision'     => $decision,
+                'replay_feature_quality' => $extracted['feature_quality'],
             ];
 
             if ($decision === 'would_block') {
@@ -1678,6 +1719,14 @@ final class DynamicLearningService
             'blocked_good_examples'                 => $blockedGoodEx,
             'kept_bad_examples'                     => $keptBadEx,
             'kept_good_examples'                    => $keptGoodEx,
+            // Feature linking diagnostics
+            'replay_features_loaded_total'          => $featureIndex['records_total'],
+            'replay_features_linked_total'          => $featLinked,
+            'replay_features_missing_total'         => $featMissing,
+            'replay_features_micro_available_total' => $featMicroAvail,
+            'replay_features_micro_missing_total'   => $featMicroMissing,
+            'replay_features_link_method_counts'    => $featLinkMethodCounts,
+            'replay_features_missing_examples'      => $featMissingExamples,
             'replay_summary' => [
                 'bad_blocked'            => $badBlocked,
                 'good_blocked'           => $goodBlocked,
@@ -1738,6 +1787,13 @@ final class DynamicLearningService
             'blocked_good_examples'                 => [],
             'kept_bad_examples'                     => [],
             'kept_good_examples'                    => [],
+            'replay_features_loaded_total'          => 0,
+            'replay_features_linked_total'          => 0,
+            'replay_features_missing_total'         => 0,
+            'replay_features_micro_available_total' => 0,
+            'replay_features_micro_missing_total'   => 0,
+            'replay_features_link_method_counts'    => [],
+            'replay_features_missing_examples'      => [],
             'replay_summary' => [
                 'bad_blocked'             => 0,
                 'good_blocked'            => 0,
@@ -1795,35 +1851,212 @@ final class DynamicLearningService
 
     /**
      * Extract entry features from a closed outcome for replay scoring.
-     * Mirrors PatternMiner::extractFeaturesFromOutcome logic.
+     * Joins with the feature index (from features.json) so that real Bybit
+     * micro-analysis fields (candle windows, impulse scores, etc.) are available.
+     *
+     * Priority:
+     *  1. Matching feature record from features.json (snapshot_id > signal_id > ssk > symbol+side+time)
+     *  2. outcome.entry_snapshot.entry_features
+     *  3. outcome.entry_snapshot.strategy_signal_context fallback
      *
      * @param array<string,mixed> $outcome
-     * @return array<string,mixed>
+     * @param array<string,mixed> $featureIndex  From buildFeatureIndexForReplay()
+     * @return array{features:array<string,mixed>,link_method:string,micro_available:bool,feature_quality:string}
      */
-    private function extractFeaturesFromOutcomeForReplay(array $outcome): array
+    private function extractFeaturesFromOutcomeForReplay(array $outcome, array $featureIndex = []): array
     {
-        $f = (array)($outcome['entry_snapshot']['entry_features'] ?? []);
-        if ($f !== []) {
-            // Normalise micro-window dot-paths (candle_micro_windows sub-keys)
-            foreach ((array)($f['candle_micro_windows'] ?? []) as $window => $stats) {
+        $featureRecord = null;
+        $linkMethod    = 'none';
+
+        if ($featureIndex !== []) {
+            // Tier 1: snapshot_id
+            $snapId = trim((string)($outcome['snapshot_id'] ?? ''));
+            if ($snapId !== '' && isset($featureIndex['by_snapshot'][$snapId])) {
+                $featureRecord = $featureIndex['by_snapshot'][$snapId];
+                $linkMethod    = 'snapshot_id';
+            }
+
+            // Tier 2: signal_id
+            if ($featureRecord === null) {
+                $sigId = trim((string)($outcome['signal_id'] ?? ''));
+                if ($sigId !== '' && isset($featureIndex['by_signal'][$sigId])) {
+                    $featureRecord = $featureIndex['by_signal'][$sigId];
+                    $linkMethod    = 'signal_id';
+                }
+            }
+
+            // Tier 3: strategy_signal_key
+            if ($featureRecord === null) {
+                $ssk = trim((string)($outcome['strategy_signal_key'] ?? ''));
+                if ($ssk !== '' && isset($featureIndex['by_ssk'][$ssk])) {
+                    $featureRecord = $featureIndex['by_ssk'][$ssk];
+                    $linkMethod    = 'ssk';
+                }
+            }
+
+            // Tier 4: symbol + side + normalised time
+            if ($featureRecord === null) {
+                $sym  = strtoupper(trim((string)($outcome['symbol'] ?? '')));
+                $side = strtolower(trim((string)($outcome['side'] ?? '')));
+                $ts   = $this->normalizeTimestamp(
+                    $outcome['learning_opened_at'] ?? $outcome['opened_at'] ?? ''
+                );
+                $timeKey = $sym . '|' . $side . '|' . $ts;
+                if ($sym !== '' && $ts !== '' && isset($featureIndex['by_time'][$timeKey])) {
+                    $featureRecord = $featureIndex['by_time'][$timeKey];
+                    $linkMethod    = 'symbol_side_time';
+                }
+            }
+        }
+
+        // Build base feature packet from entry_snapshot
+        $f   = (array)($outcome['entry_snapshot']['entry_features'] ?? []);
+        $ctx = (array)($outcome['entry_snapshot']['strategy_signal_context'] ?? []);
+
+        // Merge feature record on top (feature record wins for micro fields)
+        if ($featureRecord !== null) {
+            // Fields from the feature record that carry micro data
+            $microFields = [
+                'single_candle_dominance_pct', 'largest_candle_share_pct',
+                'largest_candle_change_pct', 'higher_close_count', 'higher_low_count',
+                'lower_close_count', 'lower_low_count', 'direction_flip_count',
+                'pullback_max_pct', 'pullback_count', 'avg_body_pct',
+                'avg_upper_wick_pct', 'avg_lower_wick_pct',
+                'max_upper_wick_pct', 'max_lower_wick_pct',
+                'smoothness_score', 'acceleration_score', 'impulse_birth_score',
+                'late_spike_risk_score', 'bounce_only_risk_score',
+                'entry_quality_micro_score', 'impulse_birth_after_dump_score',
+                'dump_shape', 'post_dump_state', 'post_dump_impulse_type',
+                'candle_micro_windows',
+                'micro_impulse_shape', 'micro_entry_timing', 'micro_growth_distribution',
+                'micro_rejection_risk', 'micro_primary_window',
+                'micro_single_candle_dominance_pct', 'micro_pullback_max_pct',
+                'micro_smoothness_score', 'micro_impulse_birth_score',
+                'micro_late_spike_risk_score', 'micro_direction_flip_count',
+                'micro_higher_close_count', 'micro_higher_low_count',
+                'micro_largest_candle_share_pct',
+                'dynamic_risk_score', 'dynamic_quality_score',
+                'dump_verticality_score', 'dump_rebound_after_low_pct',
+                // Coarse context preserved
+                'context_phase', 'context_quality', 'wave_regime',
+                'ask_wall_risk', 'bid_support_quality',
+                'open_interest_confirmed', 'open_interest_growth_pct',
+            ];
+            foreach ($microFields as $field) {
+                if (array_key_exists($field, $featureRecord) && $featureRecord[$field] !== null) {
+                    $f[$field] = $featureRecord[$field];
+                }
+            }
+            // Expose candle_micro_windows sub-keys as top-level aliases
+            foreach ((array)($featureRecord['candle_micro_windows'] ?? []) as $window => $stats) {
                 if (is_array($stats)) {
                     $f[(string)$window] = $stats;
                 }
             }
-            // Field aliases
-            if (!array_key_exists('single_candle_dominance_pct', $f) && array_key_exists('micro_single_candle_dominance_pct', $f)) {
-                $f['single_candle_dominance_pct'] = $f['micro_single_candle_dominance_pct'];
+        } else {
+            // No feature record found — use coarse entry_snapshot only
+            if ($f === [] && $ctx !== []) {
+                require_once $this->moduleDir . '/analyzers/outcome/outcome_classifier.php';
+                $f = \Modules\DynamicLearning\Analyzers\Outcome\OutcomeClassifier::extractEntryFeatures($ctx);
+                $linkMethod = 'coarse_fallback';
+            } elseif ($f !== []) {
+                $linkMethod = 'coarse_fallback';
             }
-            return $f;
         }
 
-        // Fall back to strategy_signal_context features
-        $ctx = (array)($outcome['entry_snapshot']['strategy_signal_context'] ?? []);
-        if ($ctx !== []) {
-            require_once $this->moduleDir . '/analyzers/outcome/outcome_classifier.php';
-            return \Modules\DynamicLearning\Analyzers\Outcome\OutcomeClassifier::extractEntryFeatures($ctx);
+        // Normalise micro-window dot-paths already embedded in entry_features
+        foreach ((array)($f['candle_micro_windows'] ?? []) as $window => $stats) {
+            if (is_array($stats) && !array_key_exists((string)$window, $f)) {
+                $f[(string)$window] = $stats;
+            }
         }
-        return [];
+
+        // Field alias: micro_single_candle_dominance_pct → single_candle_dominance_pct
+        if (!array_key_exists('single_candle_dominance_pct', $f) && array_key_exists('micro_single_candle_dominance_pct', $f)) {
+            $f['single_candle_dominance_pct'] = $f['micro_single_candle_dominance_pct'];
+        }
+
+        $microAvailable = isset($f['candle_micro_windows']) && is_array($f['candle_micro_windows']) && $f['candle_micro_windows'] !== []
+            || isset($f['single_candle_dominance_pct'])
+            || isset($f['late_spike_risk_score'])
+            || isset($f['impulse_birth_score']);
+
+        $featureQuality = ($featureRecord !== null)
+            ? (((bool)($featureRecord['candle_micro_real'] ?? false) || (bool)($featureRecord['dump_micro_real'] ?? false))
+                ? 'real_micro'
+                : 'feature_record_proxy')
+            : 'coarse_fallback';
+
+        if ($f === []) {
+            $linkMethod     = 'none';
+            $featureQuality = 'no_features';
+        }
+
+        return [
+            'features'        => $f,
+            'link_method'     => $linkMethod,
+            'micro_available' => $microAvailable,
+            'feature_quality' => $featureQuality,
+        ];
+    }
+
+    /**
+     * Load storage/features/early_impulse_growth_long/features.json and build lookup indexes.
+     *
+     * Indexes built:
+     *  - by_snapshot  : snapshot_id → record
+     *  - by_signal    : signal_id → record (first seen wins)
+     *  - by_ssk       : strategy_signal_key → record
+     *  - by_time      : symbol|side|normalised_opened_at → record
+     *
+     * @return array{records_total:int,by_snapshot:array<string,array>,by_signal:array<string,array>,by_ssk:array<string,array>,by_time:array<string,array>}
+     */
+    private function buildFeatureIndexForReplay(): array
+    {
+        $index = [
+            'records_total' => 0,
+            'by_snapshot'   => [],
+            'by_signal'     => [],
+            'by_ssk'        => [],
+            'by_time'       => [],
+        ];
+
+        $featurePath = $this->storagePath('features/early_impulse_growth_long/features.json');
+        $rows        = (array)$this->readJson($featurePath, []);
+
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $index['records_total']++;
+
+            $snapId = trim((string)($row['snapshot_id'] ?? ''));
+            if ($snapId !== '') {
+                $index['by_snapshot'][$snapId] = $row;
+            }
+
+            $sigId = trim((string)($row['signal_id'] ?? ''));
+            if ($sigId !== '' && !isset($index['by_signal'][$sigId])) {
+                $index['by_signal'][$sigId] = $row;
+            }
+
+            $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
+            if ($ssk !== '' && !isset($index['by_ssk'][$ssk])) {
+                $index['by_ssk'][$ssk] = $row;
+            }
+
+            $sym  = strtoupper(trim((string)($row['symbol'] ?? '')));
+            $side = strtolower(trim((string)($row['side'] ?? '')));
+            $ts   = $this->normalizeTimestamp($row['learning_opened_at'] ?? $row['entry_time'] ?? '');
+            if ($sym !== '' && $ts !== '') {
+                $timeKey = $sym . '|' . $side . '|' . $ts;
+                if (!isset($index['by_time'][$timeKey])) {
+                    $index['by_time'][$timeKey] = $row;
+                }
+            }
+        }
+
+        return $index;
     }
 
     /**

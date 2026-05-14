@@ -72,6 +72,124 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     <label>real_learning_epoch_start_at <input type="text" class="form-control" value="<?= $e((string)($cfg['real_learning_epoch_start_at'] ?? 'null')) ?>" readonly></label>
     <label>ignore_fast_demo_outcomes_in_real_profile <input type="text" class="form-control" value="<?= $e(!empty($cfg['ignore_fast_demo_outcomes_in_real_profile']) ? 'true' : 'false') ?>" readonly></label>
     <label>preserve_fast_demo_history <input type="text" class="form-control" value="<?= $e(!empty($cfg['preserve_fast_demo_history']) ? 'true' : 'false') ?>" readonly></label>
+
+    <hr style="border-color:var(--ui-border);margin:8px 0;">
+    <h5 style="margin:4px 0;color:#a5b4fc;">Rolling Learning Guard</h5>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <label>rolling_learning_enabled
+        <select name="rolling_learning_enabled" class="form-control">
+          <option value="1" <?= !empty($cfg['rolling_learning_enabled']) ? 'selected' : '' ?>>true</option>
+          <option value="0" <?= empty($cfg['rolling_learning_enabled']) ? 'selected' : '' ?>>false</option>
+        </select>
+      </label>
+      <label>rolling_learning_window_minutes
+        <input type="number" class="form-control" name="rolling_learning_window_minutes" value="<?= $e((int)($cfg['rolling_learning_window_minutes'] ?? 120)) ?>">
+      </label>
+      <label>rolling_retrain_interval_minutes
+        <input type="number" class="form-control" name="rolling_retrain_interval_minutes" value="<?= $e((int)($cfg['rolling_retrain_interval_minutes'] ?? 60)) ?>">
+      </label>
+      <label>rolling_min_closed_outcomes
+        <input type="number" class="form-control" name="rolling_min_closed_outcomes" value="<?= $e((int)($cfg['rolling_min_closed_outcomes'] ?? 20)) ?>">
+      </label>
+      <label>rolling_min_bad_entries
+        <input type="number" class="form-control" name="rolling_min_bad_entries" value="<?= $e((int)($cfg['rolling_min_bad_entries'] ?? 3)) ?>">
+      </label>
+      <label>rolling_min_good_entries
+        <input type="number" class="form-control" name="rolling_min_good_entries" value="<?= $e((int)($cfg['rolling_min_good_entries'] ?? 3)) ?>">
+      </label>
+    </div>
+
+    <hr style="border-color:var(--ui-border);margin:8px 0;">
+    <h5 style="margin:4px 0;color:#fcd34d;">Quality Guard Thresholds</h5>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <label>min_candidate_improvement_pct
+        <input type="number" step="0.1" class="form-control" name="min_candidate_improvement_pct" value="<?= $e((float)($cfg['min_candidate_improvement_pct'] ?? 7.0)) ?>">
+      </label>
+      <label>no_change_band_pct
+        <input type="number" step="0.1" class="form-control" name="no_change_band_pct" value="<?= $e((float)($cfg['no_change_band_pct'] ?? 5.0)) ?>">
+      </label>
+      <label>max_allowed_quality_degradation_pct
+        <input type="number" step="0.1" class="form-control" name="max_allowed_quality_degradation_pct" value="<?= $e((float)($cfg['max_allowed_quality_degradation_pct'] ?? 10.0)) ?>">
+      </label>
+      <label>max_allowed_winrate_degradation_pct
+        <input type="number" step="0.1" class="form-control" name="max_allowed_winrate_degradation_pct" value="<?= $e((float)($cfg['max_allowed_winrate_degradation_pct'] ?? 10.0)) ?>">
+      </label>
+      <label>max_allowed_avg_roi_degradation_pct
+        <input type="number" step="0.1" class="form-control" name="max_allowed_avg_roi_degradation_pct" value="<?= $e((float)($cfg['max_allowed_avg_roi_degradation_pct'] ?? 10.0)) ?>">
+      </label>
+      <label>max_allowed_bad_entry_rate_increase_pct
+        <input type="number" step="0.1" class="form-control" name="max_allowed_bad_entry_rate_increase_pct" value="<?= $e((float)($cfg['max_allowed_bad_entry_rate_increase_pct'] ?? 10.0)) ?>">
+      </label>
+      <label>max_allowed_drawdown_increase_pct
+        <input type="number" step="0.1" class="form-control" name="max_allowed_drawdown_increase_pct" value="<?= $e((float)($cfg['max_allowed_drawdown_increase_pct'] ?? 10.0)) ?>">
+      </label>
+    </div>
+
+    <hr style="border-color:var(--ui-border);margin:8px 0;">
+    <h5 style="margin:4px 0;color:#86efac;">Quality Score Weights</h5>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <label>quality_weight_good_capture
+        <input type="number" step="0.1" class="form-control" name="quality_weight_good_capture" value="<?= $e((float)($cfg['quality_weight_good_capture'] ?? 1.0)) ?>">
+      </label>
+      <label>quality_weight_avg_roi
+        <input type="number" step="0.1" class="form-control" name="quality_weight_avg_roi" value="<?= $e((float)($cfg['quality_weight_avg_roi'] ?? 1.0)) ?>">
+      </label>
+      <label>quality_weight_bad_entry
+        <input type="number" step="0.1" class="form-control" name="quality_weight_bad_entry" value="<?= $e((float)($cfg['quality_weight_bad_entry'] ?? 1.5)) ?>">
+      </label>
+      <label>quality_weight_drawdown
+        <input type="number" step="0.1" class="form-control" name="quality_weight_drawdown" value="<?= $e((float)($cfg['quality_weight_drawdown'] ?? 1.0)) ?>">
+      </label>
+      <label>quality_weight_entry_ok_exit_issue
+        <input type="number" step="0.1" class="form-control" name="quality_weight_entry_ok_exit_issue" value="<?= $e((float)($cfg['quality_weight_entry_ok_exit_issue'] ?? 0.5)) ?>">
+      </label>
+    </div>
+
+    <hr style="border-color:var(--ui-border);margin:8px 0;">
+    <h5 style="margin:4px 0;color:#f87171;">Rollback Guard</h5>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <label>rollback_guard_enabled
+        <select name="rollback_guard_enabled" class="form-control">
+          <option value="1" <?= !empty($cfg['rollback_guard_enabled']) ? 'selected' : '' ?>>true</option>
+          <option value="0" <?= empty($cfg['rollback_guard_enabled']) ? 'selected' : '' ?>>false</option>
+        </select>
+      </label>
+      <label>rollback_cooldown_minutes
+        <input type="number" class="form-control" name="rollback_cooldown_minutes" value="<?= $e((int)($cfg['rollback_cooldown_minutes'] ?? 120)) ?>">
+      </label>
+      <label>rollback_to
+        <select name="rollback_to" class="form-control">
+          <option value="previous_good_or_default" <?= (($cfg['rollback_to'] ?? 'previous_good_or_default') === 'previous_good_or_default') ? 'selected' : '' ?>>previous_good_or_default</option>
+          <option value="default_config" <?= (($cfg['rollback_to'] ?? '') === 'default_config') ? 'selected' : '' ?>>default_config</option>
+        </select>
+      </label>
+    </div>
+
+    <hr style="border-color:var(--ui-border);margin:8px 0;">
+    <h5 style="margin:4px 0;color:#94a3b8;">Apply Guard</h5>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <label>auto_apply_to_demo_enabled
+        <select name="auto_apply_to_demo_enabled" class="form-control">
+          <option value="0" <?= empty($cfg['auto_apply_to_demo_enabled']) ? 'selected' : '' ?>>false</option>
+          <option value="1" <?= !empty($cfg['auto_apply_to_demo_enabled']) ? 'selected' : '' ?>>true</option>
+        </select>
+      </label>
+      <label>auto_apply_to_live_enabled <span style="color:#f85149;font-size:11px;">(always false)</span>
+        <input type="text" class="form-control" value="false" readonly>
+      </label>
+      <label>require_not_worse_than_default
+        <select name="require_not_worse_than_default" class="form-control">
+          <option value="1" <?= !empty($cfg['require_not_worse_than_default']) ? 'selected' : '' ?>>true</option>
+          <option value="0" <?= empty($cfg['require_not_worse_than_default']) ? 'selected' : '' ?>>false</option>
+        </select>
+      </label>
+    </div>
+
     <button type="submit" class="btn btn-primary">Save</button>
   </form>
 </div>

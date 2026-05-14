@@ -44,6 +44,21 @@ if ($action === 'save_config') {
         'bad_drawdown_roi_threshold', 'hard_stop_reference_roi', 'good_close_roi_threshold', 'good_max_profit_roi_threshold', 'stop_slippage_buffer_roi', 'neutral_close_roi_min', 'neutral_close_roi_max',
         'min_closed_outcomes_for_profile', 'min_bad_entries_for_rule', 'min_bad_blocked_for_rule', 'max_good_blocked_for_rule', 'min_rule_net_score',
         'rollback_guard_enabled', 'rollback_drawdown_pct', 'rollback_bad_trade_streak', 'profile_history_enabled',
+        // Rolling learning guard
+        'rolling_learning_enabled', 'rolling_learning_window_minutes', 'rolling_retrain_interval_minutes',
+        'rolling_min_closed_outcomes', 'rolling_min_bad_entries', 'rolling_min_good_entries',
+        // Quality guard thresholds
+        'min_candidate_improvement_pct', 'no_change_band_pct',
+        'max_allowed_quality_degradation_pct', 'max_allowed_winrate_degradation_pct',
+        'max_allowed_avg_roi_degradation_pct', 'max_allowed_bad_entry_rate_increase_pct',
+        'max_allowed_drawdown_increase_pct',
+        // Quality score weights
+        'quality_weight_good_capture', 'quality_weight_avg_roi', 'quality_weight_bad_entry',
+        'quality_weight_drawdown', 'quality_weight_entry_ok_exit_issue',
+        // Rollback guard
+        'rollback_cooldown_minutes', 'rollback_to',
+        // Apply guard
+        'auto_apply_to_demo_enabled', 'require_not_worse_than_default',
     ];
     $out = [];
     foreach ($keys as $k) {

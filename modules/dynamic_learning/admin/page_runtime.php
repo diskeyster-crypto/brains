@@ -291,6 +291,130 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     </div>
   </div>
 
+  <!-- ── Rolling Quality Guard ─────────────────────────────────────────── -->
+  <div style="border:1px solid #a5b4fc44;border-radius:10px;padding:14px;background:rgba(165,180,252,.05);">
+    <div style="font-size:13px;font-weight:700;color:#a5b4fc;margin-bottom:10px;">
+      <i class="bi bi-shield-check" style="margin-right:6px;"></i>Rolling Quality Guard
+    </div>
+
+    <!-- Rolling window counters -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px;">
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_learning_enabled</div>
+        <div style="font-weight:600;"><?= $e((bool)($run['rolling_learning_enabled'] ?? false) ? 'true' : 'false') ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">window_minutes</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_learning_window_minutes'] ?? 120)) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_window_outcomes</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_window_outcomes_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_window_bad</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_window_bad_entry_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_window_good</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_window_good_entry_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_window_exit_issue</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_window_entry_ok_exit_issue_total'] ?? 0)) ?></div>
+      </div>
+    </div>
+
+    <!-- Quality scores comparison -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px;">
+      <div style="background:#14532d;color:#86efac;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">default_quality_score</div>
+        <div style="font-weight:600;"><?= $e($run['default_quality_score'] ?? 'n/a') ?></div>
+      </div>
+      <div style="background:#1e3a5f;color:#93c5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">active_dynamic_quality_score</div>
+        <div style="font-weight:600;"><?= $e($run['active_dynamic_quality_score'] ?? 'none') ?></div>
+      </div>
+      <div style="background:#1e3a5f;color:#93c5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">candidate_quality_score</div>
+        <div style="font-weight:600;"><?= $e($run['candidate_quality_score'] ?? 'n/a') ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">candidate_vs_default_delta</div>
+        <div style="font-weight:600;"><?= $e($run['candidate_vs_default_delta_pct'] ?? 'n/a') ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">no_change_band</div>
+        <div style="font-weight:600;">±<?= $e((float)($run['no_change_band_pct'] ?? 5.0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">min_improvement_required</div>
+        <div style="font-weight:600;">+<?= $e((float)($run['min_candidate_improvement_pct'] ?? 7.0)) ?></div>
+      </div>
+    </div>
+
+    <!-- Decision block -->
+    <?php
+    $candStatus = (string)($run['candidate_status'] ?? 'pending');
+    $promoDecision = (string)($run['promotion_decision'] ?? 'none');
+    $promoReason = (string)($run['promotion_reason'] ?? '');
+    $decisionColor = match($promoDecision) {
+        'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#86efac',
+        'reject_candidate' => '#f87171',
+        'keep_current' => '#fcd34d',
+        default => '#94a3b8',
+    };
+    ?>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:10px;">
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">candidate_status</div>
+        <div style="font-weight:600;color:#c4b5fd;"><?= $e($candStatus) ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">promotion_decision</div>
+        <div style="font-weight:600;color:<?= $decisionColor ?>;"><?= $e($promoDecision) ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">promotion_reason</div>
+        <div style="font-weight:600;color:#94a3b8;font-size:12px;"><?= $e($promoReason !== '' ? $promoReason : '—') ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">auto_apply_to_demo</div>
+        <div style="font-weight:600;color:<?= (bool)($run['auto_apply_to_demo_enabled'] ?? false) ? '#86efac' : '#94a3b8' ?>;">
+          <?= $e((bool)($run['auto_apply_to_demo_enabled'] ?? false) ? 'true' : 'false') ?>
+        </div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">require_not_worse_than_default</div>
+        <div style="font-weight:600;color:#94a3b8;"><?= $e((bool)($run['require_not_worse_than_default'] ?? true) ? 'true' : 'false') ?></div>
+      </div>
+    </div>
+
+    <!-- Rollback block -->
+    <?php
+    $rollbackReq = (bool)($run['rollback_required'] ?? false);
+    $rollbackColor = $rollbackReq ? '#f87171' : '#86efac';
+    ?>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
+      <div style="background:#0f172a;border-radius:7px;padding:8px;border-left:3px solid <?= $rollbackColor ?>;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">rollback_required</div>
+        <div style="font-weight:600;color:<?= $rollbackColor ?>;"><?= $e($rollbackReq ? 'YES' : 'no') ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">rollback_reason</div>
+        <div style="font-weight:600;color:#94a3b8;font-size:12px;"><?= $e((string)($run['rollback_reason'] ?? '—')) ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">rollback_cooldown_until</div>
+        <div style="font-weight:600;color:#94a3b8;font-size:12px;"><?= $e((string)($run['rollback_cooldown_until'] ?? '—')) ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">rollback_action</div>
+        <div style="font-weight:600;color:#94a3b8;font-size:12px;"><?= $e((string)($run['rollback_action'] ?? '—')) ?></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Storage status -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
     <div style="background:#1c1917;color:#d6d3d1;border-radius:8px;padding:10px;">

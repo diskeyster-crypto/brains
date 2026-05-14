@@ -103,6 +103,39 @@ return [
     'supported_strategy_ids' => ['early_impulse_growth_long'],
     'active_strategy_id' => 'early_impulse_growth_long',
 
+    // Rolling learning guard
+    'rolling_learning_enabled' => true,
+    'rolling_learning_window_minutes' => 120,
+    'rolling_retrain_interval_minutes' => 60,
+    'rolling_min_closed_outcomes' => 20,
+    'rolling_min_bad_entries' => 3,
+    'rolling_min_good_entries' => 3,
+
+    // Quality guard thresholds
+    'min_candidate_improvement_pct' => 7.0,
+    'no_change_band_pct' => 5.0,
+    'max_allowed_quality_degradation_pct' => 10.0,
+    'max_allowed_winrate_degradation_pct' => 10.0,
+    'max_allowed_avg_roi_degradation_pct' => 10.0,
+    'max_allowed_bad_entry_rate_increase_pct' => 10.0,
+    'max_allowed_drawdown_increase_pct' => 10.0,
+
+    // Quality score weights
+    'quality_weight_good_capture' => 1.0,
+    'quality_weight_avg_roi' => 1.0,
+    'quality_weight_bad_entry' => 1.5,
+    'quality_weight_drawdown' => 1.0,
+    'quality_weight_entry_ok_exit_issue' => 0.5,
+
+    // Rollback guard
+    'rollback_cooldown_minutes' => 120,
+    'rollback_to' => 'previous_good_or_default',
+
+    // Apply guard
+    'auto_apply_to_demo_enabled' => false,
+    'auto_apply_to_live_enabled' => false,
+    'require_not_worse_than_default' => true,
+
     // Storage limits
     'max_storage_size_mb' => 150,
     'max_cycle_history_lines' => 1000,
@@ -112,4 +145,6 @@ return [
     'max_closed_outcomes' => 1000,
     'max_active_observation_files' => 500,
     'max_examples_per_last_run_section' => 10,
+    'max_candidate_history_records' => 500,
+    'max_rollback_history_records' => 200,
 ];

@@ -22,13 +22,14 @@ return [
     'observe_open_interest_enabled' => true,
     'observe_price_enabled' => true,
 
-    'risk_profile_mode' => 'fast_demo',
-    'bad_drawdown_roi_threshold' => -2.5,
-    'hard_stop_reference_roi' => -5.0,
-    'good_close_roi_threshold' => 3.0,
-    'good_max_profit_roi_threshold' => 3.0,
-    'stop_slippage_buffer_roi' => 2.5,
-    'outcome_classification_profile' => 'fast_demo_corridor_3_5',
+    'risk_profile_mode' => 'working_real',
+    'bad_drawdown_roi_threshold' => -12.0,
+    'hard_stop_reference_roi' => -15.0,
+    'good_close_roi_threshold' => 8.0,
+    'good_max_profit_roi_threshold' => 8.0,
+    'stop_slippage_buffer_roi' => 3.0,
+    'pm_profit_reference_roi' => 10.0,
+    'outcome_classification_profile' => 'working_real_8_15',
     'neutral_close_roi_min' => -2.0,
     'neutral_close_roi_max' => 2.0,
 
@@ -85,7 +86,14 @@ return [
     'dump_micro_min_candles' => 10,
     'micro_primary_window' => 'micro_window_10m',
 
-    // Micro-learning epoch: separate pre-reset outcomes from new post-reset micro features
+    // Real-learning epoch: keep fast-demo history but exclude it from active real profile mining
+    'real_learning_epoch_enabled' => true,
+    'real_learning_epoch_start_at' => null,
+    'real_learning_epoch_id' => 'auto',
+    'ignore_fast_demo_outcomes_in_real_profile' => true,
+    'preserve_fast_demo_history' => true,
+
+    // Backward-compatible micro-learning keys (kept for existing runtime consumers)
     'micro_learning_epoch_enabled' => true,
     'micro_learning_epoch_id' => 'auto',
     'micro_learning_ignore_legacy_outcomes_before_epoch' => true,

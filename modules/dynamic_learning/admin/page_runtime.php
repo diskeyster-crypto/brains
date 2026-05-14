@@ -59,6 +59,10 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-weight:600;"><?= $e((float)($run['good_learning_threshold_roi'] ?? 0.0)) ?></div>
     </div>
     <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
+      <div style="font-size:12px;opacity:.8;">PM profit reference ROI</div>
+      <div style="font-weight:600;"><?= $e((float)($run['pm_profit_reference_roi'] ?? 0.0)) ?></div>
+    </div>
+    <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">bad_entry_total</div>
       <div style="font-weight:600;"><?= $e((int)($run['bad_entry_total'] ?? 0)) ?></div>
     </div>
@@ -208,19 +212,19 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     </div>
   </div>
 
-  <!-- Micro-learning epoch diagnostics -->
+  <!-- Real-learning epoch diagnostics -->
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
     <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">micro_learning_epoch_enabled</div>
-      <div style="font-weight:600;"><?= $e((bool)($run['micro_learning_epoch_enabled'] ?? false) ? 'true' : 'false') ?></div>
+      <div style="font-size:12px;opacity:.8;">real_learning_epoch_enabled</div>
+      <div style="font-weight:600;"><?= $e((bool)($run['real_learning_epoch_enabled'] ?? ($run['micro_learning_epoch_enabled'] ?? false)) ? 'true' : 'false') ?></div>
     </div>
     <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">micro_learning_epoch_id</div>
-      <div style="font-weight:600;"><?= $e((string)($run['micro_learning_epoch_id'] ?? 'n/a')) ?></div>
+      <div style="font-size:12px;opacity:.8;">real_learning_epoch_id</div>
+      <div style="font-weight:600;"><?= $e((string)($run['real_learning_epoch_id'] ?? $run['micro_learning_epoch_id'] ?? 'n/a')) ?></div>
     </div>
     <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">micro_learning_epoch_start_at</div>
-      <div style="font-weight:600;"><?= $e((string)($run['micro_learning_epoch_start_at'] ?? 'n/a')) ?></div>
+      <div style="font-size:12px;opacity:.8;">real_learning_epoch_start_at</div>
+      <div style="font-weight:600;"><?= $e((string)($run['real_learning_epoch_start_at'] ?? $run['micro_learning_epoch_start_at'] ?? 'n/a')) ?></div>
     </div>
     <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">epoch_start_source</div>
@@ -231,12 +235,12 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-weight:600;"><?= $e((string)($run['epoch_start_missing_reason'] ?? 'none')) ?></div>
     </div>
     <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">legacy_outcomes_total</div>
-      <div style="font-weight:600;"><?= $e((int)($run['legacy_outcomes_total'] ?? 0)) ?></div>
+      <div style="font-size:12px;opacity:.8;">previous_epoch_outcomes_excluded_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['previous_epoch_outcomes_excluded_total'] ?? $run['legacy_outcomes_total'] ?? 0)) ?></div>
     </div>
     <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">epoch_outcomes_total</div>
-      <div style="font-weight:600;"><?= $e((int)($run['epoch_outcomes_total'] ?? 0)) ?></div>
+      <div style="font-size:12px;opacity:.8;">active_epoch_outcomes_total</div>
+      <div style="font-weight:600;"><?= $e((int)($run['active_epoch_outcomes_total'] ?? $run['epoch_outcomes_total'] ?? 0)) ?></div>
     </div>
     <div style="background:#1e1b4b;color:#a5b4fc;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">outcomes_excluded_by_epoch_total</div>
@@ -380,5 +384,4 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     <div style="font-size:12px;opacity:.8;margin-bottom:8px;">storage_prune_examples</div>
     <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['storage_prune_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
   </div>
-  <pre style="margin:0;background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;overflow:auto;"><?= $e(json_encode($run, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
 </div>

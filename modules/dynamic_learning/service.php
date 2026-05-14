@@ -112,8 +112,8 @@ final class DynamicLearningService
             'entry_ok_exit_issue_total' => 0,
             'neutral_total' => 0,
             'outcome_incomplete_total' => 0,
-            'risk_profile_mode' => (string)($cfg['risk_profile_mode'] ?? 'fast_demo'),
-            'outcome_classification_profile' => (string)($cfg['outcome_classification_profile'] ?? 'standard_stop_10'),
+            'risk_profile_mode' => (string)($cfg['risk_profile_mode'] ?? 'working_real'),
+            'outcome_classification_profile' => (string)($cfg['outcome_classification_profile'] ?? 'working_real_8_15'),
             'closed_outcome_dedupe_closed_at_tolerance_seconds' => (int)($cfg['closed_outcome_dedupe_closed_at_tolerance_seconds'] ?? 0),
             'closed_outcome_time_tolerance_enabled' => (bool)($cfg['closed_outcome_dedupe_use_time_tolerance'] ?? false),
             'effective_bad_drawdown_roi_threshold' => (float)($cfg['bad_drawdown_roi_threshold'] ?? -10.0),
@@ -121,6 +121,7 @@ final class DynamicLearningService
             'effective_good_max_profit_roi_threshold' => (float)($cfg['good_max_profit_roi_threshold'] ?? 5.0),
             'hard_stop_reference_roi' => (float)($cfg['hard_stop_reference_roi'] ?? -10.0),
             'stop_slippage_buffer_roi' => (float)($cfg['stop_slippage_buffer_roi'] ?? 2.0),
+            'pm_profit_reference_roi' => (float)($cfg['pm_profit_reference_roi'] ?? 10.0),
             'stop_profile_alignment' => (string)($cfg['stop_profile_alignment'] ?? ($cfg['outcome_classification_profile'] ?? 'standard_stop_10')),
             'learning_corridor_enabled' => (bool)($cfg['learning_corridor_enabled'] ?? false),
             'bad_learning_zone_roi' => (float)($cfg['bad_drawdown_roi_threshold'] ?? -10.0),
@@ -191,6 +192,11 @@ final class DynamicLearningService
             'auto_not_worse_than_default' => false,
             'auto_improvement_score' => null,
             'auto_comparison_reason' => null,
+            'real_learning_epoch_enabled' => false,
+            'real_learning_epoch_id' => null,
+            'real_learning_epoch_start_at' => null,
+            'previous_epoch_outcomes_excluded_total' => 0,
+            'active_epoch_outcomes_total' => 0,
             'micro_learning_epoch_enabled' => false,
             'micro_learning_epoch_id' => null,
             'micro_learning_epoch_start_at' => null,
@@ -324,7 +330,7 @@ final class DynamicLearningService
             $result['weighted_score_calculated_total'] = $featureResult['weighted_score_calculated_total'];
         }
 
-        // 4b. Micro-learning epoch filter — exclude pre-epoch outcomes from profile/pattern mining
+        // 4b. Real-learning epoch filter — exclude pre-epoch outcomes from active profile/pattern mining
         $epochFilter = $this->applyMicroLearningEpoch(
             $cfg,
             $outcomes,
@@ -332,6 +338,11 @@ final class DynamicLearningService
             (array)($featureResult['feature_by_snapshot'] ?? []),
             $runStartedAt
         );
+        $result['real_learning_epoch_enabled'] = (bool)($epochFilter['epoch_enabled'] ?? false);
+        $result['real_learning_epoch_id'] = $epochFilter['epoch_id'] ?? null;
+        $result['real_learning_epoch_start_at'] = $epochFilter['epoch_start_at'] ?? null;
+        $result['previous_epoch_outcomes_excluded_total'] = (int)($epochFilter['outcomes_excluded_by_epoch_total'] ?? 0);
+        $result['active_epoch_outcomes_total'] = (int)($epochFilter['epoch_outcomes_total'] ?? 0);
         $result['micro_learning_epoch_enabled'] = (bool)($epochFilter['epoch_enabled'] ?? false);
         $result['micro_learning_epoch_id'] = $epochFilter['epoch_id'] ?? null;
         $result['micro_learning_epoch_start_at'] = $epochFilter['epoch_start_at'] ?? null;
@@ -340,7 +351,34 @@ final class DynamicLearningService
         $result['outcomes_excluded_by_epoch_total'] = (int)($epochFilter['outcomes_excluded_by_epoch_total'] ?? 0);
         $result['epoch_start_source'] = $epochFilter['epoch_start_source'] ?? null;
         $result['epoch_start_missing_reason'] = $epochFilter['epoch_start_missing_reason'] ?? null;
+        $result['bad_entry_total'] = (int)($epochFilter['active_bad_entry_total'] ?? $result['bad_entry_total']);
+        $result['good_or_do_not_touch_total'] = (int)($epochFilter['active_good_or_do_not_touch_total'] ?? $result['good_or_do_not_touch_total']);
+        $result['entry_ok_exit_issue_total'] = (int)($epochFilter['active_entry_ok_exit_issue_total'] ?? $result['entry_ok_exit_issue_total']);
+        $result['neutral_total'] = (int)($epochFilter['active_neutral_total'] ?? $result['neutral_total']);
+        $result['outcome_incomplete_total'] = (int)($epochFilter['active_outcome_incomplete_total'] ?? $result['outcome_incomplete_total']);
         $patternMiningOutcomes = $epochFilter['pattern_mining'];
+
+        $excludedOutcomeKeys = array_fill_keys((array)($epochFilter['excluded_outcome_keys'] ?? []), true);
+        if ($excludedOutcomeKeys !== []) {
+            $allOutcomes = (array)($outcomes['all'] ?? []);
+            foreach ($allOutcomes as &$existingOutcome) {
+                if (!is_array($existingOutcome)) {
+                    continue;
+                }
+                $outcomeKey = (string)($existingOutcome['outcome_key'] ?? '');
+                if ($outcomeKey !== '' && isset($excludedOutcomeKeys[$outcomeKey])) {
+                    $existingOutcome['epoch_excluded'] = true;
+                    $existingOutcome['epoch_excluded_reason'] = 'previous_risk_profile_epoch';
+                    $existingOutcome['excluded_from_epoch_id'] = $epochFilter['epoch_id'] ?? null;
+                } else {
+                    $existingOutcome['epoch_excluded'] = false;
+                    $existingOutcome['epoch_excluded_reason'] = null;
+                    $existingOutcome['excluded_from_epoch_id'] = null;
+                }
+            }
+            unset($existingOutcome);
+            $this->writeJson($this->storagePath('closed_outcomes.json'), $allOutcomes);
+        }
 
         // 5. Pattern mining
         $patterns = PatternMiner::mine($patternMiningOutcomes, $cfg, (array)($featureResult['feature_by_snapshot'] ?? []));
@@ -366,11 +404,14 @@ final class DynamicLearningService
 
         // 6. Profile building
         $epochMeta = [
+            'real_learning_epoch_id' => $epochFilter['epoch_id'] ?? null,
+            'real_learning_epoch_start_at' => $epochFilter['epoch_start_at'] ?? null,
             'micro_learning_epoch_id' => $epochFilter['epoch_id'] ?? null,
             'micro_learning_epoch_start_at' => $epochFilter['epoch_start_at'] ?? null,
             'epoch_start_source' => $epochFilter['epoch_start_source'] ?? null,
             'legacy_outcomes_total' => (int)($epochFilter['legacy_outcomes_total'] ?? 0),
             'outcomes_excluded_by_epoch_total' => (int)($epochFilter['outcomes_excluded_by_epoch_total'] ?? 0),
+            'active_epoch_outcomes_total' => (int)($epochFilter['epoch_outcomes_total'] ?? 0),
         ];
         $profile = ProfileBuilder::build($cfg, $patternMiningOutcomes, $patterns['all'], fn(string $f): string => $this->storagePath($f), $epochMeta);
         $result['profile_generated'] = true;
@@ -430,7 +471,13 @@ final class DynamicLearningService
         $defaultSummary = (array)($comparison['default_result_summary'] ?? []);
         $autoSummary = (array)($comparison['auto_candidate_result_summary'] ?? []);
 
-        $profile['source_outcomes_total'] = (int)($result['closed_outcomes_unique_total'] ?? 0);
+        $profile['risk_profile_mode'] = (string)($result['risk_profile_mode'] ?? ($cfg['risk_profile_mode'] ?? 'working_real'));
+        $profile['outcome_classification_profile'] = (string)($result['outcome_classification_profile'] ?? ($cfg['outcome_classification_profile'] ?? 'working_real_8_15'));
+        $profile['real_learning_epoch_id'] = $result['real_learning_epoch_id'] ?? ($profile['real_learning_epoch_id'] ?? null);
+        $profile['real_learning_epoch_start_at'] = $result['real_learning_epoch_start_at'] ?? ($profile['real_learning_epoch_start_at'] ?? null);
+        $profile['source_outcomes_total'] = (int)($result['active_epoch_outcomes_total'] ?? $result['closed_outcomes_unique_total'] ?? 0);
+        $profile['previous_epoch_outcomes_excluded_total'] = (int)($result['previous_epoch_outcomes_excluded_total'] ?? 0);
+        $profile['active_epoch_outcomes_total'] = (int)($result['active_epoch_outcomes_total'] ?? $result['closed_outcomes_unique_total'] ?? 0);
         $profile['feature_records_total'] = (int)($result['feature_records_total'] ?? 0);
         $profile['bad_entries_total'] = (int)($result['bad_entry_total'] ?? ($profile['bad_entries_total'] ?? 0));
         $profile['good_entries_total'] = (int)($result['good_or_do_not_touch_total'] ?? ($profile['good_entries_total'] ?? 0));
@@ -1138,6 +1185,8 @@ final class DynamicLearningService
             'duplicate_sources_count' => max(1, (int)($row['duplicate_sources_count'] ?? 1)),
             'outcome_class' => $class,
             'classification_reason' => $reason,
+            'risk_profile_mode' => (string)($cfg['risk_profile_mode'] ?? ''),
+            'outcome_classification_profile' => (string)($cfg['outcome_classification_profile'] ?? ''),
             'used_for_pattern_mining' => $featureCheck['used_for_pattern_mining'],
             'pattern_mining_exclude_reason' => $featureCheck['exclude_reason'],
         ];
@@ -1176,6 +1225,8 @@ final class DynamicLearningService
         $row['duplicate_sources_count'] = max(1, (int)($row['duplicate_sources_count'] ?? 1));
         $row['outcome_class'] = $class;
         $row['classification_reason'] = $reason;
+        $row['risk_profile_mode'] = (string)($cfg['risk_profile_mode'] ?? ($row['risk_profile_mode'] ?? ''));
+        $row['outcome_classification_profile'] = (string)($cfg['outcome_classification_profile'] ?? ($row['outcome_classification_profile'] ?? ''));
         return $row;
     }
 
@@ -1732,28 +1783,24 @@ final class DynamicLearningService
     }
 
     /**
-     * Filter pattern-mining outcomes by micro-learning epoch.
+     * Filter pattern-mining outcomes by active learning epoch.
      *
-     * When micro_learning_epoch_enabled + micro_learning_ignore_legacy_outcomes_before_epoch are set:
-     *   - Outcomes with opened_at < epoch_start_at are counted as legacy and excluded from
-     *     pattern mining / profile building. They remain in storage (closed_outcomes.json) untouched.
-     *
-     * Epoch start is derived (in order):
-     *   1. micro_learning_epoch_start_at config (explicit timestamp/iso)
-     *   2. reset_marker.json reset_at
-     *   3. first real micro feature learning_opened_at
-     *   4. first entry snapshot opened_at/detected_at
-     *   5. current run started_at fallback
+     * Real-learning mode keeps historical outcomes in storage but excludes pre-epoch outcomes
+     * from active profile/pattern mining. This isolates fast-demo history from real-learning stats.
      *
      * @param array<string,mixed> $cfg
      * @param array{pattern_mining:list<array<string,mixed>>,...} $outcomes
      * @param list<array<string,mixed>> $snapshots
      * @param array<string,array<string,mixed>> $featureBySnapshot
-     * @return array{epoch_enabled:bool,epoch_id:?string,epoch_start_at:?string,legacy_outcomes_total:int,epoch_outcomes_total:int,outcomes_excluded_by_epoch_total:int,epoch_start_source:string,epoch_start_missing_reason:?string,pattern_mining:list<array<string,mixed>>}
+     * @return array{epoch_enabled:bool,epoch_id:?string,epoch_start_at:?string,legacy_outcomes_total:int,epoch_outcomes_total:int,outcomes_excluded_by_epoch_total:int,epoch_start_source:string,epoch_start_missing_reason:?string,pattern_mining:list<array<string,mixed>>,excluded_outcome_keys:list<string>,active_bad_entry_total:int,active_good_or_do_not_touch_total:int,active_entry_ok_exit_issue_total:int,active_neutral_total:int,active_outcome_incomplete_total:int}
      */
     private function applyMicroLearningEpoch(array $cfg, array $outcomes, array $snapshots = [], array $featureBySnapshot = [], ?string $runStartedAt = null): array
     {
         $patternMining = $outcomes['pattern_mining'] ?? [];
+        $allOutcomes = $outcomes['all'] ?? [];
+        $countClass = static function (array $rows, string $class): int {
+            return count(array_filter($rows, static fn(array $r): bool => (string)($r['outcome_class'] ?? '') === $class));
+        };
         $noFilter = [
             'epoch_enabled' => false,
             'epoch_id' => null,
@@ -1764,18 +1811,24 @@ final class DynamicLearningService
             'epoch_start_source' => 'not_enabled',
             'epoch_start_missing_reason' => null,
             'pattern_mining' => $patternMining,
+            'excluded_outcome_keys' => [],
+            'active_bad_entry_total' => $countClass($allOutcomes, 'bad_entry'),
+            'active_good_or_do_not_touch_total' => $countClass($allOutcomes, 'good_or_do_not_touch'),
+            'active_entry_ok_exit_issue_total' => $countClass($allOutcomes, 'entry_ok_exit_issue'),
+            'active_neutral_total' => $countClass($allOutcomes, 'neutral'),
+            'active_outcome_incomplete_total' => $countClass($allOutcomes, 'outcome_incomplete'),
         ];
 
-        if (!(bool)($cfg['micro_learning_epoch_enabled'] ?? false)) {
+        if (!(bool)($cfg['real_learning_epoch_enabled'] ?? false)) {
             return $noFilter;
         }
-        $excludeLegacyByEpoch = (bool)($cfg['micro_learning_ignore_legacy_outcomes_before_epoch'] ?? true);
+        $excludeLegacyByEpoch = (bool)($cfg['ignore_fast_demo_outcomes_in_real_profile'] ?? true);
 
         // Determine epoch start timestamp
         $epochStartTs = 0;
         $epochStartSource = 'config';
 
-        $configuredEpoch = $cfg['micro_learning_epoch_start_at'] ?? null;
+        $configuredEpoch = $cfg['real_learning_epoch_start_at'] ?? null;
         if ($configuredEpoch !== null && $configuredEpoch !== '') {
             if (is_numeric($configuredEpoch)) {
                 $ts = (float)$configuredEpoch;
@@ -1874,16 +1927,51 @@ final class DynamicLearningService
                 'epoch_start_source' => 'epoch_start_missing',
                 'epoch_start_missing_reason' => 'no_epoch_start_derivable',
                 'pattern_mining' => $patternMining,
+                'excluded_outcome_keys' => [],
+                'active_bad_entry_total' => $countClass($allOutcomes, 'bad_entry'),
+                'active_good_or_do_not_touch_total' => $countClass($allOutcomes, 'good_or_do_not_touch'),
+                'active_entry_ok_exit_issue_total' => $countClass($allOutcomes, 'entry_ok_exit_issue'),
+                'active_neutral_total' => $countClass($allOutcomes, 'neutral'),
+                'active_outcome_incomplete_total' => $countClass($allOutcomes, 'outcome_incomplete'),
             ];
         }
 
-        // Derive epoch_id
-        $epochId = 'eigl_micro_' . gmdate('Ymd_His', $epochStartTs);
+        $epochStatePath = $this->storagePath('real_learning_epoch.json');
+        $epochState = (array)$this->readJson($epochStatePath, []);
+        $activeProfile = (string)($cfg['outcome_classification_profile'] ?? '');
+        $stateProfile = (string)($epochState['outcome_classification_profile'] ?? '');
+        $configuredEpochId = trim((string)($cfg['real_learning_epoch_id'] ?? 'auto'));
+        $stateEpochId = trim((string)($epochState['epoch_id'] ?? ''));
+        $stateEpochTs = strtotime((string)($epochState['epoch_start_at'] ?? '')) ?: 0;
+
+        $epochStartSourceResolved = $epochStartSource;
+        if ($stateEpochId !== '' && $stateEpochTs > 0 && $stateProfile === $activeProfile) {
+            $epochStartTs = $stateEpochTs;
+            $epochStartSourceResolved = 'stored_epoch';
+        } else {
+            if ($configuredEpochId === '' || strtolower($configuredEpochId) === 'auto') {
+                $configuredEpochId = 'eigl_real_' . gmdate('Ymd_His', $epochStartTs);
+            }
+            $epochState = [
+                'epoch_id' => $configuredEpochId,
+                'epoch_start_at' => gmdate('c', $epochStartTs),
+                'risk_profile_mode' => (string)($cfg['risk_profile_mode'] ?? ''),
+                'outcome_classification_profile' => $activeProfile,
+                'created_at' => date('c'),
+            ];
+            $this->writeJson($epochStatePath, $epochState);
+            $stateEpochId = $configuredEpochId;
+            $epochStartSourceResolved = 'new_profile_epoch';
+        }
+
+        $epochId = $stateEpochId;
         $epochStartIso = gmdate('c', $epochStartTs);
 
         // Partition outcomes into epoch and legacy
         $epochOutcomes = [];
         $legacyCount = 0;
+        $excludedOutcomeKeys = [];
+        $activeAllOutcomes = [];
         foreach ($patternMining as $o) {
             $openedAtStr = (string)($o['opened_at'] ?? $o['learning_opened_at'] ?? '');
             $openedAtTs = $openedAtStr !== '' ? (strtotime($openedAtStr) ?: 0) : 0;
@@ -1891,6 +1979,20 @@ final class DynamicLearningService
                 $epochOutcomes[] = $o;
             } else {
                 $legacyCount++;
+                $outcomeKey = (string)($o['outcome_key'] ?? '');
+                if ($outcomeKey !== '') {
+                    $excludedOutcomeKeys[] = $outcomeKey;
+                }
+            }
+        }
+        foreach ($allOutcomes as $o) {
+            if (!is_array($o)) {
+                continue;
+            }
+            $openedAtStr = (string)($o['opened_at'] ?? $o['learning_opened_at'] ?? '');
+            $openedAtTs = $openedAtStr !== '' ? (strtotime($openedAtStr) ?: 0) : 0;
+            if (!$excludeLegacyByEpoch || $openedAtTs === 0 || $openedAtTs >= $epochStartTs) {
+                $activeAllOutcomes[] = $o;
             }
         }
 
@@ -1901,9 +2003,15 @@ final class DynamicLearningService
             'legacy_outcomes_total' => $legacyCount,
             'epoch_outcomes_total' => count($epochOutcomes),
             'outcomes_excluded_by_epoch_total' => $legacyCount,
-            'epoch_start_source' => $epochStartSource,
+            'epoch_start_source' => $epochStartSourceResolved,
             'epoch_start_missing_reason' => null,
             'pattern_mining' => $epochOutcomes,
+            'excluded_outcome_keys' => $excludedOutcomeKeys,
+            'active_bad_entry_total' => $countClass($activeAllOutcomes, 'bad_entry'),
+            'active_good_or_do_not_touch_total' => $countClass($activeAllOutcomes, 'good_or_do_not_touch'),
+            'active_entry_ok_exit_issue_total' => $countClass($activeAllOutcomes, 'entry_ok_exit_issue'),
+            'active_neutral_total' => $countClass($activeAllOutcomes, 'neutral'),
+            'active_outcome_incomplete_total' => $countClass($activeAllOutcomes, 'outcome_incomplete'),
         ];
     }
 
@@ -2798,37 +2906,48 @@ final class DynamicLearningService
         $cfg['apply_learning_to_demo_enabled'] = (bool)($cfg['apply_learning_to_demo_enabled'] ?? false);
         $cfg['observation_interval_seconds'] = max(5, (int)($cfg['observation_interval_seconds'] ?? 30));
         $cfg['max_observations_per_position'] = max(1, (int)($cfg['max_observations_per_position'] ?? 40));
-        $cfg['risk_profile_mode'] = strtolower(trim((string)($cfg['risk_profile_mode'] ?? 'fast_demo')));
-        if (!in_array($cfg['risk_profile_mode'], ['fast_demo', 'working_normal', 'custom'], true)) {
-            $cfg['risk_profile_mode'] = 'fast_demo';
+        $cfg['risk_profile_mode'] = strtolower(trim((string)($cfg['risk_profile_mode'] ?? 'working_real')));
+        if (!in_array($cfg['risk_profile_mode'], ['fast_demo', 'working_normal', 'working_real', 'custom'], true)) {
+            $cfg['risk_profile_mode'] = 'working_real';
         }
-        $cfg['outcome_classification_profile'] = strtolower(trim((string)($cfg['outcome_classification_profile'] ?? 'fast_demo_corridor_3_5')));
-        if (!in_array($cfg['outcome_classification_profile'], ['fast_demo_corridor_3_5', 'working_normal_8_10', 'custom'], true)) {
-            $cfg['outcome_classification_profile'] = 'fast_demo_corridor_3_5';
+        $cfg['outcome_classification_profile'] = strtolower(trim((string)($cfg['outcome_classification_profile'] ?? 'working_real_8_15')));
+        if (!in_array($cfg['outcome_classification_profile'], ['fast_demo_corridor_3_5', 'working_normal_8_10', 'working_real_8_15', 'custom'], true)) {
+            $cfg['outcome_classification_profile'] = 'working_real_8_15';
         }
         $customBadDrawdown = (float)($cfg['bad_drawdown_roi_threshold'] ?? -10.0);
         $customHardStopReference = (float)($cfg['hard_stop_reference_roi'] ?? -10.0);
         $customGoodClose = (float)($cfg['good_close_roi_threshold'] ?? 5.0);
         $customGoodMaxProfit = (float)($cfg['good_max_profit_roi_threshold'] ?? 5.0);
         $customStopSlippageBuffer = (float)($cfg['stop_slippage_buffer_roi'] ?? 2.0);
+        $customPmProfitReference = (float)($cfg['pm_profit_reference_roi'] ?? 10.0);
         if ($cfg['outcome_classification_profile'] === 'fast_demo_corridor_3_5') {
             $cfg['bad_drawdown_roi_threshold'] = -2.5;
             $cfg['hard_stop_reference_roi'] = -5.0;
             $cfg['good_close_roi_threshold'] = 3.0;
             $cfg['good_max_profit_roi_threshold'] = 3.0;
             $cfg['stop_slippage_buffer_roi'] = 2.5;
+            $cfg['pm_profit_reference_roi'] = 3.0;
         } elseif ($cfg['outcome_classification_profile'] === 'working_normal_8_10') {
             $cfg['bad_drawdown_roi_threshold'] = -8.0;
             $cfg['hard_stop_reference_roi'] = -10.0;
             $cfg['good_close_roi_threshold'] = 8.0;
             $cfg['good_max_profit_roi_threshold'] = 8.0;
             $cfg['stop_slippage_buffer_roi'] = 2.0;
+            $cfg['pm_profit_reference_roi'] = 10.0;
+        } elseif ($cfg['outcome_classification_profile'] === 'working_real_8_15') {
+            $cfg['bad_drawdown_roi_threshold'] = -12.0;
+            $cfg['hard_stop_reference_roi'] = -15.0;
+            $cfg['good_close_roi_threshold'] = 8.0;
+            $cfg['good_max_profit_roi_threshold'] = 8.0;
+            $cfg['stop_slippage_buffer_roi'] = 3.0;
+            $cfg['pm_profit_reference_roi'] = 10.0;
         } else {
             $cfg['bad_drawdown_roi_threshold'] = $customBadDrawdown;
             $cfg['hard_stop_reference_roi'] = $customHardStopReference;
             $cfg['good_close_roi_threshold'] = $customGoodClose;
             $cfg['good_max_profit_roi_threshold'] = $customGoodMaxProfit;
             $cfg['stop_slippage_buffer_roi'] = $customStopSlippageBuffer;
+            $cfg['pm_profit_reference_roi'] = $customPmProfitReference;
         }
         $cfg['learning_corridor_enabled'] = $cfg['outcome_classification_profile'] === 'fast_demo_corridor_3_5';
         $cfg['stop_profile_alignment'] = (string)$cfg['risk_profile_mode'];
@@ -2881,6 +3000,25 @@ final class DynamicLearningService
         if (!in_array($cfg['micro_primary_window'], ['micro_window_5m', 'micro_window_10m', 'micro_window_15m'], true)) {
             $cfg['micro_primary_window'] = 'micro_window_10m';
         }
+        $cfg['real_learning_epoch_enabled'] = (bool)($cfg['real_learning_epoch_enabled'] ?? ($cfg['micro_learning_epoch_enabled'] ?? true));
+        $cfg['real_learning_epoch_id'] = trim((string)($cfg['real_learning_epoch_id'] ?? ($cfg['micro_learning_epoch_id'] ?? 'auto')));
+        if ($cfg['real_learning_epoch_id'] === '') {
+            $cfg['real_learning_epoch_id'] = 'auto';
+        }
+        $cfg['real_learning_epoch_start_at'] = $cfg['real_learning_epoch_start_at'] ?? ($cfg['micro_learning_epoch_start_at'] ?? null);
+        if (is_string($cfg['real_learning_epoch_start_at'])) {
+            $cfg['real_learning_epoch_start_at'] = trim($cfg['real_learning_epoch_start_at']);
+            if ($cfg['real_learning_epoch_start_at'] === '') {
+                $cfg['real_learning_epoch_start_at'] = null;
+            }
+        }
+        $cfg['ignore_fast_demo_outcomes_in_real_profile'] = (bool)($cfg['ignore_fast_demo_outcomes_in_real_profile'] ?? ($cfg['micro_learning_ignore_legacy_outcomes_before_epoch'] ?? true));
+        $cfg['preserve_fast_demo_history'] = (bool)($cfg['preserve_fast_demo_history'] ?? true);
+        // Backward-compatible aliases
+        $cfg['micro_learning_epoch_enabled'] = $cfg['real_learning_epoch_enabled'];
+        $cfg['micro_learning_epoch_id'] = (string)$cfg['real_learning_epoch_id'];
+        $cfg['micro_learning_epoch_start_at'] = $cfg['real_learning_epoch_start_at'];
+        $cfg['micro_learning_ignore_legacy_outcomes_before_epoch'] = $cfg['ignore_fast_demo_outcomes_in_real_profile'];
         $cfg['max_entry_snapshots'] = max(100, (int)($cfg['max_entry_snapshots'] ?? 2000));
         $cfg['max_feature_records'] = max(100, (int)($cfg['max_feature_records'] ?? 2000));
         $cfg['max_closed_outcomes'] = max(100, (int)($cfg['max_closed_outcomes'] ?? 1000));

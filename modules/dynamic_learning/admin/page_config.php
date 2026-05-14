@@ -45,14 +45,14 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     <label>supported_strategy_id <input class="form-control" name="supported_strategy_id" value="<?= $e((string)($cfg['supported_strategy_id'] ?? 'early_impulse_growth_long')) ?>"></label>
     <label>risk_profile_mode
       <select name="risk_profile_mode" class="form-control">
-        <?php foreach (['fast_demo', 'working_normal', 'custom'] as $option): ?>
+        <?php foreach (['fast_demo', 'working_normal', 'working_real', 'custom'] as $option): ?>
           <option value="<?= $e($option) ?>" <?= (($cfg['risk_profile_mode'] ?? 'fast_demo') === $option) ? 'selected' : '' ?>><?= $e($option) ?></option>
         <?php endforeach; ?>
       </select>
     </label>
     <label>outcome_classification_profile
       <select name="outcome_classification_profile" class="form-control">
-        <?php foreach (['fast_demo_corridor_3_5', 'working_normal_8_10', 'custom'] as $option): ?>
+        <?php foreach (['fast_demo_corridor_3_5', 'working_normal_8_10', 'working_real_8_15', 'custom'] as $option): ?>
           <option value="<?= $e($option) ?>" <?= (($cfg['outcome_classification_profile'] ?? 'fast_demo_corridor_3_5') === $option) ? 'selected' : '' ?>><?= $e($option) ?></option>
         <?php endforeach; ?>
       </select>
@@ -64,8 +64,14 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     <label>good_close_roi_threshold <input type="number" step="0.01" class="form-control" name="good_close_roi_threshold" value="<?= $e((float)($cfg['good_close_roi_threshold'] ?? 5)) ?>"></label>
     <label>good_max_profit_roi_threshold <input type="number" step="0.01" class="form-control" name="good_max_profit_roi_threshold" value="<?= $e((float)($cfg['good_max_profit_roi_threshold'] ?? 5)) ?>"></label>
     <label>stop_slippage_buffer_roi <input type="number" step="0.01" class="form-control" name="stop_slippage_buffer_roi" value="<?= $e((float)($cfg['stop_slippage_buffer_roi'] ?? 2)) ?>"></label>
+    <label>pm_profit_reference_roi <input type="number" step="0.01" class="form-control" value="<?= $e((float)($cfg['pm_profit_reference_roi'] ?? 10)) ?>" readonly></label>
     <label>neutral_close_roi_min <input type="number" step="0.01" class="form-control" name="neutral_close_roi_min" value="<?= $e((float)($cfg['neutral_close_roi_min'] ?? -2)) ?>"></label>
     <label>neutral_close_roi_max <input type="number" step="0.01" class="form-control" name="neutral_close_roi_max" value="<?= $e((float)($cfg['neutral_close_roi_max'] ?? 2)) ?>"></label>
+    <label>real_learning_epoch_enabled <input type="text" class="form-control" value="<?= $e(!empty($cfg['real_learning_epoch_enabled']) ? 'true' : 'false') ?>" readonly></label>
+    <label>real_learning_epoch_id <input type="text" class="form-control" value="<?= $e((string)($cfg['real_learning_epoch_id'] ?? 'auto')) ?>" readonly></label>
+    <label>real_learning_epoch_start_at <input type="text" class="form-control" value="<?= $e((string)($cfg['real_learning_epoch_start_at'] ?? 'null')) ?>" readonly></label>
+    <label>ignore_fast_demo_outcomes_in_real_profile <input type="text" class="form-control" value="<?= $e(!empty($cfg['ignore_fast_demo_outcomes_in_real_profile']) ? 'true' : 'false') ?>" readonly></label>
+    <label>preserve_fast_demo_history <input type="text" class="form-control" value="<?= $e(!empty($cfg['preserve_fast_demo_history']) ? 'true' : 'false') ?>" readonly></label>
     <button type="submit" class="btn btn-primary">Save</button>
   </form>
 </div>

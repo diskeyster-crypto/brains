@@ -30,6 +30,14 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
   <div><strong>Quarantined rules:</strong> <?= $e(count($quarantine)) ?></div>
   <div><strong>risk_profile_mode:</strong> <?= $e((string)($run['risk_profile_mode'] ?? 'n/a')) ?></div>
   <div><strong>outcome_classification_profile:</strong> <?= $e((string)($run['outcome_classification_profile'] ?? 'n/a')) ?></div>
+  <div><strong>hard_stop_reference_roi:</strong> <?= $e((float)($run['hard_stop_reference_roi'] ?? 0.0)) ?></div>
+  <div><strong>bad_learning_zone_roi:</strong> <?= $e((float)($run['bad_learning_zone_roi'] ?? 0.0)) ?></div>
+  <div><strong>good_learning_threshold_roi:</strong> <?= $e((float)($run['good_learning_threshold_roi'] ?? 0.0)) ?></div>
+  <div><strong>pm_profit_reference_roi:</strong> <?= $e((float)($run['pm_profit_reference_roi'] ?? 0.0)) ?></div>
+  <div><strong>real_learning_epoch_id:</strong> <?= $e((string)($run['real_learning_epoch_id'] ?? $run['micro_learning_epoch_id'] ?? 'n/a')) ?></div>
+  <div><strong>real_learning_epoch_start_at:</strong> <?= $e((string)($run['real_learning_epoch_start_at'] ?? $run['micro_learning_epoch_start_at'] ?? 'n/a')) ?></div>
+  <div><strong>previous_epoch_outcomes_excluded_total:</strong> <?= $e((int)($run['previous_epoch_outcomes_excluded_total'] ?? $run['outcomes_excluded_by_epoch_total'] ?? 0)) ?></div>
+  <div><strong>active_epoch_outcomes_total:</strong> <?= $e((int)($run['active_epoch_outcomes_total'] ?? $run['epoch_outcomes_total'] ?? 0)) ?></div>
   <div><strong>closed_outcome_time_tolerance_enabled:</strong> <?= $e((bool)($run['closed_outcome_time_tolerance_enabled'] ?? false) ? 'true' : 'false') ?></div>
   <div><strong>closed_outcome_dedupe_closed_at_tolerance_seconds:</strong> <?= $e((int)($run['closed_outcome_dedupe_closed_at_tolerance_seconds'] ?? 0)) ?></div>
   <div><strong>closed_outcomes_near_time_duplicates_merged_total:</strong> <?= $e((int)($run['closed_outcomes_near_time_duplicates_merged_total'] ?? 0)) ?></div>
@@ -70,38 +78,19 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
     </div>
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;margin-bottom:8px;">threshold candidates (observe_only)</div>
-      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($microThresholdCandidates['candidates'] ?? []), 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($microThresholdCandidates['candidates'] ?? []), 0, 10), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
     </div>
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;margin-bottom:8px;">top numeric separability features</div>
-      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($microDistributions['features'] ?? []), 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($microDistributions['features'] ?? []), 0, 10), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
     </div>
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;margin-bottom:8px;">top label purity rows</div>
-      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($microLabelPurity['labels'] ?? []), 0, 20), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($microLabelPurity['labels'] ?? []), 0, 10), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
     </div>
     <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;margin-bottom:8px;">suspicious labels with examples</div>
-      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($suspiciousMicroLabels['labels'] ?? []), 0, 10), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
-    </div>
-    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">micro shape counts</div>
-      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_impulse_shape_counts'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
-    </div>
-    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">dump shape counts</div>
-      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['dump_shape_counts'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
-    </div>
-    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">good vs bad overlap by micro features</div>
-      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_bad_good_overlap_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+      <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($suspiciousMicroLabels['labels'] ?? []), 0, 6), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
     </div>
   </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;">
-    <div style="background:#0f172a;color:#cbd5e1;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;margin-bottom:8px;">top micro bad/good pattern examples</div>
-      <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['micro_pattern_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
-    </div>
-  </div>
-  <pre style="margin:0;background:#0f172a;color:#cbd5e1;padding:12px;border-radius:8px;overflow:auto;"><?= $e(json_encode(array_slice($patterns, 0, 30), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
 </div>

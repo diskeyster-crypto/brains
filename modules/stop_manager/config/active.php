@@ -14,7 +14,7 @@ return [
         'long' => [
             'enabled'                => true,
             'emergency_stop_enabled' => true,
-            'emergency_stop_roi'     => -30.0,
+            'emergency_stop_roi'     => -15.0,
             'min_age_seconds'        => 60,
             'applies_to_strategies'  => ['double_bottom_long', '*'],
         ],

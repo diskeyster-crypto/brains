@@ -320,6 +320,18 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         <div style="font-weight:600;"><?= $e((int)($run['rolling_window_good_entry_total'] ?? 0)) ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_min_closed_outcomes</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_min_closed_outcomes'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_min_bad_entries</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_min_bad_entries'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_min_good_entries</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_min_good_entries'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">rolling_window_exit_issue</div>
         <div style="font-weight:600;"><?= $e((int)($run['rolling_window_entry_ok_exit_issue_total'] ?? 0)) ?></div>
       </div>
@@ -388,6 +400,36 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         <div style="font-size:11px;opacity:.8;color:#94a3b8;">require_not_worse_than_default</div>
         <div style="font-weight:600;color:#94a3b8;"><?= $e((bool)($run['require_not_worse_than_default'] ?? true) ? 'true' : 'false') ?></div>
       </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">replay_diagnostic_available</div>
+        <div style="font-weight:600;color:#93c5fd;"><?= $e((bool)($run['replay_diagnostic_available'] ?? false) ? 'true' : 'false') ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">replay_suggests_improvement</div>
+        <div style="font-weight:600;color:#93c5fd;"><?= $e((bool)($run['replay_suggests_improvement'] ?? false) ? 'true' : 'false') ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">promotion_blocked_by_min_data</div>
+        <div style="font-weight:600;color:<?= (bool)($run['promotion_blocked_by_min_data'] ?? false) ? '#fcd34d' : '#86efac' ?>;">
+          <?= $e((bool)($run['promotion_blocked_by_min_data'] ?? false) ? 'true' : 'false') ?>
+        </div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">promotion_blocked_reason</div>
+        <div style="font-weight:600;color:#94a3b8;font-size:12px;"><?= $e((string)($run['promotion_blocked_reason'] ?? '—')) ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">candidate_build_scope</div>
+        <div style="font-weight:600;color:#94a3b8;"><?= $e((string)($run['candidate_build_scope'] ?? '—')) ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">candidate_replay_scope</div>
+        <div style="font-weight:600;color:#94a3b8;"><?= $e((string)($run['candidate_replay_scope'] ?? '—')) ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">promotion_guard_scope</div>
+        <div style="font-weight:600;color:#94a3b8;"><?= $e((string)($run['promotion_guard_scope'] ?? '—')) ?></div>
+      </div>
     </div>
 
     <!-- Rollback block -->
@@ -454,6 +496,7 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
   };
 
   $showWarn = in_array($candStatus, ['insufficient_data', 'no_material_improvement', 'insufficient_bad_capture'], true)
+              || (bool)($run['promotion_blocked_by_min_data'] ?? false)
               || ($rpGoodBlock !== null && (float)$rpGoodBlock > 20.0);
   ?>
   <div style="border:1px solid #93c5fd44;border-radius:10px;padding:14px;background:rgba(147,197,253,.04);margin-top:6px;">
@@ -467,8 +510,10 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     <?php if ($showWarn): ?>
     <div style="background:#451a03;color:#fcd34d;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:8px;">
       ⚠&nbsp;<?php
-        if ($candStatus === 'insufficient_data') {
-            echo $e('Insufficient data — not enough outcomes for candidate evaluation.');
+        if ((bool)($run['promotion_blocked_by_min_data'] ?? false)) {
+            echo $e('Promotion blocked by rolling minimum data gate: ' . (string)($run['promotion_blocked_reason'] ?? 'insufficient_rolling_data'));
+        } elseif ($candStatus === 'insufficient_data') {
+            echo $e('Insufficient data — rolling window does not meet minimum outcomes/bad/good thresholds.');
         } elseif ($candStatus === 'no_material_improvement') {
             echo $e('No material improvement — candidate inside no-change band.');
         } elseif ($candStatus === 'insufficient_bad_capture') {

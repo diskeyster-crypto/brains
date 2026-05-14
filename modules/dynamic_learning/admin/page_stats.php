@@ -57,6 +57,11 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
       <div><strong>rolling_learning_enabled:</strong> <?= $e((bool)($run['rolling_learning_enabled'] ?? false) ? 'true' : 'false') ?></div>
       <div><strong>window_minutes:</strong> <?= $e((int)($run['rolling_learning_window_minutes'] ?? 120)) ?></div>
       <div><strong>rolling_window_outcomes:</strong> <?= $e((int)($run['rolling_window_outcomes_total'] ?? 0)) ?></div>
+      <div><strong>rolling_min_closed_outcomes:</strong> <?= $e((int)($run['rolling_min_closed_outcomes'] ?? 0)) ?></div>
+      <div><strong>rolling_min_bad_entries:</strong> <?= $e((int)($run['rolling_min_bad_entries'] ?? 0)) ?></div>
+      <div><strong>rolling_min_good_entries:</strong> <?= $e((int)($run['rolling_min_good_entries'] ?? 0)) ?></div>
+      <div><strong>rolling_window_bad_entry_total:</strong> <?= $e((int)($run['rolling_window_bad_entry_total'] ?? 0)) ?></div>
+      <div><strong>rolling_window_good_entry_total:</strong> <?= $e((int)($run['rolling_window_good_entry_total'] ?? 0)) ?></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:8px;">
       <div><strong>default_quality_score:</strong> <?= $e($run['default_quality_score'] ?? 'n/a') ?></div>
@@ -88,6 +93,14 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
         <strong>promotion_reason:</strong>
         <span style="color:#94a3b8;font-size:12px;"><?= $e((string)($run['promotion_reason'] ?? '—')) ?></span>
       </div>
+      <div><strong>replay_diagnostic_available:</strong> <?= $e((bool)($run['replay_diagnostic_available'] ?? false) ? 'true' : 'false') ?></div>
+      <div><strong>replay_suggests_improvement:</strong> <?= $e((bool)($run['replay_suggests_improvement'] ?? false) ? 'true' : 'false') ?></div>
+      <div><strong>promotion_blocked_by_min_data:</strong> <?= $e((bool)($run['promotion_blocked_by_min_data'] ?? false) ? 'true' : 'false') ?></div>
+      <div><strong>promotion_blocked_reason:</strong> <?= $e((string)($run['promotion_blocked_reason'] ?? '—')) ?></div>
+      <div><strong>candidate_build_scope:</strong> <?= $e((string)($run['candidate_build_scope'] ?? '—')) ?></div>
+      <div><strong>candidate_replay_scope:</strong> <?= $e((string)($run['candidate_replay_scope'] ?? '—')) ?></div>
+      <div><strong>promotion_guard_scope:</strong> <?= $e((string)($run['promotion_guard_scope'] ?? '—')) ?></div>
+      <div><strong>scope_mismatch_allowed_for_diagnostics:</strong> <?= $e((bool)($run['scope_mismatch_allowed_for_diagnostics'] ?? false) ? 'true' : 'false') ?></div>
     </div>
     <?php if ((bool)($run['rollback_required'] ?? false)): ?>
     <div style="background:rgba(248,81,73,.10);border:1px solid #f8514955;border-radius:7px;padding:8px;color:#f87171;">
@@ -155,6 +168,7 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
           <th style="padding:3px 6px;text-align:left;">recorded_at</th>
           <th style="padding:3px 6px;text-align:left;">status</th>
           <th style="padding:3px 6px;text-align:left;">decision</th>
+          <th style="padding:3px 6px;text-align:left;">replay_result</th>
           <th style="padding:3px 6px;text-align:left;">reason</th>
           <th style="padding:3px 6px;text-align:right;">default_score</th>
           <th style="padding:3px 6px;text-align:right;">cand_score</th>
@@ -177,6 +191,7 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
           <td style="padding:3px 6px;"><?= $e((string)($h['recorded_at'] ?? '')) ?></td>
           <td style="padding:3px 6px;color:#c4b5fd;"><?= $e((string)($h['candidate_status'] ?? '')) ?></td>
           <td style="padding:3px 6px;color:<?= $hdColor ?>;"><?= $e((string)($h['promotion_decision'] ?? '')) ?></td>
+          <td style="padding:3px 6px;color:#93c5fd;"><?= $e((string)($h['replay_result'] ?? '—')) ?></td>
           <td style="padding:3px 6px;color:#94a3b8;"><?= $e((string)($h['promotion_reason'] ?? '')) ?></td>
           <td style="padding:3px 6px;text-align:right;"><?= $e($h['default_quality_score'] ?? '—') ?></td>
           <td style="padding:3px 6px;text-align:right;"><?= $e($h['candidate_quality_score'] ?? '—') ?></td>

@@ -96,6 +96,7 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
       <div><strong>rolling_window_start_at:</strong> <?= $e((string)($run['rolling_window_start_at'] ?? '—')) ?></div>
       <div><strong>rolling_window_end_at:</strong> <?= $e((string)($run['rolling_window_end_at'] ?? '—')) ?></div>
       <div><strong>rolling_window_outcomes:</strong> <?= $e((int)($run['rolling_window_outcomes_total'] ?? 0)) ?></div>
+      <div><strong>rolling_window_raw_outcomes:</strong> <?= $e((int)($run['rolling_window_raw_outcomes_total'] ?? 0)) ?></div>
       <div><strong>rolling_min_closed_outcomes:</strong> <?= $e((int)($run['rolling_min_closed_outcomes'] ?? 0)) ?></div>
       <div><strong>rolling_min_bad_entries:</strong> <?= $e((int)($run['rolling_min_bad_entries'] ?? 0)) ?></div>
       <div><strong>rolling_min_good_entries:</strong> <?= $e((int)($run['rolling_min_good_entries'] ?? 0)) ?></div>
@@ -103,8 +104,17 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
       <div><strong>rolling_window_good_entry_total:</strong> <?= $e((int)($run['rolling_window_good_entry_total'] ?? 0)) ?></div>
       <div><strong>rolling_selected_sample_type:</strong> <?= $e((string)($run['rolling_selected_sample_type'] ?? 'insufficient')) ?></div>
       <div><strong>rolling_fallback_used:</strong> <?= $e((bool)($run['rolling_fallback_used'] ?? false) ? 'yes' : 'no') ?></div>
+      <div><strong>rolling_sample_min_counts_passed:</strong> <?= $e((bool)($run['rolling_sample_min_counts_passed'] ?? false) ? 'true' : 'false') ?></div>
       <div><strong>rolling_last_retrain_at:</strong> <?= $e((string)($run['rolling_last_retrain_at'] ?? '—')) ?></div>
       <div><strong>rolling_next_retrain_at:</strong> <?= $e((string)($run['rolling_next_retrain_at'] ?? '—')) ?></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:8px;">
+      <div><strong>Outcome Linking Health · raw outcomes:</strong> <?= $e((int)($run['active_epoch_raw_outcomes_total'] ?? 0)) ?></div>
+      <div><strong>usable outcomes:</strong> <?= $e((int)($run['active_epoch_usable_outcomes_total'] ?? 0)) ?></div>
+      <div><strong>excluded outcomes:</strong> <?= $e((int)($run['active_epoch_excluded_from_learning_total'] ?? 0)) ?></div>
+      <div><strong>rebuilt features:</strong> <?= $e((int)($run['outcome_feature_rebuilt_total'] ?? 0)) ?></div>
+      <div><strong>failed rebuilds:</strong> <?= $e((int)($run['outcome_feature_rebuild_failed_total'] ?? 0)) ?></div>
+      <div><strong>top exclusion reasons:</strong> <?= $e(implode(', ', array_slice(array_map(static fn($k, $v) => $k . ':' . $v, array_keys((array)($run['active_epoch_excluded_reasons'] ?? [])), array_values((array)($run['active_epoch_excluded_reasons'] ?? []))), 0, 3)) ?: '—') ?></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:8px;">
       <div><strong>default_quality_score:</strong> <?= $e($run['default_quality_score'] ?? 'n/a') ?></div>

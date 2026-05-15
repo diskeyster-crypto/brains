@@ -367,6 +367,10 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         <div style="font-weight:600;"><?= $e((int)($run['rolling_window_outcomes_total'] ?? 0)) ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_window_raw_outcomes</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_window_raw_outcomes_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">rolling_window_bad</div>
         <div style="font-weight:600;"><?= $e((int)($run['rolling_window_bad_entry_total'] ?? 0)) ?></div>
       </div>
@@ -383,12 +387,44 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         <div style="font-weight:600;"><?= $e((bool)($run['rolling_fallback_used'] ?? false) ? 'yes' : 'no') ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_sample_min_counts_passed</div>
+        <div style="font-weight:600;"><?= $e((bool)($run['rolling_sample_min_counts_passed'] ?? false) ? 'true' : 'false') ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">rolling_last_retrain_at</div>
         <div style="font-weight:600;"><?= $e((string)($run['rolling_last_retrain_at'] ?? '—')) ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">rolling_next_retrain_at</div>
         <div style="font-weight:600;"><?= $e((string)($run['rolling_next_retrain_at'] ?? '—')) ?></div>
+      </div>
+    </div>
+
+    <!-- Outcome Linking Health -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px;">
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Outcome Linking Health: raw outcomes</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_raw_outcomes_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">usable outcomes</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_usable_outcomes_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">excluded outcomes</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_excluded_from_learning_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rebuilt features</div>
+        <div style="font-weight:600;"><?= $e((int)($run['outcome_feature_rebuilt_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">failed rebuilds</div>
+        <div style="font-weight:600;"><?= $e((int)($run['outcome_feature_rebuild_failed_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">top exclusion reasons</div>
+        <div style="font-weight:600;font-size:12px;"><?= $e(implode(', ', array_slice(array_map(static fn($k, $v) => $k . ':' . $v, array_keys((array)($run['active_epoch_excluded_reasons'] ?? [])), array_values((array)($run['active_epoch_excluded_reasons'] ?? []))), 0, 3)) ?: '—') ?></div>
       </div>
     </div>
 

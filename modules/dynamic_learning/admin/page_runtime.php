@@ -479,6 +479,7 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     'eligible_for_demo_apply'                          => '#86efac',
     'insufficient_data', 'no_material_improvement',
     'insufficient_bad_capture', 'no_score', 'pending'  => '#fcd34d',
+    'no_safe_candidate_rules'                          => '#fb923c',
     'rejected', 'below_improvement_threshold'          => '#f87171',
     default                                            => '#94a3b8',
   };
@@ -495,7 +496,7 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     default                                                         => '#0f172a',
   };
 
-  $showWarn = in_array($candStatus, ['insufficient_data', 'no_material_improvement', 'insufficient_bad_capture'], true)
+  $showWarn = in_array($candStatus, ['insufficient_data', 'no_material_improvement', 'insufficient_bad_capture', 'no_safe_candidate_rules'], true)
               || (bool)($run['promotion_blocked_by_min_data'] ?? false)
               || ($rpGoodBlock !== null && (float)$rpGoodBlock > 20.0);
   ?>
@@ -514,6 +515,16 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
             echo $e('Promotion blocked by rolling minimum data gate: ' . (string)($run['promotion_blocked_reason'] ?? 'insufficient_rolling_data'));
         } elseif ($candStatus === 'insufficient_data') {
             echo $e('Insufficient data — rolling window does not meet minimum outcomes/bad/good thresholds.');
+        } elseif ($candStatus === 'no_safe_candidate_rules') {
+            $sfTotal    = (int)($run['candidate_single_feature_candidates_total'] ?? 0);
+            $sfRejected = (int)($run['candidate_single_feature_rejected_total']   ?? 0);
+            $compTested = (int)($run['composite_candidates_tested_total']         ?? 0);
+            $compPassed = (int)($run['composite_candidates_passed_total']         ?? 0);
+            if ($compTested > 0) {
+                echo $e("No safe candidate rules — {$sfTotal} single-feature candidates evaluated ({$sfRejected} rejected). Composite: {$compTested} tested, {$compPassed} passed.");
+            } else {
+                echo $e("No safe candidate rules — {$sfTotal} single-feature candidates evaluated, {$sfRejected} rejected (good-overlap guard). No composite candidates tested.");
+            }
         } elseif ($candStatus === 'no_material_improvement') {
             echo $e('No material improvement — candidate inside no-change band.');
         } elseif ($candStatus === 'insufficient_bad_capture') {
@@ -596,6 +607,102 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       </div>
       <?php endif; ?>
     </div>
+
+    <!-- Single-feature + composite diagnostics -->
+    <?php
+    $sfTotal    = (int)($run['candidate_single_feature_candidates_total']   ?? 0);
+    $sfRejected = (int)($run['candidate_single_feature_rejected_total']     ?? 0);
+    $sfReasons  = (array)($run['candidate_single_feature_reject_reason_counts'] ?? []);
+    $compEnabled  = (bool)($run['composite_candidate_enabled']   ?? false);
+    $compTested   = (int)($run['composite_candidates_tested_total']   ?? 0);
+    $compPassed   = (int)($run['composite_candidates_passed_total']   ?? 0);
+    $compRejected = (int)($run['composite_candidates_rejected_total'] ?? 0);
+    $compBestBad  = $run['composite_candidate_best_bad_capture_rate_pct'] ?? null;
+    $compBestGood = $run['composite_candidate_best_good_block_rate_pct']  ?? null;
+    $compBestNet  = $run['composite_candidate_best_net_score']            ?? null;
+    $compSelected = (bool)($run['composite_candidate_selected'] ?? false);
+    $compSelId    = (string)($run['composite_candidate_selected_id'] ?? '—');
+    $compReject   = (array)($run['composite_candidate_reject_reason_counts'] ?? []);
+    $rulesMissingReason = (string)($run['candidate_rules_missing_reason'] ?? '');
+    ?>
+    <?php if ($sfTotal > 0 || $compTested > 0 || $rulesMissingReason !== ''): ?>
+    <div style="margin-top:10px;border-top:1px solid #1e293b;padding-top:10px;">
+      <div style="font-size:12px;font-weight:600;color:#fb923c;margin-bottom:8px;">
+        <i class="bi bi-diagram-3" style="margin-right:5px;"></i>Candidate Selection Diagnostics
+      </div>
+      <?php if ($rulesMissingReason !== ''): ?>
+      <div style="background:#431407;color:#fb923c;border-radius:6px;padding:6px 10px;font-size:12px;margin-bottom:8px;">
+        candidate_rules_missing_reason: <strong><?= $e($rulesMissingReason) ?></strong>
+      </div>
+      <?php endif; ?>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:6px;margin-bottom:8px;">
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">single_feature_candidates</div>
+          <div style="font-weight:600;color:#e5e7eb;"><?= $e($sfTotal) ?></div>
+        </div>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">single_feature_rejected</div>
+          <div style="font-weight:600;color:<?= $sfRejected > 0 ? '#fcd34d' : '#86efac' ?>;"><?= $e($sfRejected) ?></div>
+        </div>
+        <?php if (!empty($sfReasons)): ?>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">reject_reasons</div>
+          <div style="font-size:10px;color:#94a3b8;"><?= $e(implode(', ', array_map(static fn($k, $v) => "{$k}:{$v}", array_keys($sfReasons), $sfReasons))) ?></div>
+        </div>
+        <?php endif; ?>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">composite_enabled</div>
+          <div style="font-weight:600;color:<?= $compEnabled ? '#93c5fd' : '#6b7280' ?>;"><?= $e($compEnabled ? 'true' : 'false') ?></div>
+        </div>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">composite_tested</div>
+          <div style="font-weight:600;color:#e5e7eb;"><?= $e($compTested) ?></div>
+        </div>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">composite_passed</div>
+          <div style="font-weight:600;color:<?= $compPassed > 0 ? '#86efac' : '#6b7280' ?>;"><?= $e($compPassed) ?></div>
+        </div>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">composite_rejected</div>
+          <div style="font-weight:600;color:<?= $compRejected > 0 ? '#fcd34d' : '#6b7280' ?>;"><?= $e($compRejected) ?></div>
+        </div>
+        <?php if ($compBestBad !== null): ?>
+        <div style="background:<?= (float)$compBestBad >= 20.0 ? '#14532d' : '#450a0a' ?>;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">best_bad_capture</div>
+          <div style="font-weight:600;color:<?= (float)$compBestBad >= 20.0 ? '#86efac' : '#f87171' ?>;"><?= $e(round((float)$compBestBad, 1)) ?>%</div>
+        </div>
+        <?php endif; ?>
+        <?php if ($compBestGood !== null): ?>
+        <div style="background:<?= (float)$compBestGood <= 20.0 ? '#14532d' : '#450a0a' ?>;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">best_good_block</div>
+          <div style="font-weight:600;color:<?= (float)$compBestGood <= 20.0 ? '#86efac' : '#f87171' ?>;"><?= $e(round((float)$compBestGood, 1)) ?>%</div>
+        </div>
+        <?php endif; ?>
+        <?php if ($compBestNet !== null): ?>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">best_net_score</div>
+          <div style="font-weight:600;color:<?= (float)$compBestNet > 0 ? '#86efac' : '#f87171' ?>;"><?= $e(round((float)$compBestNet, 2)) ?></div>
+        </div>
+        <?php endif; ?>
+        <div style="background:<?= $compSelected ? '#14532d' : '#1e293b' ?>;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">composite_selected</div>
+          <div style="font-weight:600;color:<?= $compSelected ? '#86efac' : '#6b7280' ?>;"><?= $e($compSelected ? 'YES' : 'no') ?></div>
+        </div>
+        <?php if ($compSelected): ?>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">selected_id</div>
+          <div style="font-size:10px;color:#93c5fd;word-break:break-all;"><?= $e($compSelId) ?></div>
+        </div>
+        <?php endif; ?>
+        <?php if (!empty($compReject)): ?>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">composite_reject_reasons</div>
+          <div style="font-size:10px;color:#94a3b8;"><?= $e(implode(', ', array_map(static fn($k, $v) => "{$k}:{$v}", array_keys($compReject), $compReject))) ?></div>
+        </div>
+        <?php endif; ?>
+      </div>
+    </div>
+    <?php endif; ?>
   </div>
 
   <!-- Storage status -->

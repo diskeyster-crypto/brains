@@ -139,6 +139,17 @@ return [
     'candidate_allow_broad_features' => false,
     'candidate_replay_enabled' => true,
 
+    // Composite candidate builder (diagnostic only)
+    'composite_candidate_enabled' => true,
+    'composite_candidate_max_components' => 3,
+    'composite_candidate_min_components' => 2,
+    'composite_candidate_max_candidates_to_test' => 100,
+    'composite_candidate_min_bad_capture_rate_pct' => 20.0,
+    'composite_candidate_max_good_block_rate_pct' => 20.0,
+    'composite_candidate_min_net_score' => 1.0,
+    'composite_candidate_allow_broad_secondary' => true,
+    'composite_candidate_primary_features_only_micro' => true,
+
     // Apply guard
     'auto_apply_to_demo_enabled' => false,
     'auto_apply_to_live_enabled' => false,

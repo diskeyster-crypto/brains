@@ -296,4 +296,116 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
       <pre style="margin:0;overflow:auto;"><?= $e(json_encode(array_slice((array)($suspiciousMicroLabels['labels'] ?? []), 0, 6), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
     </div>
   </div>
+
+  <!-- ── Candidate Selection: Single-Feature + Composite ───────────────────── -->
+  <?php
+  $sfTotal    = (int)($run['candidate_single_feature_candidates_total']    ?? 0);
+  $sfRejected = (int)($run['candidate_single_feature_rejected_total']      ?? 0);
+  $sfReasons  = (array)($run['candidate_single_feature_reject_reason_counts'] ?? []);
+  $compEnabled  = (bool)($run['composite_candidate_enabled']               ?? false);
+  $compTested   = (int)($run['composite_candidates_tested_total']          ?? 0);
+  $compPassed   = (int)($run['composite_candidates_passed_total']          ?? 0);
+  $compRejected = (int)($run['composite_candidates_rejected_total']        ?? 0);
+  $compBestBad  = $run['composite_candidate_best_bad_capture_rate_pct']    ?? null;
+  $compBestGood = $run['composite_candidate_best_good_block_rate_pct']     ?? null;
+  $compBestNet  = $run['composite_candidate_best_net_score']               ?? null;
+  $compSelected = (bool)($run['composite_candidate_selected']              ?? false);
+  $compSelId    = (string)($run['composite_candidate_selected_id']         ?? '—');
+  $compReject   = (array)($run['composite_candidate_reject_reason_counts'] ?? []);
+
+  // Load composite_candidates.json for top composites
+  $compositeCandidatesPath = $moduleDir . '/storage/profiles/early_impulse_growth_long/composite_candidates.json';
+  $compositeCandidatesData = is_file($compositeCandidatesPath)
+      ? (json_decode((string)@file_get_contents($compositeCandidatesPath), true) ?: [])
+      : [];
+  $allComposites = (array)($compositeCandidatesData['candidates'] ?? []);
+  $topPassed   = array_values(array_filter($allComposites, static fn($c) => ($c['status'] ?? '') === 'passed'));
+  $topRejected = array_values(array_filter($allComposites, static fn($c) => ($c['status'] ?? '') === 'rejected'));
+  $topPassed   = array_slice($topPassed,   0, 10);
+  $topRejected = array_slice($topRejected, 0, 10);
+  ?>
+  <?php if ($sfTotal > 0 || $compTested > 0 || !empty($sfReasons)): ?>
+  <div style="border:1px solid #fb923c44;border-radius:8px;padding:12px;background:rgba(251,146,60,.03);margin-top:8px;">
+    <div style="font-size:12px;font-weight:700;color:#fb923c;margin-bottom:8px;">
+      <i class="bi bi-diagram-3" style="margin-right:5px;"></i>Candidate Selection — Single-Feature &amp; Composite
+    </div>
+
+    <!-- Single-feature summary -->
+    <div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:6px;">Single-Feature Candidates</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px;font-size:12px;margin-bottom:10px;">
+      <div><strong>candidates_evaluated:</strong> <?= $e($sfTotal) ?></div>
+      <div><strong>rejected:</strong> <span style="color:<?= $sfRejected > 0 ? '#fcd34d' : '#86efac' ?>;"><?= $e($sfRejected) ?></span></div>
+      <div><strong>selected:</strong> <span style="color:<?= ($sfTotal > 0 && $sfRejected < $sfTotal) ? '#86efac' : '#6b7280' ?>;"><?= $e($sfTotal > 0 && $sfRejected < $sfTotal ? ($sfTotal - $sfRejected) : 0) ?></span></div>
+    </div>
+    <?php if (!empty($sfReasons)): ?>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">
+      <strong>reject_reasons:</strong>
+      <?php foreach ($sfReasons as $reason => $count): ?>
+        <span style="background:#1e293b;padding:2px 6px;border-radius:4px;margin-right:4px;"><?= $e($reason) ?>: <?= $e($count) ?></span>
+      <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <!-- Composite summary -->
+    <div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:6px;">Composite Candidates (2–3 feature combos)</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px;font-size:12px;margin-bottom:10px;">
+      <div><strong>enabled:</strong> <span style="color:<?= $compEnabled ? '#86efac' : '#6b7280' ?>;"><?= $e($compEnabled ? 'true' : 'false') ?></span></div>
+      <div><strong>tested:</strong> <?= $e($compTested) ?></div>
+      <div><strong>passed:</strong> <span style="color:<?= $compPassed > 0 ? '#86efac' : '#6b7280' ?>;"><?= $e($compPassed) ?></span></div>
+      <div><strong>rejected:</strong> <span style="color:<?= $compRejected > 0 ? '#fcd34d' : '#6b7280' ?>;"><?= $e($compRejected) ?></span></div>
+      <?php if ($compBestBad !== null): ?>
+      <div><strong>best_bad_capture:</strong> <span style="color:<?= (float)$compBestBad >= 20.0 ? '#86efac' : '#f87171' ?>;"><?= $e(round((float)$compBestBad, 1)) ?>%</span></div>
+      <?php endif; ?>
+      <?php if ($compBestGood !== null): ?>
+      <div><strong>best_good_block:</strong> <span style="color:<?= (float)$compBestGood <= 20.0 ? '#86efac' : '#f87171' ?>;"><?= $e(round((float)$compBestGood, 1)) ?>%</span></div>
+      <?php endif; ?>
+      <?php if ($compBestNet !== null): ?>
+      <div><strong>best_net_score:</strong> <span style="color:<?= (float)$compBestNet > 0 ? '#86efac' : '#f87171' ?>;"><?= $e(round((float)$compBestNet, 2)) ?></span></div>
+      <?php endif; ?>
+      <div><strong>selected:</strong> <span style="color:<?= $compSelected ? '#86efac' : '#6b7280' ?>;"><?= $e($compSelected ? 'YES — ' . $compSelId : 'none') ?></span></div>
+    </div>
+    <?php if (!empty($compReject)): ?>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">
+      <strong>composite_reject_reasons:</strong>
+      <?php foreach ($compReject as $reason => $count): ?>
+        <span style="background:#1e293b;padding:2px 6px;border-radius:4px;margin-right:4px;"><?= $e($reason) ?>: <?= $e($count) ?></span>
+      <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <!-- Top passed composites -->
+    <?php if (!empty($topPassed)): ?>
+    <div style="background:#0f172a;border-radius:7px;padding:8px;margin-bottom:8px;">
+      <div style="font-size:11px;color:#86efac;margin-bottom:6px;font-weight:600;">Top Passed Composites (<?= $e(count($topPassed)) ?>)</div>
+      <?php foreach ($topPassed as $i => $c): ?>
+      <div style="background:#111827;border-radius:5px;padding:5px 8px;margin-bottom:4px;font-size:11px;">
+        <span style="color:#93c5fd;">#<?= $e($i + 1) ?></span>
+        <span style="color:#e5e7eb;margin-left:6px;"><?= $e(implode(' + ', (array)($c['components'] ?? []))) ?></span>
+        &nbsp;
+        <span style="color:#86efac;">bad: <?= $e(round((float)($c['bad_capture_rate_pct'] ?? 0), 1)) ?>%</span>
+        &nbsp;<span style="color:#fcd34d;">good_blk: <?= $e(round((float)($c['good_block_rate_pct'] ?? 0), 1)) ?>%</span>
+        &nbsp;<span style="color:#94a3b8;">net: <?= $e(round((float)($c['net_score'] ?? 0), 2)) ?></span>
+      </div>
+      <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
+    <!-- Top rejected composites -->
+    <?php if (!empty($topRejected)): ?>
+    <div style="background:#0f172a;border-radius:7px;padding:8px;">
+      <div style="font-size:11px;color:#fcd34d;margin-bottom:6px;font-weight:600;">Top Rejected Composites (<?= $e(count($topRejected)) ?>)</div>
+      <?php foreach ($topRejected as $i => $c): ?>
+      <div style="background:#111827;border-radius:5px;padding:5px 8px;margin-bottom:4px;font-size:11px;">
+        <span style="color:#6b7280;">#<?= $e($i + 1) ?></span>
+        <span style="color:#e5e7eb;margin-left:6px;"><?= $e(implode(' + ', (array)($c['components'] ?? []))) ?></span>
+        &nbsp;
+        <span style="color:<?= (float)($c['bad_capture_rate_pct'] ?? 0) >= 20.0 ? '#86efac' : '#f87171' ?>;">bad: <?= $e(round((float)($c['bad_capture_rate_pct'] ?? 0), 1)) ?>%</span>
+        &nbsp;<span style="color:<?= (float)($c['good_block_rate_pct'] ?? 0) <= 20.0 ? '#86efac' : '#f87171' ?>;">good_blk: <?= $e(round((float)($c['good_block_rate_pct'] ?? 0), 1)) ?>%</span>
+        &nbsp;<span style="color:#94a3b8;">net: <?= $e(round((float)($c['net_score'] ?? 0), 2)) ?> — <?= $e((string)($c['reject_reason'] ?? '')) ?></span>
+      </div>
+      <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+  </div>
+  <?php endif; ?>
 </div>

@@ -536,13 +536,43 @@ final class DynamicLearningService
 
         // 7c. Candidate profile builder from micro separability diagnostics
         $candidateBuild = $this->buildCandidateProfileFromSeparability($cfg, $patternMiningOutcomes, $patterns, $epochMeta);
-        $result['candidate_profile_written'] = (bool)($candidateBuild['profile_written'] ?? false);
+
+        // Single-feature diagnostics
+        $result['candidate_single_feature_candidates_total']   = (int)($candidateBuild['single_feature_candidates_total']    ?? 0);
+        $result['candidate_single_feature_rejected_total']     = (int)($candidateBuild['single_feature_rejected_total']      ?? 0);
+        $result['candidate_single_feature_reject_reason_counts'] = (array)($candidateBuild['single_feature_reject_reason_counts'] ?? []);
+
+        // 7c-composite. If no single-feature rules found, attempt composite candidate builder
+        $compositeResult = ['composite_candidate_enabled' => false, 'composite_candidate_selected' => false];
+        if ((int)($candidateBuild['rules_total'] ?? 0) === 0 && (bool)($cfg['composite_candidate_enabled'] ?? true)) {
+            $compositeResult  = $this->buildCompositeCandidates($cfg, $patternMiningOutcomes, $patterns, $epochMeta);
+            if ((bool)($compositeResult['composite_candidate_selected'] ?? false) && isset($compositeResult['selected_candidate_build'])) {
+                $candidateBuild = (array)$compositeResult['selected_candidate_build'];
+            }
+        }
+
+        $result['composite_candidate_enabled']              = (bool)($compositeResult['composite_candidate_enabled']          ?? false);
+        $result['composite_candidates_tested_total']        = (int)($compositeResult['composite_candidates_tested_total']     ?? 0);
+        $result['composite_candidates_passed_total']        = (int)($compositeResult['composite_candidates_passed_total']     ?? 0);
+        $result['composite_candidates_rejected_total']      = (int)($compositeResult['composite_candidates_rejected_total']   ?? 0);
+        $result['composite_candidate_best_score']           = $compositeResult['composite_candidate_best_score']              ?? null;
+        $result['composite_candidate_best_bad_capture_rate_pct'] = $compositeResult['composite_candidate_best_bad_capture_rate_pct'] ?? null;
+        $result['composite_candidate_best_good_block_rate_pct']  = $compositeResult['composite_candidate_best_good_block_rate_pct']  ?? null;
+        $result['composite_candidate_best_net_score']       = $compositeResult['composite_candidate_best_net_score']          ?? null;
+        $result['composite_candidate_selected']             = (bool)($compositeResult['composite_candidate_selected']         ?? false);
+        $result['composite_candidate_selected_id']          = $compositeResult['composite_candidate_selected_id']             ?? null;
+        $result['composite_candidate_reject_reason_counts'] = (array)($compositeResult['composite_candidate_reject_reason_counts'] ?? []);
+
+        $result['candidate_profile_written']  = (bool)($candidateBuild['profile_written'] ?? false);
         $result['candidate_profile_generated'] = (bool)($candidateBuild['profile_written'] ?? false);
-        $result['candidate_profile_id'] = $candidateBuild['profile_id'];
-        $result['candidate_rules_total'] = $candidateBuild['rules_total'];
+        $result['candidate_profile_id']        = $candidateBuild['profile_id'];
+        $result['candidate_rules_total']       = $candidateBuild['rules_total'];
+        $compositeSelected = (bool)($compositeResult['composite_candidate_selected'] ?? false);
         $result['candidate_rules_missing_reason'] = ((int)($candidateBuild['rules_total'] ?? 0) > 0)
             ? null
-            : $this->normalizeCandidateRulesMissingReason((string)($candidateBuild['missing_reason'] ?? ''));
+            : ($compositeSelected
+                ? null
+                : $this->normalizeCandidateRulesMissingReason((string)($candidateBuild['missing_reason'] ?? '')));
         $result['candidate_weighted_components_total'] = $candidateBuild['components_total'];
         $result['candidate_profile_available'] = $candidateBuild['available'];
         $result['candidate_profile_missing_reason'] = ((bool)($candidateBuild['profile_written'] ?? false))
@@ -931,7 +961,10 @@ final class DynamicLearningService
 
         $blockedByMinData = (bool)($result['promotion_blocked_by_min_data'] ?? false);
         $eligible = (bool)($result['candidate_eligible_for_demo_apply'] ?? false) && !$blockedByMinData;
-        $status = $blockedByMinData ? 'insufficient_data' : 'candidate_diagnostic_only';
+        $noRules = ((int)($result['candidate_rules_total'] ?? 0) === 0);
+        $status = $blockedByMinData
+            ? 'insufficient_data'
+            : ($noRules ? 'no_safe_candidate_rules' : 'candidate_diagnostic_only');
 
         $candidate['eligibility_status'] = $status;
         $candidate['eligible_for_demo_apply'] = $eligible;
@@ -1486,6 +1519,7 @@ final class DynamicLearningService
 
         $selectedRules    = [];
         $excludedReasons  = [];
+        $singleFeatureCandidatesTotal = 0;
 
         foreach ((array)(($patternResult['micro_threshold_candidates'] ?? [])['candidates'] ?? []) as $tc) {
             if (!is_array($tc)) {
@@ -1503,6 +1537,7 @@ final class DynamicLearningService
             if ($feature === '') {
                 continue;
             }
+            $singleFeatureCandidatesTotal++;
             if ($confidence === 'low') {
                 $excludedReasons['low_confidence'] = ($excludedReasons['low_confidence'] ?? 0) + 1;
                 continue;
@@ -1614,7 +1649,7 @@ final class DynamicLearningService
             'composite_score_config'        => $compositeScoreConfig,
             'excluded_rules_total'          => array_sum($excludedReasons),
             'excluded_reason_counts'        => $excludedReasons,
-            'status'                        => count($selectedRules) > 0 ? 'candidate' : 'insufficient_data',
+            'status'                        => count($selectedRules) > 0 ? 'candidate' : 'no_safe_candidate_rules',
             'apply_mode'                    => 'observe_only',
         ];
 
@@ -1631,14 +1666,18 @@ final class DynamicLearningService
         }
 
         $available = count($selectedRules) > 0;
+        $singleFeatureRejectedTotal = array_sum($excludedReasons);
         return [
             'profile'          => $profile,
             'profile_id'       => $profileId,
             'rules_total'      => count($selectedRules),
             'components_total' => count($riskComponents),
             'available'        => $available,
-            'missing_reason'   => $available ? null : 'no_candidate_rules_selected',
+            'missing_reason'   => $available ? null : 'no_safe_candidate_rules_good_overlap',
             'profile_written'  => $profileWritten,
+            'single_feature_candidates_total' => $singleFeatureCandidatesTotal,
+            'single_feature_rejected_total'   => $singleFeatureRejectedTotal,
+            'single_feature_reject_reason_counts' => $excludedReasons,
         ];
     }
 
@@ -1707,14 +1746,435 @@ final class DynamicLearningService
         ];
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Composite candidate builder
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Build composite candidate profiles from 2–3 feature combinations.
+     * Diagnostic / observe-only — never blocks real signals.
+     *
+     * @param array<string,mixed>        $cfg
+     * @param array<array<string,mixed>> $patternMiningOutcomes
+     * @param array<string,mixed>        $patternResult
+     * @param array<string,mixed>        $epochMeta
+     * @return array<string,mixed>
+     */
+    private function buildCompositeCandidates(
+        array $cfg,
+        array $patternMiningOutcomes,
+        array $patternResult,
+        array $epochMeta
+    ): array {
+        $compositeEnabled     = (bool)($cfg['composite_candidate_enabled']                ?? true);
+        $maxComponents        = max(2, min(3, (int)($cfg['composite_candidate_max_components']       ?? 3)));
+        $minComponents        = max(2, (int)($cfg['composite_candidate_min_components']              ?? 2));
+        $maxToTest            = max(1, (int)($cfg['composite_candidate_max_candidates_to_test']      ?? 100));
+        $minBadCapture        = (float)($cfg['composite_candidate_min_bad_capture_rate_pct']         ?? 20.0);
+        $maxGoodBlock         = (float)($cfg['composite_candidate_max_good_block_rate_pct']          ?? 20.0);
+        $minNetScore          = (float)($cfg['composite_candidate_min_net_score']                    ?? 1.0);
+        $allowBroadSecondary  = (bool)($cfg['composite_candidate_allow_broad_secondary']             ?? true);
+        $maxRules             = max(1, (int)($cfg['candidate_max_rules']                             ?? 10));
+        $blockThreshold       = 60.0;
+
+        $emptyResult = [
+            'composite_candidate_enabled'               => $compositeEnabled,
+            'composite_candidates_tested_total'         => 0,
+            'composite_candidates_passed_total'         => 0,
+            'composite_candidates_rejected_total'       => 0,
+            'composite_candidate_reject_reason_counts'  => [],
+            'composite_candidate_best_score'            => null,
+            'composite_candidate_best_bad_capture_rate_pct' => null,
+            'composite_candidate_best_good_block_rate_pct'  => null,
+            'composite_candidate_best_net_score'        => null,
+            'composite_candidate_selected'              => false,
+            'composite_candidate_selected_id'           => null,
+            'selected_candidate_build'                  => null,
+        ];
+
+        if (!$compositeEnabled) {
+            return $emptyResult;
+        }
+
+        // Primary feature pool (numeric micro/context features suitable as primary conditions)
+        $primaryPool = [
+            'single_candle_dominance_pct',
+            'micro_window_5m.single_candle_dominance_pct',
+            'micro_window_10m.single_candle_dominance_pct',
+            'micro_window_15m.single_candle_dominance_pct',
+            'largest_candle_change_pct',
+            'largest_candle_share_pct',
+            'avg_upper_wick_pct',
+            'avg_lower_wick_pct',
+            'max_upper_wick_pct',
+            'max_lower_wick_pct',
+            'direction_flip_count',
+            'micro_window_5m.direction_flip_count',
+            'micro_window_10m.direction_flip_count',
+            'micro_window_15m.direction_flip_count',
+            'pullback_max_pct',
+            'micro_window_5m.pullback_max_pct',
+            'micro_window_10m.pullback_max_pct',
+            'micro_window_15m.pullback_max_pct',
+            'late_spike_risk_score',
+            'impulse_birth_score',
+            'bounce_only_risk_score',
+            'entry_quality_micro_score',
+            'dump_verticality_score',
+            'dump_rebound_after_low_pct',
+            'bid_ask_notional_ratio',
+            'nearest_ask_wall_distance_pct',
+            'bid_support_score',
+        ];
+
+        // Broad/context features allowed as secondary only
+        $broadBases = ['wave_regime', 'context_phase', 'ask_wall_risk', 'open_interest_confirmed', 'bid_support_quality'];
+
+        // Get all threshold candidates
+        $allCandidates = (array)(($patternResult['micro_threshold_candidates'] ?? [])['candidates'] ?? []);
+
+        $usablePrimary = [];
+        $usableBroad   = [];
+        foreach ($allCandidates as $tc) {
+            if (!is_array($tc)) {
+                continue;
+            }
+            $feature   = (string)($tc['feature']              ?? '');
+            $direction = (string)($tc['direction']            ?? 'unclear');
+            $threshold = $tc['candidate_threshold']           ?? null;
+            if ($feature === '' || $direction === 'unclear' || $threshold === null) {
+                continue;
+            }
+            $baseName = explode('.', $feature)[0];
+            $isPrimary = in_array($feature, $primaryPool, true);
+            $isBroad   = in_array($feature, $broadBases, true) || in_array($baseName, $broadBases, true);
+            if ($isPrimary) {
+                $usablePrimary[] = $tc;
+            } elseif ($isBroad && $allowBroadSecondary) {
+                $usableBroad[] = $tc;
+            }
+        }
+
+        // Sort by net_score descending and cap
+        usort($usablePrimary, static fn(array $a, array $b): int => ((float)($b['net_score'] ?? 0.0) <=> (float)($a['net_score'] ?? 0.0)));
+        usort($usableBroad,   static fn(array $a, array $b): int => ((float)($b['net_score'] ?? 0.0) <=> (float)($a['net_score'] ?? 0.0)));
+        $usablePrimary = array_slice($usablePrimary, 0, 15);
+        $primaryCount  = count($usablePrimary);
+
+        if ($primaryCount < $minComponents) {
+            return $emptyResult;
+        }
+
+        // Generate combinations
+        $combos = [];
+
+        // 2-feature primary pairs
+        for ($i = 0; $i < $primaryCount - 1; $i++) {
+            for ($j = $i + 1; $j < $primaryCount; $j++) {
+                $combos[] = [$usablePrimary[$i], $usablePrimary[$j]];
+            }
+        }
+
+        // 3-feature primary triplets (top 8 only to limit explosion)
+        if ($maxComponents >= 3) {
+            $topPrimary = array_slice($usablePrimary, 0, 8);
+            $topCount   = count($topPrimary);
+            for ($i = 0; $i < $topCount - 2; $i++) {
+                for ($j = $i + 1; $j < $topCount - 1; $j++) {
+                    for ($k = $j + 1; $k < $topCount; $k++) {
+                        $combos[] = [$topPrimary[$i], $topPrimary[$j], $topPrimary[$k]];
+                    }
+                }
+            }
+        }
+
+        // 2-feature: 1 primary + 1 broad (if allowed)
+        if ($allowBroadSecondary && !empty($usableBroad)) {
+            $topBroad       = array_slice($usableBroad, 0, 5);
+            $topPrimForBroad = array_slice($usablePrimary, 0, 5);
+            foreach ($topPrimForBroad as $p) {
+                foreach ($topBroad as $b) {
+                    $combos[] = [$p, $b];
+                }
+            }
+        }
+
+        // Cap to maxToTest
+        $combos = array_slice($combos, 0, $maxToTest);
+
+        // Count outcome classes
+        $totalBad = $totalGood = 0;
+        foreach ($patternMiningOutcomes as $o) {
+            if (!is_array($o)) {
+                continue;
+            }
+            $cls = (string)($o['outcome_class'] ?? '');
+            if ($cls === 'bad_entry') {
+                $totalBad++;
+            } elseif ($cls === 'good_or_do_not_touch') {
+                $totalGood++;
+            }
+        }
+
+        if ($totalBad === 0 && $totalGood === 0) {
+            return $emptyResult;
+        }
+
+        // Build feature index and cache per outcome (same logic as replayCandidateProfile)
+        $featureIndex    = $this->buildFeatureIndexForReplay();
+        $outcomeFeatures = [];
+        foreach ($patternMiningOutcomes as $idx => $o) {
+            if (!is_array($o)) {
+                continue;
+            }
+            $extracted = $this->extractFeaturesFromOutcomeForReplay($o, $featureIndex);
+            $outcomeFeatures[$idx] = $extracted['features'];
+        }
+
+        // Test each combo
+        $testedCandidates = [];
+        $passed           = [];
+        $rejected         = [];
+        $rejectReasonCounts = [];
+
+        foreach ($combos as $combo) {
+            // Build rules from combo components
+            $rules = [];
+            $broadOnly = true;
+            foreach ($combo as $tc) {
+                $feature   = (string)($tc['feature']   ?? '');
+                $direction = (string)($tc['direction'] ?? '');
+                $threshold = $tc['candidate_threshold'] ?? null;
+                $netScore  = (float)($tc['net_score']  ?? 1.0);
+                if ($feature === '' || $direction === 'unclear' || $threshold === null) {
+                    continue;
+                }
+                $op     = $direction === 'higher_bad_risk' ? 'gte' : 'lte';
+                $weight = round(max(5.0, min(25.0, $netScore > 0 ? $netScore * 2.5 : 5.0)), 1);
+                $ruleId = 'comp_' . substr(sha1($feature . '|' . $op . '|' . (string)$threshold), 0, 10);
+                $rules[] = [
+                    'rule_id'   => $ruleId,
+                    'feature'   => $feature,
+                    'direction' => $direction,
+                    'op'        => $op,
+                    'threshold' => $threshold,
+                    'weight'    => $weight,
+                    'net_score' => $netScore,
+                    'confidence' => $tc['confidence'] ?? 'medium',
+                    'action'    => 'observe_only',
+                    'scope'     => 'demo_only',
+                    'status'    => 'candidate',
+                ];
+                // Track if at least one primary feature is present
+                $baseName = explode('.', $feature)[0];
+                $isBroad  = in_array($feature, $broadBases, true) || in_array($baseName, $broadBases, true);
+                if (!$isBroad) {
+                    $broadOnly = false;
+                }
+            }
+
+            if (count($rules) < $minComponents || $broadOnly) {
+                continue;
+            }
+
+            // Lightweight replay: count bad/good blocked
+            $badBlocked = $goodBlocked = 0;
+            foreach ($patternMiningOutcomes as $idx => $o) {
+                if (!is_array($o)) {
+                    continue;
+                }
+                $features = $outcomeFeatures[$idx] ?? [];
+                $details  = $this->computeCandidateRiskScoreDetails($features, $rules);
+                if ((float)($details['risk_score_pct'] ?? 0.0) >= $blockThreshold) {
+                    $cls = (string)($o['outcome_class'] ?? '');
+                    if ($cls === 'bad_entry') {
+                        $badBlocked++;
+                    } elseif ($cls === 'good_or_do_not_touch') {
+                        $goodBlocked++;
+                    }
+                }
+            }
+
+            $badCapturePct = $totalBad  > 0 ? round($badBlocked  / $totalBad  * 100.0, 2) : 0.0;
+            $goodBlockPct  = $totalGood > 0 ? round($goodBlocked / $totalGood * 100.0, 2) : 0.0;
+            $netScore      = round($badBlocked * 1.0 - $goodBlocked * 1.5, 4);
+
+            $featureNames = array_map(static fn(array $r): string => (string)($r['feature'] ?? ''), $rules);
+            $comboId      = 'comp_' . substr(sha1(implode('+', $featureNames)), 0, 12);
+
+            $candidateRecord = [
+                'combo_id'              => $comboId,
+                'components'            => $featureNames,
+                'rules_total'           => count($rules),
+                'bad_blocked_total'     => $badBlocked,
+                'good_blocked_total'    => $goodBlocked,
+                'bad_capture_rate_pct'  => $badCapturePct,
+                'good_block_rate_pct'   => $goodBlockPct,
+                'net_score'             => $netScore,
+                'rules'                 => $rules,
+            ];
+
+            // Check guards
+            $rejectReason = null;
+            if ($badCapturePct < $minBadCapture) {
+                $rejectReason = 'bad_capture_rate_below_min';
+            } elseif ($goodBlockPct > $maxGoodBlock) {
+                $rejectReason = 'good_block_rate_above_max';
+            } elseif ($netScore < $minNetScore) {
+                $rejectReason = 'net_score_below_min';
+            }
+
+            if ($rejectReason !== null) {
+                $candidateRecord['status']        = 'rejected';
+                $candidateRecord['reject_reason'] = $rejectReason;
+                $rejected[] = $candidateRecord;
+                $rejectReasonCounts[$rejectReason] = ($rejectReasonCounts[$rejectReason] ?? 0) + 1;
+            } else {
+                $candidateRecord['status'] = 'passed';
+                $passed[] = $candidateRecord;
+            }
+            $testedCandidates[] = $candidateRecord;
+        }
+
+        // Sort passed by net_score descending and pick best
+        usort($passed, static fn(array $a, array $b): int => ((float)($b['net_score'] ?? 0.0) <=> (float)($a['net_score'] ?? 0.0)));
+        $bestCandidate = $passed[0] ?? null;
+
+        // Store composite_candidates.json (top 20)
+        $topStore = array_merge(
+            array_slice($passed, 0, 20),
+            array_slice($rejected, 0, max(0, 20 - count($passed)))
+        );
+        $storePath = $this->storagePath('profiles/early_impulse_growth_long/composite_candidates.json');
+        $storeDir  = dirname($storePath);
+        if (!is_dir($storeDir)) {
+            @mkdir($storeDir, 0755, true);
+        }
+        $storeData = [
+            'generated_at'              => date('c'),
+            'tested_total'              => count($testedCandidates),
+            'passed_total'              => count($passed),
+            'rejected_total'            => count($rejected),
+            'reject_reason_counts'      => $rejectReasonCounts,
+            'best_combo_id'             => $bestCandidate['combo_id'] ?? null,
+            'best_bad_capture_rate_pct' => $bestCandidate['bad_capture_rate_pct'] ?? null,
+            'best_good_block_rate_pct'  => $bestCandidate['good_block_rate_pct'] ?? null,
+            'best_net_score'            => $bestCandidate['net_score'] ?? null,
+            'candidates'                => $topStore,
+        ];
+        $jsonStr = json_encode($storeData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (is_string($jsonStr)) {
+            @file_put_contents($storePath, $jsonStr, LOCK_EX);
+        }
+
+        // If best composite found, build a candidate profile from it
+        $selectedBuild = null;
+        if ($bestCandidate !== null) {
+            $compositeRules = (array)($bestCandidate['rules'] ?? []);
+            $compositeRules = array_slice($compositeRules, 0, $maxRules);
+
+            $riskComponents = [];
+            foreach ($compositeRules as $rule) {
+                $key = str_replace(['.', ' '], '_', (string)($rule['feature'] ?? ''));
+                $riskComponents[$key] = (float)($rule['weight'] ?? 10.0);
+            }
+            $compositeScoreConfig = [
+                'version'                          => 'v1',
+                'source'                           => 'composite_separability',
+                'status'                           => 'diagnostic_only',
+                'score_scale'                      => 'percent_of_max_matched_weight',
+                'risk_components'                  => $riskComponents,
+                'quality_components'               => [],
+                'risk_threshold_block_candidate'   => $blockThreshold,
+                'demo_only_threshold_candidate'    => 30.0,
+            ];
+
+            $profileId = 'dl_comp_' . gmdate('Ymd_His');
+            $totalOutcomes = count($patternMiningOutcomes);
+            $profile = [
+                'profile_id'                     => $profileId,
+                'strategy_id'                    => self::STRATEGY_ID,
+                'created_at'                     => date('c'),
+                'risk_profile_mode'              => (string)($cfg['risk_profile_mode'] ?? 'working_real'),
+                'outcome_classification_profile' => (string)($cfg['outcome_classification_profile'] ?? 'working_real_8_15'),
+                'source_epoch_id'                => $epochMeta['real_learning_epoch_id'] ?? null,
+                'source_outcomes_total'          => $totalOutcomes,
+                'source_bad_entries_total'       => $totalBad,
+                'source_good_entries_total'      => $totalGood,
+                'rules'                          => $compositeRules,
+                'score_scale'                    => 'percent_of_max_matched_weight',
+                'weights'                        => $compositeScoreConfig,
+                'composite_score_config'         => $compositeScoreConfig,
+                'excluded_rules_total'           => 0,
+                'excluded_reason_counts'         => [],
+                'composite_combo_id'             => $bestCandidate['combo_id'] ?? null,
+                'composite_components'           => (array)($bestCandidate['components'] ?? []),
+                'composite_bad_capture_rate_pct' => $bestCandidate['bad_capture_rate_pct'] ?? null,
+                'composite_good_block_rate_pct'  => $bestCandidate['good_block_rate_pct'] ?? null,
+                'composite_net_score'            => $bestCandidate['net_score'] ?? null,
+                'status'                         => 'candidate',
+                'apply_mode'                     => 'observe_only',
+                'candidate_type'                 => 'composite',
+            ];
+
+            // Write candidate_profile.json with composite rules
+            $profilePath = $this->storagePath('profiles/early_impulse_growth_long/candidate_profile.json');
+            $profileDir  = dirname($profilePath);
+            if (!is_dir($profileDir)) {
+                @mkdir($profileDir, 0755, true);
+            }
+            $profileWritten = false;
+            $jsonStr = json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (is_string($jsonStr)) {
+                $profileWritten = @file_put_contents($profilePath, $jsonStr, LOCK_EX) !== false;
+            }
+
+            $selectedBuild = [
+                'profile'          => $profile,
+                'profile_id'       => $profileId,
+                'rules_total'      => count($compositeRules),
+                'components_total' => count($riskComponents),
+                'available'        => true,
+                'missing_reason'   => null,
+                'profile_written'  => $profileWritten,
+                'single_feature_candidates_total'     => 0,
+                'single_feature_rejected_total'       => 0,
+                'single_feature_reject_reason_counts' => [],
+                'composite_selected'                  => true,
+            ];
+        }
+
+        return [
+            'composite_candidate_enabled'               => true,
+            'composite_candidates_tested_total'         => count($testedCandidates),
+            'composite_candidates_passed_total'         => count($passed),
+            'composite_candidates_rejected_total'       => count($rejected),
+            'composite_candidate_reject_reason_counts'  => $rejectReasonCounts,
+            'composite_candidate_best_score'            => $bestCandidate['net_score'] ?? null,
+            'composite_candidate_best_bad_capture_rate_pct' => $bestCandidate['bad_capture_rate_pct'] ?? null,
+            'composite_candidate_best_good_block_rate_pct'  => $bestCandidate['good_block_rate_pct'] ?? null,
+            'composite_candidate_best_net_score'        => $bestCandidate['net_score'] ?? null,
+            'composite_candidate_selected'              => $bestCandidate !== null,
+            'composite_candidate_selected_id'           => $bestCandidate['combo_id'] ?? null,
+            'selected_candidate_build'                  => $selectedBuild,
+        ];
+    }
+
+
     private function normalizeCandidateRulesMissingReason(string $reason): string
     {
         $normalized = strtolower(trim($reason));
         if ($normalized === '' || $normalized === 'insufficient_data' || $normalized === 'no_epoch_outcomes') {
             return 'insufficient_data';
         }
-        if (in_array($normalized, ['no_candidate_rules_selected', 'no_rules_passed_selection_criteria'], true)) {
-            return 'no_candidate_rules_selected';
+        if (in_array($normalized, [
+            'no_candidate_rules_selected',
+            'no_rules_passed_selection_criteria',
+            'no_safe_candidate_rules',
+            'no_safe_candidate_rules_good_overlap',
+            'no_composite_rules_passed_good_overlap_guard',
+        ], true)) {
+            return 'no_safe_candidate_rules';
         }
         return 'insufficient_data';
     }
@@ -2008,8 +2468,8 @@ final class DynamicLearningService
      */
     private function buildReplayResultNoRules(int $total, int $totalBad, int $totalGood, array $defaultMetrics, ?float $defaultScore, int $rulesTotal): array
     {
-        $status = $rulesTotal === 0 ? 'insufficient_data' : 'no_score';
-        $reason = $rulesTotal === 0 ? 'no_candidate_rules_selected' : 'no_outcomes';
+        $status = $rulesTotal === 0 ? 'no_safe_candidate_rules' : 'no_score';
+        $reason = $rulesTotal === 0 ? 'no_safe_candidate_rules_good_overlap' : 'no_outcomes';
         return [
             'candidate_replay_enabled'              => true,
             'replay_generated_at'                   => date('c'),

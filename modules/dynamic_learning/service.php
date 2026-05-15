@@ -680,7 +680,7 @@ final class DynamicLearningService
         if ((bool)($result['promotion_blocked_by_min_data'] ?? false)) {
             $result['candidate_status'] = 'insufficient_data';
             $result['promotion_decision'] = 'keep_current';
-            $result['promotion_reason'] = (string)($result['promotion_blocked_reason'] ?? 'rolling_window_below_min_outcomes');
+            $result['promotion_reason'] = (string)($result['promotion_blocked_reason'] ?? 'rolling_sliding_window_and_fallback_below_min_counts');
             $result['candidate_can_apply'] = false;
             $result['candidate_eligible_for_demo_apply'] = false;
             $result['auto_apply_safety_blocked'] = true;

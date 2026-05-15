@@ -343,12 +343,24 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     <!-- Rolling window counters -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px;">
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;">rolling_learning_enabled</div>
-        <div style="font-weight:600;"><?= $e((bool)($run['rolling_learning_enabled'] ?? false) ? 'true' : 'false') ?></div>
+        <div style="font-size:11px;opacity:.8;">rolling_guard_mode</div>
+        <div style="font-weight:600;"><?= $e((string)($run['rolling_guard_mode'] ?? 'sliding_window')) ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;">window_minutes</div>
-        <div style="font-weight:600;"><?= $e((int)($run['rolling_learning_window_minutes'] ?? 120)) ?></div>
+        <div style="font-size:11px;opacity:.8;">learning_window</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_learning_window_minutes'] ?? 1440)) ?> min</div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rebuild_interval</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_retrain_interval_minutes'] ?? 120)) ?> min</div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_window_start_at</div>
+        <div style="font-weight:600;"><?= $e((string)($run['rolling_window_start_at'] ?? '—')) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_window_end_at</div>
+        <div style="font-weight:600;"><?= $e((string)($run['rolling_window_end_at'] ?? '—')) ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">rolling_window_outcomes</div>
@@ -363,20 +375,20 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         <div style="font-weight:600;"><?= $e((int)($run['rolling_window_good_entry_total'] ?? 0)) ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;">rolling_min_closed_outcomes</div>
-        <div style="font-weight:600;"><?= $e((int)($run['rolling_min_closed_outcomes'] ?? 0)) ?></div>
+        <div style="font-size:11px;opacity:.8;">rolling_selected_sample_type</div>
+        <div style="font-weight:600;"><?= $e((string)($run['rolling_selected_sample_type'] ?? 'insufficient')) ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;">rolling_min_bad_entries</div>
-        <div style="font-weight:600;"><?= $e((int)($run['rolling_min_bad_entries'] ?? 0)) ?></div>
+        <div style="font-size:11px;opacity:.8;">rolling_fallback_used</div>
+        <div style="font-weight:600;"><?= $e((bool)($run['rolling_fallback_used'] ?? false) ? 'yes' : 'no') ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;">rolling_min_good_entries</div>
-        <div style="font-weight:600;"><?= $e((int)($run['rolling_min_good_entries'] ?? 0)) ?></div>
+        <div style="font-size:11px;opacity:.8;">rolling_last_retrain_at</div>
+        <div style="font-weight:600;"><?= $e((string)($run['rolling_last_retrain_at'] ?? '—')) ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;">rolling_window_exit_issue</div>
-        <div style="font-weight:600;"><?= $e((int)($run['rolling_window_entry_ok_exit_issue_total'] ?? 0)) ?></div>
+        <div style="font-size:11px;opacity:.8;">rolling_next_retrain_at</div>
+        <div style="font-weight:600;"><?= $e((string)($run['rolling_next_retrain_at'] ?? '—')) ?></div>
       </div>
     </div>
 

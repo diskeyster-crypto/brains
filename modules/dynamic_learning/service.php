@@ -232,13 +232,24 @@ final class DynamicLearningService
             'quarantined_rule_examples' => [],
             // Rolling quality guard defaults
             'rolling_learning_enabled' => (bool)($cfg['rolling_learning_enabled'] ?? true),
-            'rolling_learning_window_minutes' => (int)($cfg['rolling_learning_window_minutes'] ?? 120),
-            'rolling_retrain_interval_minutes' => (int)($cfg['rolling_retrain_interval_minutes'] ?? 60),
+            'rolling_guard_mode' => (string)($cfg['rolling_guard_mode'] ?? 'sliding_window'),
+            'rolling_learning_window_minutes' => (int)($cfg['rolling_learning_window_minutes'] ?? 1440),
+            'rolling_retrain_interval_minutes' => (int)($cfg['rolling_retrain_interval_minutes'] ?? 120),
+            'rolling_fallback_last_n_outcomes' => (int)($cfg['rolling_fallback_last_n_outcomes'] ?? 50),
             'rolling_min_closed_outcomes' => (int)($cfg['rolling_min_closed_outcomes'] ?? 20),
+            'rolling_window_start_at' => null,
+            'rolling_window_end_at' => null,
+            'rolling_selected_sample_type' => 'insufficient',
+            'rolling_fallback_used' => false,
+            'rolling_last_retrain_at' => null,
+            'rolling_next_retrain_at' => null,
             'rolling_window_outcomes_total' => 0,
             'rolling_window_bad_entry_total' => 0,
             'rolling_window_good_entry_total' => 0,
             'rolling_window_entry_ok_exit_issue_total' => 0,
+            'rolling_selected_outcomes_total' => 0,
+            'rolling_selected_bad_entry_total' => 0,
+            'rolling_selected_good_entry_total' => 0,
             'default_quality_score' => null,
             'active_dynamic_quality_score' => null,
             'candidate_quality_score' => null,
@@ -505,15 +516,26 @@ final class DynamicLearningService
         // 7b. Rolling quality guard
         $rollingGuard = $this->runRollingQualityGuard($cfg, $patternMiningOutcomes, $result);
         $result['rolling_learning_enabled'] = $rollingGuard['rolling_learning_enabled'];
+        $result['rolling_guard_mode'] = $rollingGuard['rolling_guard_mode'];
         $result['rolling_learning_window_minutes'] = $rollingGuard['rolling_learning_window_minutes'];
         $result['rolling_retrain_interval_minutes'] = $rollingGuard['rolling_retrain_interval_minutes'];
+        $result['rolling_fallback_last_n_outcomes'] = $rollingGuard['rolling_fallback_last_n_outcomes'];
         $result['rolling_min_closed_outcomes'] = $rollingGuard['rolling_min_closed_outcomes'];
         $result['rolling_min_bad_entries'] = $rollingGuard['rolling_min_bad_entries'];
         $result['rolling_min_good_entries'] = $rollingGuard['rolling_min_good_entries'];
+        $result['rolling_window_start_at'] = $rollingGuard['rolling_window_start_at'];
+        $result['rolling_window_end_at'] = $rollingGuard['rolling_window_end_at'];
+        $result['rolling_selected_sample_type'] = $rollingGuard['rolling_selected_sample_type'];
+        $result['rolling_fallback_used'] = $rollingGuard['rolling_fallback_used'];
+        $result['rolling_last_retrain_at'] = $rollingGuard['rolling_last_retrain_at'];
+        $result['rolling_next_retrain_at'] = $rollingGuard['rolling_next_retrain_at'];
         $result['rolling_window_outcomes_total'] = $rollingGuard['rolling_window_outcomes_total'];
         $result['rolling_window_bad_entry_total'] = $rollingGuard['rolling_window_bad_entry_total'];
         $result['rolling_window_good_entry_total'] = $rollingGuard['rolling_window_good_entry_total'];
         $result['rolling_window_entry_ok_exit_issue_total'] = $rollingGuard['rolling_window_entry_ok_exit_issue_total'];
+        $result['rolling_selected_outcomes_total'] = $rollingGuard['rolling_selected_outcomes_total'];
+        $result['rolling_selected_bad_entry_total'] = $rollingGuard['rolling_selected_bad_entry_total'];
+        $result['rolling_selected_good_entry_total'] = $rollingGuard['rolling_selected_good_entry_total'];
         $result['default_quality_score'] = $rollingGuard['default_quality_score'];
         $result['active_dynamic_quality_score'] = $rollingGuard['active_dynamic_quality_score'];
         $result['candidate_quality_score'] = $rollingGuard['candidate_quality_score'];
@@ -537,7 +559,7 @@ final class DynamicLearningService
         $result['rollback_reason'] = $rollingGuard['rollback_reason'];
         $result['rollback_cooldown_until'] = $rollingGuard['rollback_cooldown_until'];
         $result['rollback_action'] = $rollingGuard['rollback_action'];
-        $result['promotion_guard_scope'] = 'rolling_window';
+        $result['promotion_guard_scope'] = 'sliding_window';
 
         // 7c. Candidate profile builder from micro separability diagnostics
         $candidateBuild = $this->buildCandidateProfileFromSeparability($cfg, $patternMiningOutcomes, $patterns, $epochMeta);
@@ -630,7 +652,7 @@ final class DynamicLearningService
         $result['candidate_replay_summary'] = $this->buildCandidateReplaySummary($candidateReplay, $result);
         $result['candidate_build_scope'] = 'active_epoch';
         $result['candidate_replay_scope'] = 'active_epoch';
-        $result['promotion_guard_scope'] = 'rolling_window';
+        $result['promotion_guard_scope'] = 'sliding_window';
         $result['scope_mismatch_allowed_for_diagnostics'] = true;
         $result['replay_diagnostic_available'] = (bool)($candidateReplay['candidate_replay_enabled'] ?? false);
         $result['replay_suggests_improvement'] = (bool)($candidateReplay['replay_suggests_improvement'] ?? false);
@@ -861,6 +883,19 @@ final class DynamicLearningService
         $profile['default_benchmark']          = $guardResult['default_result_summary']   ?? null;
         $profile['active_dynamic_benchmark']   = $guardResult['active_dynamic_result_summary'] ?? null;
         $profile['candidate_benchmark']        = $guardResult['candidate_result_summary'] ?? null;
+        $profile['rolling_guard_mode']         = (string)($guardResult['rolling_guard_mode'] ?? 'sliding_window');
+        $profile['rolling_learning_window_minutes'] = (int)($guardResult['rolling_learning_window_minutes'] ?? 1440);
+        $profile['rolling_retrain_interval_minutes'] = (int)($guardResult['rolling_retrain_interval_minutes'] ?? 120);
+        $profile['rolling_fallback_last_n_outcomes'] = (int)($guardResult['rolling_fallback_last_n_outcomes'] ?? 50);
+        $profile['rolling_window_start_at']    = $guardResult['rolling_window_start_at'] ?? null;
+        $profile['rolling_window_end_at']      = $guardResult['rolling_window_end_at'] ?? null;
+        $profile['rolling_selected_sample_type'] = (string)($guardResult['rolling_selected_sample_type'] ?? 'insufficient');
+        $profile['rolling_fallback_used']      = (bool)($guardResult['rolling_fallback_used'] ?? false);
+        $profile['rolling_last_retrain_at']    = $guardResult['rolling_last_retrain_at'] ?? null;
+        $profile['rolling_next_retrain_at']    = $guardResult['rolling_next_retrain_at'] ?? null;
+        $profile['rolling_window_outcomes_total'] = (int)($guardResult['rolling_window_outcomes_total'] ?? 0);
+        $profile['rolling_window_bad_entry_total'] = (int)($guardResult['rolling_window_bad_entry_total'] ?? 0);
+        $profile['rolling_window_good_entry_total'] = (int)($guardResult['rolling_window_good_entry_total'] ?? 0);
         $profile['compared_to_default']        = $guardResult['default_result_summary'] !== null;
         $profile['auto_not_worse_than_default'] = (bool)($cfg['require_not_worse_than_default'] ?? true);
         $profile['no_change_band_pct']         = $guardResult['no_change_band_pct'];
@@ -988,10 +1023,23 @@ final class DynamicLearningService
         $profile['composite_candidate_no_selection_reason'] = $result['composite_candidate_no_selection_reason'] ?? ($profile['composite_candidate_no_selection_reason'] ?? null);
         $profile['candidate_build_scope'] = (string)($result['candidate_build_scope'] ?? 'active_epoch');
         $profile['candidate_replay_scope'] = (string)($result['candidate_replay_scope'] ?? 'active_epoch');
-        $profile['promotion_guard_scope'] = (string)($result['promotion_guard_scope'] ?? 'rolling_window');
+        $profile['promotion_guard_scope'] = (string)($result['promotion_guard_scope'] ?? 'sliding_window');
         $profile['scope_mismatch_allowed_for_diagnostics'] = (bool)($result['scope_mismatch_allowed_for_diagnostics'] ?? true);
         $profile['auto_apply_safety_blocked'] = (bool)($result['auto_apply_safety_blocked'] ?? true);
         $profile['auto_apply_safety_reason'] = $result['auto_apply_safety_reason'] ?? ($profile['auto_apply_safety_reason'] ?? 'candidate_not_eligible_for_demo_apply');
+        $profile['rolling_guard_mode'] = (string)($result['rolling_guard_mode'] ?? ($profile['rolling_guard_mode'] ?? 'sliding_window'));
+        $profile['rolling_learning_window_minutes'] = (int)($result['rolling_learning_window_minutes'] ?? ($profile['rolling_learning_window_minutes'] ?? 1440));
+        $profile['rolling_retrain_interval_minutes'] = (int)($result['rolling_retrain_interval_minutes'] ?? ($profile['rolling_retrain_interval_minutes'] ?? 120));
+        $profile['rolling_fallback_last_n_outcomes'] = (int)($result['rolling_fallback_last_n_outcomes'] ?? ($profile['rolling_fallback_last_n_outcomes'] ?? 50));
+        $profile['rolling_window_start_at'] = $result['rolling_window_start_at'] ?? ($profile['rolling_window_start_at'] ?? null);
+        $profile['rolling_window_end_at'] = $result['rolling_window_end_at'] ?? ($profile['rolling_window_end_at'] ?? null);
+        $profile['rolling_selected_sample_type'] = (string)($result['rolling_selected_sample_type'] ?? ($profile['rolling_selected_sample_type'] ?? 'insufficient'));
+        $profile['rolling_fallback_used'] = (bool)($result['rolling_fallback_used'] ?? ($profile['rolling_fallback_used'] ?? false));
+        $profile['rolling_last_retrain_at'] = $result['rolling_last_retrain_at'] ?? ($profile['rolling_last_retrain_at'] ?? null);
+        $profile['rolling_next_retrain_at'] = $result['rolling_next_retrain_at'] ?? ($profile['rolling_next_retrain_at'] ?? null);
+        $profile['rolling_window_outcomes_total'] = (int)($result['rolling_window_outcomes_total'] ?? ($profile['rolling_window_outcomes_total'] ?? 0));
+        $profile['rolling_window_bad_entry_total'] = (int)($result['rolling_window_bad_entry_total'] ?? ($profile['rolling_window_bad_entry_total'] ?? 0));
+        $profile['rolling_window_good_entry_total'] = (int)($result['rolling_window_good_entry_total'] ?? ($profile['rolling_window_good_entry_total'] ?? 0));
 
         if ((bool)($profile['promotion_blocked_by_min_data'] ?? false)) {
             $profile['status'] = 'observe_only';
@@ -1043,8 +1091,21 @@ final class DynamicLearningService
         $candidate['replay_suggests_improvement'] = (bool)($result['replay_suggests_improvement'] ?? false);
         $candidate['candidate_build_scope'] = (string)($result['candidate_build_scope'] ?? 'active_epoch');
         $candidate['candidate_replay_scope'] = (string)($result['candidate_replay_scope'] ?? 'active_epoch');
-        $candidate['promotion_guard_scope'] = (string)($result['promotion_guard_scope'] ?? 'rolling_window');
+        $candidate['promotion_guard_scope'] = (string)($result['promotion_guard_scope'] ?? 'sliding_window');
         $candidate['scope_mismatch_allowed_for_diagnostics'] = (bool)($result['scope_mismatch_allowed_for_diagnostics'] ?? true);
+        $candidate['rolling_guard_mode'] = (string)($result['rolling_guard_mode'] ?? 'sliding_window');
+        $candidate['rolling_learning_window_minutes'] = (int)($result['rolling_learning_window_minutes'] ?? 1440);
+        $candidate['rolling_retrain_interval_minutes'] = (int)($result['rolling_retrain_interval_minutes'] ?? 120);
+        $candidate['rolling_fallback_last_n_outcomes'] = (int)($result['rolling_fallback_last_n_outcomes'] ?? 50);
+        $candidate['rolling_window_start_at'] = $result['rolling_window_start_at'] ?? null;
+        $candidate['rolling_window_end_at'] = $result['rolling_window_end_at'] ?? null;
+        $candidate['rolling_selected_sample_type'] = (string)($result['rolling_selected_sample_type'] ?? 'insufficient');
+        $candidate['rolling_fallback_used'] = (bool)($result['rolling_fallback_used'] ?? false);
+        $candidate['rolling_last_retrain_at'] = $result['rolling_last_retrain_at'] ?? null;
+        $candidate['rolling_next_retrain_at'] = $result['rolling_next_retrain_at'] ?? null;
+        $candidate['rolling_window_outcomes_total'] = (int)($result['rolling_window_outcomes_total'] ?? 0);
+        $candidate['rolling_window_bad_entry_total'] = (int)($result['rolling_window_bad_entry_total'] ?? 0);
+        $candidate['rolling_window_good_entry_total'] = (int)($result['rolling_window_good_entry_total'] ?? 0);
 
         $jsonStr = json_encode($candidate, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if (is_string($jsonStr)) {
@@ -1093,7 +1154,7 @@ final class DynamicLearningService
             'final_promotion_reason' => $finalResult['final_promotion_reason'] ?? $finalResult['promotion_reason'] ?? $candidateReplay['final_promotion_reason'] ?? null,
             'final_candidate_eligible_for_demo_apply' => (bool)($finalResult['final_candidate_eligible_for_demo_apply'] ?? $finalResult['candidate_eligible_for_demo_apply'] ?? $candidateReplay['final_candidate_eligible_for_demo_apply'] ?? false),
             'promotion_blocked_by_min_data' => (bool)($finalResult['promotion_blocked_by_min_data'] ?? $candidateReplay['promotion_blocked_by_min_data'] ?? false),
-            'promotion_guard_scope' => (string)($finalResult['promotion_guard_scope'] ?? $candidateReplay['promotion_guard_scope'] ?? 'rolling_window'),
+            'promotion_guard_scope' => (string)($finalResult['promotion_guard_scope'] ?? $candidateReplay['promotion_guard_scope'] ?? 'sliding_window'),
         ];
     }
 
@@ -1221,8 +1282,13 @@ final class DynamicLearningService
     private function runRollingQualityGuard(array $cfg, array $epochOutcomes, array $result): array
     {
         $enabled = (bool)($cfg['rolling_learning_enabled'] ?? true);
-        $windowMinutes = max(1, (int)($cfg['rolling_learning_window_minutes'] ?? 120));
-        $retrainInterval = (int)($cfg['rolling_retrain_interval_minutes'] ?? 60);
+        $guardMode = strtolower(trim((string)($cfg['rolling_guard_mode'] ?? 'sliding_window')));
+        if (!in_array($guardMode, ['sliding_window', 'fixed_window', 'last_n'], true)) {
+            $guardMode = 'sliding_window';
+        }
+        $windowMinutes = max(1, (int)($cfg['rolling_learning_window_minutes'] ?? 1440));
+        $retrainInterval = max(1, (int)($cfg['rolling_retrain_interval_minutes'] ?? 120));
+        $fallbackLastN = max(1, (int)($cfg['rolling_fallback_last_n_outcomes'] ?? 50));
         $minOutcomes = max(1, (int)($cfg['rolling_min_closed_outcomes'] ?? 20));
         $minBad = (int)($cfg['rolling_min_bad_entries'] ?? 3);
         $minGood = (int)($cfg['rolling_min_good_entries'] ?? 3);
@@ -1247,15 +1313,26 @@ final class DynamicLearningService
 
         $guardResult = [
             'rolling_learning_enabled' => $enabled,
+            'rolling_guard_mode' => $guardMode,
             'rolling_learning_window_minutes' => $windowMinutes,
             'rolling_retrain_interval_minutes' => $retrainInterval,
+            'rolling_fallback_last_n_outcomes' => $fallbackLastN,
             'rolling_min_closed_outcomes' => $minOutcomes,
             'rolling_min_bad_entries' => $minBad,
             'rolling_min_good_entries' => $minGood,
+            'rolling_window_start_at' => null,
+            'rolling_window_end_at' => null,
+            'rolling_selected_sample_type' => 'insufficient',
+            'rolling_fallback_used' => false,
+            'rolling_last_retrain_at' => null,
+            'rolling_next_retrain_at' => null,
             'rolling_window_outcomes_total' => 0,
             'rolling_window_bad_entry_total' => 0,
             'rolling_window_good_entry_total' => 0,
             'rolling_window_entry_ok_exit_issue_total' => 0,
+            'rolling_selected_outcomes_total' => 0,
+            'rolling_selected_bad_entry_total' => 0,
+            'rolling_selected_good_entry_total' => 0,
             'default_quality_score' => null,
             'active_dynamic_quality_score' => null,
             'candidate_quality_score' => null,
@@ -1287,6 +1364,7 @@ final class DynamicLearningService
         }
 
         if (empty($epochOutcomes)) {
+            $guardResult['rolling_selected_sample_type'] = 'insufficient';
             $guardResult['promotion_reason'] = 'no_epoch_outcomes';
             return $guardResult;
         }
@@ -1316,61 +1394,109 @@ final class DynamicLearningService
             }
         }
 
-        // Rolling window filter: outcomes closed within last N minutes
-        $windowStart = time() - ($windowMinutes * 60);
-        $rollingOutcomes = array_values(array_filter($epochOutcomes, static function (array $o) use ($windowStart): bool {
-            $closedAt = (string)($o['closed_at'] ?? '');
-            if ($closedAt === '') {
-                return false;
-            }
-            $ts = @strtotime($closedAt) ?: 0;
-            return $ts >= $windowStart;
-        }));
+        $nowTs = time();
+        $intervalSeconds = max(60, $retrainInterval * 60);
+        $lastRetrainTs = intdiv($nowTs, $intervalSeconds) * $intervalSeconds;
+        if ($lastRetrainTs <= 0) {
+            $lastRetrainTs = $nowTs;
+        }
+        $windowEndTs = ($guardMode === 'fixed_window') ? $nowTs : $lastRetrainTs;
+        $windowStartTs = $windowEndTs - ($windowMinutes * 60);
+        $nextRetrainTs = $lastRetrainTs + $intervalSeconds;
 
-        $guardResult['rolling_window_outcomes_total'] = count($rollingOutcomes);
-        foreach ($rollingOutcomes as $ro) {
-            if (!is_array($ro)) {
+        $guardResult['rolling_window_start_at'] = date('c', $windowStartTs);
+        $guardResult['rolling_window_end_at'] = date('c', $windowEndTs);
+        $guardResult['rolling_last_retrain_at'] = date('c', $lastRetrainTs);
+        $guardResult['rolling_next_retrain_at'] = date('c', $nextRetrainTs);
+
+        $timedOutcomes = [];
+        foreach ($epochOutcomes as $outcome) {
+            if (!is_array($outcome)) {
                 continue;
             }
-            switch ((string)($ro['outcome_class'] ?? '')) {
-                case 'bad_entry':
-                    $guardResult['rolling_window_bad_entry_total']++;
-                    break;
-                case 'good_or_do_not_touch':
-                    $guardResult['rolling_window_good_entry_total']++;
-                    break;
-                case 'entry_ok_exit_issue':
-                    $guardResult['rolling_window_entry_ok_exit_issue_total']++;
-                    break;
+            $closedAt = (string)($outcome['closed_at'] ?? '');
+            $closedTs = @strtotime($closedAt) ?: 0;
+            if ($closedTs <= 0) {
+                continue;
+            }
+            $timedOutcomes[] = ['ts' => $closedTs, 'outcome' => $outcome];
+        }
+
+        usort($timedOutcomes, static function (array $a, array $b): int {
+            return $b['ts'] <=> $a['ts'];
+        });
+
+        $windowOutcomes = [];
+        foreach ($timedOutcomes as $entry) {
+            $closedTs = (int)($entry['ts'] ?? 0);
+            if ($closedTs > $windowStartTs && $closedTs <= $windowEndTs) {
+                $windowOutcomes[] = (array)$entry['outcome'];
             }
         }
 
-        // Check minimum data requirements
-        $rollingTotal = count($rollingOutcomes);
-        if ($rollingTotal < $minOutcomes) {
-            $guardResult['candidate_status'] = 'insufficient_data';
-            $guardResult['promotion_decision'] = 'keep_current';
-            $guardResult['promotion_reason'] = 'rolling_window_below_min_outcomes';
-            $this->appendCandidateHistory($guardResult, $maxCandHistory);
-            return $guardResult;
-        }
-        if ($guardResult['rolling_window_bad_entry_total'] < $minBad) {
-            $guardResult['candidate_status'] = 'insufficient_data';
-            $guardResult['promotion_decision'] = 'keep_current';
-            $guardResult['promotion_reason'] = 'rolling_window_below_min_bad_entries';
-            $this->appendCandidateHistory($guardResult, $maxCandHistory);
-            return $guardResult;
-        }
-        if ($guardResult['rolling_window_good_entry_total'] < $minGood) {
-            $guardResult['candidate_status'] = 'insufficient_data';
-            $guardResult['promotion_decision'] = 'keep_current';
-            $guardResult['promotion_reason'] = 'rolling_window_below_min_good_entries';
-            $this->appendCandidateHistory($guardResult, $maxCandHistory);
-            return $guardResult;
+        $windowCounts = $this->computeRollingOutcomeCounts($windowOutcomes);
+        $guardResult['rolling_window_outcomes_total'] = $windowCounts['total'];
+        $guardResult['rolling_window_bad_entry_total'] = $windowCounts['bad'];
+        $guardResult['rolling_window_good_entry_total'] = $windowCounts['good'];
+        $guardResult['rolling_window_entry_ok_exit_issue_total'] = $windowCounts['exit_issue'];
+
+        $selectedOutcomes = [];
+        $selectedCounts = ['total' => 0, 'bad' => 0, 'good' => 0, 'exit_issue' => 0];
+
+        if ($guardMode === 'last_n') {
+            $fallbackOutcomes = array_map(static fn(array $entry): array => (array)$entry['outcome'], array_slice($timedOutcomes, 0, $fallbackLastN));
+            $fallbackCounts = $this->computeRollingOutcomeCounts($fallbackOutcomes);
+            $guardResult['rolling_fallback_used'] = true;
+            $guardResult['rolling_selected_sample_type'] = 'last_n_fallback';
+            $fallbackGate = $this->evaluateRollingSampleCounts($fallbackCounts, $minOutcomes, $minBad, $minGood);
+            if (!($fallbackGate['passed'] ?? false)) {
+                $guardResult['candidate_status'] = 'insufficient_data';
+                $guardResult['promotion_decision'] = 'keep_current';
+                $guardResult['promotion_reason'] = 'rolling_last_n_below_min_counts';
+                $guardResult['rolling_selected_sample_type'] = 'insufficient';
+                $guardResult['rolling_selected_outcomes_total'] = $fallbackCounts['total'];
+                $guardResult['rolling_selected_bad_entry_total'] = $fallbackCounts['bad'];
+                $guardResult['rolling_selected_good_entry_total'] = $fallbackCounts['good'];
+                $this->appendCandidateHistory($guardResult, $maxCandHistory);
+                return $guardResult;
+            }
+            $selectedOutcomes = $fallbackOutcomes;
+            $selectedCounts = $fallbackCounts;
+        } else {
+            $windowGate = $this->evaluateRollingSampleCounts($windowCounts, $minOutcomes, $minBad, $minGood);
+            if ($windowGate['passed'] ?? false) {
+                $selectedOutcomes = $windowOutcomes;
+                $selectedCounts = $windowCounts;
+                $guardResult['rolling_selected_sample_type'] = 'sliding_24h';
+            } else {
+                $fallbackOutcomes = array_map(static fn(array $entry): array => (array)$entry['outcome'], array_slice($timedOutcomes, 0, $fallbackLastN));
+                $fallbackCounts = $this->computeRollingOutcomeCounts($fallbackOutcomes);
+                $fallbackGate = $this->evaluateRollingSampleCounts($fallbackCounts, $minOutcomes, $minBad, $minGood);
+                $guardResult['rolling_fallback_used'] = true;
+                if ($fallbackGate['passed'] ?? false) {
+                    $selectedOutcomes = $fallbackOutcomes;
+                    $selectedCounts = $fallbackCounts;
+                    $guardResult['rolling_selected_sample_type'] = 'last_n_fallback';
+                } else {
+                    $guardResult['candidate_status'] = 'insufficient_data';
+                    $guardResult['promotion_decision'] = 'keep_current';
+                    $guardResult['promotion_reason'] = 'rolling_sliding_window_and_fallback_below_min_counts';
+                    $guardResult['rolling_selected_sample_type'] = 'insufficient';
+                    $guardResult['rolling_selected_outcomes_total'] = $fallbackCounts['total'];
+                    $guardResult['rolling_selected_bad_entry_total'] = $fallbackCounts['bad'];
+                    $guardResult['rolling_selected_good_entry_total'] = $fallbackCounts['good'];
+                    $this->appendCandidateHistory($guardResult, $maxCandHistory);
+                    return $guardResult;
+                }
+            }
         }
 
+        $guardResult['rolling_selected_outcomes_total'] = $selectedCounts['total'];
+        $guardResult['rolling_selected_bad_entry_total'] = $selectedCounts['bad'];
+        $guardResult['rolling_selected_good_entry_total'] = $selectedCounts['good'];
+
         // Candidate quality from rolling window
-        $candidateMetrics = $this->computeQualityMetrics($rollingOutcomes, $weights);
+        $candidateMetrics = $this->computeQualityMetrics($selectedOutcomes, $weights);
         $guardResult['candidate_result_summary'] = $candidateMetrics;
         $guardResult['candidate_quality_score'] = ($candidateMetrics['benchmark_available'] ?? false)
             ? $candidateMetrics['quality_score']
@@ -1464,6 +1590,50 @@ final class DynamicLearningService
     }
 
     /**
+     * @param array<array<string,mixed>> $outcomes
+     * @return array{total:int,bad:int,good:int,exit_issue:int}
+     */
+    private function computeRollingOutcomeCounts(array $outcomes): array
+    {
+        $counts = ['total' => count($outcomes), 'bad' => 0, 'good' => 0, 'exit_issue' => 0];
+        foreach ($outcomes as $outcome) {
+            if (!is_array($outcome)) {
+                continue;
+            }
+            switch ((string)($outcome['outcome_class'] ?? '')) {
+                case 'bad_entry':
+                    $counts['bad']++;
+                    break;
+                case 'good_or_do_not_touch':
+                    $counts['good']++;
+                    break;
+                case 'entry_ok_exit_issue':
+                    $counts['exit_issue']++;
+                    break;
+            }
+        }
+        return $counts;
+    }
+
+    /**
+     * @param array{total:int,bad:int,good:int,exit_issue:int} $counts
+     * @return array{passed:bool,reason:string|null}
+     */
+    private function evaluateRollingSampleCounts(array $counts, int $minOutcomes, int $minBad, int $minGood): array
+    {
+        if (($counts['total'] ?? 0) < $minOutcomes) {
+            return ['passed' => false, 'reason' => 'rolling_window_below_min_outcomes'];
+        }
+        if (($counts['bad'] ?? 0) < $minBad) {
+            return ['passed' => false, 'reason' => 'rolling_window_below_min_bad_entries'];
+        }
+        if (($counts['good'] ?? 0) < $minGood) {
+            return ['passed' => false, 'reason' => 'rolling_window_below_min_good_entries'];
+        }
+        return ['passed' => true, 'reason' => null];
+    }
+
+    /**
      * @param array<string,mixed> $guardResult
      * @return array{passed:bool,blocked:bool,reason:string|null}
      */
@@ -1472,9 +1642,18 @@ final class DynamicLearningService
         $minOutcomes = (int)($guardResult['rolling_min_closed_outcomes'] ?? 0);
         $minBad = (int)($guardResult['rolling_min_bad_entries'] ?? 0);
         $minGood = (int)($guardResult['rolling_min_good_entries'] ?? 0);
-        $total = (int)($guardResult['rolling_window_outcomes_total'] ?? 0);
-        $bad = (int)($guardResult['rolling_window_bad_entry_total'] ?? 0);
-        $good = (int)($guardResult['rolling_window_good_entry_total'] ?? 0);
+        $selectedSampleType = (string)($guardResult['rolling_selected_sample_type'] ?? 'insufficient');
+        $total = (int)($guardResult['rolling_selected_outcomes_total'] ?? ($guardResult['rolling_window_outcomes_total'] ?? 0));
+        $bad = (int)($guardResult['rolling_selected_bad_entry_total'] ?? ($guardResult['rolling_window_bad_entry_total'] ?? 0));
+        $good = (int)($guardResult['rolling_selected_good_entry_total'] ?? ($guardResult['rolling_window_good_entry_total'] ?? 0));
+
+        if ($selectedSampleType === 'insufficient') {
+            return [
+                'passed' => false,
+                'blocked' => true,
+                'reason' => (string)($guardResult['promotion_reason'] ?? 'rolling_sliding_window_and_fallback_below_min_counts'),
+            ];
+        }
 
         if ($total < $minOutcomes) {
             return ['passed' => false, 'blocked' => true, 'reason' => 'rolling_window_below_min_outcomes'];
@@ -1514,6 +1693,13 @@ final class DynamicLearningService
             'default_quality_score' => $guardResult['default_quality_score'] ?? null,
             'candidate_quality_score' => $guardResult['candidate_quality_score'] ?? null,
             'candidate_vs_default_delta_pct' => $guardResult['candidate_vs_default_delta_pct'] ?? null,
+            'rolling_guard_mode' => $guardResult['rolling_guard_mode'] ?? 'sliding_window',
+            'rolling_window_start_at' => $guardResult['rolling_window_start_at'] ?? null,
+            'rolling_window_end_at' => $guardResult['rolling_window_end_at'] ?? null,
+            'rolling_selected_sample_type' => $guardResult['rolling_selected_sample_type'] ?? 'insufficient',
+            'rolling_fallback_used' => (bool)($guardResult['rolling_fallback_used'] ?? false),
+            'rolling_last_retrain_at' => $guardResult['rolling_last_retrain_at'] ?? null,
+            'rolling_next_retrain_at' => $guardResult['rolling_next_retrain_at'] ?? null,
             'rolling_window_outcomes_total' => $guardResult['rolling_window_outcomes_total'] ?? 0,
             'rolling_window_bad_entry_total' => $guardResult['rolling_window_bad_entry_total'] ?? 0,
             'rolling_window_good_entry_total' => $guardResult['rolling_window_good_entry_total'] ?? 0,
@@ -2377,6 +2563,8 @@ final class DynamicLearningService
             'rolling_window_below_min_bad_entries',
             'rolling_window_below_min_good_entries',
             'rolling_window_below_min_bad_good_counts',
+            'rolling_sliding_window_and_fallback_below_min_counts',
+            'rolling_last_n_below_min_counts',
         ], true)) {
             return 'insufficient_data';
         }
@@ -3203,7 +3391,20 @@ final class DynamicLearningService
         $payload['final_candidate_eligible_for_demo_apply'] = (bool)($result['final_candidate_eligible_for_demo_apply'] ?? ($result['candidate_eligible_for_demo_apply'] ?? false));
         $payload['promotion_blocked_by_min_data'] = (bool)($result['promotion_blocked_by_min_data'] ?? false);
         $payload['promotion_blocked_reason'] = $result['promotion_blocked_reason'] ?? null;
-        $payload['promotion_guard_scope'] = (string)($result['promotion_guard_scope'] ?? 'rolling_window');
+        $payload['promotion_guard_scope'] = (string)($result['promotion_guard_scope'] ?? 'sliding_window');
+        $payload['rolling_guard_mode'] = (string)($result['rolling_guard_mode'] ?? 'sliding_window');
+        $payload['rolling_learning_window_minutes'] = (int)($result['rolling_learning_window_minutes'] ?? 1440);
+        $payload['rolling_retrain_interval_minutes'] = (int)($result['rolling_retrain_interval_minutes'] ?? 120);
+        $payload['rolling_fallback_last_n_outcomes'] = (int)($result['rolling_fallback_last_n_outcomes'] ?? 50);
+        $payload['rolling_window_start_at'] = $result['rolling_window_start_at'] ?? null;
+        $payload['rolling_window_end_at'] = $result['rolling_window_end_at'] ?? null;
+        $payload['rolling_selected_sample_type'] = (string)($result['rolling_selected_sample_type'] ?? 'insufficient');
+        $payload['rolling_fallback_used'] = (bool)($result['rolling_fallback_used'] ?? false);
+        $payload['rolling_last_retrain_at'] = $result['rolling_last_retrain_at'] ?? null;
+        $payload['rolling_next_retrain_at'] = $result['rolling_next_retrain_at'] ?? null;
+        $payload['rolling_window_outcomes_total'] = (int)($result['rolling_window_outcomes_total'] ?? 0);
+        $payload['rolling_window_bad_entry_total'] = (int)($result['rolling_window_bad_entry_total'] ?? 0);
+        $payload['rolling_window_good_entry_total'] = (int)($result['rolling_window_good_entry_total'] ?? 0);
 
         // Keep legacy top-level fields aligned to final decision to avoid conflicts.
         $payload['candidate_status'] = $payload['final_candidate_status'];

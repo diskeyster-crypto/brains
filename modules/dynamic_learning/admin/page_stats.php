@@ -90,13 +90,21 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:8px;">
       <div><strong>rolling_learning_enabled:</strong> <?= $e((bool)($run['rolling_learning_enabled'] ?? false) ? 'true' : 'false') ?></div>
-      <div><strong>window_minutes:</strong> <?= $e((int)($run['rolling_learning_window_minutes'] ?? 120)) ?></div>
+      <div><strong>rolling_guard_mode:</strong> <?= $e((string)($run['rolling_guard_mode'] ?? 'sliding_window')) ?></div>
+      <div><strong>learning_window:</strong> <?= $e((int)($run['rolling_learning_window_minutes'] ?? 1440)) ?> min</div>
+      <div><strong>rebuild_interval:</strong> <?= $e((int)($run['rolling_retrain_interval_minutes'] ?? 120)) ?> min</div>
+      <div><strong>rolling_window_start_at:</strong> <?= $e((string)($run['rolling_window_start_at'] ?? '—')) ?></div>
+      <div><strong>rolling_window_end_at:</strong> <?= $e((string)($run['rolling_window_end_at'] ?? '—')) ?></div>
       <div><strong>rolling_window_outcomes:</strong> <?= $e((int)($run['rolling_window_outcomes_total'] ?? 0)) ?></div>
       <div><strong>rolling_min_closed_outcomes:</strong> <?= $e((int)($run['rolling_min_closed_outcomes'] ?? 0)) ?></div>
       <div><strong>rolling_min_bad_entries:</strong> <?= $e((int)($run['rolling_min_bad_entries'] ?? 0)) ?></div>
       <div><strong>rolling_min_good_entries:</strong> <?= $e((int)($run['rolling_min_good_entries'] ?? 0)) ?></div>
       <div><strong>rolling_window_bad_entry_total:</strong> <?= $e((int)($run['rolling_window_bad_entry_total'] ?? 0)) ?></div>
       <div><strong>rolling_window_good_entry_total:</strong> <?= $e((int)($run['rolling_window_good_entry_total'] ?? 0)) ?></div>
+      <div><strong>rolling_selected_sample_type:</strong> <?= $e((string)($run['rolling_selected_sample_type'] ?? 'insufficient')) ?></div>
+      <div><strong>rolling_fallback_used:</strong> <?= $e((bool)($run['rolling_fallback_used'] ?? false) ? 'yes' : 'no') ?></div>
+      <div><strong>rolling_last_retrain_at:</strong> <?= $e((string)($run['rolling_last_retrain_at'] ?? '—')) ?></div>
+      <div><strong>rolling_next_retrain_at:</strong> <?= $e((string)($run['rolling_next_retrain_at'] ?? '—')) ?></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:8px;">
       <div><strong>default_quality_score:</strong> <?= $e($run['default_quality_score'] ?? 'n/a') ?></div>

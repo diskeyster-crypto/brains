@@ -79,8 +79,10 @@ return [
     'micro_learning_epoch_start_at' => 'string',
     // Rolling learning guard
     'rolling_learning_enabled' => 'bool',
+    'rolling_guard_mode' => 'string',
     'rolling_learning_window_minutes' => 'int',
     'rolling_retrain_interval_minutes' => 'int',
+    'rolling_fallback_last_n_outcomes' => 'int',
     'rolling_min_closed_outcomes' => 'int',
     'rolling_min_bad_entries' => 'int',
     'rolling_min_good_entries' => 'int',

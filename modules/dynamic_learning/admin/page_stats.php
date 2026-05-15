@@ -113,6 +113,7 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
       <div><strong>usable outcomes:</strong> <?= $e((int)($run['active_epoch_usable_outcomes_total'] ?? 0)) ?></div>
       <div><strong>excluded outcomes:</strong> <?= $e((int)($run['active_epoch_excluded_from_learning_total'] ?? 0)) ?></div>
       <div><strong>rebuilt features:</strong> <?= $e((int)($run['outcome_feature_rebuilt_total'] ?? 0)) ?></div>
+      <div><strong>relinked after rebuild:</strong> <?= $e((int)($run['outcome_relink_after_rebuild_linked_total'] ?? 0)) ?></div>
       <div><strong>failed rebuilds:</strong> <?= $e((int)($run['outcome_feature_rebuild_failed_total'] ?? 0)) ?></div>
       <div><strong>top exclusion reasons:</strong> <?= $e(implode(', ', array_slice(array_map(static fn($k, $v) => $k . ':' . $v, array_keys((array)($run['active_epoch_excluded_reasons'] ?? [])), array_values((array)($run['active_epoch_excluded_reasons'] ?? []))), 0, 3)) ?: '—') ?></div>
     </div>

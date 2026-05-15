@@ -503,6 +503,10 @@ final class PatternMiner
     private static function extractFeaturesFromOutcome(array $o, array $featureBySnapshot): array
     {
         $f = (array)($o['entry_snapshot']['entry_features'] ?? []);
+        $lookupKey = trim((string)($o['feature_lookup_key'] ?? ''));
+        if ($lookupKey !== '' && isset($featureBySnapshot[$lookupKey]) && is_array($featureBySnapshot[$lookupKey])) {
+            $f = array_merge($f, (array)$featureBySnapshot[$lookupKey]);
+        }
         $sid = trim((string)($o['snapshot_id'] ?? $o['entry_snapshot']['snapshot_id'] ?? ''));
         if ($sid !== '' && isset($featureBySnapshot[$sid]) && is_array($featureBySnapshot[$sid])) {
             $f = array_merge($f, (array)$featureBySnapshot[$sid]);

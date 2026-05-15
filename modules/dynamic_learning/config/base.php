@@ -47,6 +47,7 @@ return [
     // Timing tolerance for outcome opened_at correction
     'outcome_opened_at_mismatch_tolerance_minutes' => 15,
     'prefer_entry_snapshot_time_on_signal_match' => true,
+    'outcome_relink_after_rebuild_enabled' => true,
 
     // Profile comparison: default vs auto-generated
     'compare_auto_vs_default_enabled' => true,

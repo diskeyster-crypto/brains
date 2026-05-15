@@ -394,7 +394,11 @@ final class DynamicLearningService
         $result['good_entry_examples'] = array_slice($outcomes['good'], 0, 6);
 
         // 4. Feature extraction pipeline
-        $featureResult = ['feature_by_snapshot' => []];
+        $featureResult = [
+            'feature_by_snapshot' => [],
+            'feature_index' => [],
+            'pattern_miner_feature_map' => [],
+        ];
         if ((bool)($cfg['feature_pipeline_enabled'] ?? true)) {
             $featureResult = $this->runFeaturePipeline($cfg, $snapshots['all']);
             $result['feature_records_total'] = $featureResult['records_total'];
@@ -441,6 +445,38 @@ final class DynamicLearningService
             $result['outcome_feature_rebuild_failed_examples'] = (array)($featureResult['outcome_feature_rebuild_failed_examples'] ?? ($result['outcome_feature_rebuild_failed_examples'] ?? []));
         }
 
+        $result['outcome_relink_after_rebuild_enabled'] = (bool)($cfg['outcome_relink_after_rebuild_enabled'] ?? true);
+        $result['outcome_relink_after_rebuild_attempted_total'] = 0;
+        $result['outcome_relink_after_rebuild_linked_total'] = 0;
+        $result['outcome_relink_after_rebuild_method_counts'] = [];
+        $result['outcome_relink_after_rebuild_examples'] = [];
+        $result['outcome_relink_after_rebuild_failed_total'] = 0;
+        $result['outcome_relink_after_rebuild_failed_examples'] = [];
+        if ($result['outcome_relink_after_rebuild_enabled']) {
+            $relink = $this->relinkClosedOutcomesAfterFeaturePipeline($cfg, $outcomes, (array)($featureResult['feature_index'] ?? []));
+            $outcomes = (array)($relink['outcomes'] ?? $outcomes);
+            $result['closed_outcomes_effective_total'] = (int)($outcomes['effective_total'] ?? $result['closed_outcomes_effective_total']);
+            $result['closed_outcomes_unique_total'] = (int)($outcomes['unique_total'] ?? $result['closed_outcomes_unique_total']);
+            $result['closed_outcomes_strong_link_total'] = (int)($outcomes['strong_link_total'] ?? $result['closed_outcomes_strong_link_total']);
+            $result['closed_outcomes_weak_link_skipped_total'] = (int)($outcomes['weak_link_skipped_total'] ?? $result['closed_outcomes_weak_link_skipped_total']);
+            $result['outcome_excluded_from_pattern_mining_total'] = (int)($outcomes['excluded_from_pattern_mining_total'] ?? $result['outcome_excluded_from_pattern_mining_total']);
+            $result['outcome_excluded_reasons'] = (array)($outcomes['excluded_reasons'] ?? $result['outcome_excluded_reasons']);
+            $result['outcome_feature_link_attempted_total'] = (int)($outcomes['feature_link_attempted_total'] ?? $result['outcome_feature_link_attempted_total']);
+            $result['outcome_feature_linked_existing_total'] = (int)($outcomes['feature_linked_existing_total'] ?? $result['outcome_feature_linked_existing_total']);
+            $result['outcome_feature_rebuilt_total'] = (int)($outcomes['feature_rebuilt_total'] ?? $result['outcome_feature_rebuilt_total']);
+            $result['outcome_feature_rebuild_failed_total'] = (int)($outcomes['feature_rebuild_failed_total'] ?? $result['outcome_feature_rebuild_failed_total']);
+            $result['outcome_feature_link_method_counts'] = (array)($outcomes['feature_link_method_counts'] ?? $result['outcome_feature_link_method_counts']);
+            $result['outcome_feature_rebuild_examples'] = (array)($outcomes['feature_rebuild_examples'] ?? $result['outcome_feature_rebuild_examples']);
+            $result['outcome_feature_rebuild_failed_examples'] = (array)($outcomes['feature_rebuild_failed_examples'] ?? $result['outcome_feature_rebuild_failed_examples']);
+
+            $result['outcome_relink_after_rebuild_attempted_total'] = (int)($relink['attempted_total'] ?? 0);
+            $result['outcome_relink_after_rebuild_linked_total'] = (int)($relink['linked_total'] ?? 0);
+            $result['outcome_relink_after_rebuild_method_counts'] = (array)($relink['method_counts'] ?? []);
+            $result['outcome_relink_after_rebuild_examples'] = (array)($relink['examples'] ?? []);
+            $result['outcome_relink_after_rebuild_failed_total'] = (int)($relink['failed_total'] ?? 0);
+            $result['outcome_relink_after_rebuild_failed_examples'] = (array)($relink['failed_examples'] ?? []);
+        }
+
         // 4b. Real-learning epoch filter — exclude pre-epoch outcomes from active profile/pattern mining
         $epochFilter = $this->applyMicroLearningEpoch(
             $cfg,
@@ -453,7 +489,7 @@ final class DynamicLearningService
         $result['real_learning_epoch_id'] = $epochFilter['epoch_id'] ?? null;
         $result['real_learning_epoch_start_at'] = $epochFilter['epoch_start_at'] ?? null;
         $result['previous_epoch_outcomes_excluded_total'] = (int)($epochFilter['outcomes_excluded_by_epoch_total'] ?? 0);
-        $result['active_epoch_outcomes_total'] = (int)($epochFilter['epoch_outcomes_total'] ?? 0);
+        $result['active_epoch_outcomes_total'] = (int)($epochFilter['raw_epoch_outcomes_total'] ?? 0);
         $result['active_epoch_raw_outcomes_total'] = (int)($epochFilter['raw_epoch_outcomes_total'] ?? 0);
         $result['active_epoch_usable_outcomes_total'] = (int)($epochFilter['epoch_outcomes_total'] ?? 0);
         $result['active_epoch_excluded_from_learning_total'] = (int)($epochFilter['excluded_from_learning_total'] ?? 0);
@@ -466,11 +502,21 @@ final class DynamicLearningService
         $result['outcomes_excluded_by_epoch_total'] = (int)($epochFilter['outcomes_excluded_by_epoch_total'] ?? 0);
         $result['epoch_start_source'] = $epochFilter['epoch_start_source'] ?? null;
         $result['epoch_start_missing_reason'] = $epochFilter['epoch_start_missing_reason'] ?? null;
-        $result['bad_entry_total'] = (int)($epochFilter['active_bad_entry_total'] ?? $result['bad_entry_total']);
-        $result['good_or_do_not_touch_total'] = (int)($epochFilter['active_good_or_do_not_touch_total'] ?? $result['good_or_do_not_touch_total']);
-        $result['entry_ok_exit_issue_total'] = (int)($epochFilter['active_entry_ok_exit_issue_total'] ?? $result['entry_ok_exit_issue_total']);
-        $result['neutral_total'] = (int)($epochFilter['active_neutral_total'] ?? $result['neutral_total']);
-        $result['outcome_incomplete_total'] = (int)($epochFilter['active_outcome_incomplete_total'] ?? $result['outcome_incomplete_total']);
+        $result['active_epoch_raw_bad_entry_total'] = (int)($epochFilter['active_bad_entry_total'] ?? 0);
+        $result['active_epoch_raw_good_or_do_not_touch_total'] = (int)($epochFilter['active_good_or_do_not_touch_total'] ?? 0);
+        $result['active_epoch_raw_entry_ok_exit_issue_total'] = (int)($epochFilter['active_entry_ok_exit_issue_total'] ?? 0);
+        $result['active_epoch_raw_neutral_total'] = (int)($epochFilter['active_neutral_total'] ?? 0);
+        $result['active_epoch_raw_outcome_incomplete_total'] = (int)($epochFilter['active_outcome_incomplete_total'] ?? 0);
+        $result['active_epoch_usable_bad_entry_total'] = (int)($epochFilter['usable_bad_entry_total'] ?? 0);
+        $result['active_epoch_usable_good_or_do_not_touch_total'] = (int)($epochFilter['usable_good_or_do_not_touch_total'] ?? 0);
+        $result['active_epoch_usable_entry_ok_exit_issue_total'] = (int)($epochFilter['usable_entry_ok_exit_issue_total'] ?? 0);
+        $result['active_epoch_usable_neutral_total'] = (int)($epochFilter['usable_neutral_total'] ?? 0);
+        $result['active_epoch_usable_outcome_incomplete_total'] = (int)($epochFilter['usable_outcome_incomplete_total'] ?? 0);
+        $result['bad_entry_total'] = (int)($epochFilter['usable_bad_entry_total'] ?? $result['bad_entry_total']);
+        $result['good_or_do_not_touch_total'] = (int)($epochFilter['usable_good_or_do_not_touch_total'] ?? $result['good_or_do_not_touch_total']);
+        $result['entry_ok_exit_issue_total'] = (int)($epochFilter['usable_entry_ok_exit_issue_total'] ?? $result['entry_ok_exit_issue_total']);
+        $result['neutral_total'] = (int)($epochFilter['usable_neutral_total'] ?? $result['neutral_total']);
+        $result['outcome_incomplete_total'] = (int)($epochFilter['usable_outcome_incomplete_total'] ?? $result['outcome_incomplete_total']);
         $patternMiningOutcomes = $epochFilter['pattern_mining'];
 
         $excludedOutcomeKeys = array_fill_keys((array)($epochFilter['excluded_outcome_keys'] ?? []), true);
@@ -496,7 +542,7 @@ final class DynamicLearningService
         }
 
         // 5. Pattern mining
-        $patterns = PatternMiner::mine($patternMiningOutcomes, $cfg, (array)($featureResult['feature_by_snapshot'] ?? []));
+        $patterns = PatternMiner::mine($patternMiningOutcomes, $cfg, (array)($featureResult['pattern_miner_feature_map'] ?? []));
         $this->writeJson($this->storagePath('patterns/bad_patterns.json'), $patterns['bad_patterns']);
         $this->writeJson($this->storagePath('patterns/pattern_stats.json'), $patterns['all']);
         $this->writeJson($this->storagePath('patterns/micro_feature_distributions.json'), (array)($patterns['micro_feature_distributions'] ?? []));
@@ -526,7 +572,7 @@ final class DynamicLearningService
             'epoch_start_source' => $epochFilter['epoch_start_source'] ?? null,
             'legacy_outcomes_total' => (int)($epochFilter['legacy_outcomes_total'] ?? 0),
             'outcomes_excluded_by_epoch_total' => (int)($epochFilter['outcomes_excluded_by_epoch_total'] ?? 0),
-            'active_epoch_outcomes_total' => (int)($epochFilter['epoch_outcomes_total'] ?? 0),
+            'active_epoch_outcomes_total' => (int)($epochFilter['raw_epoch_outcomes_total'] ?? 0),
             'active_epoch_raw_outcomes_total' => (int)($epochFilter['raw_epoch_outcomes_total'] ?? 0),
             'active_epoch_usable_outcomes_total' => (int)($epochFilter['epoch_outcomes_total'] ?? 0),
             'active_epoch_excluded_from_learning_total' => (int)($epochFilter['excluded_from_learning_total'] ?? 0),
@@ -3267,60 +3313,117 @@ final class DynamicLearningService
     /**
      * Load storage/features/early_impulse_growth_long/features.json and build lookup indexes.
      *
-     * Indexes built:
-     *  - by_snapshot  : snapshot_id → record
-     *  - by_signal    : signal_id → record (first seen wins)
-     *  - by_ssk       : strategy_signal_key → record
-     *  - by_time      : symbol|side|normalised_opened_at → record
-     *
-     * @return array{records_total:int,by_snapshot:array<string,array>,by_signal:array<string,array>,by_ssk:array<string,array>,by_time:array<string,array>}
+     * @return array<string,mixed>
      */
     private function buildFeatureIndexForReplay(): array
     {
+        $featurePath = $this->storagePath('features/early_impulse_growth_long/features.json');
+        return $this->buildFeatureIndexFromRecords((array)$this->readJson($featurePath, []));
+    }
+
+    /** @return array<string,mixed> */
+    private function buildFeatureIndexFromRecords(array $rows): array
+    {
         $index = [
             'records_total' => 0,
-            'by_snapshot'   => [],
-            'by_signal'     => [],
-            'by_ssk'        => [],
-            'by_time'       => [],
+            'by_snapshot' => [],
+            'by_signal' => [],
+            'by_ssk' => [],
+            'by_time' => [],
+            'by_time_price' => [],
+            'by_lookup_key' => [],
         ];
-
-        $featurePath = $this->storagePath('features/early_impulse_growth_long/features.json');
-        $rows        = (array)$this->readJson($featurePath, []);
-
         foreach ($rows as $row) {
             if (!is_array($row)) {
                 continue;
             }
             $index['records_total']++;
-
             $snapId = trim((string)($row['snapshot_id'] ?? ''));
+            $signalId = trim((string)($row['signal_id'] ?? ''));
+            $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
+            $symbol = strtoupper(trim((string)($row['symbol'] ?? '')));
+            $side = strtolower(trim((string)($row['side'] ?? '')));
+            $openedAt = $this->normalizeTimestamp($row['learning_opened_at'] ?? $row['entry_time'] ?? '');
+            $entryPrice = DlHelpers::toFloat($row['entry_price'] ?? null);
+
             if ($snapId !== '') {
                 $index['by_snapshot'][$snapId] = $row;
             }
-
-            $sigId = trim((string)($row['signal_id'] ?? ''));
-            if ($sigId !== '' && !isset($index['by_signal'][$sigId])) {
-                $index['by_signal'][$sigId] = $row;
+            if ($signalId !== '' && !isset($index['by_signal'][$signalId])) {
+                $index['by_signal'][$signalId] = $row;
             }
-
-            $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
             if ($ssk !== '' && !isset($index['by_ssk'][$ssk])) {
                 $index['by_ssk'][$ssk] = $row;
             }
-
-            $sym  = strtoupper(trim((string)($row['symbol'] ?? '')));
-            $side = strtolower(trim((string)($row['side'] ?? '')));
-            $ts   = $this->normalizeTimestamp($row['learning_opened_at'] ?? $row['entry_time'] ?? '');
-            if ($sym !== '' && $ts !== '') {
-                $timeKey = $sym . '|' . $side . '|' . $ts;
+            if ($symbol !== '' && $side !== '' && $openedAt !== '') {
+                $timeKey = $symbol . '|' . $side . '|' . $openedAt;
                 if (!isset($index['by_time'][$timeKey])) {
                     $index['by_time'][$timeKey] = $row;
                 }
+                if ($entryPrice !== null) {
+                    $priceKey = $timeKey . '|' . $this->normalizePriceKey($entryPrice);
+                    if (!isset($index['by_time_price'][$priceKey])) {
+                        $index['by_time_price'][$priceKey] = $row;
+                    }
+                }
+            }
+
+            foreach ($this->buildFeatureLookupKeys($row) as $lookupKey) {
+                if (!isset($index['by_lookup_key'][$lookupKey])) {
+                    $index['by_lookup_key'][$lookupKey] = $row;
+                }
+            }
+        }
+        return $index;
+    }
+
+    /** @return array<string,array<string,mixed>> */
+    private function buildPatternMinerFeatureMap(array $featureIndex): array
+    {
+        $map = (array)($featureIndex['by_snapshot'] ?? []);
+        foreach ((array)($featureIndex['by_lookup_key'] ?? []) as $key => $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $map[(string)$key] = $row;
+        }
+        return $map;
+    }
+
+    private function normalizePriceKey(float $price): string
+    {
+        return number_format($price, 8, '.', '');
+    }
+
+    /** @param array<string,mixed> $feature */
+    private function buildFeatureLookupKeys(array $feature): array
+    {
+        $keys = [];
+        $snapId = trim((string)($feature['snapshot_id'] ?? ''));
+        $signalId = trim((string)($feature['signal_id'] ?? ''));
+        $ssk = trim((string)($feature['strategy_signal_key'] ?? ''));
+        $symbol = strtoupper(trim((string)($feature['symbol'] ?? '')));
+        $side = strtolower(trim((string)($feature['side'] ?? '')));
+        $openedAt = $this->normalizeTimestamp($feature['learning_opened_at'] ?? $feature['entry_time'] ?? '');
+        $entryPrice = DlHelpers::toFloat($feature['entry_price'] ?? null);
+
+        if ($snapId !== '') {
+            $keys[] = 'snapshot:' . $snapId;
+        }
+        if ($signalId !== '') {
+            $keys[] = 'signal:' . $signalId;
+        }
+        if ($ssk !== '') {
+            $keys[] = 'ssk:' . $ssk;
+        }
+        if ($symbol !== '' && $side !== '' && $openedAt !== '') {
+            $keys[] = 'time:' . $symbol . '|' . $side . '|' . $openedAt;
+            if ($entryPrice !== null) {
+                $keys[] = 'time_price:' . $symbol . '|' . $side . '|' . $openedAt . '|' . $this->normalizePriceKey($entryPrice);
             }
         }
 
-        return $index;
+        return array_values(array_unique($keys));
     }
 
     /**
@@ -4220,8 +4323,9 @@ final class DynamicLearningService
             'outcome_feature_link_attempted' => true,
             'outcome_feature_linked_existing' => (bool)($featureLink['linked_existing'] ?? false),
             'outcome_feature_link_method' => (string)($featureLink['method'] ?? 'none'),
-            'outcome_feature_rebuilt' => false,
+            'outcome_feature_rebuilt' => (bool)($featureLink['rebuilt_from_closed_outcome'] ?? false),
             'outcome_feature_rebuild_failed' => false,
+            'feature_lookup_key' => (string)($featureLink['lookup_key'] ?? ''),
             'opened_at_corrected_from_signal_id' => (bool)($timing['opened_at_corrected_from_signal_id'] ?? false),
         ];
     }
@@ -4268,30 +4372,73 @@ final class DynamicLearningService
      * @param array<string,mixed> $row
      * @param array<string,mixed>|null $snapshot
      * @param array<string,mixed> $featureIndex
-     * @return array{strong:bool,linked_existing:bool,method:string}
+     * @return array{strong:bool,linked_existing:bool,method:string,lookup_key:string,rebuilt_from_closed_outcome:bool}
      */
     private function resolveOutcomeFeatureLink(array $row, ?array $snapshot, array $featureIndex): array
     {
         $signalId = trim((string)($row['signal_id'] ?? ''));
-        $snapshotSignalId = trim((string)($snapshot['signal_id'] ?? ''));
         $ssk = trim((string)($row['strategy_signal_key'] ?? ''));
+        $snapshotId = trim((string)($row['snapshot_id'] ?? $snapshot['snapshot_id'] ?? ''));
+        $symbol = strtoupper(trim((string)($row['symbol'] ?? $snapshot['symbol'] ?? '')));
+        $side = strtolower(trim((string)($row['side'] ?? $snapshot['side'] ?? '')));
+        $openedAt = $this->normalizeTimestamp($row['learning_opened_at'] ?? $row['opened_at'] ?? $snapshot['opened_at'] ?? '');
+        $entryPrice = DlHelpers::toFloat($row['entry_price'] ?? $snapshot['entry_price'] ?? null);
+        $bySnapshot = (array)($featureIndex['by_snapshot'] ?? []);
+        $bySignal = (array)($featureIndex['by_signal'] ?? []);
+        $bySsk = (array)($featureIndex['by_ssk'] ?? []);
+        $byTime = (array)($featureIndex['by_time'] ?? []);
+        $byTimePrice = (array)($featureIndex['by_time_price'] ?? []);
 
-        if ($signalId !== '' && isset($featureIndex['by_signal'][$signalId])) {
-            return ['strong' => true, 'linked_existing' => true, 'method' => 'feature_signal_id'];
-        }
-        if ($signalId !== '' && $snapshotSignalId !== '' && $signalId === $snapshotSignalId) {
-            return ['strong' => true, 'linked_existing' => true, 'method' => 'snapshot_signal_id'];
-        }
-        if ($signalId !== '' && trim((string)($row['signal_id'] ?? '')) === $signalId) {
-            if (isset($featureIndex['by_signal'][$signalId])) {
-                return ['strong' => true, 'linked_existing' => true, 'method' => 'closed_trade_signal_id'];
+        $matched = null;
+        $method = 'none';
+        $lookupKey = '';
+
+        if ($snapshotId !== '' && isset($bySnapshot[$snapshotId]) && is_array($bySnapshot[$snapshotId])) {
+            $matched = (array)$bySnapshot[$snapshotId];
+            $method = 'feature_snapshot_id';
+            $lookupKey = 'snapshot:' . $snapshotId;
+        } elseif ($signalId !== '' && isset($bySignal[$signalId]) && is_array($bySignal[$signalId])) {
+            $matched = (array)$bySignal[$signalId];
+            $method = 'feature_signal_id';
+            $lookupKey = 'signal:' . $signalId;
+        } elseif ($ssk !== '' && isset($bySsk[$ssk]) && is_array($bySsk[$ssk])) {
+            $matched = (array)$bySsk[$ssk];
+            $method = 'feature_strategy_signal_key';
+            $lookupKey = 'ssk:' . $ssk;
+        } elseif ($symbol !== '' && $side !== '' && $openedAt !== '') {
+            $timeKey = $symbol . '|' . $side . '|' . $openedAt;
+            if (isset($byTime[$timeKey]) && is_array($byTime[$timeKey])) {
+                $matched = (array)$byTime[$timeKey];
+                $method = 'feature_time';
+                $lookupKey = 'time:' . $timeKey;
+            } elseif ($entryPrice !== null) {
+                $timePriceKey = $timeKey . '|' . $this->normalizePriceKey($entryPrice);
+                if (isset($byTimePrice[$timePriceKey]) && is_array($byTimePrice[$timePriceKey])) {
+                    $matched = (array)$byTimePrice[$timePriceKey];
+                    $method = 'feature_time_price';
+                    $lookupKey = 'time_price:' . $timePriceKey;
+                }
             }
         }
-        if ($ssk !== '' && isset($featureIndex['by_ssk'][$ssk])) {
-            return ['strong' => true, 'linked_existing' => true, 'method' => 'feature_strategy_signal_key'];
+
+        if (!is_array($matched)) {
+            return [
+                'strong' => false,
+                'linked_existing' => false,
+                'method' => 'none',
+                'lookup_key' => '',
+                'rebuilt_from_closed_outcome' => false,
+            ];
         }
 
-        return ['strong' => false, 'linked_existing' => false, 'method' => 'none'];
+        $rebuilt = ((string)($matched['feature_source'] ?? '') === 'rebuilt_from_closed_outcome');
+        return [
+            'strong' => true,
+            'linked_existing' => true,
+            'method' => $method,
+            'lookup_key' => $lookupKey,
+            'rebuilt_from_closed_outcome' => $rebuilt,
+        ];
     }
 
     /**
@@ -4382,6 +4529,160 @@ final class DynamicLearningService
             return ['used_for_pattern_mining' => false, 'exclude_reason' => 'unlinked_closed_outcome'];
         }
         return ['used_for_pattern_mining' => true, 'exclude_reason' => null];
+    }
+
+    /**
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed> $outcomes
+     * @param array<string,mixed> $featureIndex
+     * @return array<string,mixed>
+     */
+    private function relinkClosedOutcomesAfterFeaturePipeline(array $cfg, array $outcomes, array $featureIndex): array
+    {
+        $all = array_values(array_filter((array)($outcomes['all'] ?? []), static fn(mixed $row): bool => is_array($row)));
+        $attemptedTotal = 0;
+        $linkedTotal = 0;
+        $failedTotal = 0;
+        $methodCounts = [];
+        $examples = [];
+        $failedExamples = [];
+
+        foreach ($all as &$outcome) {
+            if (!is_array($outcome)) {
+                continue;
+            }
+            $attemptedTotal++;
+            $snapshot = is_array($outcome['entry_snapshot'] ?? null) ? (array)$outcome['entry_snapshot'] : null;
+            $featureLink = $this->resolveOutcomeFeatureLink($outcome, $snapshot, $featureIndex);
+
+            $outcome['outcome_feature_link_attempted'] = true;
+            $outcome['outcome_feature_linked_existing'] = (bool)($featureLink['linked_existing'] ?? false);
+            $outcome['outcome_feature_link_method'] = (string)($featureLink['method'] ?? 'none');
+            $outcome['feature_lookup_key'] = (string)($featureLink['lookup_key'] ?? '');
+            $outcome['outcome_feature_rebuilt'] = (bool)($featureLink['rebuilt_from_closed_outcome'] ?? false);
+            if ((bool)($featureLink['linked_existing'] ?? false)) {
+                $linkedTotal++;
+                $outcome['link_strength'] = 'strong';
+                $timingConfidence = (string)($outcome['timing_confidence'] ?? 'low');
+                if ($timingConfidence === 'low') {
+                    $hasSnapshot = is_array($snapshot) && $snapshot !== [];
+                    $openedAtTs = strtotime((string)($outcome['learning_opened_at'] ?? $outcome['opened_at'] ?? '')) ?: 0;
+                    if (!$hasSnapshot && $openedAtTs > 0) {
+                        $outcome['timing_confidence'] = 'medium';
+                    }
+                }
+                $timing = [
+                    'timing_confidence' => (string)($outcome['timing_confidence'] ?? 'low'),
+                ];
+                $eligibility = $this->determineOutcomeLearningEligibility($snapshot, $timing, 'strong', $featureLink);
+                $outcome['used_for_pattern_mining'] = (bool)($eligibility['used_for_pattern_mining'] ?? false);
+                $outcome['pattern_mining_exclude_reason'] = $eligibility['exclude_reason'] ?? null;
+                if ($outcome['used_for_pattern_mining']) {
+                    $outcome['pattern_mining_exclude_reason'] = null;
+                }
+                if (count($examples) < 20) {
+                    $examples[] = [
+                        'symbol' => (string)($outcome['symbol'] ?? ''),
+                        'signal_id' => (string)($outcome['signal_id'] ?? ''),
+                        'method' => (string)($outcome['outcome_feature_link_method'] ?? 'none'),
+                    ];
+                }
+            } else {
+                $failedTotal++;
+                $outcome['used_for_pattern_mining'] = false;
+                if ((string)($outcome['pattern_mining_exclude_reason'] ?? '') === '' || (string)($outcome['pattern_mining_exclude_reason'] ?? '') === 'unlinked_closed_outcome') {
+                    $outcome['pattern_mining_exclude_reason'] = 'unlinked_closed_outcome';
+                }
+                if (count($failedExamples) < 20) {
+                    $failedExamples[] = [
+                        'symbol' => (string)($outcome['symbol'] ?? ''),
+                        'signal_id' => (string)($outcome['signal_id'] ?? ''),
+                        'strategy_signal_key' => (string)($outcome['strategy_signal_key'] ?? ''),
+                    ];
+                }
+            }
+            $method = trim((string)($outcome['outcome_feature_link_method'] ?? 'none'));
+            if ($method === '') {
+                $method = 'none';
+            }
+            $methodCounts[$method] = (int)($methodCounts[$method] ?? 0) + 1;
+        }
+        unset($outcome);
+
+        usort($all, static fn(array $a, array $b): int => strcmp((string)($b['closed_at'] ?? ''), (string)($a['closed_at'] ?? '')));
+        $this->writeJson($this->storagePath('closed_outcomes.json'), $all);
+
+        $pick = static fn(string $c): array => array_values(array_filter($all, static fn(array $r): bool => (string)($r['outcome_class'] ?? '') === $c));
+        $patternMining = array_values(array_filter($all, static fn(array $r): bool => (bool)($r['used_for_pattern_mining'] ?? false)));
+        $excludedReasons = [];
+        foreach ($all as $row) {
+            if ((bool)($row['used_for_pattern_mining'] ?? false)) {
+                continue;
+            }
+            $reason = trim((string)($row['pattern_mining_exclude_reason'] ?? 'unknown'));
+            if ($reason === '') {
+                $reason = 'unknown';
+            }
+            $excludedReasons[$reason] = (int)($excludedReasons[$reason] ?? 0) + 1;
+        }
+
+        $strongLinkTotal = count(array_filter($all, static fn(array $r): bool => (string)($r['link_strength'] ?? '') === 'strong'));
+        $weakLinkSkippedTotal = count(array_filter($all, static fn(array $r): bool => (string)($r['link_strength'] ?? '') === 'weak' && (string)($r['pattern_mining_exclude_reason'] ?? '') === 'weak_symbol_only_match'));
+        $featureRebuiltTotal = count(array_filter($all, static fn(array $r): bool => (bool)($r['outcome_feature_rebuilt'] ?? false)));
+        $featureRebuildFailedTotal = count(array_filter($all, static fn(array $r): bool => (bool)($r['outcome_feature_rebuild_failed'] ?? false)));
+        $featureLinkedExistingTotal = count(array_filter($all, static fn(array $r): bool => (bool)($r['outcome_feature_linked_existing'] ?? false)));
+
+        return [
+            'outcomes' => [
+                'all' => $all,
+                'pattern_mining' => $patternMining,
+                'bad' => $pick('bad_entry'),
+                'good' => $pick('good_or_do_not_touch'),
+                'exit_issue' => $pick('entry_ok_exit_issue'),
+                'neutral' => $pick('neutral'),
+                'incomplete' => $pick('outcome_incomplete'),
+                'loaded_total' => (int)($outcomes['loaded_total'] ?? count($all)),
+                'raw_loaded_total' => (int)($outcomes['raw_loaded_total'] ?? count($all)),
+                'effective_total' => count($all),
+                'unique_total' => count($all),
+                'duplicates_skipped_total' => (int)($outcomes['duplicates_skipped_total'] ?? 0),
+                'merged_total' => (int)($outcomes['merged_total'] ?? 0),
+                'near_time_duplicates_merged_total' => (int)($outcomes['near_time_duplicates_merged_total'] ?? 0),
+                'duplicate_examples' => (array)($outcomes['duplicate_examples'] ?? []),
+                'near_time_duplicate_examples' => (array)($outcomes['near_time_duplicate_examples'] ?? []),
+                'strong_link_total' => $strongLinkTotal,
+                'weak_link_skipped_total' => $weakLinkSkippedTotal,
+                'preserved_due_empty_source_total' => (int)($outcomes['preserved_due_empty_source_total'] ?? 0),
+                'rebuilt_from_ndjson_total' => (int)($outcomes['rebuilt_from_ndjson_total'] ?? 0),
+                'rebuild_skipped_due_reset_total' => (int)($outcomes['rebuild_skipped_due_reset_total'] ?? 0),
+                'time_mismatch_total' => (int)($outcomes['time_mismatch_total'] ?? 0),
+                'opened_at_corrected_total' => (int)($outcomes['opened_at_corrected_total'] ?? 0),
+                'opened_at_corrected_from_signal_id_total' => (int)($outcomes['opened_at_corrected_from_signal_id_total'] ?? 0),
+                'timing_low_confidence_total' => count(array_filter($all, static fn(array $r): bool => (string)($r['timing_confidence'] ?? '') === 'low')),
+                'time_mismatch_examples' => (array)($outcomes['time_mismatch_examples'] ?? []),
+                'opened_at_signal_id_mismatch_examples' => (array)($outcomes['opened_at_signal_id_mismatch_examples'] ?? []),
+                'mfe_normalized_total' => count(array_filter($all, static fn(array $r): bool => (bool)($r['mfe_normalized'] ?? false))),
+                'mae_normalized_total' => count(array_filter($all, static fn(array $r): bool => (bool)($r['mae_normalized'] ?? false))),
+                'roi_normalization_examples' => (array)($outcomes['roi_normalization_examples'] ?? []),
+                'excluded_from_pattern_mining_total' => max(0, count($all) - count($patternMining)),
+                'excluded_reasons' => $excludedReasons,
+                'feature_link_attempted_total' => $attemptedTotal,
+                'feature_linked_existing_total' => $featureLinkedExistingTotal,
+                'feature_rebuilt_total' => $featureRebuiltTotal,
+                'feature_rebuild_failed_total' => $featureRebuildFailedTotal,
+                'feature_link_method_counts' => $methodCounts,
+                'feature_rebuild_examples' => (array)($outcomes['feature_rebuild_examples'] ?? []),
+                'feature_rebuild_failed_examples' => (array)($outcomes['feature_rebuild_failed_examples'] ?? []),
+                'reclassified_total' => (int)($outcomes['reclassified_total'] ?? 0),
+                'reclassified_examples' => (array)($outcomes['reclassified_examples'] ?? []),
+            ],
+            'attempted_total' => $attemptedTotal,
+            'linked_total' => $linkedTotal,
+            'method_counts' => $methodCounts,
+            'examples' => $examples,
+            'failed_total' => $failedTotal,
+            'failed_examples' => $failedExamples,
+        ];
     }
 
     /**
@@ -4995,6 +5296,11 @@ final class DynamicLearningService
             'active_entry_ok_exit_issue_total' => $countClass($allOutcomes, 'entry_ok_exit_issue'),
             'active_neutral_total' => $countClass($allOutcomes, 'neutral'),
             'active_outcome_incomplete_total' => $countClass($allOutcomes, 'outcome_incomplete'),
+            'usable_bad_entry_total' => $countClass($patternMining, 'bad_entry'),
+            'usable_good_or_do_not_touch_total' => $countClass($patternMining, 'good_or_do_not_touch'),
+            'usable_entry_ok_exit_issue_total' => $countClass($patternMining, 'entry_ok_exit_issue'),
+            'usable_neutral_total' => $countClass($patternMining, 'neutral'),
+            'usable_outcome_incomplete_total' => $countClass($patternMining, 'outcome_incomplete'),
         ];
 
         if (!(bool)($cfg['real_learning_epoch_enabled'] ?? false)) {
@@ -5115,6 +5421,11 @@ final class DynamicLearningService
                 'active_entry_ok_exit_issue_total' => $countClass($allOutcomes, 'entry_ok_exit_issue'),
                 'active_neutral_total' => $countClass($allOutcomes, 'neutral'),
                 'active_outcome_incomplete_total' => $countClass($allOutcomes, 'outcome_incomplete'),
+                'usable_bad_entry_total' => $countClass($patternMining, 'bad_entry'),
+                'usable_good_or_do_not_touch_total' => $countClass($patternMining, 'good_or_do_not_touch'),
+                'usable_entry_ok_exit_issue_total' => $countClass($patternMining, 'entry_ok_exit_issue'),
+                'usable_neutral_total' => $countClass($patternMining, 'neutral'),
+                'usable_outcome_incomplete_total' => $countClass($patternMining, 'outcome_incomplete'),
             ];
         }
 
@@ -5206,6 +5517,11 @@ final class DynamicLearningService
             'active_entry_ok_exit_issue_total' => $countClass($activeAllOutcomes, 'entry_ok_exit_issue'),
             'active_neutral_total' => $countClass($activeAllOutcomes, 'neutral'),
             'active_outcome_incomplete_total' => $countClass($activeAllOutcomes, 'outcome_incomplete'),
+            'usable_bad_entry_total' => $countClass($epochOutcomes, 'bad_entry'),
+            'usable_good_or_do_not_touch_total' => $countClass($epochOutcomes, 'good_or_do_not_touch'),
+            'usable_entry_ok_exit_issue_total' => $countClass($epochOutcomes, 'entry_ok_exit_issue'),
+            'usable_neutral_total' => $countClass($epochOutcomes, 'neutral'),
+            'usable_outcome_incomplete_total' => $countClass($epochOutcomes, 'outcome_incomplete'),
         ];
     }
 
@@ -5263,6 +5579,8 @@ final class DynamicLearningService
             'micro_primary_summary_available_total' => 0,
             'micro_primary_summary_missing_total' => 0,
             'feature_by_snapshot' => [],
+            'feature_index' => [],
+            'pattern_miner_feature_map' => [],
             'weighted_score_calculated_total' => 0,
             'outcome_feature_rebuilt_total' => 0,
             'outcome_feature_rebuild_failed_total' => 0,
@@ -5690,6 +6008,11 @@ final class DynamicLearningService
                 $result['micro_bad_good_overlap_examples'][] = ['bucket' => $k, 'counts' => $classes];
             }
         }
+
+        $featureIndex = $this->buildFeatureIndexFromRecords($records);
+        $result['feature_index'] = $featureIndex;
+        $result['feature_by_snapshot'] = (array)($featureIndex['by_snapshot'] ?? []);
+        $result['pattern_miner_feature_map'] = $this->buildPatternMinerFeatureMap($featureIndex);
 
         return $result;
     }
@@ -6419,6 +6742,7 @@ final class DynamicLearningService
         $cfg['neutral_close_roi_max'] = (float)($cfg['neutral_close_roi_max'] ?? 2.0);
         $cfg['outcome_opened_at_mismatch_tolerance_minutes'] = max(1, (int)($cfg['outcome_opened_at_mismatch_tolerance_minutes'] ?? 15));
         $cfg['prefer_entry_snapshot_time_on_signal_match'] = (bool)($cfg['prefer_entry_snapshot_time_on_signal_match'] ?? true);
+        $cfg['outcome_relink_after_rebuild_enabled'] = (bool)($cfg['outcome_relink_after_rebuild_enabled'] ?? true);
         $cfg['rebuild_missing_outcome_features_enabled'] = (bool)($cfg['rebuild_missing_outcome_features_enabled'] ?? true);
         $cfg['max_missing_outcome_features_rebuild_per_run'] = max(1, (int)($cfg['max_missing_outcome_features_rebuild_per_run'] ?? 100));
         $cfg['min_closed_outcomes_for_profile'] = max(1, (int)($cfg['min_closed_outcomes_for_profile'] ?? 10));

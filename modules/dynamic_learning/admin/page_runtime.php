@@ -419,6 +419,10 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         <div style="font-weight:600;"><?= $e((int)($run['outcome_feature_rebuilt_total'] ?? 0)) ?></div>
       </div>
       <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">relinked after rebuild</div>
+        <div style="font-weight:600;"><?= $e((int)($run['outcome_relink_after_rebuild_linked_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">failed rebuilds</div>
         <div style="font-weight:600;"><?= $e((int)($run['outcome_feature_rebuild_failed_total'] ?? 0)) ?></div>
       </div>

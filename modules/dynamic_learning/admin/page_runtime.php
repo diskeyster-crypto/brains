@@ -14,14 +14,57 @@ $moduleDir = dirname(__DIR__);
 require_once $moduleDir . '/service.php';
 $svc = \Modules\DynamicLearning\DynamicLearningService::instance($moduleDir);
 $run = $svc->getLastRun();
+$uiStorageWarnings = [];
+$storageWarningIfLarge = static function (string $path, int $maxBytes) use (&$uiStorageWarnings): ?array {
+    if (!is_file($path)) {
+        return null;
+    }
+    $size = (int)@filesize($path);
+    if ($size <= $maxBytes) {
+        return null;
+    }
+    $warning = [
+        'file_too_large_for_ui' => true,
+        'file' => basename($path),
+        'file_size_mb' => round($size / 1048576, 3),
+        'max_allowed_mb' => round($maxBytes / 1048576, 3),
+    ];
+    $uiStorageWarnings[] = $warning;
+    return $warning;
+};
+$safeJsonReadLimited = static function (string $path, int $maxBytes, mixed $default = []) use ($storageWarningIfLarge): mixed {
+    if (!is_file($path)) {
+        return $default;
+    }
+    if ($storageWarningIfLarge($path, $maxBytes) !== null) {
+        return $default;
+    }
+    $raw = @file_get_contents($path);
+    if (!is_string($raw) || trim($raw) === '') {
+        return $default;
+    }
+    $decoded = json_decode($raw, true);
+    return $decoded !== null ? $decoded : $default;
+};
+$uiJsonMaxBytes = 2 * 1024 * 1024;
 $profilePath = $moduleDir . '/storage/profiles/early_impulse_growth_long/current_profile.json';
-$profile = is_file($profilePath) ? (json_decode((string)@file_get_contents($profilePath), true) ?: []) : [];
+$profile = (array)$safeJsonReadLimited($profilePath, $uiJsonMaxBytes, []);
 $profileStatus = is_array($profile) ? (string)($profile['status'] ?? 'missing') : 'missing';
 $profileRulesTotal = is_array($profile) ? count((array)($profile['rules'] ?? [])) : 0;
 $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
 ?>
 <div style="max-width:1200px;display:grid;gap:12px;">
+  <?php if ($uiStorageWarnings !== []): ?>
+  <div style="background:rgba(251,191,36,.10);border:1px solid #fbbf2455;border-radius:6px;padding:8px 12px;font-size:12px;color:#fbbf24;">
+    <strong>UI safe-read warnings:</strong>
+    <ul style="margin:6px 0 0 18px;">
+      <?php foreach ($uiStorageWarnings as $w): ?>
+      <li><code><?= $e((string)($w['file'] ?? 'unknown')) ?></code> (<?= $e((string)($w['file_size_mb'] ?? '0')) ?> MB) exceeded UI max <?= $e((string)($w['max_allowed_mb'] ?? '0')) ?> MB</li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
+  <?php endif; ?>
   <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
     <h3 style="margin:0;">Dynamic Learning — Runtime</h3>
     <div style="display:flex;gap:8px;">

@@ -23,6 +23,47 @@ function renderDashboardHub(): string
 {
     $botDir     = System::path('root') . '/modules/bot';
     $storageDir = $botDir . '/storage';
+    $dashboardStorageWarnings = [];
+    $uiSafeReadSkippedTotal = 0;
+    $safeJsonReadLimited = static function (string $path, int $maxBytes, mixed $default = []) use (&$dashboardStorageWarnings, &$uiSafeReadSkippedTotal): mixed {
+        if (!is_file($path)) {
+            return $default;
+        }
+        $size = (int)@filesize($path);
+        if ($size > $maxBytes) {
+            $dashboardStorageWarnings[] = [
+                'file' => $path,
+                'file_too_large_for_ui' => true,
+                'file_size_mb' => round($size / 1048576, 3),
+                'max_allowed_mb' => round($maxBytes / 1048576, 3),
+            ];
+            $uiSafeReadSkippedTotal++;
+            return $default;
+        }
+        $raw = @file_get_contents($path);
+        if (!is_string($raw) || trim($raw) === '') {
+            return $default;
+        }
+        $decoded = json_decode($raw, true);
+        return $decoded !== null ? $decoded : $default;
+    };
+    $estimateDirSizeMb = static function (string $dir): ?float {
+        if (!is_dir($dir)) {
+            return null;
+        }
+        $total = 0;
+        try {
+            $iter = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS));
+            foreach ($iter as $file) {
+                if ($file instanceof \SplFileInfo && $file->isFile()) {
+                    $total += $file->getSize();
+                }
+            }
+            return round($total / 1048576, 3);
+        } catch (\Throwable) {
+            return null;
+        }
+    };
 
     // ── read storage files ────────────────────────────────────────────────
     $readJson = static function (string $file, mixed $default = []) use ($storageDir): mixed {
@@ -88,21 +129,29 @@ function renderDashboardHub(): string
     $dlModuleDir = System::path('root') . '/modules/dynamic_learning';
     $dlLastRun   = [];
     $dlLastRunTs = null;
+    $dlUiReadMaxBytes = 2 * 1024 * 1024;
+    $dlCurrentProfile = [];
+    $dlCandidateProfile = [];
+    $dlCandidateReplay = [];
     try {
         $dlLrPath = $dlModuleDir . '/storage/last_run.json';
-        if (is_file($dlLrPath)) {
-            $dlLrRaw = @file_get_contents($dlLrPath);
-            if ($dlLrRaw !== false && $dlLrRaw !== '') {
-                $dlDec = @json_decode($dlLrRaw, true);
-                if (is_array($dlDec)) {
-                    $dlLastRun = $dlDec;
-                    $dlLastRunTs = @filemtime($dlLrPath) ?: null;
-                }
-            }
+        $dlDec = $safeJsonReadLimited($dlLrPath, $dlUiReadMaxBytes, []);
+        if (is_array($dlDec) && $dlDec !== []) {
+            $dlLastRun = $dlDec;
+            $dlLastRunTs = @filemtime($dlLrPath) ?: null;
         }
+        $dlCurrentProfile = (array)$safeJsonReadLimited($dlModuleDir . '/storage/profiles/early_impulse_growth_long/current_profile.json', $dlUiReadMaxBytes, []);
+        $dlCandidateProfile = (array)$safeJsonReadLimited($dlModuleDir . '/storage/profiles/early_impulse_growth_long/candidate_profile.json', $dlUiReadMaxBytes, []);
+        $dlCandidateReplay = (array)$safeJsonReadLimited($dlModuleDir . '/storage/profiles/early_impulse_growth_long/candidate_replay.json', $dlUiReadMaxBytes, []);
     } catch (\Throwable) {
         // keep empty
     }
+    $dlStorageSizeMb = $estimateDirSizeMb($dlModuleDir . '/storage');
+    $eigStorageSizeMb = $estimateDirSizeMb(System::path('root') . '/modules/strategy/flow/early_impulse_growth_long/storage');
+    usort($dashboardStorageWarnings, static function (array $a, array $b): int {
+        return ((float)($b['file_size_mb'] ?? 0.0) <=> (float)($a['file_size_mb'] ?? 0.0));
+    });
+    $largestStorageWarnings = array_slice($dashboardStorageWarnings, 0, 5);
 
     // ── prof_manager runtime data ─────────────────────────────────────────
     $pmModuleDir = System::path('root') . '/modules/prof_manager';
@@ -4945,9 +4994,25 @@ HTML;
         $_dlMicroDump    = (int)($dlLastRun['dump_micro_real_available_total'] ?? 0);
         $_dlBybitErr     = (int)($dlLastRun['bybit_kline_error_total'] ?? 0);
         $_dlSize         = $e((string)($dlLastRun['storage_size_estimate_mb'] ?? '—'));
+        $_dlStorageSize  = $e($dlStorageSizeMb !== null ? (string)$dlStorageSizeMb : '—');
+        $_eigStorageSize = $e($eigStorageSizeMb !== null ? (string)$eigStorageSizeMb : '—');
+        $_uiSafeSkipped  = (int)$uiSafeReadSkippedTotal;
+        $_storageWarnCnt = count($dashboardStorageWarnings);
         $_dlDefScore     = $e((string)($dlLastRun['default_quality_score'] ?? '—'));
         $_dlCandScore    = $e((string)($dlLastRun['candidate_quality_score'] ?? '—'));
         $_dlDelta        = $e((string)($dlLastRun['candidate_vs_default_delta_pct'] ?? '—'));
+        $_dlCurrentProfileStatus = $e((string)($dlCurrentProfile['status'] ?? '—'));
+        $_dlCandidateProfileRules = (int)count((array)($dlCandidateProfile['rules'] ?? []));
+        $_dlCandidateReplayResult = $e((string)($dlCandidateReplay['replay_result'] ?? ($dlLastRun['replay_result'] ?? '—')));
+        $_largestWarningsHtml = '';
+        if ($largestStorageWarnings !== []) {
+            $parts = [];
+            foreach ($largestStorageWarnings as $_w) {
+                $parts[] = '<code>' . htmlspecialchars((string)basename((string)($_w['file'] ?? 'unknown')), ENT_QUOTES, 'UTF-8')
+                    . '</code> ' . htmlspecialchars((string)($_w['file_size_mb'] ?? '0'), ENT_QUOTES, 'UTF-8') . 'MB';
+            }
+            $_largestWarningsHtml = implode(' · ', $parts);
+        }
         $_dlRollbackColor = $_dlRollback ? '#f87171' : '#86efac';
         $_dlPromoDecisionRaw = (string)($dlLastRun['promotion_decision'] ?? '');
         $_dlPromoColor = match($_dlPromoDecisionRaw) {
@@ -4989,7 +5054,17 @@ HTML;
               . ($_dlBybitErr > 0 ? ' <span style="color:#f87171;font-size:11px;">⚠kline_err:' . $_dlBybitErr . '</span>' : '')
             . '</div>'
             . '<div><span style="color:var(--ui-text-muted);">Storage</span><br><code>' . $_dlSize . ' MB</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">DL storage dir</span><br><code>' . $_dlStorageSize . ' MB</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">EIG storage dir</span><br><code>' . $_eigStorageSize . ' MB</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">UI safe-read skipped</span><br><strong>' . $_uiSafeSkipped . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Storage warnings</span><br><strong>' . $_storageWarnCnt . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">current_profile.status</span><br><code>' . $_dlCurrentProfileStatus . '</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">candidate_profile.rules</span><br><strong>' . $_dlCandidateProfileRules . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">candidate_replay</span><br><code>' . $_dlCandidateReplayResult . '</code></div>'
             . '</div>'
+            . ($_largestWarningsHtml !== ''
+                ? '<div style="margin-top:8px;font-size:11px;color:#fbbf24;"><strong>largest_storage_warnings:</strong> ' . $_largestWarningsHtml . '</div>'
+                : '')
             . '<div style="margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;font-size:12px;padding-top:8px;border-top:1px solid var(--ui-border);">'
             . '<div><span style="color:var(--ui-text-muted);">Default score</span><br><strong>' . $_dlDefScore . '</strong></div>'
             . '<div><span style="color:var(--ui-text-muted);">Candidate score</span><br><strong>' . $_dlCandScore . '</strong></div>'
@@ -5007,7 +5082,9 @@ HTML;
         unset($_dlClr, $_dlBg, $_dlRiskProfile, $_dlClassProfile, $_dlEpochId, $_dlOutcomes, $_dlBad, $_dlGood,
               $_dlExitIssue, $_dlNeutral, $_dlRules, $_dlCandStatus, $_dlPromoDecision, $_dlRollback,
               $_dlRollbackReason, $_dlApplyStrat, $_dlApplyLive, $_dlMicroReal, $_dlMicroDump, $_dlBybitErr,
-              $_dlSize, $_dlDefScore, $_dlCandScore, $_dlDelta, $_dlRollbackColor, $_dlPromoDecisionRaw,
+              $_dlSize, $_dlStorageSize, $_eigStorageSize, $_uiSafeSkipped, $_storageWarnCnt, $_dlCurrentProfileStatus,
+              $_dlCandidateProfileRules, $_dlCandidateReplayResult, $_largestWarningsHtml, $_dlDefScore, $_dlCandScore,
+              $_dlDelta, $_dlRollbackColor, $_dlPromoDecisionRaw,
               $_dlPromoColor, $_dlRuntimeUrl, $_dlConfigUrl, $_dlStatsUrl);
     }
     $flashHtml = '';

@@ -214,6 +214,11 @@ final class DynamicLearningService
             'cycle_history_pruned_total' => 0,
             'active_observation_files_total' => 0,
             'active_observation_files_pruned_total' => 0,
+            'entry_snapshots_pruned_total' => 0,
+            'feature_records_pruned_total' => 0,
+            'entry_snapshots_ndjson_rebuilt' => false,
+            'features_ndjson_rebuilt' => false,
+            'protected_replay_records_total' => 0,
             'reset_detected' => false,
             'manual_reset_respected' => false,
             'dynamic_filter_available' => is_file($this->repoRoot . '/modules/filter_engine/filters/dynamic_learning_filter.php'),
@@ -729,6 +734,11 @@ final class DynamicLearningService
         $result['cycle_history_pruned_total'] = (int)($prune['cycle_history_pruned_total'] ?? 0);
         $result['active_observation_files_total'] = (int)($prune['active_observation_files_total'] ?? 0);
         $result['active_observation_files_pruned_total'] = (int)($prune['active_observation_files_pruned_total'] ?? 0);
+        $result['entry_snapshots_pruned_total'] = (int)($prune['entry_snapshots_pruned_total'] ?? 0);
+        $result['feature_records_pruned_total'] = (int)($prune['feature_records_pruned_total'] ?? 0);
+        $result['entry_snapshots_ndjson_rebuilt'] = (bool)($prune['entry_snapshots_ndjson_rebuilt'] ?? false);
+        $result['features_ndjson_rebuilt'] = (bool)($prune['features_ndjson_rebuilt'] ?? false);
+        $result['protected_replay_records_total'] = (int)($prune['protected_replay_records_total'] ?? 0);
 
         $cycleHistoryWrite = $this->appendCycleHistoryCompact($result);
         $result['cycle_history_compact_enabled'] = true;
@@ -5186,7 +5196,20 @@ final class DynamicLearningService
      * Prune old storage records to stay within configured limits.
      * Never deletes active position observations.
      *
-     * @return array{pruned_total:int,size_estimate_mb:float|null,prune_examples:list<string>,prune_reason_counts:array<string,int>,cycle_history_pruned_total:int,active_observation_files_total:int,active_observation_files_pruned_total:int}
+     * @return array{
+     *   pruned_total:int,
+     *   size_estimate_mb:float|null,
+     *   prune_examples:list<string>,
+     *   prune_reason_counts:array<string,int>,
+     *   cycle_history_pruned_total:int,
+     *   active_observation_files_total:int,
+     *   active_observation_files_pruned_total:int,
+     *   entry_snapshots_pruned_total:int,
+     *   feature_records_pruned_total:int,
+     *   entry_snapshots_ndjson_rebuilt:bool,
+     *   features_ndjson_rebuilt:bool,
+     *   protected_replay_records_total:int
+     * }
      */
     private function pruneStorage(array $cfg, array $currentSnapshots): array
     {
@@ -5196,6 +5219,10 @@ final class DynamicLearningService
         $cycleHistoryPrunedTotal = 0;
         $activeObservationFilesTotal = 0;
         $activeObservationFilesPrunedTotal = 0;
+        $entrySnapshotsPrunedTotal = 0;
+        $featureRecordsPrunedTotal = 0;
+        $entrySnapshotsNdjsonRebuilt = false;
+        $featuresNdjsonRebuilt = false;
 
         $bump = static function (array &$map, string $reason, int $count = 1): void {
             $map[$reason] = (int)($map[$reason] ?? 0) + $count;
@@ -5234,7 +5261,7 @@ final class DynamicLearningService
         }
         $protectedSnapshotIds = $activeIds + $patternSnapshotIds;
 
-        $maxSnapshots = max(100, (int)($cfg['max_entry_snapshots'] ?? 2000));
+        $maxSnapshots = max(100, (int)($cfg['max_entry_snapshots'] ?? 700));
         if (count($currentSnapshots) > $maxSnapshots) {
             $snapshotPath = $this->storagePath('entry_snapshots.json');
             $allSnaps = (array)$this->readJson($snapshotPath, []);
@@ -5257,6 +5284,7 @@ final class DynamicLearningService
                 $pruned = array_slice($unprotected, $slots);
                 $trimCount = count($pruned);
                 $prunedTotal += $trimCount;
+                $entrySnapshotsPrunedTotal += $trimCount;
                 $bump($reasonCounts, 'entry_snapshots_limit', $trimCount);
                 foreach (array_slice($pruned, 0, 5) as $p) {
                     $pruneExamples[] = 'snapshot:' . (is_array($p) ? (string)($p['snapshot_id'] ?? '?') : '?');
@@ -5277,7 +5305,7 @@ final class DynamicLearningService
             $this->writeJson($outcomesPath, array_values($allOutcomes));
         }
 
-        $maxFeatureRecords = max(100, (int)($cfg['max_feature_records'] ?? 2000));
+        $maxFeatureRecords = max(100, (int)($cfg['max_feature_records'] ?? 700));
         $featureJsonPath = $this->storagePath('features/early_impulse_growth_long/features.json');
         $featureNdjsonPath = $this->storagePath('features/early_impulse_growth_long/features.ndjson');
         $allFeatures = (array)$this->readJson($featureJsonPath, []);
@@ -5299,6 +5327,7 @@ final class DynamicLearningService
             $allFeatures = array_merge($protectedFeatures, array_slice($unprotectedFeatures, 0, $slots));
             $trimCount = max(0, count($unprotectedFeatures) - $slots);
             $prunedTotal += $trimCount;
+            $featureRecordsPrunedTotal += $trimCount;
             $bump($reasonCounts, 'feature_records_limit', $trimCount);
             $pruneExamples[] = 'features:' . $trimCount . '_pruned';
             $this->writeJson($featureJsonPath, array_values($allFeatures));
@@ -5313,7 +5342,7 @@ final class DynamicLearningService
         }
 
         // Prune entry_snapshots.ndjson to bounded tail (no json_decode — size-only check)
-        $maxSnapNdjsonMb = max(1.0, (float)($cfg['max_entry_snapshots_ndjson_size_mb'] ?? 20.0));
+        $maxSnapNdjsonMb = max(1.0, (float)($cfg['max_entry_snapshots_ndjson_size_mb'] ?? 10.0));
         $snapNdjsonPath = $this->storagePath('entry_snapshots.ndjson');
         if (is_file($snapNdjsonPath)) {
             $snapNdjsonSize = (int)@filesize($snapNdjsonPath);
@@ -5330,12 +5359,32 @@ final class DynamicLearningService
                 @file_put_contents($snapNdjsonPath, $ndjsonLines, LOCK_EX);
                 $bump($reasonCounts, 'entry_snapshots_ndjson_rebuilt', 1);
                 $pruneExamples[] = 'entry_snapshots_ndjson:rebuilt_from_bounded_json';
+                $entrySnapshotsNdjsonRebuilt = true;
+            }
+        }
+
+        $maxFeatureNdjsonMb = max(1.0, (float)($cfg['max_features_ndjson_size_mb'] ?? 10.0));
+        if (is_file($featureNdjsonPath)) {
+            $featureNdjsonSize = (int)@filesize($featureNdjsonPath);
+            if ($featureNdjsonSize > (int)round($maxFeatureNdjsonMb * 1048576)) {
+                $featureJson = (array)$this->readJson($featureJsonPath, []);
+                $featureLines = '';
+                foreach ($featureJson as $row) {
+                    $line = json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    if (is_string($line)) {
+                        $featureLines .= $line . PHP_EOL;
+                    }
+                }
+                @file_put_contents($featureNdjsonPath, $featureLines, LOCK_EX);
+                $bump($reasonCounts, 'features_ndjson_rebuilt', 1);
+                $pruneExamples[] = 'features_ndjson:rebuilt_from_bounded_json';
+                $featuresNdjsonRebuilt = true;
             }
         }
 
         // Prune profile_history.ndjson to bounded tail (streaming keep-tail)
-        $maxProfileHistLines = max(50, (int)($cfg['max_profile_history_lines'] ?? 500));
-        $maxProfileHistMb = max(1.0, (float)($cfg['max_profile_history_size_mb'] ?? 5.0));
+        $maxProfileHistLines = max(50, (int)($cfg['max_profile_history_lines'] ?? 300));
+        $maxProfileHistMb = max(1.0, (float)($cfg['max_profile_history_size_mb'] ?? 3.0));
         $profileHistPath = $this->storagePath('profiles/early_impulse_growth_long/profile_history.ndjson');
         if (is_file($profileHistPath)) {
             $profileHistSize = (int)@filesize($profileHistPath);
@@ -5462,6 +5511,11 @@ final class DynamicLearningService
             'cycle_history_pruned_total' => $cycleHistoryPrunedTotal,
             'active_observation_files_total' => $activeObservationFilesTotal,
             'active_observation_files_pruned_total' => $activeObservationFilesPrunedTotal,
+            'entry_snapshots_pruned_total' => $entrySnapshotsPrunedTotal,
+            'feature_records_pruned_total' => $featureRecordsPrunedTotal,
+            'entry_snapshots_ndjson_rebuilt' => $entrySnapshotsNdjsonRebuilt,
+            'features_ndjson_rebuilt' => $featuresNdjsonRebuilt,
+            'protected_replay_records_total' => count($protectedSnapshotIds),
         ];
     }
 
@@ -5722,14 +5776,19 @@ final class DynamicLearningService
         $cfg['micro_learning_epoch_id'] = (string)$cfg['real_learning_epoch_id'];
         $cfg['micro_learning_epoch_start_at'] = $cfg['real_learning_epoch_start_at'];
         $cfg['micro_learning_ignore_legacy_outcomes_before_epoch'] = $cfg['ignore_fast_demo_outcomes_in_real_profile'];
-        $cfg['max_entry_snapshots'] = max(100, (int)($cfg['max_entry_snapshots'] ?? 2000));
-        $cfg['max_feature_records'] = max(100, (int)($cfg['max_feature_records'] ?? 2000));
+        $cfg['max_entry_snapshots'] = max(100, (int)($cfg['max_entry_snapshots'] ?? 700));
+        $cfg['max_feature_records'] = max(100, (int)($cfg['max_feature_records'] ?? 700));
         $cfg['max_closed_outcomes'] = max(100, (int)($cfg['max_closed_outcomes'] ?? 1000));
         $cfg['max_active_observation_files'] = max(100, (int)($cfg['max_active_observation_files'] ?? 500));
         $cfg['max_storage_size_mb'] = max(50.0, (float)($cfg['max_storage_size_mb'] ?? 150.0));
         $cfg['max_cycle_history_lines'] = max(100, (int)($cfg['max_cycle_history_lines'] ?? 1000));
         $cfg['max_cycle_history_size_mb'] = max(1.0, (float)($cfg['max_cycle_history_size_mb'] ?? 20.0));
         $cfg['max_examples_per_last_run_section'] = max(1, (int)($cfg['max_examples_per_last_run_section'] ?? 10));
+        $cfg['max_candidate_history_records'] = max(10, (int)($cfg['max_candidate_history_records'] ?? 300));
+        $cfg['max_entry_snapshots_ndjson_size_mb'] = max(1.0, (float)($cfg['max_entry_snapshots_ndjson_size_mb'] ?? 10.0));
+        $cfg['max_features_ndjson_size_mb'] = max(1.0, (float)($cfg['max_features_ndjson_size_mb'] ?? 10.0));
+        $cfg['max_profile_history_lines'] = max(50, (int)($cfg['max_profile_history_lines'] ?? 300));
+        $cfg['max_profile_history_size_mb'] = max(1.0, (float)($cfg['max_profile_history_size_mb'] ?? 3.0));
         return $cfg;
     }
 

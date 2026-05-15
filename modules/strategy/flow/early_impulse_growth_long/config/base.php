@@ -138,11 +138,12 @@ return [
     'bybit_oi_limit' => 2,
 
     // Storage caps
-    'max_evaluated_store' => 4000,
-    'max_candidates_store' => 2000,
-    'max_near_pass_store' => 2000,
-    'max_rejects_store' => 2000,
-    'max_signals_store' => 1000,
+    'max_evaluated_store' => 1000,
+    'max_candidates_store' => 500,
+    'max_near_pass_store' => 500,
+    'max_rejects_store' => 500,
+    'max_signals_store' => 300,
+    'max_large_json_size_mb' => 10,
 
     // Cycle history limits (memory-safety)
     'max_cycle_history_lines' => 1000,

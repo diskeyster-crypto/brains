@@ -1191,11 +1191,15 @@ final class EarlyImpulseGrowthLongService
         }
         $allSignals = array_values($signalIndex);
 
-        $allEvaluated = array_slice($allEvaluated, -max(100, (int)$config['max_evaluated_store']));
-        $allCandidates = array_slice($allCandidates, -max(100, (int)$config['max_candidates_store']));
+        $allEvaluated = array_slice($allEvaluated, -max(50, (int)$config['max_evaluated_store']));
+        $allCandidates = array_slice($allCandidates, -max(50, (int)$config['max_candidates_store']));
         $allWatchCandidates = array_slice($allWatchCandidates, -max(50, (int)($config['watch_storage_max_records'] ?? 500)));
-        $allRejects = array_slice($allRejects, -max(100, (int)$config['max_rejects_store']));
-        $allSignals = array_slice($allSignals, -max(100, (int)$config['max_signals_store']));
+        $allRejects = array_slice($allRejects, -max(50, (int)$config['max_rejects_store']));
+        $allSignals = $this->retainSignalStorageSlice(
+            $allSignals,
+            max(50, (int)$config['max_signals_store']),
+            []
+        );
 
         $canEmitBotHandoff = (bool)$config['handoff_enabled'] && (bool)$config['emit_bot_handoff'];
         $queueMode = $this->resolveHandoffMode($config);
@@ -1404,6 +1408,22 @@ final class EarlyImpulseGrowthLongService
                 $handoffQueue[] = $record;
             }
         }
+
+        $storageBounds = $this->enforceEiglStorageBounds(
+            $allEvaluated,
+            $allCandidates,
+            $allWatchCandidates,
+            $allRejects,
+            $allSignals,
+            $config,
+            $currentRunSignalIds
+        );
+        $allEvaluated = $storageBounds['evaluated'];
+        $allCandidates = $storageBounds['candidates'];
+        $allWatchCandidates = $storageBounds['watch_candidates'];
+        $allRejects = $storageBounds['rejects'];
+        $allSignals = $storageBounds['signals'];
+        $storageDiag = $storageBounds['diag'];
 
         $this->writeJson($this->storagePath('evaluated_contexts.json'), $allEvaluated);
         $this->writeJson($this->storagePath('candidates.json'), $allCandidates);
@@ -1809,6 +1829,15 @@ final class EarlyImpulseGrowthLongService
             'stored_bot_queue_written_total' => $storedBotQueueWrittenTotal,
             'actual_bot_handoff_queue_records_total' => $actualBotHandoffQueueRecordsTotal,
             'handoff_ready_total' => $handoffReadyTotal,
+            'storage_pruned_total' => (int)($storageDiag['storage_pruned_total'] ?? 0),
+            'storage_prune_reason_counts' => (array)($storageDiag['storage_prune_reason_counts'] ?? []),
+            'storage_prune_examples' => (array)($storageDiag['storage_prune_examples'] ?? []),
+            'storage_file_size_mb' => (array)($storageDiag['storage_file_size_mb'] ?? []),
+            'large_file_warnings' => (array)($storageDiag['large_file_warnings'] ?? []),
+            'storage_size_estimate_mb' => $storageDiag['storage_size_estimate_mb'] ?? null,
+            'max_evaluated_store_effective' => max(50, (int)$config['max_evaluated_store']),
+            'max_candidates_store_effective' => max(50, (int)$config['max_candidates_store']),
+            'max_signals_store_effective' => max(50, (int)$config['max_signals_store']),
 
             // Universe info
             'universe_source' => $state['universe_source'] ?? $this->universeSource,
@@ -4842,11 +4871,12 @@ final class EarlyImpulseGrowthLongService
         $cfg['bybit_oi_interval'] = (string)($cfg['bybit_oi_interval'] ?? '5min');
         $cfg['bybit_oi_limit'] = max(2, min(50, (int)($cfg['bybit_oi_limit'] ?? 2)));
 
-        $cfg['max_evaluated_store'] = max(100, (int)($cfg['max_evaluated_store'] ?? 4000));
-        $cfg['max_candidates_store'] = max(100, (int)($cfg['max_candidates_store'] ?? 2000));
-        $cfg['max_near_pass_store'] = max(100, (int)($cfg['max_near_pass_store'] ?? 2000));
-        $cfg['max_rejects_store'] = max(100, (int)($cfg['max_rejects_store'] ?? 2000));
-        $cfg['max_signals_store'] = max(100, (int)($cfg['max_signals_store'] ?? 1000));
+        $cfg['max_evaluated_store'] = max(50, (int)($cfg['max_evaluated_store'] ?? 1000));
+        $cfg['max_candidates_store'] = max(50, (int)($cfg['max_candidates_store'] ?? 500));
+        $cfg['max_near_pass_store'] = max(50, (int)($cfg['max_near_pass_store'] ?? 500));
+        $cfg['max_rejects_store'] = max(50, (int)($cfg['max_rejects_store'] ?? 500));
+        $cfg['max_signals_store'] = max(50, (int)($cfg['max_signals_store'] ?? 300));
+        $cfg['max_large_json_size_mb'] = max(1.0, (float)($cfg['max_large_json_size_mb'] ?? 10.0));
         $cfg['watch_storage_prune_enabled'] = (bool)($cfg['watch_storage_prune_enabled'] ?? true);
         $cfg['watch_storage_keep_expired_minutes'] = max(0, (int)($cfg['watch_storage_keep_expired_minutes'] ?? 120));
         $cfg['watch_storage_max_records'] = max(50, (int)($cfg['watch_storage_max_records'] ?? 500));
@@ -4909,6 +4939,170 @@ final class EarlyImpulseGrowthLongService
             return false;
         }
         return @file_put_contents($path, $json . PHP_EOL, FILE_APPEND | LOCK_EX) !== false;
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $signals
+     * @param array<string,bool> $currentRunSignalIds
+     * @return array<int,array<string,mixed>>
+     */
+    private function retainSignalStorageSlice(array $signals, int $limit, array $currentRunSignalIds): array
+    {
+        if ($limit <= 0 || $signals === []) {
+            return [];
+        }
+
+        $protected = [];
+        $unprotected = [];
+        foreach ($signals as $sig) {
+            if (!is_array($sig)) {
+                continue;
+            }
+            $sid = trim((string)($sig['signal_id'] ?? ''));
+            $isProtected = (bool)($sig['active_final'] ?? false)
+                || (bool)($sig['handoff_ready'] ?? false)
+                || (bool)($sig['executable'] ?? false)
+                || ($sid !== '' && isset($currentRunSignalIds[$sid]));
+            if ($isProtected) {
+                $protected[] = $sig;
+            } else {
+                $unprotected[] = $sig;
+            }
+        }
+
+        $slots = max(0, $limit - count($protected));
+        if ($slots === 0) {
+            return array_values($protected);
+        }
+
+        $tailUnprotected = array_slice($unprotected, -$slots);
+        return array_values(array_merge($tailUnprotected, $protected));
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $allEvaluated
+     * @param array<int,array<string,mixed>> $allCandidates
+     * @param array<int,array<string,mixed>> $allWatchCandidates
+     * @param array<int,array<string,mixed>> $allRejects
+     * @param array<int,array<string,mixed>> $allSignals
+     * @param array<string,mixed> $config
+     * @param array<string,bool> $currentRunSignalIds
+     * @return array{
+     *   evaluated:array<int,array<string,mixed>>,
+     *   candidates:array<int,array<string,mixed>>,
+     *   watch_candidates:array<int,array<string,mixed>>,
+     *   rejects:array<int,array<string,mixed>>,
+     *   signals:array<int,array<string,mixed>>,
+     *   diag:array<string,mixed>
+     * }
+     */
+    private function enforceEiglStorageBounds(
+        array $allEvaluated,
+        array $allCandidates,
+        array $allWatchCandidates,
+        array $allRejects,
+        array $allSignals,
+        array $config,
+        array $currentRunSignalIds
+    ): array {
+        $maxEvaluated = max(50, (int)($config['max_evaluated_store'] ?? 1000));
+        $maxCandidates = max(50, (int)($config['max_candidates_store'] ?? 500));
+        $maxNearPass = max(50, (int)($config['max_near_pass_store'] ?? 500));
+        $maxRejects = max(50, (int)($config['max_rejects_store'] ?? 500));
+        $maxSignals = max(50, (int)($config['max_signals_store'] ?? 300));
+        $maxLargeMb = max(1.0, (float)($config['max_large_json_size_mb'] ?? 10.0));
+        $maxLargeBytes = (int)round($maxLargeMb * 1048576);
+
+        $prunedTotal = 0;
+        $reasonCounts = [];
+        $pruneExamples = [];
+
+        $countPruned = static function (
+            int $before,
+            int $after,
+            string $reason,
+            array &$reasonCounts,
+            int &$prunedTotal
+        ): void {
+            $delta = max(0, $before - $after);
+            if ($delta <= 0) {
+                return;
+            }
+            $prunedTotal += $delta;
+            $reasonCounts[$reason] = (int)($reasonCounts[$reason] ?? 0) + $delta;
+        };
+
+        $beforeEvaluated = count($allEvaluated);
+        $beforeCandidates = count($allCandidates);
+        $beforeWatch = count($allWatchCandidates);
+        $beforeRejects = count($allRejects);
+        $beforeSignals = count($allSignals);
+
+        $allEvaluated = array_slice($allEvaluated, -$maxEvaluated);
+        $allCandidates = array_slice($allCandidates, -$maxCandidates);
+        $allWatchCandidates = array_slice($allWatchCandidates, -$maxNearPass);
+        $allRejects = array_slice($allRejects, -$maxRejects);
+        $allSignals = $this->retainSignalStorageSlice($allSignals, $maxSignals, $currentRunSignalIds);
+
+        $countPruned($beforeEvaluated, count($allEvaluated), 'evaluated_contexts_limit', $reasonCounts, $prunedTotal);
+        $countPruned($beforeCandidates, count($allCandidates), 'candidates_limit', $reasonCounts, $prunedTotal);
+        $countPruned($beforeWatch, count($allWatchCandidates), 'near_pass_candidates_limit', $reasonCounts, $prunedTotal);
+        $countPruned($beforeRejects, count($allRejects), 'rejects_limit', $reasonCounts, $prunedTotal);
+        $countPruned($beforeSignals, count($allSignals), 'signals_limit', $reasonCounts, $prunedTotal);
+
+        $estimatedBytes = static function (mixed $value): int {
+            $json = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            return is_string($json) ? strlen($json) : 0;
+        };
+
+        $sizeMapBytes = [
+            'evaluated_contexts.json' => $estimatedBytes($allEvaluated),
+            'candidates.json' => $estimatedBytes($allCandidates),
+            'near_pass_candidates.json' => $estimatedBytes($allWatchCandidates),
+            'rejects.json' => $estimatedBytes($allRejects),
+            'signals.json' => $estimatedBytes($allSignals),
+        ];
+
+        $sizeMapMb = [];
+        $largeWarnings = [];
+        foreach ($sizeMapBytes as $file => $sizeBytes) {
+            $sizeMb = round($sizeBytes / 1048576, 3);
+            $sizeMapMb[$file] = $sizeMb;
+            if ($sizeBytes > $maxLargeBytes) {
+                $largeWarnings[] = [
+                    'file' => $file,
+                    'file_too_large_for_ui' => true,
+                    'file_size_mb' => $sizeMb,
+                    'max_allowed_mb' => round($maxLargeMb, 3),
+                ];
+            }
+        }
+
+        if ($prunedTotal > 0) {
+            $pruneExamples = [
+                'evaluated_contexts:' . $beforeEvaluated . '→' . count($allEvaluated),
+                'candidates:' . $beforeCandidates . '→' . count($allCandidates),
+                'near_pass_candidates:' . $beforeWatch . '→' . count($allWatchCandidates),
+                'rejects:' . $beforeRejects . '→' . count($allRejects),
+                'signals:' . $beforeSignals . '→' . count($allSignals),
+            ];
+        }
+
+        return [
+            'evaluated' => $allEvaluated,
+            'candidates' => $allCandidates,
+            'watch_candidates' => $allWatchCandidates,
+            'rejects' => $allRejects,
+            'signals' => $allSignals,
+            'diag' => [
+                'storage_pruned_total' => $prunedTotal,
+                'storage_prune_reason_counts' => $reasonCounts,
+                'storage_prune_examples' => array_values(array_filter($pruneExamples)),
+                'storage_file_size_mb' => $sizeMapMb,
+                'large_file_warnings' => $largeWarnings,
+                'storage_size_estimate_mb' => round(array_sum($sizeMapBytes) / 1048576, 3),
+            ],
+        ];
     }
 
     /**

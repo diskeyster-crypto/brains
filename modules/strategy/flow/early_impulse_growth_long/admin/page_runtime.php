@@ -16,9 +16,29 @@ $storageDir = $moduleDir . '/storage';
 $eigUrl = rtrim(System::web('admin/strategy/early_impulse_growth_long'), '/');
 $ajaxUrl = $eigUrl . '/ajax';
 
-$readJson = static function (string $file, mixed $default = []) use ($storageDir): mixed {
-    $path = $storageDir . '/' . $file;
+$uiStorageWarnings = [];
+$storageWarningIfLarge = static function (string $path, int $maxBytes) use (&$uiStorageWarnings): ?array {
     if (!is_file($path)) {
+        return null;
+    }
+    $size = (int)@filesize($path);
+    if ($size <= $maxBytes) {
+        return null;
+    }
+    $warning = [
+        'file_too_large_for_ui' => true,
+        'file' => basename($path),
+        'file_size_mb' => round($size / 1048576, 3),
+        'max_allowed_mb' => round($maxBytes / 1048576, 3),
+    ];
+    $uiStorageWarnings[] = $warning;
+    return $warning;
+};
+$safeJsonReadLimited = static function (string $path, int $maxBytes, mixed $default = []) use ($storageWarningIfLarge): mixed {
+    if (!is_file($path)) {
+        return $default;
+    }
+    if ($storageWarningIfLarge($path, $maxBytes) !== null) {
         return $default;
     }
     $raw = @file_get_contents($path);
@@ -29,8 +49,9 @@ $readJson = static function (string $file, mixed $default = []) use ($storageDir
     return $decoded !== null ? $decoded : $default;
 };
 
-$runState = $readJson('run_state.json', []);
-$lastRun = $readJson('last_run.json', []);
+$uiJsonMaxBytes = 2 * 1024 * 1024;
+$runState = $safeJsonReadLimited($storageDir . '/run_state.json', $uiJsonMaxBytes, []);
+$lastRun = $safeJsonReadLimited($storageDir . '/last_run.json', $uiJsonMaxBytes, []);
 $storageExists = is_dir($storageDir);
 
 $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
@@ -93,6 +114,16 @@ $watchRecheckExamples = is_array($lastRun['watch_recheck_examples'] ?? null) ? (
   <?php if (!$storageExists): ?>
   <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#f59e0b;">
     Storage directory does not exist yet. Run the first tick to initialise runtime files.
+  </div>
+  <?php endif; ?>
+  <?php if ($uiStorageWarnings !== []): ?>
+  <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:#f59e0b;">
+    <strong>UI safe-read warnings:</strong>
+    <ul style="margin:6px 0 0 18px;">
+      <?php foreach ($uiStorageWarnings as $w): ?>
+      <li><code><?= $e((string)($w['file'] ?? 'unknown')) ?></code> (<?= $e((string)($w['file_size_mb'] ?? '0')) ?> MB) exceeded UI max <?= $e((string)($w['max_allowed_mb'] ?? '0')) ?> MB</li>
+      <?php endforeach; ?>
+    </ul>
   </div>
   <?php endif; ?>
 

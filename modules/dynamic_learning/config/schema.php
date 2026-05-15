@@ -103,6 +103,10 @@ return [
     'require_not_worse_than_default' => 'bool',
     'max_candidate_history_records' => 'int',
     'max_rollback_history_records' => 'int',
+    'max_entry_snapshots_ndjson_size_mb' => 'float',
+    'max_features_ndjson_size_mb' => 'float',
+    'max_profile_history_lines' => 'int',
+    'max_profile_history_size_mb' => 'float',
     // Candidate profile builder + replay
     'candidate_min_separation_score' => 'float',
     'candidate_max_good_block_rate_pct' => 'float',

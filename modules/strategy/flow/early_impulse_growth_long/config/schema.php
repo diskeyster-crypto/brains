@@ -130,6 +130,9 @@ return [
     'max_near_pass_store' => 'int',
     'max_rejects_store' => 'int',
     'max_signals_store' => 'int',
+    'max_cycle_history_lines' => 'int',
+    'max_cycle_history_size_mb' => 'float',
+    'cycle_history_compact_enabled' => 'bool',
 
     'watch_recheck_enabled' => 'bool',
     'watch_recheck_max_symbols_per_tick' => 'int',

@@ -2040,7 +2040,14 @@ final class EarlyImpulseGrowthLongService
         ];
 
         $this->writeJson($this->storagePath('last_run.json'), $lastRun);
-        $this->appendNdjson($this->storagePath('cycle_history.ndjson'), $lastRun);
+        $cycleHistDiag = $this->appendEiglCycleHistoryCompact($lastRun, $config);
+        $lastRun['cycle_history_compact_enabled'] = $cycleHistDiag['cycle_history_compact_enabled'];
+        $lastRun['cycle_history_file_size_mb'] = $cycleHistDiag['cycle_history_file_size_mb'];
+        if ($cycleHistDiag['pruned_total'] > 0) {
+            $lastRun['cycle_history_pruned_total'] = $cycleHistDiag['pruned_total'];
+            // Re-write last_run.json with diagnostics included
+            $this->writeJson($this->storagePath('last_run.json'), $lastRun);
+        }
 
         return $lastRun;
     }
@@ -4902,6 +4909,207 @@ final class EarlyImpulseGrowthLongService
             return false;
         }
         return @file_put_contents($path, $json . PHP_EOL, FILE_APPEND | LOCK_EX) !== false;
+    }
+
+    /**
+     * Build a compact cycle history row from last_run.
+     * Keeps only scalar counters, excludes large example/context arrays.
+     *
+     * @param array<string,mixed> $lastRun
+     * @return array<string,mixed>
+     */
+    private function buildEiglCompactHistoryRow(array $lastRun): array
+    {
+        $pick = static function (array $src, array $keys): array {
+            $out = [];
+            foreach ($keys as $k) {
+                if (array_key_exists($k, $src)) {
+                    $out[$k] = $src[$k];
+                }
+            }
+            return $out;
+        };
+
+        $compact = $pick($lastRun, [
+            'strategy_id', 'status', 'started_at', 'finished_at', 'duration_ms',
+            // Counters
+            'current_run_processed_total', 'current_run_evaluated_total',
+            'current_run_candidates_total', 'current_run_near_pass_total',
+            'current_run_signals_total', 'current_run_rejects_total',
+            'current_run_handoff_ready_total', 'current_run_bot_queue_written_total',
+            'stored_evaluated_total', 'stored_candidates_total',
+            'stored_signals_total', 'stored_rejects_total', 'stored_handoff_ready_total',
+            'actual_bot_handoff_queue_records_total',
+            // Batch
+            'universe_total', 'batch_size', 'selected_window_total',
+            // Phase counts
+            'phase_evaluated_total', 'phase_failed_total',
+            'phase_early_entry_total', 'phase_stabilizing_total',
+            'phase_confirmed_later_total', 'phase_late_spike_total', 'phase_extended_total',
+            'phase_dump_only_total',
+            // Entry / stabilizing
+            'early_entry_candidates_total', 'stabilizing_candidates_total',
+            'confirmed_later_candidates_total', 'late_spike_candidates_total', 'extended_candidates_total',
+            'early_entry_handoff_ready_total', 'early_entry_handoff_written_total',
+            // Handoff
+            'handoff_enabled', 'effective_bot_handoff_enabled',
+            'handoff_candidates_before_filters_total',
+            'handoff_blocked_by_phase_total', 'handoff_blocked_by_filter_total',
+            'handoff_blocked_by_quality_guard_total',
+            'bot_queue_written_total', 'bot_queue_stale_skipped_total',
+            'bot_queue_duplicate_skipped_total',
+            // Dynamic learning
+            'dynamic_learning_enabled', 'dynamic_learning_mode',
+            'dynamic_learning_checked_total', 'dynamic_learning_pass_total',
+            'dynamic_learning_block_total', 'dynamic_learning_shadow_block_total',
+            'dynamic_learning_no_profile_total', 'dynamic_learning_counter_mismatch_total',
+            // Filters
+            'filter_engine_enabled', 'filter_engine_checked_total',
+            'filter_engine_blocked_total', 'filter_engine_diagnostic_only_total',
+            'enabled_filters_count',
+            // Watch recheck
+            'watch_recheck_enabled', 'watch_recheck_processed_total',
+            'watch_recheck_triggered_total', 'watch_recheck_selected_total',
+            'watch_storage_pruned_total',
+            // Data quality / errors
+            'insufficient_data_total', 'stale_data_total', 'data_source_error_total',
+            // Recovery / OI
+            'prior_decline_passed_total', 'recovery_growth_passed_total',
+            'open_interest_growth_passed_total', 'oi_missing_allowed_total', 'oi_missing_blocked_total',
+            'raw_strategy_passed_total', 'raw_strategy_rejected_total',
+            'dump_detected_total', 'stabilization_detected_total', 'smooth_growth_detected_total',
+            'fast_spike_detected_total', 'late_spike_detected_total', 'too_early_no_structure_total',
+            // Outcome analyzer counters
+            'outcome_analyzer_enabled', 'outcome_trades_loaded_total', 'outcome_bad_entry_total',
+            'outcome_good_or_do_not_touch_total', 'outcome_incomplete_total',
+            // DL module summary
+            'dynamic_learning_module_enabled', 'dynamic_learning_profile_id',
+            'dynamic_learning_bad_patterns_total', 'dynamic_learning_profile_rules_total',
+        ]);
+
+        // Add compact storage size estimates (no file_get_contents, just filesize)
+        $storageDir = $this->storagePath('');
+        $compact['storage_size_mb_compact'] = [];
+        foreach ([
+            'cycle_history.ndjson', 'signals.json', 'candidates.json',
+            'evaluated_contexts.json', 'rejects.json',
+        ] as $f) {
+            $fp = rtrim($storageDir, '/') . '/' . $f;
+            if (is_file($fp)) {
+                $compact['storage_size_mb_compact'][$f] = round((int)@filesize($fp) / 1048576, 2);
+            }
+        }
+
+        return $compact;
+    }
+
+    /**
+     * Append a compact row to cycle_history.ndjson and prune if over limits.
+     *
+     * @param array<string,mixed> $lastRun
+     * @param array<string,mixed> $cfg
+     * @return array{pruned_total:int,cycle_history_file_size_mb:float|null,cycle_history_compact_enabled:bool}
+     */
+    private function appendEiglCycleHistoryCompact(array $lastRun, array $cfg): array
+    {
+        $compactEnabled = (bool)($cfg['cycle_history_compact_enabled'] ?? true);
+        $historyPath = $this->storagePath('cycle_history.ndjson');
+
+        if ($compactEnabled) {
+            $row = $this->buildEiglCompactHistoryRow($lastRun);
+        } else {
+            $row = $lastRun;
+        }
+
+        $this->appendNdjson($historyPath, $row);
+
+        // Prune if over limits (streaming tail-keep — do NOT load full file)
+        $maxLines = max(100, (int)($cfg['max_cycle_history_lines'] ?? 1000));
+        $maxSizeMb = max(1.0, (float)($cfg['max_cycle_history_size_mb'] ?? 10.0));
+        $pruned = $this->pruneEiglCycleHistoryFile($historyPath, $maxLines, $maxSizeMb);
+
+        $sizeMb = is_file($historyPath) ? round((int)@filesize($historyPath) / 1048576, 2) : null;
+
+        return [
+            'pruned_total' => $pruned,
+            'cycle_history_file_size_mb' => $sizeMb,
+            'cycle_history_compact_enabled' => $compactEnabled,
+        ];
+    }
+
+    /**
+     * Tail-keep prune for cycle_history.ndjson.
+     * Reads only as many lines from the front as needed to determine trim size,
+     * then rewrites only the kept tail.
+     *
+     * @return int lines pruned
+     */
+    private function pruneEiglCycleHistoryFile(string $path, int $maxLines, float $maxSizeMb): int
+    {
+        if (!is_file($path)) {
+            return 0;
+        }
+        $sizeBytes = (int)@filesize($path);
+        $maxSizeBytes = (int)round($maxSizeMb * 1048576);
+
+        // Fast path: file is small and we still need to check line count
+        if ($sizeBytes <= $maxSizeBytes) {
+            $lineCount = 0;
+            $fh = @fopen($path, 'r');
+            if (!is_resource($fh)) {
+                return 0;
+            }
+            while (!feof($fh)) {
+                $line = fgets($fh);
+                if ($line !== false && trim($line) !== '') {
+                    $lineCount++;
+                }
+            }
+            fclose($fh);
+            if ($lineCount <= $maxLines) {
+                return 0;
+            }
+        }
+
+        // Memory-safe tail extraction: seek to position = max(0, filesize - maxSizeBytes),
+        // then discard the first (possibly partial) line and keep the rest.
+        // This avoids loading the full file into memory for large files.
+        $readFrom = max(0, $sizeBytes - $maxSizeBytes);
+        $fh = @fopen($path, 'r');
+        if (!is_resource($fh)) {
+            return 0;
+        }
+        if ($readFrom > 0) {
+            fseek($fh, $readFrom);
+            fgets($fh); // skip partial first line
+        }
+        $tailLines = [];
+        while (($line = fgets($fh)) !== false) {
+            $line = rtrim($line, "\r\n");
+            if ($line !== '') {
+                $tailLines[] = $line;
+            }
+        }
+        fclose($fh);
+
+        if (empty($tailLines)) {
+            return 0;
+        }
+
+        // Also enforce max line count within the tail
+        $kept = array_slice($tailLines, -$maxLines);
+        $dropped = $sizeBytes > $maxSizeBytes
+            ? max(1, (int)round(($sizeBytes - $maxSizeBytes) / max(1, $sizeBytes / max(1, count($tailLines) + 1))))
+            : count($tailLines) - count($kept);
+
+        if ($readFrom === 0 && count($tailLines) <= $maxLines) {
+            return 0; // nothing to prune
+        }
+
+        @file_put_contents($path, implode(PHP_EOL, $kept) . PHP_EOL, LOCK_EX);
+
+        // Return an estimate of lines dropped (exact count not available without loading full file)
+        return max(1, $dropped);
     }
 
     /**

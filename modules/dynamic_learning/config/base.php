@@ -156,14 +156,18 @@ return [
     'require_not_worse_than_default' => true,
 
     // Storage limits
-    'max_storage_size_mb' => 150,
+    'max_storage_size_mb' => 100,
     'max_cycle_history_lines' => 1000,
     'max_cycle_history_size_mb' => 20,
-    'max_entry_snapshots' => 2000,
-    'max_feature_records' => 2000,
+    'max_entry_snapshots' => 1000,
+    'max_entry_snapshots_ndjson_size_mb' => 20,
+    'max_feature_records' => 1000,
+    'max_features_ndjson_size_mb' => 20,
     'max_closed_outcomes' => 1000,
     'max_active_observation_files' => 500,
     'max_examples_per_last_run_section' => 10,
     'max_candidate_history_records' => 500,
     'max_rollback_history_records' => 200,
+    'max_profile_history_lines' => 500,
+    'max_profile_history_size_mb' => 5,
 ];

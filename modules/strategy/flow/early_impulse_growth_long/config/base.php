@@ -144,6 +144,11 @@ return [
     'max_rejects_store' => 2000,
     'max_signals_store' => 1000,
 
+    // Cycle history limits (memory-safety)
+    'max_cycle_history_lines' => 1000,
+    'max_cycle_history_size_mb' => 10,
+    'cycle_history_compact_enabled' => true,
+
     // Watch recheck (priority re-evaluation of active stabilizing candidates)
     'watch_recheck_enabled' => true,
     'watch_recheck_max_symbols_per_tick' => 30,

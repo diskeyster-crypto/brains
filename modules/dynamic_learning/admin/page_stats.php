@@ -13,19 +13,54 @@ if (!Auth::check()) {
 $moduleDir = dirname(__DIR__);
 require_once $moduleDir . '/service.php';
 $svc = \Modules\DynamicLearning\DynamicLearningService::instance($moduleDir);
-$patterns = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/pattern_stats.json'), true);
-$outcomes = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/closed_outcomes.json'), true);
-$quarantine = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/quarantine/rejected_rules.json'), true);
-$microDistributions = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/micro_feature_distributions.json'), true);
-$microLabelPurity = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/micro_label_purity.json'), true);
-$microThresholdCandidates = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/micro_threshold_candidates.json'), true);
-$suspiciousMicroLabels = (array)json_decode((string)@file_get_contents($moduleDir . '/storage/patterns/suspicious_micro_labels.json'), true);
+
+// Safe bounded JSON read helper — never loads files larger than $maxBytes into memory.
+$safeReadJson = static function (string $path, int $maxBytes = 5242880, mixed $default = []): mixed {
+    if (!is_file($path)) {
+        return $default;
+    }
+    $size = (int)@filesize($path);
+    if ($size > $maxBytes) {
+        return ['_file_too_large_for_ui' => true, '_file_size_mb' => round($size / 1048576, 1), '_max_allowed_mb' => round($maxBytes / 1048576, 1)];
+    }
+    $raw = @file_get_contents($path);
+    if (!is_string($raw) || trim($raw) === '') {
+        return $default;
+    }
+    $decoded = json_decode($raw, true);
+    return $decoded !== null ? $decoded : $default;
+};
+
+$safeFileSizeMb = static function (string $path): ?float {
+    return is_file($path) ? round((int)@filesize($path) / 1048576, 1) : null;
+};
+
+// 5 MB safe limit for UI reads of potentially-large files
+$maxUiBytes = 5 * 1024 * 1024;
+
+$patterns = (array)$safeReadJson($moduleDir . '/storage/patterns/pattern_stats.json', $maxUiBytes, []);
+// closed_outcomes.json can be large — load safely
+$outcomesRaw = $safeReadJson($moduleDir . '/storage/closed_outcomes.json', $maxUiBytes, []);
+$outcomesTooLarge = is_array($outcomesRaw) && isset($outcomesRaw['_file_too_large_for_ui']);
+$outcomes = $outcomesTooLarge ? [] : (array)$outcomesRaw;
+$outcomesSizeMb = $safeFileSizeMb($moduleDir . '/storage/closed_outcomes.json');
+
+$quarantine = (array)$safeReadJson($moduleDir . '/storage/quarantine/rejected_rules.json', $maxUiBytes, []);
+$microDistributions = (array)$safeReadJson($moduleDir . '/storage/patterns/micro_feature_distributions.json', $maxUiBytes, []);
+$microLabelPurity = (array)$safeReadJson($moduleDir . '/storage/patterns/micro_label_purity.json', $maxUiBytes, []);
+$microThresholdCandidates = (array)$safeReadJson($moduleDir . '/storage/patterns/micro_threshold_candidates.json', $maxUiBytes, []);
+$suspiciousMicroLabels = (array)$safeReadJson($moduleDir . '/storage/patterns/suspicious_micro_labels.json', $maxUiBytes, []);
 $run = $svc->getLastRun();
 $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 ?>
 <div style="max-width:1200px;display:grid;gap:12px;">
   <h3 style="margin:0;">Dynamic Learning — Stats</h3>
-  <div><strong>Closed outcomes:</strong> <?= $e(count($outcomes)) ?></div>
+  <?php if ($outcomesTooLarge): ?>
+  <div style="background:rgba(251,191,36,.10);border:1px solid #fbbf2455;border-radius:6px;padding:8px 12px;font-size:12px;color:#fbbf24;">
+    ⚠ closed_outcomes.json is too large to load in UI (<?= $e($outcomesSizeMb) ?> MB). Showing count from last_run.
+  </div>
+  <?php endif; ?>
+  <div><strong>Closed outcomes:</strong> <?= $e($outcomesTooLarge ? (int)($run['closed_outcomes_unique_total'] ?? '?') : count($outcomes)) ?></div>
   <div><strong>Pattern rows:</strong> <?= $e(count($patterns)) ?></div>
   <div><strong>Quarantined rules:</strong> <?= $e(count($quarantine)) ?></div>
   <div><strong>risk_profile_mode:</strong> <?= $e((string)($run['risk_profile_mode'] ?? 'n/a')) ?></div>
@@ -160,8 +195,27 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
   $candHistPath = $moduleDir . '/storage/profiles/early_impulse_growth_long/candidate_history.ndjson';
   $candHistLines = [];
   if (is_file($candHistPath)) {
-      $raw = @file($candHistPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
-      $candHistLines = array_slice(array_reverse($raw), 0, 10);
+      $candHistSizeBytes = (int)@filesize($candHistPath);
+      if ($candHistSizeBytes < 5 * 1024 * 1024) {
+          $raw = @file($candHistPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+          $candHistLines = array_slice(array_reverse($raw), 0, 10);
+      } else {
+          // Too large — tail-read last 100 KB only
+          $fh = @fopen($candHistPath, 'r');
+          if (is_resource($fh)) {
+              fseek($fh, -102400, SEEK_END);
+              fgets($fh); // skip partial line
+              $tailLines = [];
+              while (($line = fgets($fh)) !== false) {
+                  $line = trim($line);
+                  if ($line !== '') {
+                      $tailLines[] = $line;
+                  }
+              }
+              fclose($fh);
+              $candHistLines = array_slice(array_reverse($tailLines), 0, 10);
+          }
+      }
   }
   if ($candHistLines !== []):
   ?>
@@ -215,7 +269,7 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
   <!-- ── Candidate Profile & Replay (compact) ───────────────────────────── -->
   <?php
   $cpId      = (string)($run['candidate_profile_id']    ?? '—');
-  $cpStatus  = (string)($run['candidate_status']         ?? '—');
+  $cpStatus  = (string)($run['final_candidate_status'] ?? ($run['candidate_status'] ?? '—'));
   $cpRules   = (int)($run['candidate_rules_total']       ?? 0);
   $cpComps   = (int)($run['candidate_weighted_components_total'] ?? 0);
   $cpReplay  = (bool)($run['candidate_replay_enabled']   ?? false);
@@ -226,7 +280,7 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px;font-size:12px;">
       <div><strong>candidate_profile_id:</strong> <span style="color:#93c5fd;word-break:break-all;"><?= $e($cpId) ?></span></div>
-      <div><strong>candidate_status:</strong> <span style="color:#c4b5fd;"><?= $e($cpStatus) ?></span></div>
+      <div><strong>final_candidate_status:</strong> <span style="color:#c4b5fd;"><?= $e($cpStatus) ?></span></div>
       <div><strong>rules_total:</strong> <?= $e($cpRules) ?></div>
       <div><strong>risk_components:</strong> <?= $e($cpComps) ?></div>
       <div><strong>candidate_replay_enabled:</strong> <?= $e($cpReplay ? 'true' : 'false') ?></div>
@@ -242,9 +296,9 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
       <div><strong>good_blocked:</strong> <?= $e((int)($run['replay_good_blocked_total'] ?? 0)) ?></div>
       <div><strong>bad_capture_rate:</strong> <?= $e($run['replay_bad_capture_rate_pct'] !== null ? round((float)$run['replay_bad_capture_rate_pct'], 1) . '%' : 'n/a') ?></div>
       <div><strong>good_block_rate:</strong> <?= $e($run['replay_good_block_rate_pct']  !== null ? round((float)$run['replay_good_block_rate_pct'],  1) . '%' : 'n/a') ?></div>
-      <div><strong>promotion_decision:</strong>
+      <div><strong>final_promotion_decision:</strong>
         <?php
-        $pd  = (string)($run['promotion_decision'] ?? '—');
+        $pd  = (string)($run['final_promotion_decision'] ?? ($run['promotion_decision'] ?? '—'));
         $pdc = match($pd) {
             'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#86efac',
             'reject_candidate' => '#f87171',
@@ -254,7 +308,7 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
         ?>
         <span style="color:<?= $pdc ?>;"><?= $e($pd) ?></span>
       </div>
-      <div><strong>promotion_reason:</strong> <span style="color:#94a3b8;"><?= $e((string)($run['promotion_reason'] ?? '—')) ?></span></div>
+      <div><strong>final_promotion_reason:</strong> <span style="color:#94a3b8;"><?= $e((string)($run['final_promotion_reason'] ?? ($run['promotion_reason'] ?? '—'))) ?></span></div>
     </div>
   </div>
 
@@ -324,11 +378,12 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
   $compReject   = (array)($run['composite_candidate_reject_reason_counts'] ?? []);
   $compNoSelReason = (string)($run['composite_candidate_no_selection_reason'] ?? '');
 
-  // Load composite_candidates.json for top composites
+  // Load composite_candidates.json for top composites — size-guarded
   $compositeCandidatesPath = $moduleDir . '/storage/profiles/early_impulse_growth_long/composite_candidates.json';
-  $compositeCandidatesData = is_file($compositeCandidatesPath)
-      ? (json_decode((string)@file_get_contents($compositeCandidatesPath), true) ?: [])
-      : [];
+  $compositeCandidatesData = (array)$safeReadJson($compositeCandidatesPath, $maxUiBytes, []);
+  if (isset($compositeCandidatesData['_file_too_large_for_ui'])) {
+      $compositeCandidatesData = [];
+  }
   $allComposites = (array)($compositeCandidatesData['candidates'] ?? []);
   $topPassed   = array_values(array_filter($allComposites, static fn($c) => ($c['status'] ?? '') === 'passed'));
   $topRejected = array_values(array_filter($allComposites, static fn($c) => ($c['status'] ?? '') === 'rejected'));

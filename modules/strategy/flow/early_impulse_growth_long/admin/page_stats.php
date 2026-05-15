@@ -29,22 +29,48 @@ $readJson = static function (string $file, mixed $default = []) use ($storageDir
 };
 
 $lastRun = $readJson('last_run.json', []);
+// Safe tail-read for cycle_history.ndjson — do NOT read the whole file into memory.
 $cycleHistory = [];
+$cycleHistoryLarge = false;
+$cycleHistoryFileSizeMb = null;
 $cyclePath = $storageDir . '/cycle_history.ndjson';
 if (is_file($cyclePath)) {
-    $fh = @fopen($cyclePath, 'r');
-    if (is_resource($fh)) {
-        while (($line = fgets($fh)) !== false) {
-            $line = trim($line);
-            if ($line === '') {
-                continue;
+    $fileSize = (int)@filesize($cyclePath);
+    $cycleHistoryFileSizeMb = round($fileSize / 1048576, 1);
+    $tailWindow = 2 * 1024 * 1024; // 2 MB tail scan window
+    if ($fileSize > $tailWindow) {
+        $cycleHistoryLarge = true;
+        $fh = @fopen($cyclePath, 'r');
+        if (is_resource($fh)) {
+            fseek($fh, -$tailWindow, SEEK_END);
+            fgets($fh); // skip potentially partial first line
+            while (($line = fgets($fh)) !== false) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $row = json_decode($line, true);
+                if (is_array($row)) {
+                    $cycleHistory[] = $row;
+                }
             }
-            $row = json_decode($line, true);
-            if (is_array($row)) {
-                $cycleHistory[] = $row;
-            }
+            fclose($fh);
         }
-        fclose($fh);
+    } else {
+        $fh = @fopen($cyclePath, 'r');
+        if (is_resource($fh)) {
+            while (($line = fgets($fh)) !== false) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $row = json_decode($line, true);
+                if (is_array($row)) {
+                    $cycleHistory[] = $row;
+                }
+            }
+            fclose($fh);
+        }
     }
 }
 $cycleHistory = array_slice($cycleHistory, -200);
@@ -129,8 +155,14 @@ if ($oiVals !== []) {
 
   <div class="st-section">
     <h6>Cycle overview</h6>
+    <?php if ($cycleHistoryLarge): ?>
+    <div style="background:rgba(251,191,36,.10);border:1px solid #fbbf2455;border-radius:6px;padding:8px 12px;font-size:12px;color:#fbbf24;margin-bottom:10px;">
+      ⚠ cycle_history.ndjson is large (<?= $e($cycleHistoryFileSizeMb) ?> MB) — showing tail only. Compact writes reduce file size on next cycle.
+    </div>
+    <?php endif; ?>
     <div class="st-grid">
-      <div class="st-box"><div class="st-val"><?= $e(count($cycleHistory)) ?></div><div class="st-lbl">cycle_history_records</div></div>
+      <div class="st-box"><div class="st-val"><?= $e(count($cycleHistory)) ?></div><div class="st-lbl">cycle_history_records<?= $cycleHistoryLarge ? ' (tail)' : '' ?></div></div>
+      <div class="st-box"><div class="st-val"><?= $e($cycleHistoryFileSizeMb !== null ? $cycleHistoryFileSizeMb . ' MB' : '—') ?></div><div class="st-lbl">cycle_history_file_size</div></div>
       <div class="st-box"><div class="st-val"><?= $e((int)($lastRun['current_run_candidates_total'] ?? 0)) ?></div><div class="st-lbl">candidates_per_last_cycle</div></div>
       <div class="st-box"><div class="st-val"><?= $e((int)($lastRun['current_run_signals_total'] ?? 0)) ?></div><div class="st-lbl">signals_per_last_cycle</div></div>
       <div class="st-box"><div class="st-val"><?= $e((int)($lastRun['current_run_rejects_total'] ?? 0)) ?></div><div class="st-lbl">rejects_per_last_cycle</div></div>

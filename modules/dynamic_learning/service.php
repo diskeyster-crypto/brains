@@ -887,15 +887,16 @@ final class DynamicLearningService
                 $profile['candidate_benchmark'] = $candidateReplay['candidate_result'] ?? $profile['candidate_benchmark'];
             }
             $profile['default_benchmark'] = $candidateReplay['default_baseline'] ?? $profile['default_benchmark'];
-            $profile['candidate_status'] = (string)($candidateReplay['candidate_status'] ?? $profile['candidate_status']);
-            $profile['promotion_decision'] = (string)($candidateReplay['promotion_decision'] ?? $profile['promotion_decision']);
-            $profile['promotion_reason'] = $candidateReplay['promotion_reason'] ?? $profile['promotion_reason'];
+            // NOTE: candidate_status, promotion_decision, promotion_reason are intentionally
+            // NOT overridden here from replay-only values.  syncCurrentProfilePromotionDiagnostics
+            // (called immediately after) will write the correct final-gated values.
             $profile['candidate_vs_default_delta_pct'] = $candidateReplay['candidate_vs_default_delta_pct'] ?? null;
             $profile['candidate_bad_entry_rate_delta_pct'] = $candidateReplay['candidate_bad_entry_rate_delta_pct'] ?? null;
             $profile['candidate_good_capture_delta_pct'] = $candidateReplay['candidate_good_capture_delta_pct'] ?? null;
             $profile['candidate_avg_roi_delta_pct'] = $candidateReplay['candidate_avg_roi_delta_pct'] ?? null;
             $profile['candidate_drawdown_delta_pct'] = $candidateReplay['candidate_drawdown_delta_pct'] ?? null;
-            $profile['candidate_replay_summary'] = $this->buildCandidateReplaySummary($candidateReplay, $guardResult);
+            // candidate_replay_summary is set exclusively by syncCurrentProfilePromotionDiagnostics
+            // to avoid writing replay-only eligibility before final promotion gating.
             $profile['default_quality_score'] = $candidateReplay['default_quality_score'] ?? $guardResult['default_quality_score'] ?? null;
             $profile['candidate_quality_score'] = $replayCandScore;
             $profile['auto_apply_safety_blocked'] = (bool)($candidateReplay['auto_apply_safety_blocked'] ?? true);
@@ -984,6 +985,17 @@ final class DynamicLearningService
 
         if ((bool)($profile['promotion_blocked_by_min_data'] ?? false)) {
             $profile['status'] = 'observe_only';
+        } else {
+            // Re-derive status from final candidate_status so it is always correct
+            // regardless of any intermediate value written by syncRollingGuardToCurrentProfile.
+            $finalCandStatus = (string)($profile['candidate_status'] ?? 'pending');
+            if ($finalCandStatus === 'eligible_for_demo_apply') {
+                $profile['status'] = 'eligible_for_demo_apply';
+            } elseif (in_array($finalCandStatus, ['rejected', 'rejected_worse_than_default', 'below_improvement_threshold', 'no_material_improvement'], true)) {
+                $profile['status'] = 'rejected';
+            } else {
+                $profile['status'] = 'observe_only';
+            }
         }
 
         $this->writeJson($profilePath, $profile);
@@ -5298,6 +5310,48 @@ final class DynamicLearningService
                 }
             }
             @file_put_contents($featureNdjsonPath, $lines, LOCK_EX);
+        }
+
+        // Prune entry_snapshots.ndjson to bounded tail (no json_decode — size-only check)
+        $maxSnapNdjsonMb = max(1.0, (float)($cfg['max_entry_snapshots_ndjson_size_mb'] ?? 20.0));
+        $snapNdjsonPath = $this->storagePath('entry_snapshots.ndjson');
+        if (is_file($snapNdjsonPath)) {
+            $snapNdjsonSize = (int)@filesize($snapNdjsonPath);
+            if ($snapNdjsonSize > (int)round($maxSnapNdjsonMb * 1048576)) {
+                // Rebuild ndjson from bounded entry_snapshots.json (already pruned above)
+                $snapJson = (array)$this->readJson($this->storagePath('entry_snapshots.json'), []);
+                $ndjsonLines = '';
+                foreach ($snapJson as $row) {
+                    $l = json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    if (is_string($l)) {
+                        $ndjsonLines .= $l . PHP_EOL;
+                    }
+                }
+                @file_put_contents($snapNdjsonPath, $ndjsonLines, LOCK_EX);
+                $bump($reasonCounts, 'entry_snapshots_ndjson_rebuilt', 1);
+                $pruneExamples[] = 'entry_snapshots_ndjson:rebuilt_from_bounded_json';
+            }
+        }
+
+        // Prune profile_history.ndjson to bounded tail (streaming keep-tail)
+        $maxProfileHistLines = max(50, (int)($cfg['max_profile_history_lines'] ?? 500));
+        $maxProfileHistMb = max(1.0, (float)($cfg['max_profile_history_size_mb'] ?? 5.0));
+        $profileHistPath = $this->storagePath('profiles/early_impulse_growth_long/profile_history.ndjson');
+        if (is_file($profileHistPath)) {
+            $profileHistSize = (int)@filesize($profileHistPath);
+            $profileHistMaxBytes = (int)round($maxProfileHistMb * 1048576);
+            if ($profileHistSize > $profileHistMaxBytes) {
+                // Tail-prune profile_history.ndjson without reading the whole file
+                $profileHistLines = @file($profileHistPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                if (is_array($profileHistLines) && count($profileHistLines) > $maxProfileHistLines) {
+                    $kept = array_slice($profileHistLines, -$maxProfileHistLines);
+                    @file_put_contents($profileHistPath, implode(PHP_EOL, $kept) . PHP_EOL, LOCK_EX);
+                    $dropped = count($profileHistLines) - count($kept);
+                    $prunedTotal += $dropped;
+                    $bump($reasonCounts, 'profile_history_limit', $dropped);
+                    $pruneExamples[] = 'profile_history:' . $dropped . '_pruned';
+                }
+            }
         }
 
         $historyPrune = $this->pruneCycleHistoryFile(

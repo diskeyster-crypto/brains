@@ -303,6 +303,8 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
   $sfRejected = (int)($run['candidate_single_feature_rejected_total']      ?? 0);
   $sfReasons  = (array)($run['candidate_single_feature_reject_reason_counts'] ?? []);
   $compEnabled  = (bool)($run['composite_candidate_enabled']               ?? false);
+  $compSource   = (string)($run['composite_candidate_source']              ?? 'missing');
+  $compAvail    = (int)($run['composite_candidates_available_total']       ?? 0);
   $compTested   = (int)($run['composite_candidates_tested_total']          ?? 0);
   $compPassed   = (int)($run['composite_candidates_passed_total']          ?? 0);
   $compRejected = (int)($run['composite_candidates_rejected_total']        ?? 0);
@@ -312,6 +314,7 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
   $compSelected = (bool)($run['composite_candidate_selected']              ?? false);
   $compSelId    = (string)($run['composite_candidate_selected_id']         ?? '—');
   $compReject   = (array)($run['composite_candidate_reject_reason_counts'] ?? []);
+  $compNoSelReason = (string)($run['composite_candidate_no_selection_reason'] ?? '');
 
   // Load composite_candidates.json for top composites
   $compositeCandidatesPath = $moduleDir . '/storage/profiles/early_impulse_growth_long/composite_candidates.json';
@@ -350,6 +353,8 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
     <div style="font-size:11px;font-weight:600;color:#94a3b8;margin-bottom:6px;">Composite Candidates (2–3 feature combos)</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px;font-size:12px;margin-bottom:10px;">
       <div><strong>enabled:</strong> <span style="color:<?= $compEnabled ? '#86efac' : '#6b7280' ?>;"><?= $e($compEnabled ? 'true' : 'false') ?></span></div>
+      <div><strong>source:</strong> <span style="color:#93c5fd;"><?= $e($compSource) ?></span></div>
+      <div><strong>available:</strong> <?= $e($compAvail) ?></div>
       <div><strong>tested:</strong> <?= $e($compTested) ?></div>
       <div><strong>passed:</strong> <span style="color:<?= $compPassed > 0 ? '#86efac' : '#6b7280' ?>;"><?= $e($compPassed) ?></span></div>
       <div><strong>rejected:</strong> <span style="color:<?= $compRejected > 0 ? '#fcd34d' : '#6b7280' ?>;"><?= $e($compRejected) ?></span></div>
@@ -364,6 +369,11 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
       <?php endif; ?>
       <div><strong>selected:</strong> <span style="color:<?= $compSelected ? '#86efac' : '#6b7280' ?>;"><?= $e($compSelected ? 'YES — ' . $compSelId : 'none') ?></span></div>
     </div>
+    <?php if ($compNoSelReason !== ''): ?>
+    <div style="font-size:11px;color:#fb923c;margin-bottom:8px;">
+      <strong>no_selection_reason:</strong> <?= $e($compNoSelReason) ?>
+    </div>
+    <?php endif; ?>
     <?php if (!empty($compReject)): ?>
     <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">
       <strong>composite_reject_reasons:</strong>

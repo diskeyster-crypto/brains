@@ -614,6 +614,8 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     $sfRejected = (int)($run['candidate_single_feature_rejected_total']     ?? 0);
     $sfReasons  = (array)($run['candidate_single_feature_reject_reason_counts'] ?? []);
     $compEnabled  = (bool)($run['composite_candidate_enabled']   ?? false);
+    $compSource   = (string)($run['composite_candidate_source']  ?? 'missing');
+    $compAvail    = (int)($run['composite_candidates_available_total'] ?? 0);
     $compTested   = (int)($run['composite_candidates_tested_total']   ?? 0);
     $compPassed   = (int)($run['composite_candidates_passed_total']   ?? 0);
     $compRejected = (int)($run['composite_candidates_rejected_total'] ?? 0);
@@ -623,6 +625,7 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     $compSelected = (bool)($run['composite_candidate_selected'] ?? false);
     $compSelId    = (string)($run['composite_candidate_selected_id'] ?? '—');
     $compReject   = (array)($run['composite_candidate_reject_reason_counts'] ?? []);
+    $compNoSelReason = (string)($run['composite_candidate_no_selection_reason'] ?? '');
     $rulesMissingReason = (string)($run['candidate_rules_missing_reason'] ?? '');
     ?>
     <?php if ($sfTotal > 0 || $compTested > 0 || $rulesMissingReason !== ''): ?>
@@ -653,6 +656,14 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         <div style="background:#1e293b;border-radius:6px;padding:7px;">
           <div style="font-size:10px;color:#94a3b8;">composite_enabled</div>
           <div style="font-weight:600;color:<?= $compEnabled ? '#93c5fd' : '#6b7280' ?>;"><?= $e($compEnabled ? 'true' : 'false') ?></div>
+        </div>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">composite_source</div>
+          <div style="font-weight:600;color:#93c5fd;"><?= $e($compSource) ?></div>
+        </div>
+        <div style="background:#1e293b;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#94a3b8;">composite_available</div>
+          <div style="font-weight:600;color:#e5e7eb;"><?= $e($compAvail) ?></div>
         </div>
         <div style="background:#1e293b;border-radius:6px;padding:7px;">
           <div style="font-size:10px;color:#94a3b8;">composite_tested</div>
@@ -698,6 +709,12 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         <div style="background:#1e293b;border-radius:6px;padding:7px;">
           <div style="font-size:10px;color:#94a3b8;">composite_reject_reasons</div>
           <div style="font-size:10px;color:#94a3b8;"><?= $e(implode(', ', array_map(static fn($k, $v) => "{$k}:{$v}", array_keys($compReject), $compReject))) ?></div>
+        </div>
+        <?php endif; ?>
+        <?php if ($compNoSelReason !== ''): ?>
+        <div style="background:#431407;border-radius:6px;padding:7px;">
+          <div style="font-size:10px;color:#fdba74;">composite_no_selection_reason</div>
+          <div style="font-size:10px;color:#fb923c;"><?= $e($compNoSelReason) ?></div>
         </div>
         <?php endif; ?>
       </div>

@@ -106,15 +106,15 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="font-weight:600;"><?= $e((float)($run['pm_profit_reference_roi'] ?? 0.0)) ?></div>
     </div>
     <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">bad_entry_total</div>
+      <div style="font-size:12px;opacity:.8;">bad_entry_total (usable scope)</div>
       <div style="font-weight:600;"><?= $e((int)($run['bad_entry_total'] ?? 0)) ?></div>
     </div>
     <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">good_or_do_not_touch_total</div>
+      <div style="font-size:12px;opacity:.8;">good_or_do_not_touch_total (usable scope)</div>
       <div style="font-weight:600;"><?= $e((int)($run['good_or_do_not_touch_total'] ?? 0)) ?></div>
     </div>
     <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
-      <div style="font-size:12px;opacity:.8;">neutral_total</div>
+      <div style="font-size:12px;opacity:.8;">neutral_total (usable scope)</div>
       <div style="font-weight:600;"><?= $e((int)($run['neutral_total'] ?? 0)) ?></div>
     </div>
     <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
@@ -423,12 +423,74 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         <div style="font-weight:600;"><?= $e((int)($run['outcome_relink_after_rebuild_linked_total'] ?? 0)) ?></div>
       </div>
       <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">relink attempted</div>
+        <div style="font-weight:600;"><?= $e((int)($run['outcome_relink_after_rebuild_attempted_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">relink failed</div>
+        <div style="font-weight:600;"><?= $e((int)($run['outcome_relink_after_rebuild_failed_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">failed rebuilds</div>
         <div style="font-weight:600;"><?= $e((int)($run['outcome_feature_rebuild_failed_total'] ?? 0)) ?></div>
       </div>
       <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">relink methods</div>
+        <div style="font-weight:600;font-size:12px;"><?= $e(implode(', ', array_slice(array_map(static fn($k, $v) => $k . ':' . $v, array_keys((array)($run['outcome_relink_after_rebuild_method_counts'] ?? [])), array_values((array)($run['outcome_relink_after_rebuild_method_counts'] ?? []))), 0, 4)) ?: '—') ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">top exclusion reasons</div>
         <div style="font-weight:600;font-size:12px;"><?= $e(implode(', ', array_slice(array_map(static fn($k, $v) => $k . ':' . $v, array_keys((array)($run['active_epoch_excluded_reasons'] ?? [])), array_values((array)($run['active_epoch_excluded_reasons'] ?? []))), 0, 3)) ?: '—') ?></div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px;">
+      <div style="background:#0f172a;color:#cbd5e1;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Raw class totals · bad</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_raw_bad_entry_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#0f172a;color:#cbd5e1;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Raw class totals · good</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_raw_good_or_do_not_touch_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#0f172a;color:#cbd5e1;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Raw class totals · exit_issue</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_raw_entry_ok_exit_issue_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#0f172a;color:#cbd5e1;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Raw class totals · neutral</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_raw_neutral_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#0f172a;color:#cbd5e1;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Raw class totals · incomplete</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_raw_outcome_incomplete_total'] ?? 0)) ?></div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px;">
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Usable class totals · bad</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_usable_bad_entry_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Usable class totals · good</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_usable_good_or_do_not_touch_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Usable class totals · exit_issue</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_usable_entry_ok_exit_issue_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Usable class totals · neutral</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_usable_neutral_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">Usable class totals · incomplete</div>
+        <div style="font-weight:600;"><?= $e((int)($run['active_epoch_usable_outcome_incomplete_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#111827;color:#e5e7eb;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">legacy counter scope</div>
+        <div style="font-weight:600;"><?= $e((string)($run['outcome_class_counter_scope'] ?? 'usable')) ?></div>
       </div>
     </div>
 

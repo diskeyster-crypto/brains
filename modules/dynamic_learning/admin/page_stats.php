@@ -76,11 +76,12 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
   <div><strong>closed_outcome_time_tolerance_enabled:</strong> <?= $e((bool)($run['closed_outcome_time_tolerance_enabled'] ?? false) ? 'true' : 'false') ?></div>
   <div><strong>closed_outcome_dedupe_closed_at_tolerance_seconds:</strong> <?= $e((int)($run['closed_outcome_dedupe_closed_at_tolerance_seconds'] ?? 0)) ?></div>
   <div><strong>closed_outcomes_near_time_duplicates_merged_total:</strong> <?= $e((int)($run['closed_outcomes_near_time_duplicates_merged_total'] ?? 0)) ?></div>
-  <div><strong>Counts:</strong>
+  <div><strong>Legacy usable counts (scope=<?= $e((string)($run['outcome_class_counter_scope'] ?? 'usable')) ?>):</strong>
     bad=<?= $e((int)($run['bad_entry_total'] ?? 0)) ?> /
     good=<?= $e((int)($run['good_or_do_not_touch_total'] ?? 0)) ?> /
     exit_issue=<?= $e((int)($run['entry_ok_exit_issue_total'] ?? 0)) ?> /
-    neutral=<?= $e((int)($run['neutral_total'] ?? 0)) ?>
+    neutral=<?= $e((int)($run['neutral_total'] ?? 0)) ?> /
+    incomplete=<?= $e((int)($run['outcome_incomplete_total'] ?? 0)) ?>
   </div>
 
   <!-- ── Rolling Quality Guard Summary ─────────────────────────────── -->
@@ -114,8 +115,27 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
       <div><strong>excluded outcomes:</strong> <?= $e((int)($run['active_epoch_excluded_from_learning_total'] ?? 0)) ?></div>
       <div><strong>rebuilt features:</strong> <?= $e((int)($run['outcome_feature_rebuilt_total'] ?? 0)) ?></div>
       <div><strong>relinked after rebuild:</strong> <?= $e((int)($run['outcome_relink_after_rebuild_linked_total'] ?? 0)) ?></div>
+      <div><strong>relink attempted:</strong> <?= $e((int)($run['outcome_relink_after_rebuild_attempted_total'] ?? 0)) ?></div>
+      <div><strong>relink failed:</strong> <?= $e((int)($run['outcome_relink_after_rebuild_failed_total'] ?? 0)) ?></div>
+      <div><strong>relink methods:</strong> <?= $e(implode(', ', array_slice(array_map(static fn($k, $v) => $k . ':' . $v, array_keys((array)($run['outcome_relink_after_rebuild_method_counts'] ?? [])), array_values((array)($run['outcome_relink_after_rebuild_method_counts'] ?? []))), 0, 4)) ?: '—') ?></div>
       <div><strong>failed rebuilds:</strong> <?= $e((int)($run['outcome_feature_rebuild_failed_total'] ?? 0)) ?></div>
       <div><strong>top exclusion reasons:</strong> <?= $e(implode(', ', array_slice(array_map(static fn($k, $v) => $k . ':' . $v, array_keys((array)($run['active_epoch_excluded_reasons'] ?? [])), array_values((array)($run['active_epoch_excluded_reasons'] ?? []))), 0, 3)) ?: '—') ?></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:8px;">
+      <div><strong>Raw class totals:</strong></div>
+      <div>bad=<?= $e((int)($run['active_epoch_raw_bad_entry_total'] ?? 0)) ?></div>
+      <div>good=<?= $e((int)($run['active_epoch_raw_good_or_do_not_touch_total'] ?? 0)) ?></div>
+      <div>exit_issue=<?= $e((int)($run['active_epoch_raw_entry_ok_exit_issue_total'] ?? 0)) ?></div>
+      <div>neutral=<?= $e((int)($run['active_epoch_raw_neutral_total'] ?? 0)) ?></div>
+      <div>incomplete=<?= $e((int)($run['active_epoch_raw_outcome_incomplete_total'] ?? 0)) ?></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:8px;">
+      <div><strong>Usable class totals:</strong></div>
+      <div>bad=<?= $e((int)($run['active_epoch_usable_bad_entry_total'] ?? 0)) ?></div>
+      <div>good=<?= $e((int)($run['active_epoch_usable_good_or_do_not_touch_total'] ?? 0)) ?></div>
+      <div>exit_issue=<?= $e((int)($run['active_epoch_usable_entry_ok_exit_issue_total'] ?? 0)) ?></div>
+      <div>neutral=<?= $e((int)($run['active_epoch_usable_neutral_total'] ?? 0)) ?></div>
+      <div>incomplete=<?= $e((int)($run['active_epoch_usable_outcome_incomplete_total'] ?? 0)) ?></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:8px;">
       <div><strong>default_quality_score:</strong> <?= $e($run['default_quality_score'] ?? 'n/a') ?></div>

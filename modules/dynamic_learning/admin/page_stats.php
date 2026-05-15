@@ -72,7 +72,10 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
       <div><strong>min_improvement:</strong> +<?= $e((float)($run['min_candidate_improvement_pct'] ?? 7.0)) ?></div>
     </div>
     <?php
-    $promoDecision = (string)($run['promotion_decision'] ?? 'none');
+    $promoDecision = (string)($run['final_promotion_decision'] ?? ($run['promotion_decision'] ?? 'none'));
+    $finalStatus = (string)($run['final_candidate_status'] ?? ($run['candidate_status'] ?? 'pending'));
+    $finalReason = (string)($run['final_promotion_reason'] ?? ($run['promotion_reason'] ?? '—'));
+    $replayResult = (string)($run['replay_result'] ?? ((bool)($run['replay_suggests_improvement'] ?? false) ? 'improved_on_sample' : 'no_improvement'));
     $promoColor = match($promoDecision) {
         'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#86efac',
         'reject_candidate' => '#f87171',
@@ -82,21 +85,23 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
     ?>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:8px;">
       <div>
-        <strong>candidate_status:</strong>
-        <span style="color:#c4b5fd;"><?= $e((string)($run['candidate_status'] ?? 'pending')) ?></span>
+        <strong>final_candidate_status:</strong>
+        <span style="color:#c4b5fd;"><?= $e($finalStatus) ?></span>
       </div>
       <div>
-        <strong>promotion_decision:</strong>
+        <strong>final_promotion_decision:</strong>
         <span style="color:<?= $promoColor ?>;"><?= $e($promoDecision) ?></span>
       </div>
       <div>
-        <strong>promotion_reason:</strong>
-        <span style="color:#94a3b8;font-size:12px;"><?= $e((string)($run['promotion_reason'] ?? '—')) ?></span>
+        <strong>final_promotion_reason:</strong>
+        <span style="color:#94a3b8;font-size:12px;"><?= $e($finalReason) ?></span>
       </div>
+      <div><strong>replay_result:</strong> <?= $e($replayResult) ?></div>
       <div><strong>replay_diagnostic_available:</strong> <?= $e((bool)($run['replay_diagnostic_available'] ?? false) ? 'true' : 'false') ?></div>
       <div><strong>replay_suggests_improvement:</strong> <?= $e((bool)($run['replay_suggests_improvement'] ?? false) ? 'true' : 'false') ?></div>
       <div><strong>promotion_blocked_by_min_data:</strong> <?= $e((bool)($run['promotion_blocked_by_min_data'] ?? false) ? 'true' : 'false') ?></div>
       <div><strong>promotion_blocked_reason:</strong> <?= $e((string)($run['promotion_blocked_reason'] ?? '—')) ?></div>
+      <div><strong>final_candidate_eligible_for_demo_apply:</strong> <?= $e((bool)($run['final_candidate_eligible_for_demo_apply'] ?? $run['candidate_eligible_for_demo_apply'] ?? false) ? 'true' : 'false') ?></div>
       <div><strong>candidate_build_scope:</strong> <?= $e((string)($run['candidate_build_scope'] ?? '—')) ?></div>
       <div><strong>candidate_replay_scope:</strong> <?= $e((string)($run['candidate_replay_scope'] ?? '—')) ?></div>
       <div><strong>promotion_guard_scope:</strong> <?= $e((string)($run['promotion_guard_scope'] ?? '—')) ?></div>
@@ -180,19 +185,22 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
         <?php foreach ($candHistLines as $line):
           $h = @json_decode($line, true);
           if (!is_array($h)) continue;
-          $hdColor = match((string)($h['promotion_decision'] ?? '')) {
+          $histDecision = (string)($h['final_promotion_decision'] ?? ($h['promotion_decision'] ?? ''));
+          $hdColor = match($histDecision) {
               'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#86efac',
               'reject_candidate' => '#f87171',
               'keep_current' => '#fcd34d',
               default => '#94a3b8',
           };
+          $histStatus = (string)($h['final_candidate_status'] ?? ($h['candidate_status'] ?? ''));
+          $histReason = (string)($h['final_promotion_reason'] ?? ($h['promotion_reason'] ?? ''));
         ?>
         <tr style="border-bottom:1px solid #1e293b;">
           <td style="padding:3px 6px;"><?= $e((string)($h['recorded_at'] ?? '')) ?></td>
-          <td style="padding:3px 6px;color:#c4b5fd;"><?= $e((string)($h['candidate_status'] ?? '')) ?></td>
-          <td style="padding:3px 6px;color:<?= $hdColor ?>;"><?= $e((string)($h['promotion_decision'] ?? '')) ?></td>
+          <td style="padding:3px 6px;color:#c4b5fd;"><?= $e($histStatus) ?></td>
+          <td style="padding:3px 6px;color:<?= $hdColor ?>;"><?= $e($histDecision) ?></td>
           <td style="padding:3px 6px;color:#93c5fd;"><?= $e((string)($h['replay_result'] ?? '—')) ?></td>
-          <td style="padding:3px 6px;color:#94a3b8;"><?= $e((string)($h['promotion_reason'] ?? '')) ?></td>
+          <td style="padding:3px 6px;color:#94a3b8;"><?= $e($histReason) ?></td>
           <td style="padding:3px 6px;text-align:right;"><?= $e($h['default_quality_score'] ?? '—') ?></td>
           <td style="padding:3px 6px;text-align:right;"><?= $e($h['candidate_quality_score'] ?? '—') ?></td>
           <td style="padding:3px 6px;text-align:right;"><?= $e($h['candidate_vs_default_delta_pct'] ?? '—') ?></td>

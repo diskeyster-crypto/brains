@@ -629,6 +629,8 @@ final class DynamicLearningService
         $result['scope_mismatch_allowed_for_diagnostics'] = true;
         $result['replay_diagnostic_available'] = (bool)($candidateReplay['candidate_replay_enabled'] ?? false);
         $result['replay_suggests_improvement'] = (bool)($candidateReplay['replay_suggests_improvement'] ?? false);
+        $result['replay_result'] = (string)($candidateReplay['replay_result'] ?? ((bool)($candidateReplay['replay_suggests_improvement'] ?? false) ? 'improved_on_sample' : 'no_improvement'));
+        $result['replay_candidate_status'] = (string)($candidateReplay['replay_candidate_status'] ?? 'insufficient_replay_data');
         $result['promotion_blocked_by_min_data'] = false;
         $result['promotion_blocked_reason'] = null;
         $result['candidate_can_apply'] = false;
@@ -674,6 +676,13 @@ final class DynamicLearningService
             }
         }
 
+        $result['final_candidate_status'] = (string)($result['candidate_status'] ?? 'pending');
+        $result['final_promotion_decision'] = (string)($result['promotion_decision'] ?? 'keep_current');
+        $result['final_promotion_reason'] = $result['promotion_reason'] ?? null;
+        $result['final_candidate_eligible_for_demo_apply'] = (bool)($result['candidate_eligible_for_demo_apply'] ?? false);
+
+        $this->syncCandidateReplayFinalDiagnostics($cfg, $result, $candidateReplay);
+
         if ((bool)($result['replay_diagnostic_available'] ?? false)) {
             $this->appendCandidateHistory([
                 'candidate_status' => $result['candidate_status'] ?? 'pending',
@@ -687,7 +696,13 @@ final class DynamicLearningService
                 'rolling_window_outcomes_total' => $result['rolling_window_outcomes_total'] ?? 0,
                 'rolling_window_bad_entry_total' => $result['rolling_window_bad_entry_total'] ?? 0,
                 'rolling_window_good_entry_total' => $result['rolling_window_good_entry_total'] ?? 0,
-                'replay_result' => (bool)($result['replay_suggests_improvement'] ?? false) ? 'improved_on_sample' : 'not_improved_on_sample',
+                'replay_result' => $result['replay_result'] ?? null,
+                'replay_candidate_status' => $result['replay_candidate_status'] ?? null,
+                'replay_suggests_improvement' => (bool)($result['replay_suggests_improvement'] ?? false),
+                'final_candidate_status' => $result['final_candidate_status'] ?? null,
+                'final_promotion_decision' => $result['final_promotion_decision'] ?? null,
+                'final_promotion_reason' => $result['final_promotion_reason'] ?? null,
+                'final_candidate_eligible_for_demo_apply' => (bool)($result['final_candidate_eligible_for_demo_apply'] ?? false),
                 'promotion_blocked_by_min_data' => (bool)($result['promotion_blocked_by_min_data'] ?? false),
                 'promotion_blocked_reason' => $result['promotion_blocked_reason'] ?? null,
             ], max(1, (int)($cfg['max_candidate_history_records'] ?? 200)), 'replay_evaluator');
@@ -1429,6 +1444,12 @@ final class DynamicLearningService
             'rolling_window_bad_entry_total' => $guardResult['rolling_window_bad_entry_total'] ?? 0,
             'rolling_window_good_entry_total' => $guardResult['rolling_window_good_entry_total'] ?? 0,
             'replay_result' => $guardResult['replay_result'] ?? null,
+            'replay_candidate_status' => $guardResult['replay_candidate_status'] ?? null,
+            'replay_suggests_improvement' => (bool)($guardResult['replay_suggests_improvement'] ?? false),
+            'final_candidate_status' => $guardResult['final_candidate_status'] ?? null,
+            'final_promotion_decision' => $guardResult['final_promotion_decision'] ?? null,
+            'final_promotion_reason' => $guardResult['final_promotion_reason'] ?? null,
+            'final_candidate_eligible_for_demo_apply' => (bool)($guardResult['final_candidate_eligible_for_demo_apply'] ?? false),
             'promotion_blocked_by_min_data' => (bool)($guardResult['promotion_blocked_by_min_data'] ?? false),
             'promotion_blocked_reason' => $guardResult['promotion_blocked_reason'] ?? null,
             'rollback_required' => $guardResult['rollback_required'] ?? false,
@@ -2499,6 +2520,7 @@ final class DynamicLearningService
             $autoApplyDemo,
             $applyLearningToStrategy
         );
+        $replayDiag = $this->deriveReplayDiagnosticOutcome($candidateStatus);
 
         $replayPassedGuards = $candidateStatus === 'eligible_for_demo_apply';
         $autoApplySafetyBlocked = !($autoApplyDemo && $applyLearningToStrategy && $replayPassedGuards);
@@ -2546,6 +2568,8 @@ final class DynamicLearningService
             'candidate_status'                      => $candidateStatus,
             'promotion_decision'                    => $promotionDecision,
             'promotion_reason'                      => $promotionReason,
+            'replay_result'                         => $replayDiag['replay_result'],
+            'replay_candidate_status'               => $replayDiag['replay_candidate_status'],
             'auto_apply_safety_blocked'             => $autoApplySafetyBlocked,
             'auto_apply_safety_reason'              => $autoApplySafetyReason,
             'blocked_bad_examples'                  => $blockedBadEx,
@@ -2562,7 +2586,7 @@ final class DynamicLearningService
             'replay_features_missing_examples'      => $featMissingExamples,
             'replay_skipped_feature_link_reason'    => null,
             'replay_diagnostic_available'           => true,
-            'replay_suggests_improvement'           => $candidateStatus === 'eligible_for_demo_apply',
+            'replay_suggests_improvement'           => (bool)$replayDiag['replay_suggests_improvement'],
             'replay_summary' => [
                 'bad_blocked'            => $badBlocked,
                 'good_blocked'           => $goodBlocked,
@@ -2574,6 +2598,8 @@ final class DynamicLearningService
                 'delta'                  => $delta,
                 'candidate_vs_default_delta_pct' => $delta,
                 'candidate_status'       => $candidateStatus,
+                'replay_candidate_status' => $replayDiag['replay_candidate_status'],
+                'replay_result'          => $replayDiag['replay_result'],
                 'promotion_decision'     => $promotionDecision,
             ],
         ];
@@ -2592,6 +2618,7 @@ final class DynamicLearningService
     {
         $status = $rulesTotal === 0 ? 'no_safe_candidate_rules' : 'no_score';
         $reason = $rulesTotal === 0 ? 'no_safe_candidate_rules_good_overlap' : 'no_outcomes';
+        $replayDiag = $this->deriveReplayDiagnosticOutcome($status);
         return [
             'candidate_replay_enabled'              => true,
             'replay_generated_at'                   => date('c'),
@@ -2623,6 +2650,8 @@ final class DynamicLearningService
             'candidate_status'                      => $status,
             'promotion_decision'                    => 'keep_current',
             'promotion_reason'                      => $reason,
+            'replay_result'                         => $replayDiag['replay_result'],
+            'replay_candidate_status'               => $replayDiag['replay_candidate_status'],
             'auto_apply_safety_blocked'             => true,
             'auto_apply_safety_reason'              => 'candidate_not_eligible_for_demo_apply',
             'blocked_bad_examples'                  => [],
@@ -2638,7 +2667,7 @@ final class DynamicLearningService
             'replay_features_missing_examples'      => [],
             'replay_skipped_feature_link_reason'    => $rulesTotal === 0 ? 'no_candidate_rules' : null,
             'replay_diagnostic_available'           => true,
-            'replay_suggests_improvement'           => false,
+            'replay_suggests_improvement'           => (bool)$replayDiag['replay_suggests_improvement'],
             'replay_summary' => [
                 'bad_blocked'             => 0,
                 'good_blocked'            => 0,
@@ -2648,8 +2677,46 @@ final class DynamicLearningService
                 'candidate_quality_score' => $defaultScore,
                 'delta'                   => 0.0,
                 'candidate_status'        => $status,
+                'replay_candidate_status' => $replayDiag['replay_candidate_status'],
+                'replay_result'           => $replayDiag['replay_result'],
                 'promotion_decision'      => 'keep_current',
             ],
+        ];
+    }
+
+    /**
+     * @return array{replay_candidate_status:string,replay_result:string,replay_suggests_improvement:bool}
+     */
+    private function deriveReplayDiagnosticOutcome(string $candidateStatus): array
+    {
+        if ($candidateStatus === 'eligible_for_demo_apply') {
+            return [
+                'replay_candidate_status' => 'eligible_on_replay_only',
+                'replay_result' => 'improved_on_sample',
+                'replay_suggests_improvement' => true,
+            ];
+        }
+
+        if (in_array($candidateStatus, ['insufficient_data', 'no_score', 'pending'], true)) {
+            return [
+                'replay_candidate_status' => 'insufficient_replay_data',
+                'replay_result' => 'no_improvement',
+                'replay_suggests_improvement' => false,
+            ];
+        }
+
+        if (in_array($candidateStatus, ['no_material_improvement'], true)) {
+            return [
+                'replay_candidate_status' => 'rejected_on_replay',
+                'replay_result' => 'no_improvement',
+                'replay_suggests_improvement' => false,
+            ];
+        }
+
+        return [
+            'replay_candidate_status' => 'rejected_on_replay',
+            'replay_result' => 'rejected_on_sample',
+            'replay_suggests_improvement' => false,
         ];
     }
 
@@ -3029,6 +3096,48 @@ final class DynamicLearningService
         if (is_string($jsonStr)) {
             @file_put_contents($replayPath, $jsonStr, LOCK_EX);
         }
+    }
+
+    /**
+     * Sync final rolling-guard decision fields into candidate_replay.json
+     * while preserving replay-only diagnostics.
+     *
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed> $result
+     * @param array<string,mixed> $candidateReplay
+     */
+    private function syncCandidateReplayFinalDiagnostics(array $cfg, array $result, array $candidateReplay): void
+    {
+        if (!((bool)($result['candidate_replay_enabled'] ?? false) || (bool)($candidateReplay['candidate_replay_enabled'] ?? false))) {
+            return;
+        }
+
+        $replayPath = $this->storagePath('profiles/early_impulse_growth_long/candidate_replay.json');
+        $payload = (array)$this->readJson($replayPath, []);
+        if ($payload === []) {
+            $payload = $candidateReplay;
+        }
+
+        $payload['replay_diagnostic_available'] = (bool)($result['replay_diagnostic_available'] ?? true);
+        $payload['replay_suggests_improvement'] = (bool)($result['replay_suggests_improvement'] ?? false);
+        $payload['replay_result'] = (string)($result['replay_result'] ?? ($payload['replay_result'] ?? 'no_improvement'));
+        $payload['replay_candidate_status'] = (string)($result['replay_candidate_status'] ?? ($payload['replay_candidate_status'] ?? 'insufficient_replay_data'));
+
+        $payload['final_candidate_status'] = (string)($result['final_candidate_status'] ?? ($result['candidate_status'] ?? 'pending'));
+        $payload['final_promotion_decision'] = (string)($result['final_promotion_decision'] ?? ($result['promotion_decision'] ?? 'keep_current'));
+        $payload['final_promotion_reason'] = $result['final_promotion_reason'] ?? ($result['promotion_reason'] ?? null);
+        $payload['final_candidate_eligible_for_demo_apply'] = (bool)($result['final_candidate_eligible_for_demo_apply'] ?? ($result['candidate_eligible_for_demo_apply'] ?? false));
+        $payload['promotion_blocked_by_min_data'] = (bool)($result['promotion_blocked_by_min_data'] ?? false);
+        $payload['promotion_blocked_reason'] = $result['promotion_blocked_reason'] ?? null;
+        $payload['promotion_guard_scope'] = (string)($result['promotion_guard_scope'] ?? 'rolling_window');
+
+        // Keep legacy top-level fields aligned to final decision to avoid conflicts.
+        $payload['candidate_status'] = $payload['final_candidate_status'];
+        $payload['promotion_decision'] = $payload['final_promotion_decision'];
+        $payload['promotion_reason'] = $payload['final_promotion_reason'];
+        $payload['candidate_eligible_for_demo_apply'] = $payload['final_candidate_eligible_for_demo_apply'];
+
+        $this->writeReplayToFile($payload, $cfg);
     }
 
     /** @return array{all:list<array<string,mixed>>,index:array<string,array<string,mixed>>,new_total:int} */

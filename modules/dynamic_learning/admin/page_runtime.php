@@ -367,9 +367,10 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
 
     <!-- Decision block -->
     <?php
-    $candStatus = (string)($run['candidate_status'] ?? 'pending');
-    $promoDecision = (string)($run['promotion_decision'] ?? 'none');
-    $promoReason = (string)($run['promotion_reason'] ?? '');
+    $candStatus = (string)($run['final_candidate_status'] ?? ($run['candidate_status'] ?? 'pending'));
+    $promoDecision = (string)($run['final_promotion_decision'] ?? ($run['promotion_decision'] ?? 'none'));
+    $promoReason = (string)($run['final_promotion_reason'] ?? ($run['promotion_reason'] ?? ''));
+    $replayResult = (string)($run['replay_result'] ?? ((bool)($run['replay_suggests_improvement'] ?? false) ? 'improved_on_sample' : 'no_improvement'));
     $decisionColor = match($promoDecision) {
         'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#86efac',
         'reject_candidate' => '#f87171',
@@ -379,16 +380,20 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     ?>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:10px;">
       <div style="background:#0f172a;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;color:#94a3b8;">candidate_status</div>
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">final_candidate_status</div>
         <div style="font-weight:600;color:#c4b5fd;"><?= $e($candStatus) ?></div>
       </div>
       <div style="background:#0f172a;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;color:#94a3b8;">promotion_decision</div>
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">final_promotion_decision</div>
         <div style="font-weight:600;color:<?= $decisionColor ?>;"><?= $e($promoDecision) ?></div>
       </div>
       <div style="background:#0f172a;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;color:#94a3b8;">promotion_reason</div>
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">final_promotion_reason</div>
         <div style="font-weight:600;color:#94a3b8;font-size:12px;"><?= $e($promoReason !== '' ? $promoReason : '—') ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#94a3b8;">replay_result</div>
+        <div style="font-weight:600;color:#93c5fd;"><?= $e($replayResult) ?></div>
       </div>
       <div style="background:#0f172a;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;color:#94a3b8;">auto_apply_to_demo</div>
@@ -460,10 +465,11 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
   <!-- ── Candidate Profile & Replay ──────────────────────────────────────── -->
   <?php
   $candProfileId     = (string)($run['candidate_profile_id']    ?? '—');
-  $candStatus        = (string)($run['candidate_status']         ?? '—');
+  $candStatus        = (string)($run['final_candidate_status']   ?? ($run['candidate_status'] ?? '—'));
   $candRulesTotal    = (int)($run['candidate_rules_total']       ?? 0);
   $candComponents    = (int)($run['candidate_weighted_components_total'] ?? 0);
   $candReplayEnabled = (bool)($run['candidate_replay_enabled']   ?? false);
+  $replayResult      = (string)($run['replay_result'] ?? ((bool)($run['replay_suggests_improvement'] ?? false) ? 'improved_on_sample' : 'no_improvement'));
   $rpDefaultScore    = $run['default_quality_score']             ?? null;
   $rpCandScore       = $run['candidate_quality_score']           ?? null;
   $rpDelta           = $run['candidate_vs_default_delta_pct']    ?? null;
@@ -472,8 +478,8 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
   $rpBadCapture      = $run['replay_bad_capture_rate_pct']       ?? null;
   $rpGoodBlock       = $run['replay_good_block_rate_pct']        ?? null;
   $rpNetScore        = $run['replay_net_score']                  ?? null;
-  $rpPromoDec        = (string)($run['promotion_decision']       ?? '—');
-  $rpPromoReason     = (string)($run['promotion_reason']         ?? '');
+  $rpPromoDec        = (string)($run['final_promotion_decision'] ?? ($run['promotion_decision'] ?? '—'));
+  $rpPromoReason     = (string)($run['final_promotion_reason']   ?? ($run['promotion_reason'] ?? ''));
 
   $candStatusColor = match($candStatus) {
     'eligible_for_demo_apply'                          => '#86efac',
@@ -593,12 +599,16 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         <div style="font-weight:600;color:<?= $blkClr ?>;"><?= $e($rpGoodBlock !== null ? round((float)$rpGoodBlock, 1) . '%' : 'n/a') ?></div>
       </div>
       <div style="background:<?= $rpPromoBg ?>;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.7;color:<?= $rpPromoColor ?>;">promotion_decision</div>
+        <div style="font-size:11px;opacity:.7;color:<?= $rpPromoColor ?>;">final_decision</div>
         <div style="font-weight:600;font-size:11px;color:<?= $rpPromoColor ?>;"><?= $e($rpPromoDec) ?></div>
       </div>
       <div style="background:#0f172a;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.7;color:#94a3b8;">promotion_reason</div>
+        <div style="font-size:11px;opacity:.7;color:#94a3b8;">final_reason</div>
         <div style="font-size:11px;color:#94a3b8;"><?= $e($rpPromoReason !== '' ? $rpPromoReason : '—') ?></div>
+      </div>
+      <div style="background:#1e293b;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.7;color:#93c5fd;">replay_result</div>
+        <div style="font-weight:600;color:#93c5fd;"><?= $e($replayResult) ?></div>
       </div>
       <?php if ($candReplayEnabled): ?>
       <div style="background:#0f172a;border-radius:7px;padding:8px;">

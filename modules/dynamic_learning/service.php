@@ -114,7 +114,7 @@ final class DynamicLearningService
             'entry_ok_exit_issue_total' => 0,
             'neutral_total' => 0,
             'outcome_incomplete_total' => 0,
-            'outcome_class_counter_scope' => 'usable',
+            'outcome_class_counter_scope' => 'usable_classifiable_for_quality',
             'active_epoch_raw_outcomes_total' => 0,
             'active_epoch_usable_outcomes_total' => 0,
             'active_epoch_excluded_from_learning_total' => 0,
@@ -129,6 +129,8 @@ final class DynamicLearningService
             'active_epoch_usable_entry_ok_exit_issue_total' => 0,
             'active_epoch_usable_neutral_total' => 0,
             'active_epoch_usable_outcome_incomplete_total' => 0,
+            'active_epoch_classifiable_outcomes_total' => 0,
+            'active_epoch_incomplete_outcomes_total' => 0,
             'risk_profile_mode' => (string)($cfg['risk_profile_mode'] ?? 'working_real'),
             'outcome_classification_profile' => (string)($cfg['outcome_classification_profile'] ?? 'working_real_8_15'),
             'closed_outcome_dedupe_closed_at_tolerance_seconds' => (int)($cfg['closed_outcome_dedupe_closed_at_tolerance_seconds'] ?? 0),
@@ -280,11 +282,15 @@ final class DynamicLearningService
             'rolling_next_retrain_at' => null,
             'rolling_window_outcomes_total' => 0,
             'rolling_window_raw_outcomes_total' => 0,
+            'rolling_window_classifiable_outcomes_total' => 0,
+            'rolling_window_incomplete_outcomes_total' => 0,
+            'rolling_window_neutral_total' => 0,
             'rolling_window_bad_entry_total' => 0,
             'rolling_window_good_entry_total' => 0,
             'rolling_sample_min_counts_passed' => false,
             'rolling_window_entry_ok_exit_issue_total' => 0,
             'rolling_selected_outcomes_total' => 0,
+            'rolling_selected_classifiable_outcomes_total' => 0,
             'rolling_selected_bad_entry_total' => 0,
             'rolling_selected_good_entry_total' => 0,
             'default_quality_score' => null,
@@ -320,6 +326,10 @@ final class DynamicLearningService
             // Candidate replay defaults
             'candidate_replay_enabled' => false,
             'replay_trades_total' => 0,
+            'replay_classifiable_outcomes_total' => 0,
+            'replay_incomplete_outcomes_total' => 0,
+            'replay_incomplete_skipped_total' => 0,
+            'replay_incomplete_skip_reason' => null,
             'replay_bad_entries_total' => 0,
             'replay_good_entries_total' => 0,
             'replay_bad_blocked_total' => 0,
@@ -534,7 +544,9 @@ final class DynamicLearningService
         $result['active_epoch_usable_entry_ok_exit_issue_total'] = (int)($epochFilter['usable_entry_ok_exit_issue_total'] ?? 0);
         $result['active_epoch_usable_neutral_total'] = (int)($epochFilter['usable_neutral_total'] ?? 0);
         $result['active_epoch_usable_outcome_incomplete_total'] = (int)($epochFilter['usable_outcome_incomplete_total'] ?? 0);
-        $result['outcome_class_counter_scope'] = 'usable';
+        $result['active_epoch_classifiable_outcomes_total'] = (int)($epochFilter['usable_classifiable_outcomes_total'] ?? 0);
+        $result['active_epoch_incomplete_outcomes_total'] = (int)($epochFilter['usable_outcome_incomplete_total'] ?? 0);
+        $result['outcome_class_counter_scope'] = 'usable_classifiable_for_quality';
         $result['bad_entry_total'] = (int)($epochFilter['usable_bad_entry_total'] ?? $result['bad_entry_total']);
         $result['good_or_do_not_touch_total'] = (int)($epochFilter['usable_good_or_do_not_touch_total'] ?? $result['good_or_do_not_touch_total']);
         $result['entry_ok_exit_issue_total'] = (int)($epochFilter['usable_entry_ok_exit_issue_total'] ?? $result['entry_ok_exit_issue_total']);
@@ -640,11 +652,15 @@ final class DynamicLearningService
         $result['rolling_next_retrain_at'] = $rollingGuard['rolling_next_retrain_at'];
         $result['rolling_window_outcomes_total'] = $rollingGuard['rolling_window_outcomes_total'];
         $result['rolling_window_raw_outcomes_total'] = (int)($rollingGuard['rolling_window_raw_outcomes_total'] ?? 0);
+        $result['rolling_window_classifiable_outcomes_total'] = (int)($rollingGuard['rolling_window_classifiable_outcomes_total'] ?? 0);
+        $result['rolling_window_incomplete_outcomes_total'] = (int)($rollingGuard['rolling_window_incomplete_outcomes_total'] ?? 0);
+        $result['rolling_window_neutral_total'] = (int)($rollingGuard['rolling_window_neutral_total'] ?? 0);
         $result['rolling_window_bad_entry_total'] = $rollingGuard['rolling_window_bad_entry_total'];
         $result['rolling_window_good_entry_total'] = $rollingGuard['rolling_window_good_entry_total'];
         $result['rolling_sample_min_counts_passed'] = (bool)($rollingGuard['rolling_sample_min_counts_passed'] ?? false);
         $result['rolling_window_entry_ok_exit_issue_total'] = $rollingGuard['rolling_window_entry_ok_exit_issue_total'];
         $result['rolling_selected_outcomes_total'] = $rollingGuard['rolling_selected_outcomes_total'];
+        $result['rolling_selected_classifiable_outcomes_total'] = (int)($rollingGuard['rolling_selected_classifiable_outcomes_total'] ?? 0);
         $result['rolling_selected_bad_entry_total'] = $rollingGuard['rolling_selected_bad_entry_total'];
         $result['rolling_selected_good_entry_total'] = $rollingGuard['rolling_selected_good_entry_total'];
         $result['default_quality_score'] = $rollingGuard['default_quality_score'];
@@ -727,6 +743,10 @@ final class DynamicLearningService
         }
         $result['candidate_replay_enabled'] = (bool)($candidateReplay['candidate_replay_enabled'] ?? false);
         $result['replay_trades_total'] = (int)($candidateReplay['replay_trades_total'] ?? 0);
+        $result['replay_classifiable_outcomes_total'] = (int)($candidateReplay['replay_classifiable_outcomes_total'] ?? 0);
+        $result['replay_incomplete_outcomes_total'] = (int)($candidateReplay['replay_incomplete_outcomes_total'] ?? 0);
+        $result['replay_incomplete_skipped_total'] = (int)($candidateReplay['replay_incomplete_skipped_total'] ?? 0);
+        $result['replay_incomplete_skip_reason'] = $candidateReplay['replay_incomplete_skip_reason'] ?? null;
         $result['replay_bad_entries_total'] = (int)($candidateReplay['replay_bad_entries_total'] ?? 0);
         $result['replay_good_entries_total'] = (int)($candidateReplay['replay_good_entries_total'] ?? 0);
         $result['replay_bad_blocked_total'] = (int)($candidateReplay['replay_bad_blocked_total'] ?? 0);
@@ -1305,6 +1325,7 @@ final class DynamicLearningService
         $goodTotal = 0;
         $exitIssueTotal = 0;
         $neutralTotal = 0;
+        $incompleteTotal = 0;
         $sumCloseRoi = 0.0;
         $sumMaxDrawdown = 0.0;
         $sumMaxProfit = 0.0;
@@ -1329,6 +1350,10 @@ final class DynamicLearningService
                 case 'entry_ok_exit_issue':
                     $exitIssueTotal++;
                     break;
+                case 'outcome_incomplete':
+                    $incompleteTotal++;
+                    // Not counted in quality denominator — skip ROI/drawdown accumulation
+                    continue 2;
                 default:
                     $neutralTotal++;
                     break;
@@ -1356,10 +1381,23 @@ final class DynamicLearningService
             }
         }
 
-        $winrate = ($goodTotal + $exitIssueTotal) / $total * 100.0;
-        $badRate = $badTotal / $total * 100.0;
-        $goodCapture = ($goodTotal + $exitIssueTotal) / $total * 100.0;
-        $exitIssueRate = $exitIssueTotal / $total * 100.0;
+        // Use only classifiable outcomes as quality denominator — outcome_incomplete is excluded
+        $classifiableTotal = $badTotal + $goodTotal + $exitIssueTotal + $neutralTotal;
+        if ($classifiableTotal === 0) {
+            return [
+                'benchmark_available' => false,
+                'benchmark_missing_reason' => 'no_classifiable_outcomes',
+                'trades_total' => $total,
+                'classifiable_total' => 0,
+                'incomplete_total' => $incompleteTotal,
+                'incomplete_excluded_from_quality' => true,
+            ];
+        }
+
+        $winrate = ($goodTotal + $exitIssueTotal) / $classifiableTotal * 100.0;
+        $badRate = $badTotal / $classifiableTotal * 100.0;
+        $goodCapture = ($goodTotal + $exitIssueTotal) / $classifiableTotal * 100.0;
+        $exitIssueRate = $exitIssueTotal / $classifiableTotal * 100.0;
         $avgCloseRoi = $hasCloseRoi > 0 ? $sumCloseRoi / $hasCloseRoi : null;
         $avgMaxDrawdown = $hasDrawdown > 0 ? $sumMaxDrawdown / $hasDrawdown : null;
         $avgMaxProfit = $hasMaxProfit > 0 ? $sumMaxProfit / $hasMaxProfit : null;
@@ -1380,6 +1418,9 @@ final class DynamicLearningService
             'benchmark_available' => true,
             'benchmark_missing_reason' => null,
             'trades_total' => $total,
+            'classifiable_total' => $classifiableTotal,
+            'incomplete_total' => $incompleteTotal,
+            'incomplete_excluded_from_quality' => true,
             'bad_entry_total' => $badTotal,
             'good_or_do_not_touch_total' => $goodTotal,
             'entry_ok_exit_issue_total' => $exitIssueTotal,
@@ -1454,11 +1495,15 @@ final class DynamicLearningService
             'rolling_next_retrain_at' => null,
             'rolling_window_outcomes_total' => 0,
             'rolling_window_raw_outcomes_total' => 0,
+            'rolling_window_classifiable_outcomes_total' => 0,
+            'rolling_window_incomplete_outcomes_total' => 0,
+            'rolling_window_neutral_total' => 0,
             'rolling_window_bad_entry_total' => 0,
             'rolling_window_good_entry_total' => 0,
             'rolling_sample_min_counts_passed' => false,
             'rolling_window_entry_ok_exit_issue_total' => 0,
             'rolling_selected_outcomes_total' => 0,
+            'rolling_selected_classifiable_outcomes_total' => 0,
             'rolling_selected_bad_entry_total' => 0,
             'rolling_selected_good_entry_total' => 0,
             'default_quality_score' => null,
@@ -1584,12 +1629,15 @@ final class DynamicLearningService
         $windowCounts = $this->computeRollingOutcomeCounts($windowOutcomes);
         $guardResult['rolling_window_raw_outcomes_total'] = count($rawWindowOutcomes);
         $guardResult['rolling_window_outcomes_total'] = $windowCounts['total'];
+        $guardResult['rolling_window_classifiable_outcomes_total'] = $windowCounts['classifiable'];
+        $guardResult['rolling_window_incomplete_outcomes_total'] = $windowCounts['incomplete'];
+        $guardResult['rolling_window_neutral_total'] = $windowCounts['neutral'];
         $guardResult['rolling_window_bad_entry_total'] = $windowCounts['bad'];
         $guardResult['rolling_window_good_entry_total'] = $windowCounts['good'];
         $guardResult['rolling_window_entry_ok_exit_issue_total'] = $windowCounts['exit_issue'];
 
         $selectedOutcomes = [];
-        $selectedCounts = ['total' => 0, 'bad' => 0, 'good' => 0, 'exit_issue' => 0];
+        $selectedCounts = ['total' => 0, 'classifiable' => 0, 'bad' => 0, 'good' => 0, 'exit_issue' => 0, 'neutral' => 0, 'incomplete' => 0];
 
         if ($guardMode === 'last_n') {
             $fallbackOutcomes = array_map(static fn(array $entry): array => (array)$entry['outcome'], array_slice($timedOutcomes, 0, $fallbackLastN));
@@ -1604,6 +1652,7 @@ final class DynamicLearningService
                 $guardResult['promotion_reason'] = 'rolling_last_n_below_min_counts';
                 $guardResult['rolling_selected_sample_type'] = 'insufficient';
                 $guardResult['rolling_selected_outcomes_total'] = $fallbackCounts['total'];
+                $guardResult['rolling_selected_classifiable_outcomes_total'] = $fallbackCounts['classifiable'];
                 $guardResult['rolling_selected_bad_entry_total'] = $fallbackCounts['bad'];
                 $guardResult['rolling_selected_good_entry_total'] = $fallbackCounts['good'];
                 $this->appendCandidateHistory($guardResult, $maxCandHistory);
@@ -1634,6 +1683,7 @@ final class DynamicLearningService
                     $guardResult['promotion_reason'] = 'rolling_sliding_window_and_fallback_below_min_counts';
                     $guardResult['rolling_selected_sample_type'] = 'insufficient';
                     $guardResult['rolling_selected_outcomes_total'] = $fallbackCounts['total'];
+                    $guardResult['rolling_selected_classifiable_outcomes_total'] = $fallbackCounts['classifiable'];
                     $guardResult['rolling_selected_bad_entry_total'] = $fallbackCounts['bad'];
                     $guardResult['rolling_selected_good_entry_total'] = $fallbackCounts['good'];
                     $this->appendCandidateHistory($guardResult, $maxCandHistory);
@@ -1643,6 +1693,7 @@ final class DynamicLearningService
         }
 
         $guardResult['rolling_selected_outcomes_total'] = $selectedCounts['total'];
+        $guardResult['rolling_selected_classifiable_outcomes_total'] = $selectedCounts['classifiable'];
         $guardResult['rolling_selected_bad_entry_total'] = $selectedCounts['bad'];
         $guardResult['rolling_selected_good_entry_total'] = $selectedCounts['good'];
 
@@ -1742,11 +1793,11 @@ final class DynamicLearningService
 
     /**
      * @param array<array<string,mixed>> $outcomes
-     * @return array{total:int,bad:int,good:int,exit_issue:int}
+     * @return array{total:int,classifiable:int,bad:int,good:int,exit_issue:int,neutral:int,incomplete:int}
      */
     private function computeRollingOutcomeCounts(array $outcomes): array
     {
-        $counts = ['total' => count($outcomes), 'bad' => 0, 'good' => 0, 'exit_issue' => 0];
+        $counts = ['total' => count($outcomes), 'classifiable' => 0, 'bad' => 0, 'good' => 0, 'exit_issue' => 0, 'neutral' => 0, 'incomplete' => 0];
         foreach ($outcomes as $outcome) {
             if (!is_array($outcome)) {
                 continue;
@@ -1754,12 +1805,22 @@ final class DynamicLearningService
             switch ((string)($outcome['outcome_class'] ?? '')) {
                 case 'bad_entry':
                     $counts['bad']++;
+                    $counts['classifiable']++;
                     break;
                 case 'good_or_do_not_touch':
                     $counts['good']++;
+                    $counts['classifiable']++;
                     break;
                 case 'entry_ok_exit_issue':
                     $counts['exit_issue']++;
+                    $counts['classifiable']++;
+                    break;
+                case 'neutral':
+                    $counts['neutral']++;
+                    $counts['classifiable']++;
+                    break;
+                case 'outcome_incomplete':
+                    $counts['incomplete']++;
                     break;
             }
         }
@@ -1767,13 +1828,14 @@ final class DynamicLearningService
     }
 
     /**
-     * @param array{total:int,bad:int,good:int,exit_issue:int} $counts
+     * @param array{total:int,classifiable:int,bad:int,good:int,exit_issue:int,neutral:int,incomplete:int} $counts
      * @return array{passed:bool,reason:string|null}
      */
     private function evaluateRollingSampleCounts(array $counts, int $minOutcomes, int $minBad, int $minGood): array
     {
-        if (($counts['total'] ?? 0) < $minOutcomes) {
-            return ['passed' => false, 'reason' => 'rolling_window_below_min_outcomes'];
+        $classifiable = $counts['classifiable'] ?? $counts['total'];
+        if ($classifiable < $minOutcomes) {
+            return ['passed' => false, 'reason' => 'rolling_window_below_min_classifiable_outcomes'];
         }
         if (($counts['bad'] ?? 0) < $minBad) {
             return ['passed' => false, 'reason' => 'rolling_window_below_min_bad_entries'];
@@ -1794,7 +1856,10 @@ final class DynamicLearningService
         $minBad = (int)($guardResult['rolling_min_bad_entries'] ?? 0);
         $minGood = (int)($guardResult['rolling_min_good_entries'] ?? 0);
         $selectedSampleType = (string)($guardResult['rolling_selected_sample_type'] ?? 'insufficient');
-        $total = (int)($guardResult['rolling_selected_outcomes_total'] ?? ($guardResult['rolling_window_outcomes_total'] ?? 0));
+        // Use classifiable outcomes (excludes outcome_incomplete) for eligibility check
+        $total = (int)($guardResult['rolling_selected_classifiable_outcomes_total']
+            ?? $guardResult['rolling_selected_outcomes_total']
+            ?? ($guardResult['rolling_window_classifiable_outcomes_total'] ?? 0));
         $bad = (int)($guardResult['rolling_selected_bad_entry_total'] ?? ($guardResult['rolling_window_bad_entry_total'] ?? 0));
         $good = (int)($guardResult['rolling_selected_good_entry_total'] ?? ($guardResult['rolling_window_good_entry_total'] ?? 0));
 
@@ -1807,10 +1872,13 @@ final class DynamicLearningService
         }
 
         if ($total < $minOutcomes) {
-            return ['passed' => false, 'blocked' => true, 'reason' => 'rolling_window_below_min_outcomes'];
+            return ['passed' => false, 'blocked' => true, 'reason' => 'rolling_window_below_min_classifiable_counts'];
         }
-        if ($bad < $minBad || $good < $minGood) {
-            return ['passed' => false, 'blocked' => true, 'reason' => 'rolling_window_below_min_bad_good_counts'];
+        if ($bad < $minBad) {
+            return ['passed' => false, 'blocked' => true, 'reason' => 'rolling_window_below_min_bad_entries'];
+        }
+        if ($good < $minGood) {
+            return ['passed' => false, 'blocked' => true, 'reason' => 'rolling_window_below_min_good_entries'];
         }
         return ['passed' => true, 'blocked' => false, 'reason' => null];
     }
@@ -2772,7 +2840,7 @@ final class DynamicLearningService
         ];
 
         $total = count($epochOutcomes);
-        $totalBad = $totalGood = 0;
+        $totalBad = $totalGood = $totalIncomplete = 0;
         foreach ($epochOutcomes as $o) {
             if (!is_array($o)) {
                 continue;
@@ -2782,11 +2850,15 @@ final class DynamicLearningService
                 $totalBad++;
             } elseif ($cls === 'good_or_do_not_touch') {
                 $totalGood++;
+            } elseif ($cls === 'outcome_incomplete') {
+                $totalIncomplete++;
             }
         }
+        $totalClassifiable = $total - $totalIncomplete;
 
-        // Default baseline: all outcomes pass — use computeQualityMetrics on all
-        $defaultMetrics = $this->computeQualityMetrics($epochOutcomes, $weights);
+        // Default baseline: all classifiable outcomes pass — filter out incomplete before quality scoring
+        $classifiableEpochOutcomes = array_values(array_filter($epochOutcomes, static fn(array $o): bool => (string)($o['outcome_class'] ?? '') !== 'outcome_incomplete'));
+        $defaultMetrics = $this->computeQualityMetrics($classifiableEpochOutcomes, $weights);
         $defaultScore   = ($defaultMetrics['benchmark_available'] ?? false) ? (float)$defaultMetrics['quality_score'] : null;
 
         // If no rules, candidate = default (nothing blocked)
@@ -2888,10 +2960,15 @@ final class DynamicLearningService
         }
 
         $keptTotal      = count($keptOutcomes);
-        $candMetrics    = $keptTotal > 0
-            ? $this->computeQualityMetrics($keptOutcomes, $weights)
-            : ['benchmark_available' => false, 'benchmark_missing_reason' => 'all_outcomes_blocked', 'trades_total' => 0];
+        // For candidate quality scoring: filter out incomplete outcomes so quality denominator is classifiable-only
+        $keptClassifiable = array_values(array_filter($keptOutcomes, static fn(array $o): bool => (string)($o['outcome_class'] ?? '') !== 'outcome_incomplete'));
+        $candMetrics    = count($keptClassifiable) > 0
+            ? $this->computeQualityMetrics($keptClassifiable, $weights)
+            : ['benchmark_available' => false, 'benchmark_missing_reason' => 'all_classifiable_outcomes_blocked', 'trades_total' => 0];
         $candScore      = ($candMetrics['benchmark_available'] ?? false) ? (float)$candMetrics['quality_score'] : null;
+
+        $incompleteSkippedTotal = $totalIncomplete;
+        $incompleteSkipReason = $incompleteSkippedTotal > 0 ? 'outcome_incomplete_not_quality_evidence' : null;
 
         $badCapturePct  = $totalBad  > 0 ? round($badBlocked  / $totalBad  * 100.0, 2) : 0.0;
         $goodBlockPct   = $totalGood > 0 ? round($goodBlocked / $totalGood * 100.0, 2) : 0.0;
@@ -2958,6 +3035,10 @@ final class DynamicLearningService
             'demo_only_threshold_candidate'         => $demoThreshold,
             'rules_used_total'                      => count($rules),
             'replay_trades_total'                   => $total,
+            'replay_classifiable_outcomes_total'    => $totalClassifiable,
+            'replay_incomplete_outcomes_total'      => $totalIncomplete,
+            'replay_incomplete_skipped_total'       => $incompleteSkippedTotal,
+            'replay_incomplete_skip_reason'         => $incompleteSkipReason,
             'replay_bad_entries_total'              => $totalBad,
             'replay_good_entries_total'             => $totalGood,
             'replay_bad_blocked_total'              => $badBlocked,
@@ -3040,6 +3121,10 @@ final class DynamicLearningService
             'demo_only_threshold_candidate'         => 30.0,
             'rules_used_total'                      => $rulesTotal,
             'replay_trades_total'                   => $total,
+            'replay_classifiable_outcomes_total'    => $total,
+            'replay_incomplete_outcomes_total'      => 0,
+            'replay_incomplete_skipped_total'       => 0,
+            'replay_incomplete_skip_reason'         => null,
             'replay_bad_entries_total'              => $totalBad,
             'replay_good_entries_total'             => $totalGood,
             'replay_bad_blocked_total'              => 0,
@@ -3612,11 +3697,15 @@ final class DynamicLearningService
         $payload['rolling_next_retrain_at'] = $result['rolling_next_retrain_at'] ?? null;
         $payload['rolling_window_outcomes_total'] = (int)($result['rolling_window_outcomes_total'] ?? 0);
         $payload['rolling_window_raw_outcomes_total'] = (int)($result['rolling_window_raw_outcomes_total'] ?? 0);
+        $payload['rolling_window_classifiable_outcomes_total'] = (int)($result['rolling_window_classifiable_outcomes_total'] ?? 0);
+        $payload['rolling_window_incomplete_outcomes_total'] = (int)($result['rolling_window_incomplete_outcomes_total'] ?? 0);
         $payload['rolling_window_bad_entry_total'] = (int)($result['rolling_window_bad_entry_total'] ?? 0);
         $payload['rolling_window_good_entry_total'] = (int)($result['rolling_window_good_entry_total'] ?? 0);
         $payload['rolling_sample_min_counts_passed'] = (bool)($result['rolling_sample_min_counts_passed'] ?? false);
         $payload['active_epoch_raw_outcomes_total'] = (int)($result['active_epoch_raw_outcomes_total'] ?? 0);
         $payload['active_epoch_usable_outcomes_total'] = (int)($result['active_epoch_usable_outcomes_total'] ?? 0);
+        $payload['active_epoch_classifiable_outcomes_total'] = (int)($result['active_epoch_classifiable_outcomes_total'] ?? 0);
+        $payload['active_epoch_incomplete_outcomes_total'] = (int)($result['active_epoch_incomplete_outcomes_total'] ?? 0);
         $payload['active_epoch_excluded_from_learning_total'] = (int)($result['active_epoch_excluded_from_learning_total'] ?? 0);
         $payload['outcome_feature_rebuilt_total'] = (int)($result['outcome_feature_rebuilt_total'] ?? 0);
 
@@ -5324,6 +5413,10 @@ final class DynamicLearningService
             'usable_entry_ok_exit_issue_total' => $countClass($patternMining, 'entry_ok_exit_issue'),
             'usable_neutral_total' => $countClass($patternMining, 'neutral'),
             'usable_outcome_incomplete_total' => $countClass($patternMining, 'outcome_incomplete'),
+            'usable_classifiable_outcomes_total' => $countClass($patternMining, 'bad_entry')
+                + $countClass($patternMining, 'good_or_do_not_touch')
+                + $countClass($patternMining, 'entry_ok_exit_issue')
+                + $countClass($patternMining, 'neutral'),
         ];
 
         if (!(bool)($cfg['real_learning_epoch_enabled'] ?? false)) {
@@ -5449,6 +5542,10 @@ final class DynamicLearningService
                 'usable_entry_ok_exit_issue_total' => $countClass($patternMining, 'entry_ok_exit_issue'),
                 'usable_neutral_total' => $countClass($patternMining, 'neutral'),
                 'usable_outcome_incomplete_total' => $countClass($patternMining, 'outcome_incomplete'),
+                'usable_classifiable_outcomes_total' => $countClass($patternMining, 'bad_entry')
+                    + $countClass($patternMining, 'good_or_do_not_touch')
+                    + $countClass($patternMining, 'entry_ok_exit_issue')
+                    + $countClass($patternMining, 'neutral'),
             ];
         }
 
@@ -5545,6 +5642,10 @@ final class DynamicLearningService
             'usable_entry_ok_exit_issue_total' => $countClass($epochOutcomes, 'entry_ok_exit_issue'),
             'usable_neutral_total' => $countClass($epochOutcomes, 'neutral'),
             'usable_outcome_incomplete_total' => $countClass($epochOutcomes, 'outcome_incomplete'),
+            'usable_classifiable_outcomes_total' => $countClass($epochOutcomes, 'bad_entry')
+                + $countClass($epochOutcomes, 'good_or_do_not_touch')
+                + $countClass($epochOutcomes, 'entry_ok_exit_issue')
+                + $countClass($epochOutcomes, 'neutral'),
         ];
     }
 

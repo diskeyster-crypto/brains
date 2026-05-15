@@ -110,9 +110,9 @@ return [
     'rolling_learning_window_minutes' => 1440,
     'rolling_retrain_interval_minutes' => 120,
     'rolling_fallback_last_n_outcomes' => 50,
-    'rolling_min_closed_outcomes' => 20,
-    'rolling_min_bad_entries' => 3,
-    'rolling_min_good_entries' => 3,
+    'rolling_min_closed_outcomes' => 50,
+    'rolling_min_bad_entries' => 8,
+    'rolling_min_good_entries' => 20,
 
     // Quality guard thresholds
     'min_candidate_improvement_pct' => 7.0,

@@ -342,6 +342,46 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
 
     <!-- Rolling window counters -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px;">
+      <?php
+      // Eligibility thresholds vs current
+      $reqClassifiable = (int)($run['rolling_min_closed_outcomes'] ?? 50);
+      $reqBad          = (int)($run['rolling_min_bad_entries'] ?? 8);
+      $reqGood         = (int)($run['rolling_min_good_entries'] ?? 20);
+      $curClassifiable = (int)($run['rolling_window_classifiable_outcomes_total'] ?? 0);
+      $curBad          = (int)($run['rolling_window_bad_entry_total'] ?? 0);
+      $curGood         = (int)($run['rolling_window_good_entry_total'] ?? 0);
+      $curIncomplete   = (int)($run['rolling_window_incomplete_outcomes_total'] ?? 0);
+      $okClass = $curClassifiable >= $reqClassifiable ? '#86efac' : '#f87171';
+      $bgClass = $curClassifiable >= $reqClassifiable ? '#14532d' : '#450a0a';
+      $okBad   = $curBad >= $reqBad ? '#86efac' : '#fcd34d';
+      $bgBad   = $curBad >= $reqBad ? '#14532d' : '#451a03';
+      $okGood  = $curGood >= $reqGood ? '#86efac' : '#fcd34d';
+      $bgGood  = $curGood >= $reqGood ? '#14532d' : '#451a03';
+      ?>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;grid-column:1/-1;">
+        <div style="font-size:11px;font-weight:700;margin-bottom:4px;">Eligibility Requirements (classifiable outcomes only)</div>
+        <div style="font-size:10px;color:#a5b4fc;">outcome_incomplete (<?= $e($curIncomplete) ?>) excluded from quality scoring and eligibility counts</div>
+      </div>
+      <div style="background:<?= $bgClass ?>;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:<?= $okClass ?>;">classifiable outcomes (need ≥<?= $e($reqClassifiable) ?>)</div>
+        <div style="font-weight:600;color:<?= $okClass ?>;"><?= $e($curClassifiable) ?></div>
+      </div>
+      <div style="background:<?= $bgBad ?>;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:<?= $okBad ?>;">bad entries (need ≥<?= $e($reqBad) ?>)</div>
+        <div style="font-weight:600;color:<?= $okBad ?>;"><?= $e($curBad) ?></div>
+      </div>
+      <div style="background:<?= $bgGood ?>;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:<?= $okGood ?>;">good entries (need ≥<?= $e($reqGood) ?>)</div>
+        <div style="font-weight:600;color:<?= $okGood ?>;"><?= $e($curGood) ?></div>
+      </div>
+      <div style="background:#0f172a;color:#6b7280;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">incomplete (excluded)</div>
+        <div style="font-weight:600;color:#64748b;"><?= $e($curIncomplete) ?></div>
+      </div>
+    </div>
+
+    <!-- Rolling window counters -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px;">
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">rolling_guard_mode</div>
         <div style="font-weight:600;"><?= $e((string)($run['rolling_guard_mode'] ?? 'sliding_window')) ?></div>
@@ -365,6 +405,14 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">rolling_window_outcomes</div>
         <div style="font-weight:600;"><?= $e((int)($run['rolling_window_outcomes_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_window_classifiable</div>
+        <div style="font-weight:600;"><?= $e((int)($run['rolling_window_classifiable_outcomes_total'] ?? 0)) ?></div>
+      </div>
+      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;">rolling_window_incomplete</div>
+        <div style="font-weight:600;color:#64748b;"><?= $e((int)($run['rolling_window_incomplete_outcomes_total'] ?? 0)) ?></div>
       </div>
       <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;">rolling_window_raw_outcomes</div>

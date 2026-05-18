@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Core\Auth\Auth;
-use Core\System\System;
 
 if (!Auth::check()) {
     http_response_code(403);
@@ -17,6 +16,10 @@ require_once $moduleDir . '/service.php';
 $svc = \Modules\DynamicLearning\DynamicLearningService::instance($moduleDir);
 $action = trim((string)($_POST['action'] ?? $_GET['action'] ?? ''));
 $activePath = $moduleDir . '/config/active.php';
+$lastRunPath = $moduleDir . '/storage/last_run.json';
+$currentProfilePath = $moduleDir . '/storage/profiles/early_impulse_growth_long/current_profile.json';
+$candidateProfilePath = $moduleDir . '/storage/profiles/early_impulse_growth_long/candidate_profile.json';
+$candidateReplayPath = $moduleDir . '/storage/profiles/early_impulse_growth_long/candidate_replay.json';
 
 $jsonOut = static function (bool $ok, array $data = [], string $error = ''): never {
     header('Content-Type: application/json');
@@ -27,234 +30,380 @@ $jsonOut = static function (bool $ok, array $data = [], string $error = ''): nev
 $loadActive = static function () use ($activePath): array {
     return is_file($activePath) ? ((array)require $activePath) : [];
 };
+
 $saveActive = static function (array $active) use ($activePath): void {
     $php = "<?php\n\ndeclare(strict_types=1);\n\nreturn " . var_export($active, true) . ";\n";
     if (@file_put_contents($activePath, $php, LOCK_EX) === false) {
         throw new RuntimeException('Failed to write active config');
     }
 };
-$getLatestCandidate = static function () use ($moduleDir): array {
-    $candidatePath = $moduleDir . '/storage/profiles/early_impulse_growth_long/candidate_profile.json';
-    if (!is_file($candidatePath)) {
-        return ['exists' => false, 'profile' => [], 'profile_id' => '', 'rules_total' => 0];
+
+$readJson = static function (string $path): array {
+    if (!is_file($path)) {
+        return [];
     }
-    $rawCand = @file_get_contents($candidatePath);
-    $candData = is_string($rawCand) ? json_decode($rawCand, true) : null;
-    $profileId = trim((string)(is_array($candData) ? ($candData['profile_id'] ?? '') : ''));
-    $rulesTotal = is_array($candData) ? count(array_values(array_filter((array)($candData['rules'] ?? []), static fn(mixed $r): bool => is_array($r)))) : 0;
+    $raw = @file_get_contents($path);
+    if (!is_string($raw) || trim($raw) === '') {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) ? $decoded : [];
+};
+
+$writeJson = static function (string $path, array $payload): void {
+    $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if (!is_string($encoded) || @file_put_contents($path, $encoded, LOCK_EX) === false) {
+        throw new RuntimeException('Failed to write JSON file: ' . basename($path));
+    }
+};
+
+$countRules = static function (array $profile): int {
+    return count(array_values(array_filter((array)($profile['rules'] ?? []), static fn (mixed $r): bool => is_array($r))));
+};
+
+$resolveCandidateDiagnostics = static function (array $cfg) use ($readJson, $countRules, $lastRunPath, $currentProfilePath, $candidateProfilePath, $candidateReplayPath): array {
+    $lastRun = $readJson($lastRunPath);
+    $currentProfile = $readJson($currentProfilePath);
+    $candidateProfile = $readJson($candidateProfilePath);
+    $candidateReplay = $readJson($candidateReplayPath);
+
+    $latestCandidateProfileId = trim((string)($candidateProfile['profile_id'] ?? ''));
+    $latestCandidateRulesTotal = $latestCandidateProfileId !== '' ? $countRules($candidateProfile) : 0;
+    $currentCandidateProfileId = trim((string)($currentProfile['candidate_profile_id'] ?? ''));
+    if ($currentCandidateProfileId === '') {
+        $currentCandidateProfileId = trim((string)($currentProfile['profile_id'] ?? ''));
+    }
+
+    $replayExists = $candidateReplay !== [];
+    $replayResult = strtolower(trim((string)($candidateReplay['replay_result'] ?? '')));
+    $replaySuggestsImprovement = (bool)($candidateReplay['replay_suggests_improvement'] ?? false);
+    $replayGoodBlockRate = $candidateReplay['replay_good_block_rate_pct'] ?? null;
+    $replayGoodBlockRateValue = is_numeric($replayGoodBlockRate) ? (float)$replayGoodBlockRate : null;
+    $goodBlockRateGuard = $cfg['candidate_max_good_block_rate_pct'] ?? null;
+    $goodBlockRateGuardValue = is_numeric($goodBlockRateGuard) ? (float)$goodBlockRateGuard : null;
+    $goodBlockRateWithinGuard = $goodBlockRateGuardValue === null || $replayGoodBlockRateValue === null || $replayGoodBlockRateValue <= $goodBlockRateGuardValue;
+
+    $latestUsableCandidateProfileId = '';
+    $latestUsableReason = '';
+    if ($latestCandidateProfileId === '') {
+        $latestUsableReason = 'latest candidate profile_id is empty';
+    } elseif ($latestCandidateRulesTotal <= 0) {
+        $latestUsableReason = 'latest candidate has no rules';
+    } elseif (!$replayExists) {
+        $latestUsableReason = 'candidate_replay.json is missing';
+    } elseif (!($replayResult === 'improved_on_sample' || $replaySuggestsImprovement)) {
+        $latestUsableReason = 'candidate replay does not suggest improvement';
+    } elseif (!$goodBlockRateWithinGuard) {
+        $latestUsableReason = 'candidate replay good block rate exceeds guard';
+    } else {
+        $latestUsableCandidateProfileId = $latestCandidateProfileId;
+    }
+
     return [
-        'exists' => $profileId !== '',
-        'profile' => is_array($candData) ? $candData : [],
-        'profile_id' => $profileId,
-        'rules_total' => $rulesTotal,
+        'last_run' => $lastRun,
+        'current_profile' => $currentProfile,
+        'candidate_profile' => $candidateProfile,
+        'candidate_replay' => $candidateReplay,
+        'latest_candidate_profile_id' => $latestCandidateProfileId,
+        'latest_candidate_rules_total' => $latestCandidateRulesTotal,
+        'latest_candidate_status' => (string)($lastRun['final_candidate_status'] ?? $lastRun['candidate_status'] ?? ($candidateProfile['candidate_status'] ?? 'pending')),
+        'latest_candidate_replay_status' => (string)($candidateReplay['replay_candidate_status'] ?? 'missing'),
+        'latest_candidate_vs_default_delta' => $lastRun['candidate_vs_default_delta_pct'] ?? null,
+        'latest_candidate_replay_bad_blocked' => (int)($lastRun['replay_bad_blocked_total'] ?? 0),
+        'latest_candidate_replay_good_blocked' => (int)($lastRun['replay_good_blocked_total'] ?? 0),
+        'latest_usable_candidate_profile_id' => $latestUsableCandidateProfileId,
+        'latest_usable_candidate_reason' => $latestUsableReason,
+        'current_profile_candidate_profile_id' => $currentCandidateProfileId,
+        'candidate_replay_exists' => $replayExists,
+        'candidate_replay_result' => $replayResult,
+        'candidate_replay_suggests_improvement' => $replaySuggestsImprovement,
     ];
 };
-$candidateReplayExists = static function () use ($moduleDir): bool {
-    return is_file($moduleDir . '/storage/profiles/early_impulse_growth_long/candidate_replay.json');
-};
-$readiness = static function (array $active, array $latestCandidate, bool $replayExists): array {
+
+$resolveSelectedState = static function (array $active, array $diag) use ($countRules): array {
     $selectedId = trim((string)($active['selected_candidate_profile_id'] ?? ''));
-    $selectedExists = $latestCandidate['exists'] && $selectedId !== '' && $selectedId === (string)$latestCandidate['profile_id'];
-    $selectedRulesTotal = $selectedExists ? (int)$latestCandidate['rules_total'] : 0;
-    $reasons = [];
-    if ((string)($active['dynamic_learning_execution_mode'] ?? 'observe') !== 'gate_demo') {
-        $reasons[] = 'execution mode is not gate_demo';
-    }
-    if (!((bool)($active['manual_gate_demo_enabled'] ?? false))) {
-        $reasons[] = 'manual_gate_demo_enabled is false';
-    }
-    if (!((bool)($active['apply_learning_to_strategy_enabled'] ?? false))) {
-        $reasons[] = 'apply_learning_to_strategy_enabled is false';
-    }
-    if ($selectedId === '') {
-        $reasons[] = 'selected_candidate_profile_id is empty';
-    }
-    if (!$selectedExists) {
-        $reasons[] = 'selected candidate profile does not exist';
-    }
-    if ($selectedRulesTotal <= 0) {
-        $reasons[] = 'selected candidate rules_total is 0';
-    }
-    if (!$replayExists) {
-        $reasons[] = 'candidate_replay.json is missing';
-    }
-    if ((bool)($active['apply_learning_to_live_enabled'] ?? false)) {
-        $reasons[] = 'apply_learning_to_live_enabled must be false';
-    }
-    if ((bool)($active['auto_apply_to_demo_enabled'] ?? false)) {
-        $reasons[] = 'auto_apply_to_demo_enabled must be false';
-    }
-    if ((bool)($active['auto_apply_to_live_enabled'] ?? false)) {
-        $reasons[] = 'auto_apply_to_live_enabled must be false';
+    $selectedExists = false;
+    $selectedRulesTotal = 0;
+    if ($selectedId !== '') {
+        $candidateProfile = (array)($diag['candidate_profile'] ?? []);
+        $candidateProfileId = trim((string)($candidateProfile['profile_id'] ?? ''));
+        $currentProfile = (array)($diag['current_profile'] ?? []);
+        $currentProfileId = trim((string)($currentProfile['profile_id'] ?? ''));
+        $currentCandidateId = trim((string)($currentProfile['candidate_profile_id'] ?? ''));
+
+        if ($candidateProfileId !== '' && $selectedId === $candidateProfileId) {
+            $selectedExists = true;
+            $selectedRulesTotal = $countRules($candidateProfile);
+        } elseif ($currentCandidateId !== '' && $selectedId === $currentCandidateId) {
+            $selectedExists = true;
+            $selectedRulesTotal = max(0, (int)($currentProfile['rules_total'] ?? 0));
+        } elseif ($currentProfileId !== '' && $selectedId === $currentProfileId) {
+            $selectedExists = true;
+            $selectedRulesTotal = max(0, (int)($currentProfile['rules_total'] ?? 0));
+        }
     }
     return [
         'selected_candidate_profile_id' => $selectedId,
         'selected_candidate_exists' => $selectedExists,
         'selected_candidate_rules_total' => $selectedRulesTotal,
-        'gate_demo_ready' => $reasons === [],
-        'gate_demo_not_ready_reason' => $reasons === [] ? null : implode('; ', $reasons),
-        'warnings' => $reasons,
     ];
 };
 
-if ($action === 'use_latest_candidate' || $action === 'use_latest_candidate_for_demo_gate') {
-    $latest = $getLatestCandidate();
-    if (!$latest['exists']) {
-        $jsonOut(false, [], 'Latest candidate profile is missing or has empty profile_id');
+$buildReadiness = static function (array $active, array $diag, array $selected): array {
+    $checks = [
+        'mode_is_gate_demo' => (string)($active['dynamic_learning_execution_mode'] ?? 'observe') === 'gate_demo',
+        'manual_gate_demo_enabled' => (bool)($active['manual_gate_demo_enabled'] ?? false),
+        'apply_learning_to_strategy_enabled' => (bool)($active['apply_learning_to_strategy_enabled'] ?? false),
+        'selected_candidate_not_empty' => trim((string)($selected['selected_candidate_profile_id'] ?? '')) !== '',
+        'selected_candidate_exists' => (bool)($selected['selected_candidate_exists'] ?? false),
+        'selected_candidate_rules_total_gt_0' => (int)($selected['selected_candidate_rules_total'] ?? 0) > 0,
+        'candidate_replay_exists' => (bool)($diag['candidate_replay_exists'] ?? false),
+        'live_apply_disabled' => !((bool)($active['apply_learning_to_live_enabled'] ?? false)),
+        'auto_apply_disabled' => !((bool)($active['auto_apply_to_demo_enabled'] ?? false) || (bool)($active['auto_apply_to_live_enabled'] ?? false)),
+    ];
+
+    $warnings = [];
+    if (!$checks['mode_is_gate_demo']) {
+        $warnings[] = 'execution mode is ' . (string)($active['dynamic_learning_execution_mode'] ?? 'observe');
     }
+    if (!$checks['manual_gate_demo_enabled']) {
+        $warnings[] = 'manual_gate_demo_enabled is false';
+    }
+    if (!$checks['apply_learning_to_strategy_enabled']) {
+        $warnings[] = 'apply_learning_to_strategy_enabled is false';
+    }
+    if (!$checks['selected_candidate_not_empty']) {
+        $warnings[] = 'selected_candidate_profile_id is empty';
+    }
+    if (!$checks['selected_candidate_exists']) {
+        $warnings[] = 'selected candidate profile does not exist';
+    }
+    if (!$checks['selected_candidate_rules_total_gt_0']) {
+        $warnings[] = 'selected candidate rules_total is 0';
+    }
+    if (!$checks['candidate_replay_exists']) {
+        $warnings[] = 'candidate_replay.json is missing';
+    }
+    if (!$checks['live_apply_disabled']) {
+        $warnings[] = 'apply_learning_to_live_enabled must be false';
+    }
+    if (!$checks['auto_apply_disabled']) {
+        $warnings[] = 'auto apply flags must be false';
+    }
+
+    $ready = $warnings === [];
+    return [
+        'gate_demo_ready' => $ready,
+        'gate_demo_not_ready_reason' => $ready ? null : implode('; ', $warnings),
+        'gate_demo_readiness_checks' => $checks,
+        'warnings' => $warnings,
+    ];
+};
+
+$ensureDemoSafety = static function (array $active): array {
+    $active['apply_learning_to_live_enabled'] = false;
+    $active['auto_apply_to_demo_enabled'] = false;
+    $active['auto_apply_to_live_enabled'] = false;
+    return $active;
+};
+
+$updateLastRunDiagnostics = static function (array $active, array $diag, array $selected, array $readiness) use ($readJson, $writeJson, $lastRunPath): void {
+    $lastRun = $readJson($lastRunPath);
+    $liveSafetyOk = !((bool)($active['apply_learning_to_live_enabled'] ?? false) || (bool)($active['auto_apply_to_live_enabled'] ?? false));
+
+    $lastRun['dynamic_learning_execution_mode'] = (string)($active['dynamic_learning_execution_mode'] ?? 'observe');
+    $lastRun['manual_gate_demo_enabled'] = (bool)($active['manual_gate_demo_enabled'] ?? false);
+    $lastRun['apply_learning_to_strategy_enabled'] = (bool)($active['apply_learning_to_strategy_enabled'] ?? false);
+    $lastRun['apply_learning_to_live_enabled'] = false;
+    $lastRun['auto_apply_to_demo_enabled'] = false;
+    $lastRun['auto_apply_to_live_enabled'] = false;
+    $lastRun['selected_candidate_profile_id'] = (string)($selected['selected_candidate_profile_id'] ?? '');
+    $lastRun['selected_candidate_source'] = (string)($active['selected_candidate_source'] ?? 'manual_selection');
+    $lastRun['selected_candidate_locked'] = (bool)($active['selected_candidate_locked'] ?? true);
+    $lastRun['selected_candidate_exists'] = (bool)($selected['selected_candidate_exists'] ?? false);
+    $lastRun['selected_candidate_rules_total'] = (int)($selected['selected_candidate_rules_total'] ?? 0);
+    $lastRun['latest_candidate_profile_id'] = (string)($diag['latest_candidate_profile_id'] ?? '');
+    $lastRun['latest_usable_candidate_profile_id'] = (string)($diag['latest_usable_candidate_profile_id'] ?? '');
+    $lastRun['gate_demo_ready'] = (bool)($readiness['gate_demo_ready'] ?? false);
+    $lastRun['gate_demo_not_ready_reason'] = $readiness['gate_demo_not_ready_reason'] ?? null;
+    $lastRun['gate_demo_readiness_checks'] = (array)($readiness['gate_demo_readiness_checks'] ?? []);
+    $lastRun['live_apply_safety_ok'] = $liveSafetyOk;
+    $lastRun['live_apply_safety_reason'] = $liveSafetyOk ? 'live_apply_disabled' : 'live_apply_flag_detected';
+
+    $writeJson($lastRunPath, $lastRun);
+};
+
+$buildResponse = static function (array $active, array $diag, array $selected, array $readiness, array $extra = []): array {
+    $pid = (string)($selected['selected_candidate_profile_id'] ?? '');
+    return array_merge([
+        'profile_id' => $pid,
+        'selected_candidate_profile_id' => $pid,
+        'selected_candidate_source' => (string)($active['selected_candidate_source'] ?? 'manual_selection'),
+        'selected_candidate_locked' => (bool)($active['selected_candidate_locked'] ?? true),
+        'dynamic_learning_execution_mode' => (string)($active['dynamic_learning_execution_mode'] ?? 'observe'),
+        'manual_gate_demo_enabled' => (bool)($active['manual_gate_demo_enabled'] ?? false),
+        'apply_learning_to_strategy_enabled' => (bool)($active['apply_learning_to_strategy_enabled'] ?? false),
+        'apply_learning_to_live_enabled' => false,
+        'auto_apply_to_demo_enabled' => false,
+        'auto_apply_to_live_enabled' => false,
+        'selected_candidate_exists' => (bool)($selected['selected_candidate_exists'] ?? false),
+        'selected_candidate_rules_total' => (int)($selected['selected_candidate_rules_total'] ?? 0),
+        'latest_candidate_profile_id' => (string)($diag['latest_candidate_profile_id'] ?? ''),
+        'latest_usable_candidate_profile_id' => (string)($diag['latest_usable_candidate_profile_id'] ?? ''),
+        'gate_demo_ready_after_save' => (bool)($readiness['gate_demo_ready'] ?? false),
+        'gate_demo_not_ready_reason' => $readiness['gate_demo_not_ready_reason'] ?? null,
+        'warnings' => (array)($readiness['warnings'] ?? []),
+    ], $extra);
+};
+
+$runGateAction = static function (callable $mutator) use (
+    $svc,
+    $loadActive,
+    $saveActive,
+    $resolveCandidateDiagnostics,
+    $resolveSelectedState,
+    $buildReadiness,
+    $updateLastRunDiagnostics,
+    $buildResponse,
+    $jsonOut
+): void {
     try {
         $active = $loadActive();
-        $active['selected_candidate_profile_id'] = (string)$latest['profile_id'];
-        $active['selected_candidate_source'] = 'candidate_profile';
-        $active['selected_candidate_locked'] = true;
-        $active['apply_learning_to_live_enabled'] = false;
-        $active['auto_apply_to_live_enabled'] = false;
+        $cfg = $svc->getConfig();
+        $diag = $resolveCandidateDiagnostics($cfg);
+        [$ok, $active, $extra, $error] = $mutator($active, $diag);
+        if (!$ok) {
+            $jsonOut(false, $extra, $error);
+        }
         $saveActive($active);
-        $ready = $readiness($active, $latest, $candidateReplayExists());
-        $jsonOut(true, [
-            'selected_candidate_profile_id' => (string)$latest['profile_id'],
-            'selected_candidate_source' => 'candidate_profile',
-            'gate_demo_ready_after_save' => (bool)$ready['gate_demo_ready'],
-            'warnings' => (array)$ready['warnings'],
-        ]);
+        $selected = $resolveSelectedState($active, $diag);
+        $readiness = $buildReadiness($active, $diag, $selected);
+        $updateLastRunDiagnostics($active, $diag, $selected, $readiness);
+        $jsonOut(true, $buildResponse($active, $diag, $selected, $readiness, $extra));
     } catch (\Throwable $e) {
         $jsonOut(false, [], $e->getMessage());
     }
+};
+
+if ($action === 'use_latest_candidate' || $action === 'use_latest_candidate_for_demo_gate' || $action === 'use_latest_usable_candidate_for_demo_gate') {
+    $runGateAction(static function (array $active, array $diag) use ($ensureDemoSafety): array {
+        $usableId = (string)($diag['latest_usable_candidate_profile_id'] ?? '');
+        if ($usableId === '') {
+            $reason = trim((string)($diag['latest_usable_candidate_reason'] ?? 'no_usable_candidate'));
+            return [false, $active, ['error_code' => 'no_usable_candidate', 'warning' => $reason, 'warnings' => [$reason]], 'No usable candidate for DEMO gate'];
+        }
+        $active['selected_candidate_profile_id'] = $usableId;
+        $active['selected_candidate_source'] = 'candidate_profile';
+        $active['selected_candidate_locked'] = true;
+        $active = $ensureDemoSafety($active);
+        return [true, $active, [], ''];
+    });
 }
 
 if ($action === 'enable_manual_demo_gate_latest') {
-    $latest = $getLatestCandidate();
-    if (!$latest['exists']) {
-        $jsonOut(false, [], 'Latest candidate profile is missing or has empty profile_id');
-    }
-    try {
-        $active = $loadActive();
+    $runGateAction(static function (array $active, array $diag) use ($ensureDemoSafety): array {
+        $usableId = (string)($diag['latest_usable_candidate_profile_id'] ?? '');
+        if ($usableId === '') {
+            $reason = trim((string)($diag['latest_usable_candidate_reason'] ?? 'candidate has no rules or replay not improved'));
+            return [false, $active, ['error_code' => 'no_usable_candidate', 'warning' => $reason, 'warnings' => [$reason]], 'No usable candidate'];
+        }
         $active['dynamic_learning_execution_mode'] = 'gate_demo';
         $active['mode'] = 'gate_demo';
         $active['manual_gate_demo_enabled'] = true;
         $active['apply_learning_to_demo_enabled'] = true;
         $active['apply_learning_to_strategy_enabled'] = true;
-        $active['selected_candidate_profile_id'] = (string)$latest['profile_id'];
+        $active['selected_candidate_profile_id'] = $usableId;
         $active['selected_candidate_source'] = 'candidate_profile';
         $active['selected_candidate_locked'] = true;
         $active['allow_manual_demo_gate_with_insufficient_data'] = true;
         $active['manual_demo_gate_requires_user_selection'] = true;
-        $active['apply_learning_to_live_enabled'] = false;
-        $active['auto_apply_to_demo_enabled'] = false;
-        $active['auto_apply_to_live_enabled'] = false;
-        $saveActive($active);
-        $ready = $readiness($active, $latest, $candidateReplayExists());
-        $jsonOut(true, [
-            'selected_candidate_profile_id' => (string)$latest['profile_id'],
-            'selected_candidate_source' => 'candidate_profile',
-            'gate_demo_ready_after_save' => (bool)$ready['gate_demo_ready'],
-            'warnings' => (array)$ready['warnings'],
-        ]);
-    } catch (\Throwable $e) {
-        $jsonOut(false, [], $e->getMessage());
-    }
+        $active = $ensureDemoSafety($active);
+        return [true, $active, [], ''];
+    });
 }
 
 if ($action === 'disable_dynamic_learning_gate') {
-    try {
-        $active = $loadActive();
+    $runGateAction(static function (array $active, array $diag) use ($ensureDemoSafety): array {
         $active['dynamic_learning_execution_mode'] = 'observe';
         $active['mode'] = 'observe';
         $active['manual_gate_demo_enabled'] = false;
         $active['apply_learning_to_demo_enabled'] = false;
         $active['apply_learning_to_strategy_enabled'] = false;
-        $active['apply_learning_to_live_enabled'] = false;
-        $active['auto_apply_to_demo_enabled'] = false;
-        $active['auto_apply_to_live_enabled'] = false;
-        $saveActive($active);
-        $latest = $getLatestCandidate();
-        $ready = $readiness($active, $latest, $candidateReplayExists());
-        $jsonOut(true, [
-            'selected_candidate_profile_id' => (string)($active['selected_candidate_profile_id'] ?? ''),
-            'selected_candidate_source' => (string)($active['selected_candidate_source'] ?? ''),
-            'gate_demo_ready_after_save' => (bool)$ready['gate_demo_ready'],
-            'warnings' => (array)$ready['warnings'],
-        ]);
-    } catch (\Throwable $e) {
-        $jsonOut(false, [], $e->getMessage());
-    }
+        $active = $ensureDemoSafety($active);
+        return [true, $active, [], ''];
+    });
 }
 
 if ($action === 'run_cycle') {
     try {
-        $res = $svc->runCycle();
-        $jsonOut(true, ['result' => $res]);
+        $jsonOut(true, ['result' => $svc->runCycle()]);
     } catch (\Throwable $e) {
         $jsonOut(false, [], $e->getMessage());
     }
 }
 
 if ($action === 'save_config') {
-    $cfg = $svc->getConfig();
-    $keys = [
-        'enabled', 'mode', 'supported_strategy_id',
-        'collect_entry_snapshots_enabled', 'observe_active_positions_enabled', 'analyze_closed_outcomes_enabled', 'build_dynamic_profile_enabled',
-        'apply_learning_to_strategy_enabled', 'apply_learning_to_live_enabled', 'apply_learning_to_demo_enabled',
-        'observation_interval_seconds', 'max_observations_per_position',
-        'risk_profile_mode', 'outcome_classification_profile',
-        'bad_drawdown_roi_threshold', 'hard_stop_reference_roi', 'good_close_roi_threshold', 'good_max_profit_roi_threshold', 'stop_slippage_buffer_roi', 'neutral_close_roi_min', 'neutral_close_roi_max',
-        'min_closed_outcomes_for_profile', 'min_bad_entries_for_rule', 'min_bad_blocked_for_rule', 'max_good_blocked_for_rule', 'min_rule_net_score',
-        'rollback_guard_enabled', 'rollback_drawdown_pct', 'rollback_bad_trade_streak', 'profile_history_enabled',
-        // Rolling learning guard
-        'rolling_learning_enabled', 'rolling_learning_window_minutes', 'rolling_retrain_interval_minutes',
-        'rolling_min_closed_outcomes', 'rolling_min_bad_entries', 'rolling_min_good_entries',
-        // Quality guard thresholds
-        'min_candidate_improvement_pct', 'no_change_band_pct',
-        'max_allowed_quality_degradation_pct', 'max_allowed_winrate_degradation_pct',
-        'max_allowed_avg_roi_degradation_pct', 'max_allowed_bad_entry_rate_increase_pct',
-        'max_allowed_drawdown_increase_pct',
-        // Quality score weights
-        'quality_weight_good_capture', 'quality_weight_avg_roi', 'quality_weight_bad_entry',
-        'quality_weight_drawdown', 'quality_weight_entry_ok_exit_issue',
-        // Rollback guard
-        'rollback_cooldown_minutes', 'rollback_to',
-        // Apply guard
-        'auto_apply_to_demo_enabled', 'require_not_worse_than_default',
-        // Manual demo gate override
-        'allow_manual_demo_gate_with_insufficient_data', 'manual_demo_gate_requires_user_selection',
-        'dynamic_learning_execution_mode', 'manual_gate_demo_enabled', 'selected_candidate_profile_id',
-        'selected_candidate_source', 'selected_candidate_locked',
-        'log_passed_demo_signals_enabled', 'max_blocked_demo_signals',
-        'max_blocked_demo_signals_ndjson_size_mb', 'max_passed_demo_signals_ndjson_size_mb',
-    ];
-    $out = [];
-    foreach ($keys as $k) {
-        if (!array_key_exists($k, $cfg)) {
-            continue;
+    try {
+        $cfg = $svc->getConfig();
+        $keys = [
+            'dynamic_learning_execution_mode',
+            'manual_gate_demo_enabled',
+            'apply_learning_to_strategy_enabled',
+            'selected_candidate_profile_id',
+            'selected_candidate_source',
+            'selected_candidate_locked',
+            'allow_manual_demo_gate_with_insufficient_data',
+            'manual_demo_gate_requires_user_selection',
+            'log_passed_demo_signals_enabled',
+            'max_blocked_demo_signals',
+            'max_blocked_demo_signals_ndjson_size_mb',
+            'max_passed_demo_signals_ndjson_size_mb',
+        ];
+
+        $active = $loadActive();
+        foreach ($keys as $key) {
+            $default = $cfg[$key] ?? ($active[$key] ?? null);
+            if (is_bool($default)) {
+                $active[$key] = isset($_POST[$key]) && (string)$_POST[$key] === '1';
+            } elseif (is_int($default)) {
+                $active[$key] = (int)($_POST[$key] ?? $default);
+            } elseif (is_float($default)) {
+                $active[$key] = (float)($_POST[$key] ?? $default);
+            } else {
+                $active[$key] = trim((string)($_POST[$key] ?? (string)$default));
+            }
         }
-        $default = $cfg[$k];
-        if (is_bool($default)) {
-            $out[$k] = isset($_POST[$k]) ? (bool)(int)$_POST[$k] : $default;
-        } elseif (is_int($default)) {
-            $out[$k] = (int)($_POST[$k] ?? $default);
-        } elseif (is_float($default)) {
-            $out[$k] = (float)($_POST[$k] ?? $default);
-        } else {
-            $out[$k] = trim((string)($_POST[$k] ?? $default));
+
+        $mode = strtolower(trim((string)($active['dynamic_learning_execution_mode'] ?? 'observe')));
+        if (!in_array($mode, ['off', 'observe', 'gate_demo'], true)) {
+            $mode = 'observe';
         }
+        $active['dynamic_learning_execution_mode'] = $mode;
+        $active['mode'] = $mode;
+        $active['manual_gate_demo_enabled'] = (bool)($active['manual_gate_demo_enabled'] ?? false);
+        $active['apply_learning_to_demo_enabled'] = $active['manual_gate_demo_enabled'];
+        $active['apply_learning_to_strategy_enabled'] = (bool)($active['apply_learning_to_strategy_enabled'] ?? false);
+        $active['selected_candidate_profile_id'] = trim((string)($active['selected_candidate_profile_id'] ?? ''));
+        $active['selected_candidate_source'] = trim((string)($active['selected_candidate_source'] ?? 'manual_selection'));
+        $active['selected_candidate_locked'] = (bool)($active['selected_candidate_locked'] ?? true);
+        $active['allow_manual_demo_gate_with_insufficient_data'] = (bool)($active['allow_manual_demo_gate_with_insufficient_data'] ?? true);
+        $active['manual_demo_gate_requires_user_selection'] = (bool)($active['manual_demo_gate_requires_user_selection'] ?? true);
+        $active['log_passed_demo_signals_enabled'] = (bool)($active['log_passed_demo_signals_enabled'] ?? true);
+        $active['max_blocked_demo_signals'] = max(1, (int)($active['max_blocked_demo_signals'] ?? 1000));
+        $active['max_blocked_demo_signals_ndjson_size_mb'] = max(1.0, (float)($active['max_blocked_demo_signals_ndjson_size_mb'] ?? 20.0));
+        $active['max_passed_demo_signals_ndjson_size_mb'] = max(1.0, (float)($active['max_passed_demo_signals_ndjson_size_mb'] ?? 20.0));
+        $active = $ensureDemoSafety($active);
+
+        $diag = $resolveCandidateDiagnostics($cfg);
+        $saveActive($active);
+        $selected = $resolveSelectedState($active, $diag);
+        $readiness = $buildReadiness($active, $diag, $selected);
+        $updateLastRunDiagnostics($active, $diag, $selected, $readiness);
+
+        $jsonOut(true, $buildResponse($active, $diag, $selected, $readiness, ['saved' => true]));
+    } catch (\Throwable $e) {
+        $jsonOut(false, [], $e->getMessage());
     }
-    $out['apply_learning_to_strategy_enabled'] = isset($_POST['apply_learning_to_strategy_enabled']) && (string)$_POST['apply_learning_to_strategy_enabled'] === '1';
-    $out['apply_learning_to_live_enabled'] = isset($_POST['apply_learning_to_live_enabled']) && (string)$_POST['apply_learning_to_live_enabled'] === '1';
-    $out['auto_apply_to_demo_enabled'] = isset($_POST['auto_apply_to_demo_enabled']) && (string)$_POST['auto_apply_to_demo_enabled'] === '1';
-    $out['auto_apply_to_live_enabled'] = false;
-    $out['apply_learning_to_live_enabled'] = false;
-    $out['selected_candidate_profile_id'] = trim((string)($out['selected_candidate_profile_id'] ?? ''));
-    $out['selected_candidate_source'] = trim((string)($out['selected_candidate_source'] ?? 'manual_selection'));
-    $out['selected_candidate_locked'] = true;
-    $saveActive($out);
-    $latest = $getLatestCandidate();
-    $ready = $readiness($out, $latest, $candidateReplayExists());
-    $jsonOut(true, [
-        'saved' => true,
-        'selected_candidate_profile_id' => (string)$ready['selected_candidate_profile_id'],
-        'gate_demo_ready_after_save' => (bool)$ready['gate_demo_ready'],
-        'warnings' => (array)$ready['warnings'],
-    ]);
 }
 
 $jsonOut(false, [], 'Unknown action');

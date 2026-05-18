@@ -644,6 +644,12 @@ final class DynamicLearningService
         $result['rolling_min_closed_outcomes'] = $rollingGuard['rolling_min_closed_outcomes'];
         $result['rolling_min_bad_entries'] = $rollingGuard['rolling_min_bad_entries'];
         $result['rolling_min_good_entries'] = $rollingGuard['rolling_min_good_entries'];
+        $result['manual_demo_gate_min_classifiable_outcomes'] = (int)($rollingGuard['manual_demo_gate_min_classifiable_outcomes'] ?? 30);
+        $result['manual_demo_gate_min_bad_entries'] = (int)($rollingGuard['manual_demo_gate_min_bad_entries'] ?? 4);
+        $result['manual_demo_gate_min_good_entries'] = (int)($rollingGuard['manual_demo_gate_min_good_entries'] ?? 12);
+        $result['auto_demo_min_classifiable_outcomes'] = (int)($rollingGuard['auto_demo_min_classifiable_outcomes'] ?? 50);
+        $result['auto_demo_min_bad_entries'] = (int)($rollingGuard['auto_demo_min_bad_entries'] ?? 8);
+        $result['auto_demo_min_good_entries'] = (int)($rollingGuard['auto_demo_min_good_entries'] ?? 20);
         $result['rolling_window_start_at'] = $rollingGuard['rolling_window_start_at'];
         $result['rolling_window_end_at'] = $rollingGuard['rolling_window_end_at'];
         $result['rolling_selected_sample_type'] = $rollingGuard['rolling_selected_sample_type'];
@@ -793,10 +799,11 @@ final class DynamicLearningService
         $result['promotion_blocked_reason'] = null;
         $result['candidate_can_apply'] = false;
         $result['candidate_eligible_for_demo_apply'] = false;
-
-        $promotionGate = $this->evaluatePromotionMinDataGate($rollingGuard);
-        $result['promotion_blocked_by_min_data'] = (bool)($promotionGate['blocked'] ?? false);
-        $result['promotion_blocked_reason'] = $promotionGate['reason'] ?? null;
+        $result['candidate_manual_demo_gate_eligible'] = false;
+        $result['candidate_auto_demo_eligible'] = false;
+        $result['candidate_live_eligible'] = false;
+        $result['manual_demo_gate_missing_counts'] = [];
+        $result['auto_demo_missing_counts'] = [];
 
         // If replay produced a meaningful candidate decision, override rolling guard's candidate fields
         if ((bool)($candidateReplay['candidate_replay_enabled'] ?? false) && $candidateReplay['candidate_quality_score'] !== null) {
@@ -808,36 +815,79 @@ final class DynamicLearningService
             $result['promotion_reason'] = $candidateReplay['promotion_reason'] ?? $result['promotion_reason'];
         }
 
-        if ((bool)($result['promotion_blocked_by_min_data'] ?? false)) {
+        // Two-level eligibility gate evaluation
+        $twoLevelGate = $this->evaluateTwoLevelEligibility($rollingGuard);
+        $manualGatePassed = (bool)($twoLevelGate['manual_gate_passed'] ?? false);
+        $autoGatePassed  = (bool)($twoLevelGate['auto_gate_passed'] ?? false);
+        $result['manual_demo_gate_missing_counts'] = $twoLevelGate['manual_gate_missing_counts'] ?? [];
+        $result['auto_demo_missing_counts']         = $twoLevelGate['auto_gate_missing_counts'] ?? [];
+
+        // Replay quality check: did replay produce a candidate that passes quality guards?
+        $replayProducedEligible = ((string)($result['candidate_status'] ?? '')) === 'eligible_for_demo_apply';
+
+        $noRules = ((int)($result['candidate_rules_total'] ?? 0) === 0);
+
+        if (!$manualGatePassed) {
+            // Neither gate passes — fully blocked by insufficient counts
+            $result['promotion_blocked_by_min_data'] = true;
+            $result['promotion_blocked_reason'] = $twoLevelGate['manual_gate_reason'] ?? 'rolling_window_below_min_classifiable_counts';
             $result['candidate_status'] = 'insufficient_data';
             $result['promotion_decision'] = 'keep_current';
-            $result['promotion_reason'] = (string)($result['promotion_blocked_reason'] ?? 'rolling_sliding_window_and_fallback_below_min_counts');
+            $result['promotion_reason'] = $result['promotion_blocked_reason'];
             $result['candidate_can_apply'] = false;
             $result['candidate_eligible_for_demo_apply'] = false;
             $result['auto_apply_safety_blocked'] = true;
             $result['auto_apply_safety_reason'] = 'candidate_not_eligible_for_demo_apply';
+        } elseif ($noRules) {
+            // Count thresholds met but no safe rules
+            $result['candidate_manual_demo_gate_eligible'] = false;
+            $result['candidate_auto_demo_eligible'] = false;
+            $result['candidate_status'] = 'no_safe_candidate_rules';
+            $result['promotion_decision'] = 'keep_current';
+            $result['promotion_reason'] = 'no_single_or_composite_rules_passed_guard';
+            $result['candidate_rules_missing_reason'] = 'no_safe_candidate_rules_good_overlap';
+            $result['candidate_can_apply'] = false;
+            $result['candidate_eligible_for_demo_apply'] = false;
+            $result['auto_apply_safety_blocked'] = true;
+            $result['auto_apply_safety_reason'] = 'candidate_not_eligible_for_demo_apply';
+        } elseif ($autoGatePassed && $replayProducedEligible) {
+            // Auto gate passes and replay confirms quality — highest eligibility level
+            $result['candidate_manual_demo_gate_eligible'] = true;
+            $result['candidate_auto_demo_eligible'] = true;
+            $result['candidate_status'] = 'eligible_for_auto_demo';
+            $result['promotion_decision'] = 'candidate_ready_but_apply_disabled';
+            $result['promotion_reason'] = 'auto_demo_thresholds_met_apply_disabled';
+            $result['candidate_can_apply'] = false;
+            $result['candidate_eligible_for_demo_apply'] = false;
+            $result['auto_apply_safety_blocked'] = true;
+            $result['auto_apply_safety_reason'] = 'auto_apply_to_demo_disabled';
+        } elseif ($manualGatePassed && $replayProducedEligible) {
+            // Only manual gate passes and replay confirms quality — ready for manual demo-gate test
+            $result['candidate_manual_demo_gate_eligible'] = true;
+            $result['candidate_auto_demo_eligible'] = false;
+            $result['candidate_status'] = 'eligible_for_manual_demo_gate';
+            $result['promotion_decision'] = 'manual_demo_gate_ready_apply_disabled';
+            $result['promotion_reason'] = $twoLevelGate['auto_gate_reason'] ?? 'rolling_window_below_auto_demo_thresholds';
+            $result['candidate_can_apply'] = false;
+            $result['candidate_eligible_for_demo_apply'] = false;
+            $result['auto_apply_safety_blocked'] = true;
+            $result['auto_apply_safety_reason'] = 'auto_demo_count_thresholds_not_met';
         } else {
-            $eligible = ((string)($result['candidate_status'] ?? '')) === 'eligible_for_demo_apply';
-            $result['candidate_can_apply'] = $eligible;
-            $result['candidate_eligible_for_demo_apply'] = $eligible;
-
-            $noRules = ((int)($result['candidate_rules_total'] ?? 0) === 0);
-            if ($noRules) {
-                $result['candidate_status'] = 'no_safe_candidate_rules';
-                $result['promotion_decision'] = 'keep_current';
-                $result['promotion_reason'] = 'no_single_or_composite_rules_passed_guard';
-                $result['candidate_rules_missing_reason'] = 'no_safe_candidate_rules_good_overlap';
-                $result['candidate_can_apply'] = false;
-                $result['candidate_eligible_for_demo_apply'] = false;
-                $result['auto_apply_safety_blocked'] = true;
-                $result['auto_apply_safety_reason'] = 'candidate_not_eligible_for_demo_apply';
-            }
+            // Count thresholds pass at some level but replay does not confirm quality
+            $result['candidate_manual_demo_gate_eligible'] = false;
+            $result['candidate_auto_demo_eligible'] = false;
+            $result['candidate_can_apply'] = false;
+            $result['candidate_eligible_for_demo_apply'] = false;
+            $result['auto_apply_safety_blocked'] = true;
+            $result['auto_apply_safety_reason'] = 'candidate_not_eligible_for_demo_apply';
         }
 
         $result['final_candidate_status'] = (string)($result['candidate_status'] ?? 'pending');
         $result['final_promotion_decision'] = (string)($result['promotion_decision'] ?? 'keep_current');
         $result['final_promotion_reason'] = $result['promotion_reason'] ?? null;
         $result['final_candidate_eligible_for_demo_apply'] = (bool)($result['candidate_eligible_for_demo_apply'] ?? false);
+        $result['final_candidate_manual_demo_gate_eligible'] = (bool)($result['candidate_manual_demo_gate_eligible'] ?? false);
+        $result['final_candidate_auto_demo_eligible'] = (bool)($result['candidate_auto_demo_eligible'] ?? false);
         $result['candidate_replay_summary'] = $this->buildCandidateReplaySummary($candidateReplay, $result);
 
         $this->syncCandidateReplayFinalDiagnostics($cfg, $result, $candidateReplay);
@@ -863,8 +913,12 @@ final class DynamicLearningService
                 'final_promotion_decision' => $result['final_promotion_decision'] ?? null,
                 'final_promotion_reason' => $result['final_promotion_reason'] ?? null,
                 'final_candidate_eligible_for_demo_apply' => (bool)($result['final_candidate_eligible_for_demo_apply'] ?? false),
+                'final_candidate_manual_demo_gate_eligible' => (bool)($result['final_candidate_manual_demo_gate_eligible'] ?? false),
+                'final_candidate_auto_demo_eligible' => (bool)($result['final_candidate_auto_demo_eligible'] ?? false),
                 'promotion_blocked_by_min_data' => (bool)($result['promotion_blocked_by_min_data'] ?? false),
                 'promotion_blocked_reason' => $result['promotion_blocked_reason'] ?? null,
+                'manual_demo_gate_missing_counts' => $result['manual_demo_gate_missing_counts'] ?? [],
+                'auto_demo_missing_counts' => $result['auto_demo_missing_counts'] ?? [],
             ], max(1, (int)($cfg['max_candidate_history_records'] ?? 200)), 'replay_evaluator');
         }
 
@@ -1033,6 +1087,15 @@ final class DynamicLearningService
         $profile['rolling_window_bad_entry_total'] = (int)($guardResult['rolling_window_bad_entry_total'] ?? 0);
         $profile['rolling_window_good_entry_total'] = (int)($guardResult['rolling_window_good_entry_total'] ?? 0);
         $profile['rolling_sample_min_counts_passed'] = (bool)($guardResult['rolling_sample_min_counts_passed'] ?? false);
+        $profile['rolling_min_closed_outcomes'] = (int)($guardResult['rolling_min_closed_outcomes'] ?? 50);
+        $profile['rolling_min_bad_entries'] = (int)($guardResult['rolling_min_bad_entries'] ?? 8);
+        $profile['rolling_min_good_entries'] = (int)($guardResult['rolling_min_good_entries'] ?? 20);
+        $profile['manual_demo_gate_min_classifiable_outcomes'] = (int)($guardResult['manual_demo_gate_min_classifiable_outcomes'] ?? 30);
+        $profile['manual_demo_gate_min_bad_entries'] = (int)($guardResult['manual_demo_gate_min_bad_entries'] ?? 4);
+        $profile['manual_demo_gate_min_good_entries'] = (int)($guardResult['manual_demo_gate_min_good_entries'] ?? 12);
+        $profile['auto_demo_min_classifiable_outcomes'] = (int)($guardResult['auto_demo_min_classifiable_outcomes'] ?? 50);
+        $profile['auto_demo_min_bad_entries'] = (int)($guardResult['auto_demo_min_bad_entries'] ?? 8);
+        $profile['auto_demo_min_good_entries'] = (int)($guardResult['auto_demo_min_good_entries'] ?? 20);
         $profile['compared_to_default']        = $guardResult['default_result_summary'] !== null;
         $profile['auto_not_worse_than_default'] = (bool)($cfg['require_not_worse_than_default'] ?? true);
         $profile['no_change_band_pct']         = $guardResult['no_change_band_pct'];
@@ -1144,6 +1207,11 @@ final class DynamicLearningService
         $profile['promotion_blocked_reason'] = $result['promotion_blocked_reason'] ?? null;
         $profile['candidate_can_apply'] = (bool)($result['candidate_can_apply'] ?? false);
         $profile['candidate_eligible_for_demo_apply'] = (bool)($result['candidate_eligible_for_demo_apply'] ?? false);
+        $profile['candidate_manual_demo_gate_eligible'] = (bool)($result['candidate_manual_demo_gate_eligible'] ?? false);
+        $profile['candidate_auto_demo_eligible'] = (bool)($result['candidate_auto_demo_eligible'] ?? false);
+        $profile['candidate_live_eligible'] = false;
+        $profile['manual_demo_gate_missing_counts'] = $result['manual_demo_gate_missing_counts'] ?? [];
+        $profile['auto_demo_missing_counts'] = $result['auto_demo_missing_counts'] ?? [];
         $profile['replay_diagnostic_available'] = (bool)($result['replay_diagnostic_available'] ?? false);
         $profile['replay_suggests_improvement'] = (bool)($result['replay_suggests_improvement'] ?? false);
         $profile['candidate_replay_summary'] = $this->buildCandidateReplaySummary(
@@ -1179,6 +1247,12 @@ final class DynamicLearningService
         $profile['rolling_window_bad_entry_total'] = (int)($result['rolling_window_bad_entry_total'] ?? ($profile['rolling_window_bad_entry_total'] ?? 0));
         $profile['rolling_window_good_entry_total'] = (int)($result['rolling_window_good_entry_total'] ?? ($profile['rolling_window_good_entry_total'] ?? 0));
         $profile['rolling_sample_min_counts_passed'] = (bool)($result['rolling_sample_min_counts_passed'] ?? ($profile['rolling_sample_min_counts_passed'] ?? false));
+        $profile['manual_demo_gate_min_classifiable_outcomes'] = (int)($result['manual_demo_gate_min_classifiable_outcomes'] ?? ($profile['manual_demo_gate_min_classifiable_outcomes'] ?? 30));
+        $profile['manual_demo_gate_min_bad_entries'] = (int)($result['manual_demo_gate_min_bad_entries'] ?? ($profile['manual_demo_gate_min_bad_entries'] ?? 4));
+        $profile['manual_demo_gate_min_good_entries'] = (int)($result['manual_demo_gate_min_good_entries'] ?? ($profile['manual_demo_gate_min_good_entries'] ?? 12));
+        $profile['auto_demo_min_classifiable_outcomes'] = (int)($result['auto_demo_min_classifiable_outcomes'] ?? ($profile['auto_demo_min_classifiable_outcomes'] ?? 50));
+        $profile['auto_demo_min_bad_entries'] = (int)($result['auto_demo_min_bad_entries'] ?? ($profile['auto_demo_min_bad_entries'] ?? 8));
+        $profile['auto_demo_min_good_entries'] = (int)($result['auto_demo_min_good_entries'] ?? ($profile['auto_demo_min_good_entries'] ?? 20));
 
         if ((bool)($profile['promotion_blocked_by_min_data'] ?? false)) {
             $profile['status'] = 'observe_only';
@@ -1186,8 +1260,10 @@ final class DynamicLearningService
             // Re-derive status from final candidate_status so it is always correct
             // regardless of any intermediate value written by syncRollingGuardToCurrentProfile.
             $finalCandStatus = (string)($profile['candidate_status'] ?? 'pending');
-            if ($finalCandStatus === 'eligible_for_demo_apply') {
+            if (in_array($finalCandStatus, ['eligible_for_demo_apply', 'eligible_for_auto_demo'], true)) {
                 $profile['status'] = 'eligible_for_demo_apply';
+            } elseif ($finalCandStatus === 'eligible_for_manual_demo_gate') {
+                $profile['status'] = 'eligible_for_manual_demo_gate';
             } elseif (in_array($finalCandStatus, ['rejected', 'rejected_worse_than_default', 'below_improvement_threshold', 'no_material_improvement'], true)) {
                 $profile['status'] = 'rejected';
             } else {
@@ -1214,12 +1290,18 @@ final class DynamicLearningService
         $blockedByMinData = (bool)($result['promotion_blocked_by_min_data'] ?? false);
         $eligible = (bool)($result['candidate_eligible_for_demo_apply'] ?? false) && !$blockedByMinData;
         $noRules = ((int)($result['candidate_rules_total'] ?? 0) === 0);
+        $candStatus = (string)($result['candidate_status'] ?? 'pending');
         $status = $blockedByMinData
             ? 'insufficient_data'
-            : ($noRules ? 'no_safe_candidate_rules' : 'candidate_diagnostic_only');
+            : ($noRules ? 'no_safe_candidate_rules' : $candStatus);
 
         $candidate['eligibility_status'] = $status;
         $candidate['eligible_for_demo_apply'] = $eligible;
+        $candidate['candidate_manual_demo_gate_eligible'] = (bool)($result['candidate_manual_demo_gate_eligible'] ?? false);
+        $candidate['candidate_auto_demo_eligible'] = (bool)($result['candidate_auto_demo_eligible'] ?? false);
+        $candidate['candidate_live_eligible'] = false;
+        $candidate['manual_demo_gate_missing_counts'] = $result['manual_demo_gate_missing_counts'] ?? [];
+        $candidate['auto_demo_missing_counts'] = $result['auto_demo_missing_counts'] ?? [];
         $candidate['promotion_blocked_by_min_data'] = $blockedByMinData;
         $candidate['promotion_blocked_reason'] = $result['promotion_blocked_reason'] ?? null;
         $candidate['promotion_decision'] = (string)($result['promotion_decision'] ?? 'keep_current');
@@ -1247,6 +1329,12 @@ final class DynamicLearningService
         $candidate['rolling_window_bad_entry_total'] = (int)($result['rolling_window_bad_entry_total'] ?? 0);
         $candidate['rolling_window_good_entry_total'] = (int)($result['rolling_window_good_entry_total'] ?? 0);
         $candidate['rolling_sample_min_counts_passed'] = (bool)($result['rolling_sample_min_counts_passed'] ?? false);
+        $candidate['manual_demo_gate_min_classifiable_outcomes'] = (int)($result['manual_demo_gate_min_classifiable_outcomes'] ?? 30);
+        $candidate['manual_demo_gate_min_bad_entries'] = (int)($result['manual_demo_gate_min_bad_entries'] ?? 4);
+        $candidate['manual_demo_gate_min_good_entries'] = (int)($result['manual_demo_gate_min_good_entries'] ?? 12);
+        $candidate['auto_demo_min_classifiable_outcomes'] = (int)($result['auto_demo_min_classifiable_outcomes'] ?? 50);
+        $candidate['auto_demo_min_bad_entries'] = (int)($result['auto_demo_min_bad_entries'] ?? 8);
+        $candidate['auto_demo_min_good_entries'] = (int)($result['auto_demo_min_good_entries'] ?? 20);
         $candidate['active_epoch_raw_outcomes_total'] = (int)($result['active_epoch_raw_outcomes_total'] ?? 0);
         $candidate['active_epoch_usable_outcomes_total'] = (int)($result['active_epoch_usable_outcomes_total'] ?? 0);
         $candidate['active_epoch_excluded_from_learning_total'] = (int)($result['active_epoch_excluded_from_learning_total'] ?? 0);
@@ -1298,6 +1386,8 @@ final class DynamicLearningService
             'final_promotion_decision' => (string)($finalResult['final_promotion_decision'] ?? $finalResult['promotion_decision'] ?? $candidateReplay['final_promotion_decision'] ?? 'keep_current'),
             'final_promotion_reason' => $finalResult['final_promotion_reason'] ?? $finalResult['promotion_reason'] ?? $candidateReplay['final_promotion_reason'] ?? null,
             'final_candidate_eligible_for_demo_apply' => (bool)($finalResult['final_candidate_eligible_for_demo_apply'] ?? $finalResult['candidate_eligible_for_demo_apply'] ?? $candidateReplay['final_candidate_eligible_for_demo_apply'] ?? false),
+            'final_candidate_manual_demo_gate_eligible' => (bool)($finalResult['final_candidate_manual_demo_gate_eligible'] ?? $finalResult['candidate_manual_demo_gate_eligible'] ?? false),
+            'final_candidate_auto_demo_eligible' => (bool)($finalResult['final_candidate_auto_demo_eligible'] ?? $finalResult['candidate_auto_demo_eligible'] ?? false),
             'promotion_blocked_by_min_data' => (bool)($finalResult['promotion_blocked_by_min_data'] ?? $candidateReplay['promotion_blocked_by_min_data'] ?? false),
             'promotion_guard_scope' => (string)($finalResult['promotion_guard_scope'] ?? $candidateReplay['promotion_guard_scope'] ?? 'sliding_window'),
         ];
@@ -1459,6 +1549,13 @@ final class DynamicLearningService
         $minOutcomes = max(1, (int)($cfg['rolling_min_closed_outcomes'] ?? 20));
         $minBad = (int)($cfg['rolling_min_bad_entries'] ?? 3);
         $minGood = (int)($cfg['rolling_min_good_entries'] ?? 3);
+        // Two-level eligibility thresholds
+        $manualGateMinOutcomes = max(1, (int)($cfg['manual_demo_gate_min_classifiable_outcomes'] ?? 30));
+        $manualGateMinBad = (int)($cfg['manual_demo_gate_min_bad_entries'] ?? 4);
+        $manualGateMinGood = (int)($cfg['manual_demo_gate_min_good_entries'] ?? 12);
+        $autoGateMinOutcomes = max(1, (int)($cfg['auto_demo_min_classifiable_outcomes'] ?? $minOutcomes));
+        $autoGateMinBad = (int)($cfg['auto_demo_min_bad_entries'] ?? $minBad);
+        $autoGateMinGood = (int)($cfg['auto_demo_min_good_entries'] ?? $minGood);
         $minImprovementPct = (float)($cfg['min_candidate_improvement_pct'] ?? 7.0);
         $noChangeBandPct = (float)($cfg['no_change_band_pct'] ?? 5.0);
         $maxBadRateIncreasePct = (float)($cfg['max_allowed_bad_entry_rate_increase_pct'] ?? 10.0);
@@ -1487,6 +1584,12 @@ final class DynamicLearningService
             'rolling_min_closed_outcomes' => $minOutcomes,
             'rolling_min_bad_entries' => $minBad,
             'rolling_min_good_entries' => $minGood,
+            'manual_demo_gate_min_classifiable_outcomes' => $manualGateMinOutcomes,
+            'manual_demo_gate_min_bad_entries' => $manualGateMinBad,
+            'manual_demo_gate_min_good_entries' => $manualGateMinGood,
+            'auto_demo_min_classifiable_outcomes' => $autoGateMinOutcomes,
+            'auto_demo_min_bad_entries' => $autoGateMinBad,
+            'auto_demo_min_good_entries' => $autoGateMinGood,
             'rolling_window_start_at' => null,
             'rolling_window_end_at' => null,
             'rolling_selected_sample_type' => 'insufficient',
@@ -1846,6 +1949,99 @@ final class DynamicLearningService
         return ['passed' => true, 'reason' => null];
     }
 
+
+    /**
+     * Evaluate two-level candidate eligibility (manual demo-gate vs auto-demo).
+     * Returns both gate results plus missing-count diagnostics.
+     *
+     * @param array<string,mixed> $guardResult
+     * @return array{manual_gate_passed:bool,auto_gate_passed:bool,manual_gate_reason:string|null,auto_gate_reason:string|null,manual_gate_missing_counts:list<string>,auto_gate_missing_counts:list<string>}
+     */
+    private function evaluateTwoLevelEligibility(array $guardResult): array
+    {
+        $selectedSampleType = (string)($guardResult['rolling_selected_sample_type'] ?? 'insufficient');
+        // Use classifiable outcomes (excludes outcome_incomplete) for eligibility check
+        $total = (int)($guardResult['rolling_selected_classifiable_outcomes_total']
+            ?? $guardResult['rolling_selected_outcomes_total']
+            ?? ($guardResult['rolling_window_classifiable_outcomes_total'] ?? 0));
+        $bad  = (int)($guardResult['rolling_selected_bad_entry_total']  ?? ($guardResult['rolling_window_bad_entry_total']  ?? 0));
+        $good = (int)($guardResult['rolling_selected_good_entry_total'] ?? ($guardResult['rolling_window_good_entry_total'] ?? 0));
+
+        $manualMinOutcomes = (int)($guardResult['manual_demo_gate_min_classifiable_outcomes'] ?? 30);
+        $manualMinBad      = (int)($guardResult['manual_demo_gate_min_bad_entries']           ?? 4);
+        $manualMinGood     = (int)($guardResult['manual_demo_gate_min_good_entries']          ?? 12);
+        $autoMinOutcomes   = (int)($guardResult['auto_demo_min_classifiable_outcomes']        ?? 50);
+        $autoMinBad        = (int)($guardResult['auto_demo_min_bad_entries']                  ?? 8);
+        $autoMinGood       = (int)($guardResult['auto_demo_min_good_entries']                 ?? 20);
+
+        if ($selectedSampleType === 'insufficient') {
+            $noSampleReason = (string)($guardResult['promotion_reason'] ?? 'rolling_sliding_window_and_fallback_below_min_counts');
+            return [
+                'manual_gate_passed'         => false,
+                'auto_gate_passed'           => false,
+                'manual_gate_reason'         => $noSampleReason,
+                'auto_gate_reason'           => $noSampleReason,
+                'manual_gate_missing_counts' => [],
+                'auto_gate_missing_counts'   => [],
+            ];
+        }
+
+        // Manual gate
+        $manualMissing = [];
+        if ($total < $manualMinOutcomes) {
+            $manualMissing[] = "classifiable_outcomes {$total}/{$manualMinOutcomes}";
+        }
+        if ($bad < $manualMinBad) {
+            $manualMissing[] = "bad_entries {$bad}/{$manualMinBad}";
+        }
+        if ($good < $manualMinGood) {
+            $manualMissing[] = "good_entries {$good}/{$manualMinGood}";
+        }
+        $manualPassed = empty($manualMissing);
+        $manualReason = null;
+        if (!$manualPassed) {
+            if ($total < $manualMinOutcomes) {
+                $manualReason = 'rolling_window_below_min_classifiable_counts';
+            } elseif ($bad < $manualMinBad) {
+                $manualReason = 'rolling_window_below_min_bad_entries';
+            } else {
+                $manualReason = 'rolling_window_below_min_good_entries';
+            }
+        }
+
+        // Auto gate
+        $autoMissing = [];
+        if ($total < $autoMinOutcomes) {
+            $autoMissing[] = "classifiable_outcomes {$total}/{$autoMinOutcomes}";
+        }
+        if ($bad < $autoMinBad) {
+            $autoMissing[] = "bad_entries {$bad}/{$autoMinBad}";
+        }
+        if ($good < $autoMinGood) {
+            $autoMissing[] = "good_entries {$good}/{$autoMinGood}";
+        }
+        $autoPassed = empty($autoMissing);
+        $autoReason = null;
+        if (!$autoPassed) {
+            if ($total < $autoMinOutcomes) {
+                $autoReason = 'rolling_window_below_min_classifiable_counts';
+            } elseif ($bad < $autoMinBad) {
+                $autoReason = 'rolling_window_below_min_bad_entries';
+            } else {
+                $autoReason = 'rolling_window_below_min_good_entries';
+            }
+        }
+
+        return [
+            'manual_gate_passed'         => $manualPassed,
+            'auto_gate_passed'           => $autoPassed,
+            'manual_gate_reason'         => $manualReason,
+            'auto_gate_reason'           => $autoReason,
+            'manual_gate_missing_counts' => $manualMissing,
+            'auto_gate_missing_counts'   => $autoMissing,
+        ];
+    }
+
     /**
      * @param array<string,mixed> $guardResult
      * @return array{passed:bool,blocked:bool,reason:string|null}
@@ -1929,8 +2125,12 @@ final class DynamicLearningService
             'final_promotion_decision' => $guardResult['final_promotion_decision'] ?? null,
             'final_promotion_reason' => $guardResult['final_promotion_reason'] ?? null,
             'final_candidate_eligible_for_demo_apply' => (bool)($guardResult['final_candidate_eligible_for_demo_apply'] ?? false),
+            'final_candidate_manual_demo_gate_eligible' => (bool)($guardResult['final_candidate_manual_demo_gate_eligible'] ?? false),
+            'final_candidate_auto_demo_eligible' => (bool)($guardResult['final_candidate_auto_demo_eligible'] ?? false),
             'promotion_blocked_by_min_data' => (bool)($guardResult['promotion_blocked_by_min_data'] ?? false),
             'promotion_blocked_reason' => $guardResult['promotion_blocked_reason'] ?? null,
+            'manual_demo_gate_missing_counts' => $guardResult['manual_demo_gate_missing_counts'] ?? [],
+            'auto_demo_missing_counts' => $guardResult['auto_demo_missing_counts'] ?? [],
             'rollback_required' => $guardResult['rollback_required'] ?? false,
         ];
 
@@ -3682,6 +3882,8 @@ final class DynamicLearningService
         $payload['final_promotion_decision'] = (string)($result['final_promotion_decision'] ?? ($result['promotion_decision'] ?? 'keep_current'));
         $payload['final_promotion_reason'] = $result['final_promotion_reason'] ?? ($result['promotion_reason'] ?? null);
         $payload['final_candidate_eligible_for_demo_apply'] = (bool)($result['final_candidate_eligible_for_demo_apply'] ?? ($result['candidate_eligible_for_demo_apply'] ?? false));
+        $payload['final_candidate_manual_demo_gate_eligible'] = (bool)($result['final_candidate_manual_demo_gate_eligible'] ?? ($result['candidate_manual_demo_gate_eligible'] ?? false));
+        $payload['final_candidate_auto_demo_eligible'] = (bool)($result['final_candidate_auto_demo_eligible'] ?? ($result['candidate_auto_demo_eligible'] ?? false));
         $payload['promotion_blocked_by_min_data'] = (bool)($result['promotion_blocked_by_min_data'] ?? false);
         $payload['promotion_blocked_reason'] = $result['promotion_blocked_reason'] ?? null;
         $payload['promotion_guard_scope'] = (string)($result['promotion_guard_scope'] ?? 'sliding_window');
@@ -3702,6 +3904,14 @@ final class DynamicLearningService
         $payload['rolling_window_bad_entry_total'] = (int)($result['rolling_window_bad_entry_total'] ?? 0);
         $payload['rolling_window_good_entry_total'] = (int)($result['rolling_window_good_entry_total'] ?? 0);
         $payload['rolling_sample_min_counts_passed'] = (bool)($result['rolling_sample_min_counts_passed'] ?? false);
+        $payload['manual_demo_gate_min_classifiable_outcomes'] = (int)($result['manual_demo_gate_min_classifiable_outcomes'] ?? 30);
+        $payload['manual_demo_gate_min_bad_entries'] = (int)($result['manual_demo_gate_min_bad_entries'] ?? 4);
+        $payload['manual_demo_gate_min_good_entries'] = (int)($result['manual_demo_gate_min_good_entries'] ?? 12);
+        $payload['auto_demo_min_classifiable_outcomes'] = (int)($result['auto_demo_min_classifiable_outcomes'] ?? 50);
+        $payload['auto_demo_min_bad_entries'] = (int)($result['auto_demo_min_bad_entries'] ?? 8);
+        $payload['auto_demo_min_good_entries'] = (int)($result['auto_demo_min_good_entries'] ?? 20);
+        $payload['manual_demo_gate_missing_counts'] = $result['manual_demo_gate_missing_counts'] ?? [];
+        $payload['auto_demo_missing_counts'] = $result['auto_demo_missing_counts'] ?? [];
         $payload['active_epoch_raw_outcomes_total'] = (int)($result['active_epoch_raw_outcomes_total'] ?? 0);
         $payload['active_epoch_usable_outcomes_total'] = (int)($result['active_epoch_usable_outcomes_total'] ?? 0);
         $payload['active_epoch_classifiable_outcomes_total'] = (int)($result['active_epoch_classifiable_outcomes_total'] ?? 0);
@@ -3714,6 +3924,8 @@ final class DynamicLearningService
         $payload['promotion_decision'] = $payload['final_promotion_decision'];
         $payload['promotion_reason'] = $payload['final_promotion_reason'];
         $payload['candidate_eligible_for_demo_apply'] = $payload['final_candidate_eligible_for_demo_apply'];
+        $payload['candidate_manual_demo_gate_eligible'] = $payload['final_candidate_manual_demo_gate_eligible'];
+        $payload['candidate_auto_demo_eligible'] = $payload['final_candidate_auto_demo_eligible'];
 
         $this->writeReplayToFile($payload, $cfg);
     }

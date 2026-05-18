@@ -340,43 +340,85 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <i class="bi bi-shield-check" style="margin-right:6px;"></i>Rolling Quality Guard
     </div>
 
-    <!-- Rolling window counters -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:10px;">
+    <!-- Two-level eligibility display -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
       <?php
-      // Eligibility thresholds vs current
-      $reqClassifiable = (int)($run['rolling_min_closed_outcomes'] ?? 50);
-      $reqBad          = (int)($run['rolling_min_bad_entries'] ?? 8);
-      $reqGood         = (int)($run['rolling_min_good_entries'] ?? 20);
       $curClassifiable = (int)($run['rolling_window_classifiable_outcomes_total'] ?? 0);
       $curBad          = (int)($run['rolling_window_bad_entry_total'] ?? 0);
       $curGood         = (int)($run['rolling_window_good_entry_total'] ?? 0);
       $curIncomplete   = (int)($run['rolling_window_incomplete_outcomes_total'] ?? 0);
-      $okClass = $curClassifiable >= $reqClassifiable ? '#86efac' : '#f87171';
-      $bgClass = $curClassifiable >= $reqClassifiable ? '#14532d' : '#450a0a';
-      $okBad   = $curBad >= $reqBad ? '#86efac' : '#fcd34d';
-      $bgBad   = $curBad >= $reqBad ? '#14532d' : '#451a03';
-      $okGood  = $curGood >= $reqGood ? '#86efac' : '#fcd34d';
-      $bgGood  = $curGood >= $reqGood ? '#14532d' : '#451a03';
+
+      // Manual demo-gate thresholds
+      $mReqClass = (int)($run['manual_demo_gate_min_classifiable_outcomes'] ?? 30);
+      $mReqBad   = (int)($run['manual_demo_gate_min_bad_entries'] ?? 4);
+      $mReqGood  = (int)($run['manual_demo_gate_min_good_entries'] ?? 12);
+      $mReady    = (bool)($run['candidate_manual_demo_gate_eligible'] ?? (
+          $curClassifiable >= $mReqClass && $curBad >= $mReqBad && $curGood >= $mReqGood
+      ));
+
+      // Auto-demo thresholds
+      $aReqClass = (int)($run['auto_demo_min_classifiable_outcomes'] ?? 50);
+      $aReqBad   = (int)($run['auto_demo_min_bad_entries'] ?? 8);
+      $aReqGood  = (int)($run['auto_demo_min_good_entries'] ?? 20);
+      $aReady    = (bool)($run['candidate_auto_demo_eligible'] ?? (
+          $curClassifiable >= $aReqClass && $curBad >= $aReqBad && $curGood >= $aReqGood
+      ));
+
+      $mColor = $mReady ? '#86efac' : '#fcd34d';
+      $mBg    = $mReady ? '#14532d' : '#451a03';
+      $aColor = $aReady ? '#86efac' : '#f87171';
+      $aBg    = $aReady ? '#14532d' : '#450a0a';
       ?>
-      <div style="background:#1e1b4b;color:#c4b5fd;border-radius:7px;padding:8px;grid-column:1/-1;">
-        <div style="font-size:11px;font-weight:700;margin-bottom:4px;">Eligibility Requirements (classifiable outcomes only)</div>
-        <div style="font-size:10px;color:#a5b4fc;">outcome_incomplete (<?= $e($curIncomplete) ?>) excluded from quality scoring and eligibility counts</div>
+      <!-- Manual demo-gate panel -->
+      <div style="background:<?= $mBg ?>;border:1px solid <?= $mColor ?>33;border-radius:8px;padding:10px;">
+        <div style="font-size:11px;font-weight:700;color:<?= $mColor ?>;margin-bottom:6px;">
+          Manual demo-gate &nbsp;
+          <span style="background:<?= $mReady ? '#166534' : '#78350f' ?>;color:<?= $mColor ?>;padding:1px 6px;border-radius:4px;font-size:10px;">
+            <?= $mReady ? 'READY' : 'not ready' ?>
+          </span>
+        </div>
+        <?php foreach ([
+          ['classifiable', $curClassifiable, $mReqClass],
+          ['bad entries',  $curBad,          $mReqBad],
+          ['good entries', $curGood,          $mReqGood],
+        ] as [$label, $cur, $req]): ?>
+        <?php $ok = $cur >= $req; $c = $ok ? '#86efac' : '#fcd34d'; ?>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:2px;">
+          <span style="color:<?= $c ?>;opacity:.9;"><?= $e($label) ?></span>
+          <span style="font-weight:600;color:<?= $c ?>"><?= $e($cur) ?>/<?= $e($req) ?></span>
+        </div>
+        <?php endforeach; ?>
       </div>
-      <div style="background:<?= $bgClass ?>;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;color:<?= $okClass ?>;">classifiable outcomes (need ≥<?= $e($reqClassifiable) ?>)</div>
-        <div style="font-weight:600;color:<?= $okClass ?>;"><?= $e($curClassifiable) ?></div>
+
+      <!-- Auto-demo panel -->
+      <div style="background:<?= $aBg ?>;border:1px solid <?= $aColor ?>33;border-radius:8px;padding:10px;">
+        <div style="font-size:11px;font-weight:700;color:<?= $aColor ?>;margin-bottom:6px;">
+          Auto-demo &nbsp;
+          <span style="background:<?= $aReady ? '#166534' : '#450a0a' ?>;color:<?= $aColor ?>;padding:1px 6px;border-radius:4px;font-size:10px;">
+            <?= $aReady ? 'READY' : 'not ready' ?>
+          </span>
+          &nbsp;<span style="font-size:10px;color:#64748b;font-weight:400;">(apply disabled)</span>
+        </div>
+        <?php foreach ([
+          ['classifiable', $curClassifiable, $aReqClass],
+          ['bad entries',  $curBad,          $aReqBad],
+          ['good entries', $curGood,          $aReqGood],
+        ] as [$label, $cur, $req]): ?>
+        <?php $ok = $cur >= $req; $c = $ok ? '#86efac' : '#f87171'; ?>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:2px;">
+          <span style="color:<?= $c ?>;opacity:.9;"><?= $e($label) ?></span>
+          <span style="font-weight:600;color:<?= $c ?>"><?= $e($cur) ?>/<?= $e($req) ?></span>
+        </div>
+        <?php endforeach; ?>
       </div>
-      <div style="background:<?= $bgBad ?>;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;color:<?= $okBad ?>;">bad entries (need ≥<?= $e($reqBad) ?>)</div>
-        <div style="font-weight:600;color:<?= $okBad ?>;"><?= $e($curBad) ?></div>
-      </div>
-      <div style="background:<?= $bgGood ?>;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;color:<?= $okGood ?>;">good entries (need ≥<?= $e($reqGood) ?>)</div>
-        <div style="font-weight:600;color:<?= $okGood ?>;"><?= $e($curGood) ?></div>
-      </div>
-      <div style="background:#0f172a;color:#6b7280;border-radius:7px;padding:8px;">
-        <div style="font-size:11px;opacity:.8;">incomplete (excluded)</div>
-        <div style="font-weight:600;color:#64748b;"><?= $e($curIncomplete) ?></div>
+
+      <!-- Live eligibility panel (always disabled) -->
+      <div style="background:#0f172a;border:1px solid #33415544;border-radius:8px;padding:10px;grid-column:1/-1;">
+        <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:2px;">
+          Live &nbsp;<span style="background:#1e293b;color:#64748b;padding:1px 6px;border-radius:4px;font-size:10px;">DISABLED</span>
+          &nbsp;<span style="font-size:10px;color:#475569;">apply_learning_to_live_enabled = false</span>
+        </div>
+        <div style="font-size:10px;color:#475569;">outcome_incomplete (<?= $e($curIncomplete) ?>) excluded from quality scoring and eligibility counts</div>
       </div>
     </div>
 
@@ -577,11 +619,13 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
     $promoReason = (string)($run['final_promotion_reason'] ?? ($run['promotion_reason'] ?? ''));
     $replayResult = (string)($run['replay_result'] ?? ((bool)($run['replay_suggests_improvement'] ?? false) ? 'improved_on_sample' : 'no_improvement'));
     $decisionColor = match($promoDecision) {
-        'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#86efac',
+        'promote_candidate_demo', 'candidate_ready_but_apply_disabled', 'manual_demo_gate_ready_apply_disabled' => '#86efac',
         'reject_candidate' => '#f87171',
         'keep_current' => '#fcd34d',
         default => '#94a3b8',
     };
+    $manualEligible = (bool)($run['candidate_manual_demo_gate_eligible'] ?? false);
+    $autoEligible   = (bool)($run['candidate_auto_demo_eligible'] ?? false);
     ?>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:10px;">
       <div style="background:#0f172a;border-radius:7px;padding:8px;">
@@ -595,6 +639,18 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div style="background:#0f172a;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;color:#94a3b8;">final_promotion_reason</div>
         <div style="font-weight:600;color:#94a3b8;font-size:12px;"><?= $e($promoReason !== '' ? $promoReason : '—') ?></div>
+      </div>
+      <div style="background:<?= $manualEligible ? '#14532d' : '#451a03' ?>;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:<?= $manualEligible ? '#86efac' : '#fcd34d' ?>;">candidate_manual_demo_gate_eligible</div>
+        <div style="font-weight:600;color:<?= $manualEligible ? '#86efac' : '#fcd34d' ?>;"><?= $e($manualEligible ? 'true' : 'false') ?></div>
+      </div>
+      <div style="background:<?= $autoEligible ? '#14532d' : '#450a0a' ?>;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:<?= $autoEligible ? '#86efac' : '#f87171' ?>;">candidate_auto_demo_eligible</div>
+        <div style="font-weight:600;color:<?= $autoEligible ? '#86efac' : '#f87171' ?>;"><?= $e($autoEligible ? 'true' : 'false') ?></div>
+      </div>
+      <div style="background:#0f172a;border-radius:7px;padding:8px;">
+        <div style="font-size:11px;opacity:.8;color:#64748b;">candidate_live_eligible</div>
+        <div style="font-weight:600;color:#64748b;">false (disabled)</div>
       </div>
       <div style="background:#0f172a;border-radius:7px;padding:8px;">
         <div style="font-size:11px;opacity:.8;color:#94a3b8;">replay_result</div>
@@ -687,21 +743,24 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
   $rpPromoReason     = (string)($run['final_promotion_reason']   ?? ($run['promotion_reason'] ?? ''));
 
   $candStatusColor = match($candStatus) {
-    'eligible_for_demo_apply'                          => '#86efac',
+    'eligible_for_demo_apply', 'eligible_for_auto_demo'            => '#86efac',
+    'eligible_for_manual_demo_gate'                                => '#a3e635',
     'insufficient_data', 'no_material_improvement',
-    'insufficient_bad_capture', 'no_score', 'pending'  => '#fcd34d',
-    'no_safe_candidate_rules'                          => '#fb923c',
-    'rejected', 'below_improvement_threshold'          => '#f87171',
-    default                                            => '#94a3b8',
+    'insufficient_bad_capture', 'no_score', 'pending'              => '#fcd34d',
+    'no_safe_candidate_rules'                                      => '#fb923c',
+    'rejected', 'below_improvement_threshold'                      => '#f87171',
+    default                                                        => '#94a3b8',
   };
   $rpPromoColor = match($rpPromoDec) {
-    'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#86efac',
+    'promote_candidate_demo', 'candidate_ready_but_apply_disabled',
+    'manual_demo_gate_ready_apply_disabled'                         => '#86efac',
     'reject_candidate'                                              => '#f87171',
     'keep_current'                                                  => '#fcd34d',
     default                                                         => '#94a3b8',
   };
   $rpPromoBg = match($rpPromoDec) {
-    'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#14532d',
+    'promote_candidate_demo', 'candidate_ready_but_apply_disabled',
+    'manual_demo_gate_ready_apply_disabled'                         => '#14532d',
     'reject_candidate'                                              => '#450a0a',
     'keep_current'                                                  => '#451a03',
     default                                                         => '#0f172a',
@@ -725,7 +784,7 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
         if ((bool)($run['promotion_blocked_by_min_data'] ?? false)) {
             echo $e('Promotion blocked by rolling minimum data gate: ' . (string)($run['promotion_blocked_reason'] ?? 'insufficient_rolling_data'));
         } elseif ($candStatus === 'insufficient_data') {
-            echo $e('Insufficient data — rolling window does not meet minimum outcomes/bad/good thresholds.');
+            echo $e('Insufficient data — rolling window does not meet minimum classifiable outcomes/bad/good thresholds.');
         } elseif ($candStatus === 'no_safe_candidate_rules') {
             $sfTotal    = (int)($run['candidate_single_feature_candidates_total'] ?? 0);
             $sfRejected = (int)($run['candidate_single_feature_rejected_total']   ?? 0);
@@ -744,6 +803,15 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
             echo $e('Too many good trades blocked — good_block_rate=' . round((float)$rpGoodBlock, 1) . '%');
         }
       ?>
+    </div>
+    <?php endif; ?>
+    <?php if ($candStatus === 'eligible_for_manual_demo_gate'): ?>
+    <div style="background:#14532d;color:#86efac;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:8px;border:1px solid #86efac44;">
+      ✅&nbsp;Manual demo-gate ready — candidate meets manual thresholds and replay quality guards. Auto-demo thresholds not yet met. Apply is disabled; this is for manual demo-gate testing only.
+    </div>
+    <?php elseif ($candStatus === 'eligible_for_auto_demo'): ?>
+    <div style="background:#14532d;color:#86efac;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:8px;border:1px solid #86efac44;">
+      ✅&nbsp;Auto-demo ready — candidate meets all auto-demo thresholds and replay quality guards. Apply remains disabled (auto_apply_to_demo_enabled = false).
     </div>
     <?php endif; ?>
 

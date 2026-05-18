@@ -114,6 +114,14 @@ return [
     'rolling_min_bad_entries' => 8,
     'rolling_min_good_entries' => 20,
 
+    // Two-level candidate eligibility: manual demo-gate (lower) vs auto-demo (stricter)
+    'manual_demo_gate_min_classifiable_outcomes' => 30,
+    'manual_demo_gate_min_bad_entries' => 4,
+    'manual_demo_gate_min_good_entries' => 12,
+    'auto_demo_min_classifiable_outcomes' => 50,
+    'auto_demo_min_bad_entries' => 8,
+    'auto_demo_min_good_entries' => 20,
+
     // Quality guard thresholds
     'min_candidate_improvement_pct' => 7.0,
     'no_change_band_pct' => 5.0,

@@ -22,6 +22,9 @@ return [
     'log_passed_demo_signals_enabled' => true,
     'allow_manual_demo_gate_with_insufficient_data' => true,
     'manual_demo_gate_requires_user_selection' => true,
+    'financial_bad_entry_fallback_enabled' => true,
+    'financial_bad_entry_close_roi_threshold' => -12.0,
+    'financial_bad_entry_respects_bad_learning_roi' => true,
 
     'observation_interval_seconds' => 30,
     'max_observations_per_position' => 40,

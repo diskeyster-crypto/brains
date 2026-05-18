@@ -147,6 +147,14 @@ final class DynamicLearningService
             'good_learning_threshold_roi' => (float)($cfg['good_close_roi_threshold'] ?? 5.0),
             'outcomes_reclassified_total' => 0,
             'outcomes_reclassified_examples' => [],
+            'financial_bad_entry_fallback_enabled' => (bool)($cfg['financial_bad_entry_fallback_enabled'] ?? true),
+            'financial_bad_entry_close_roi_threshold' => (float)($cfg['financial_bad_entry_close_roi_threshold'] ?? -12.0),
+            'financial_bad_entry_bad_learning_roi_threshold' => $this->resolveFinancialBadEntryBadLearningThreshold($cfg),
+            'financial_bad_entry_checked_total' => 0,
+            'financial_bad_entry_applied_total' => 0,
+            'financial_bad_entry_skipped_no_close_roi_total' => 0,
+            'financial_bad_entry_skipped_not_bad_enough_total' => 0,
+            'financial_bad_entry_examples' => [],
             'outcome_mfe_normalized_total' => 0,
             'outcome_mae_normalized_total' => 0,
             'outcome_roi_normalization_examples' => [],
@@ -449,6 +457,14 @@ final class DynamicLearningService
         $result['outcome_roi_normalization_examples'] = $outcomes['roi_normalization_examples'];
         $result['outcomes_reclassified_total'] = (int)($outcomes['reclassified_total'] ?? 0);
         $result['outcomes_reclassified_examples'] = (array)($outcomes['reclassified_examples'] ?? []);
+        $result['financial_bad_entry_fallback_enabled'] = (bool)($outcomes['financial_bad_entry_fallback_enabled'] ?? ($cfg['financial_bad_entry_fallback_enabled'] ?? true));
+        $result['financial_bad_entry_close_roi_threshold'] = (float)($outcomes['financial_bad_entry_close_roi_threshold'] ?? ($cfg['financial_bad_entry_close_roi_threshold'] ?? -12.0));
+        $result['financial_bad_entry_bad_learning_roi_threshold'] = $outcomes['financial_bad_entry_bad_learning_roi_threshold'] ?? $this->resolveFinancialBadEntryBadLearningThreshold($cfg);
+        $result['financial_bad_entry_checked_total'] = (int)($outcomes['financial_bad_entry_checked_total'] ?? 0);
+        $result['financial_bad_entry_applied_total'] = (int)($outcomes['financial_bad_entry_applied_total'] ?? 0);
+        $result['financial_bad_entry_skipped_no_close_roi_total'] = (int)($outcomes['financial_bad_entry_skipped_no_close_roi_total'] ?? 0);
+        $result['financial_bad_entry_skipped_not_bad_enough_total'] = (int)($outcomes['financial_bad_entry_skipped_not_bad_enough_total'] ?? 0);
+        $result['financial_bad_entry_examples'] = (array)($outcomes['financial_bad_entry_examples'] ?? []);
         $result['outcome_excluded_from_pattern_mining_total'] = $outcomes['excluded_from_pattern_mining_total'];
         $result['outcome_excluded_reasons'] = $outcomes['excluded_reasons'];
         $result['outcome_feature_link_attempted_total'] = (int)($outcomes['feature_link_attempted_total'] ?? 0);
@@ -4560,6 +4576,11 @@ final class DynamicLearningService
 
         $reclassifiedTotal = 0;
         $reclassifiedExamples = [];
+        $financialFallbackCheckedTotal = 0;
+        $financialFallbackAppliedTotal = 0;
+        $financialFallbackSkippedNoCloseRoiTotal = 0;
+        $financialFallbackSkippedNotBadEnoughTotal = 0;
+        $financialFallbackExamples = [];
         $all = [];
         if ($sourceHasRows || $resetDetected) {
             foreach ($effectiveRows as $row) {
@@ -4572,6 +4593,14 @@ final class DynamicLearningService
                 }
                 $row['_dl_identity'] = $identity;
                 $outcome = $this->makeOutcome($row, $cfg, $snapshotIndex, $featureIndex);
+                [$outcome, $financialFallbackDiag] = $this->applyFinancialBadEntryFallbackToOutcome($outcome, $cfg);
+                $financialFallbackCheckedTotal += (int)($financialFallbackDiag['checked'] ?? 0);
+                $financialFallbackAppliedTotal += (int)($financialFallbackDiag['applied'] ?? 0);
+                $financialFallbackSkippedNoCloseRoiTotal += (int)($financialFallbackDiag['skipped_no_close_roi'] ?? 0);
+                $financialFallbackSkippedNotBadEnoughTotal += (int)($financialFallbackDiag['skipped_not_bad_enough'] ?? 0);
+                if (isset($financialFallbackDiag['example']) && is_array($financialFallbackDiag['example']) && count($financialFallbackExamples) < 20) {
+                    $financialFallbackExamples[] = $financialFallbackDiag['example'];
+                }
                 $existingOutcome = $existingIndex[(string)($outcome['outcome_key'] ?? '')] ?? null;
                 if (is_array($existingOutcome)) {
                     $oldClass = (string)($existingOutcome['outcome_class'] ?? '');
@@ -4605,6 +4634,14 @@ final class DynamicLearningService
                     $oldClass = (string)($row['outcome_class'] ?? '');
                     $oldReason = (string)($row['classification_reason'] ?? '');
                     $reclassified = $this->reclassifyStoredOutcome($row, $cfg);
+                    [$reclassified, $financialFallbackDiag] = $this->applyFinancialBadEntryFallbackToOutcome($reclassified, $cfg);
+                    $financialFallbackCheckedTotal += (int)($financialFallbackDiag['checked'] ?? 0);
+                    $financialFallbackAppliedTotal += (int)($financialFallbackDiag['applied'] ?? 0);
+                    $financialFallbackSkippedNoCloseRoiTotal += (int)($financialFallbackDiag['skipped_no_close_roi'] ?? 0);
+                    $financialFallbackSkippedNotBadEnoughTotal += (int)($financialFallbackDiag['skipped_not_bad_enough'] ?? 0);
+                    if (isset($financialFallbackDiag['example']) && is_array($financialFallbackDiag['example']) && count($financialFallbackExamples) < 20) {
+                        $financialFallbackExamples[] = $financialFallbackDiag['example'];
+                    }
                     $newClass = (string)($reclassified['outcome_class'] ?? '');
                     $newReason = (string)($reclassified['classification_reason'] ?? '');
                     if ($oldClass !== $newClass || $oldReason !== $newReason) {
@@ -4795,6 +4832,14 @@ final class DynamicLearningService
             'feature_rebuild_failed_examples' => $featureRebuildFailedExamples,
             'reclassified_total' => $reclassifiedTotal,
             'reclassified_examples' => $reclassifiedExamples,
+            'financial_bad_entry_fallback_enabled' => (bool)($cfg['financial_bad_entry_fallback_enabled'] ?? true),
+            'financial_bad_entry_close_roi_threshold' => (float)($cfg['financial_bad_entry_close_roi_threshold'] ?? -12.0),
+            'financial_bad_entry_bad_learning_roi_threshold' => $this->resolveFinancialBadEntryBadLearningThreshold($cfg),
+            'financial_bad_entry_checked_total' => $financialFallbackCheckedTotal,
+            'financial_bad_entry_applied_total' => $financialFallbackAppliedTotal,
+            'financial_bad_entry_skipped_no_close_roi_total' => $financialFallbackSkippedNoCloseRoiTotal,
+            'financial_bad_entry_skipped_not_bad_enough_total' => $financialFallbackSkippedNotBadEnoughTotal,
+            'financial_bad_entry_examples' => array_slice($financialFallbackExamples, 0, 20),
         ];
     }
 
@@ -5064,6 +5109,83 @@ final class DynamicLearningService
         $row['risk_profile_mode'] = (string)($cfg['risk_profile_mode'] ?? ($row['risk_profile_mode'] ?? ''));
         $row['outcome_classification_profile'] = (string)($cfg['outcome_classification_profile'] ?? ($row['outcome_classification_profile'] ?? ''));
         return $row;
+    }
+
+    /**
+     * @param array<string,mixed> $outcome
+     * @param array<string,mixed> $cfg
+     * @return array{0:array<string,mixed>,1:array<string,mixed>}
+     */
+    private function applyFinancialBadEntryFallbackToOutcome(array $outcome, array $cfg): array
+    {
+        $diag = [
+            'checked' => 0,
+            'applied' => 0,
+            'skipped_no_close_roi' => 0,
+            'skipped_not_bad_enough' => 0,
+        ];
+
+        if (!(bool)($cfg['financial_bad_entry_fallback_enabled'] ?? true)) {
+            return [$outcome, $diag];
+        }
+
+        $currentClass = (string)($outcome['outcome_class'] ?? '');
+        $currentReason = (string)($outcome['classification_reason'] ?? '');
+        if ($currentClass !== 'outcome_incomplete' || $currentReason !== 'max_drawdown_missing') {
+            return [$outcome, $diag];
+        }
+
+        $diag['checked'] = 1;
+        $closeRoi = DlHelpers::toFloat($outcome['close_roi'] ?? null);
+        if ($closeRoi === null) {
+            $diag['skipped_no_close_roi'] = 1;
+            return [$outcome, $diag];
+        }
+
+        $financialThreshold = (float)($cfg['financial_bad_entry_close_roi_threshold'] ?? -12.0);
+        $badLearningThreshold = $this->resolveFinancialBadEntryBadLearningThreshold($cfg);
+        $respectsBadLearning = (bool)($cfg['financial_bad_entry_respects_bad_learning_roi'] ?? true);
+        $isBadEnough = $closeRoi <= $financialThreshold;
+        if ($respectsBadLearning && $badLearningThreshold !== null) {
+            $isBadEnough = $isBadEnough || $closeRoi <= $badLearningThreshold;
+        }
+
+        if (!$isBadEnough) {
+            $diag['skipped_not_bad_enough'] = 1;
+            return [$outcome, $diag];
+        }
+
+        $previousClass = $currentClass;
+        $baseReason = 'financial_bad_entry_by_close_roi';
+        $reason = 'max_drawdown_missing_but_close_roi_bad';
+        $outcome['outcome_class'] = 'bad_entry';
+        $outcome['classification_reason'] = $reason;
+        $diag['applied'] = 1;
+        $diag['example'] = [
+            'symbol' => (string)($outcome['symbol'] ?? ''),
+            'signal_id' => (string)($outcome['signal_id'] ?? ''),
+            'outcome_id' => (string)($outcome['outcome_key'] ?? ''),
+            'close_roi' => $closeRoi,
+            'previous_outcome_class' => $previousClass,
+            'new_outcome_class' => 'bad_entry',
+            'reason' => $reason,
+            'financial_reason' => $baseReason,
+            'max_drawdown_missing' => true,
+            'closed_at' => (string)($outcome['closed_at'] ?? ''),
+        ];
+
+        return [$outcome, $diag];
+    }
+
+    private function resolveFinancialBadEntryBadLearningThreshold(array $cfg): ?float
+    {
+        if (is_numeric($cfg['bad_learning_roi'] ?? null)) {
+            return (float)$cfg['bad_learning_roi'];
+        }
+        if (is_numeric($cfg['bad_drawdown_roi_threshold'] ?? null)) {
+            return (float)$cfg['bad_drawdown_roi_threshold'];
+        }
+        return null;
     }
 
     /**

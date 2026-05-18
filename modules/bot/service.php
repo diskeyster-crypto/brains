@@ -1250,9 +1250,71 @@ final class BotService
             }
         }
 
+        // ── Strategy/Bot cron timing diagnostics ───────────────────────────────
+        $botTickTs = strtotime($tickAt) ?: time();
+        $strategyLastFinishedAtByStrategy = [];
+        $handoffQueueMtimeByStrategy      = [];
+        $botRanBeforeStrategyFinishedTotal = 0;
+        $botRanBeforeStrategyFinishedExamples = [];
+        $newestHandoffWrittenAfterBotTickTotal = 0;
+        foreach ($registry as $rec) {
+            $sid = (string)($rec['strategy_id'] ?? '');
+            if ($sid === '') {
+                continue;
+            }
+            $hqRel = (string)($rec['handoff_queue_path'] ?? '');
+            $hqAbs = $hqRel !== ''
+                ? (str_starts_with($hqRel, '/') ? $hqRel : ($this->repoRoot . '/' . $hqRel))
+                : '';
+            $hqMtimeIso = null;
+            if ($hqAbs !== '' && is_file($hqAbs)) {
+                $mt = @filemtime($hqAbs);
+                if (is_int($mt) && $mt > 0) {
+                    $hqMtimeIso = date('c', $mt);
+                    if ($mt > $botTickTs) {
+                        $newestHandoffWrittenAfterBotTickTotal++;
+                    }
+                }
+            }
+            $handoffQueueMtimeByStrategy[$sid] = $hqMtimeIso;
+
+            $finishedAtIso = null;
+            $modulePath = (string)($rec['module_path'] ?? '');
+            if ($modulePath !== '') {
+                $lrPath = rtrim($modulePath, '/') . '/storage/last_run.json';
+                if (is_file($lrPath)) {
+                    $lrRaw = @file_get_contents($lrPath);
+                    $lrDec = ($lrRaw !== false && $lrRaw !== '') ? json_decode($lrRaw, true) : null;
+                    $stratLastRun = is_array($lrDec) ? $lrDec : [];
+                    $finishedAtIso = (string)($stratLastRun['run_finished_at'] ?? $stratLastRun['finished_at'] ?? '');
+                    if ($finishedAtIso === '') {
+                        $finishedAtIso = null;
+                    }
+                }
+            }
+            $strategyLastFinishedAtByStrategy[$sid] = $finishedAtIso;
+            if ($finishedAtIso !== null) {
+                $finishedTs = strtotime($finishedAtIso) ?: 0;
+                if ($finishedTs > $botTickTs) {
+                    $botRanBeforeStrategyFinishedTotal++;
+                    if (count($botRanBeforeStrategyFinishedExamples) < 10) {
+                        $botRanBeforeStrategyFinishedExamples[] = [
+                            'strategy_id'           => $sid,
+                            'bot_tick_at'           => $tickAt,
+                            'strategy_finished_at'  => $finishedAtIso,
+                            'handoff_queue_mtime'   => $hqMtimeIso,
+                        ];
+                    }
+                }
+            }
+        }
+        $nextBotTickRequiredForNewHandoff = $newestHandoffWrittenAfterBotTickTotal > 0
+            || $botRanBeforeStrategyFinishedTotal > 0;
+
         $lastRun = [
             'status'               => 'ok',
             'tick_at'              => $tickAt,
+            'bot_tick_at'          => $tickAt,
             'elapsed_sec'          => $elapsed,
             'bot_enabled'          => true,
             'bot_mode'             => $botMode,
@@ -1304,6 +1366,13 @@ final class BotService
             'shadow_compare_direct_only_examples'     => $shadowDirectOnlyEx,
             'shadow_compare_governor_only_examples'   => $shadowGovOnlyEx,
             'shadow_compare_overlap_examples'         => $shadowOverlapEx,
+            // Strategy/Bot cron timing diagnostics
+            'strategy_last_finished_at_by_strategy'   => $strategyLastFinishedAtByStrategy,
+            'handoff_queue_mtime_by_strategy'         => $handoffQueueMtimeByStrategy,
+            'bot_ran_before_strategy_finished_total'  => $botRanBeforeStrategyFinishedTotal,
+            'bot_ran_before_strategy_finished_examples' => $botRanBeforeStrategyFinishedExamples,
+            'newest_handoff_written_after_bot_tick_total' => $newestHandoffWrittenAfterBotTickTotal,
+            'next_bot_tick_required_for_new_handoff'  => $nextBotTickRequiredForNewHandoff,
 
             // Signals this tick
             'handoff_signals_processed'                   => $result['signals_seen'],

@@ -94,6 +94,19 @@ HTML;
         $smBeTrig    = $e($config['breakeven_trigger_roi']     ?? 10.0);
         $smBeLock    = $e($config['breakeven_profit_lock_roi'] ?? 3.0);
 
+        // ── risk profile diagnostics (from last_run) ──────────────────────────
+        $lrActiveRiskProfile       = $e((string)($lastRun['active_risk_profile_mode']      ?? 'working_real'));
+        $lrLongEmergStopRoi        = $e((float)($lastRun['long_emergency_stop_roi']         ?? -30.0));
+        $lrLongStopEnabled         = $e((bool)($lastRun['long_stop_enabled']                ?? true) ? 'Да' : 'Нет');
+        $lrLongMinAge              = $e((int)($config['profiles']['long']['min_age_seconds'] ?? 60));
+        $lrLongSlippageBuffer      = $e((float)($lastRun['long_stop_slippage_buffer_roi']   ?? 3.0));
+        $lrLongLearningBadRef      = $e((float)($lastRun['long_learning_bad_reference_roi'] ?? -12.0));
+        $lrShortEmergStopRoi       = $e((float)($lastRun['short_emergency_stop_roi']        ?? -20.0));
+        $lrLongChecked             = $e((int)($lastRun['long_stop_positions_checked_total'] ?? 0));
+        $lrLongTriggered           = $e((int)($lastRun['long_stop_triggered_total']         ?? 0));
+        $lrShortChecked            = $e((int)($lastRun['short_stop_positions_checked_total'] ?? 0));
+        $lrShortTriggered          = $e((int)($lastRun['short_stop_triggered_total']         ?? 0));
+
         // ── profiles ─────────────────────────────────────────────────────────
         $longProfile  = $config['profiles']['long']  ?? [];
         $shortProfile = $config['profiles']['short'] ?? [];
@@ -318,6 +331,25 @@ HTML;
       </div>
     </div>
   </div>
+
+  <!-- Risk profile diagnostics -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header" style="color:#f0883e;">Risk Profile — Diagnostics</div>
+    <div class="card-body">
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tr><td style="color:var(--ui-text-muted);width:260px;padding:3px 12px 3px 0;">active_risk_profile_mode</td><td><code style="color:#f0883e;">{$lrActiveRiskProfile}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long_stop_enabled</td><td><code>{$lrLongStopEnabled}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long_emergency_stop_roi</td><td><code style="color:#f85149;">{$lrLongEmergStopRoi}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long_min_age_seconds</td><td><code>{$lrLongMinAge}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long_stop_slippage_buffer_roi</td><td><code>{$lrLongSlippageBuffer}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long_learning_bad_reference_roi</td><td><code>{$lrLongLearningBadRef}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">short_emergency_stop_roi</td><td><code>{$lrShortEmergStopRoi}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long checked / triggered</td><td><code>{$lrLongChecked} / {$lrLongTriggered}</code></td></tr>
+        <tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">short checked / triggered</td><td><code>{$lrShortChecked} / {$lrShortTriggered}</code></td></tr>
+      </table>
+    </div>
+  </div>
+
   <div class="card">
     <div class="card-header">Ручное управление</div>
     <div class="card-body">

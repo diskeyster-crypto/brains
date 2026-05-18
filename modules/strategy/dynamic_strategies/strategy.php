@@ -79,10 +79,15 @@ final class DynamicStrategiesStrategy
             'reclaim_lost',
             'neckline_lost',
             'pending_invalidated_reclaim_lost',
+            // confirmed_continuation: failed long retest / structure lost → bearish context
+            'long_retest_failed',
+            'long_structure_lost',
         ],
         'base_breakdown_short_watch' => [
             'base_support_broken',
             'pending_invalidated_base_support_broken',
+            // confirmed_continuation: higher low broken → base breakdown context
+            'long_higher_low_broken',
         ],
         'failed_pending_breakdown_short_watch' => [
             'pending_invalidated_fresh_dump',
@@ -95,6 +100,10 @@ final class DynamicStrategiesStrategy
             'emergency_stop_closed',
             'deep_loss_closed',
             'missed_early_fail',
+            // confirmed_continuation: long blocked by wall / wall rejection / deep loss → failed long context
+            'long_ask_wall_blocked',
+            'long_wall_rejection',
+            'long_deep_loss_closed',
         ],
         'late_exhaustion_short_watch' => [
             'late_exhaustion_detected',
@@ -1156,7 +1165,10 @@ final class DynamicStrategiesStrategy
             'confirmed_continuation_source_enabled'         => ($sourceStats['per_source']['confirmed_continuation']['enabled'] ?? null) !== false,
             'confirmed_continuation_contexts_loaded_total'  => (int)($sourceStats['per_source']['confirmed_continuation']['contexts_loaded_total'] ?? 0),
             'confirmed_continuation_contexts_useful_total'  => (int)($sourceStats['per_source']['confirmed_continuation']['contexts_useful_total'] ?? 0),
+            'confirmed_continuation_contexts_noise_total'   => (int)($sourceStats['per_source']['confirmed_continuation']['contexts_skipped_noise_total'] ?? 0),
             'confirmed_continuation_adapter_errors'         => (int)($sourceStats['per_source']['confirmed_continuation']['errors_total'] ?? 0),
+            'confirmed_continuation_context_type_counts'    => $this->computeCcContextTypeCounts($usefulContexts),
+            'confirmed_continuation_contexts_used_by_rule'  => $this->computeCcContextsUsedByRule($usefulContexts),
             // ── Input context pipeline ────────────────────────────────────────
             'input_contexts_loaded_total'     => $loadedTotal,
             'input_contexts_recent_total'     => $recentTotal,
@@ -2956,5 +2968,63 @@ final class DynamicStrategiesStrategy
         if ($json !== false) {
             file_put_contents($path, $json, LOCK_EX);
         }
+    }
+
+    /**
+     * Count how many confirmed_continuation context types appear in the useful contexts list.
+     * Returns array keyed by context_type with count values.
+     *
+     * @param  list<array<string,mixed>> $usefulContexts
+     * @return array<string,int>
+     */
+    private function computeCcContextTypeCounts(array $usefulContexts): array
+    {
+        $ccTypes = array_merge(
+            ...array_values(array_map(static fn($types) => $types, self::RULE_CONTEXT_MAP))
+        );
+        // Only CC-specific ones (those that contain 'long_' or 'short_' prefix and relate to CC)
+        $ccSpecific = [
+            'long_retest_failed', 'long_higher_low_broken', 'long_structure_lost',
+            'long_ask_wall_blocked', 'long_wall_rejection', 'long_deep_loss_closed',
+            'short_retest_failed', 'short_lower_high_broken', 'short_structure_lost',
+            'short_bid_wall_blocked', 'short_wall_rejection', 'short_deep_loss_closed',
+        ];
+        $counts = [];
+        foreach ($usefulContexts as $ctx) {
+            $ct = (string)($ctx['context_type'] ?? '');
+            if ($ct !== '' && in_array($ct, $ccSpecific, true)) {
+                $counts[$ct] = ($counts[$ct] ?? 0) + 1;
+            }
+        }
+        return $counts;
+    }
+
+    /**
+     * Count how many confirmed_continuation context types were consumed by each DS rule.
+     *
+     * @param  list<array<string,mixed>> $usefulContexts
+     * @return array<string,int>
+     */
+    private function computeCcContextsUsedByRule(array $usefulContexts): array
+    {
+        $ccSpecific = [
+            'long_retest_failed', 'long_higher_low_broken', 'long_structure_lost',
+            'long_ask_wall_blocked', 'long_wall_rejection', 'long_deep_loss_closed',
+            'short_retest_failed', 'short_lower_high_broken', 'short_structure_lost',
+            'short_bid_wall_blocked', 'short_wall_rejection', 'short_deep_loss_closed',
+        ];
+        $byRule = [];
+        foreach ($usefulContexts as $ctx) {
+            $ct = (string)($ctx['context_type'] ?? '');
+            if ($ct === '' || !in_array($ct, $ccSpecific, true)) {
+                continue;
+            }
+            foreach (self::RULE_CONTEXT_MAP as $rule => $types) {
+                if (in_array($ct, $types, true)) {
+                    $byRule[$rule] = ($byRule[$rule] ?? 0) + 1;
+                }
+            }
+        }
+        return $byRule;
     }
 }

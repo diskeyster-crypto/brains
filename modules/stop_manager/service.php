@@ -352,8 +352,11 @@ final class StopManagerService
             'double_bottom_position_roi_missing_cumulative'      => (int)($stats['db_roi_missing_total']      ?? 0),
             'double_bottom_position_price_missing_cumulative'    => (int)($stats['db_price_missing_total']    ?? 0),
             // ── Config snapshot for diagnostics ──────────────────────────────
+            'active_risk_profile_mode'    => 'working_real',
             'long_stop_enabled'           => (bool)($longProfile['enabled']                ?? true),
             'long_emergency_stop_roi'     => (float)($longProfile['emergency_stop_roi']    ?? -30.0),
+            'long_stop_slippage_buffer_roi'  => 3.0,
+            'long_learning_bad_reference_roi'=> -12.0,
             'short_stop_enabled'          => (bool)($shortProfile['enabled']               ?? true),
             'short_emergency_stop_roi'    => (float)($shortProfile['emergency_stop_roi']   ?? -20.0),
             'short_stop_applies_to_strategies' => (array)($shortProfile['applies_to_strategies'] ?? ['dynamic_strategies']),

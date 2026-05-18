@@ -35,6 +35,20 @@ $handoffQueue = $readJson($moduleDir . '/storage/bot_handoff_queue.json', []);
 $runState     = $readJson($moduleDir . '/storage/run_state.json',  []);
 $lastRun      = $readJson($moduleDir . '/storage/last_run.json',   []);
 
+// Treat missing storage as not_run_yet — not as an error
+$neverRun = !is_file($moduleDir . '/storage/last_run.json');
+if ($neverRun && empty($lastRun)) {
+    $lastRun = [
+        'status'               => 'not_run_yet',
+        'candidates_total'     => 0,
+        'signals_total'        => 0,
+        'handoff_ready_total'  => 0,
+    ];
+}
+if ($neverRun && empty($runState)) {
+    $runState = ['status' => 'not_run_yet'];
+}
+
 $activeSignals = array_filter($signals, fn($s) => !($s['stale'] ?? false) && ($s['active_final'] ?? false));
 $longSignals   = array_filter($activeSignals, fn($s) => ($s['side'] ?? '') === 'long');
 $shortSignals  = array_filter($activeSignals, fn($s) => ($s['side'] ?? '') === 'short');

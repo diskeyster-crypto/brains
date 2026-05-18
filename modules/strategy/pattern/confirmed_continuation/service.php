@@ -31,6 +31,8 @@ namespace Modules\Strategy\ConfirmedContinuation;
 
 final class ConfirmedContinuationService
 {
+    private const TIMESTAMP_MS_TO_SECONDS_THRESHOLD = 20000000000;
+    private const IDEA_KEY_BUCKET_SECONDS = 600;
     private static ?self $instance = null;
     private string $moduleDir;
     private string $repoRoot;
@@ -81,11 +83,23 @@ final class ConfirmedContinuationService
     private int $continuationConfirmedTotal = 0;
     private int $firstBounceRejectedTotal   = 0;
     private int $lateEntryRejectedTotal     = 0;
+    private int $pattern123CheckedTotal     = 0;
+    private int $pattern123DetectedTotal    = 0;
+    private int $pattern123RejectedTotal    = 0;
+    private int $pattern123MissingTotal     = 0;
+    private int $point3BreaksPoint1Total    = 0;
+    private int $point3NotConfirmedTotal    = 0;
+    private int $entryTooFarFromPoint3Total = 0;
+    /** @var list<array<string,mixed>> */
+    private array $acceptedPattern123Examples = [];
+    /** @var list<array<string,mixed>> */
+    private array $rejectedPattern123Examples = [];
 
     // ── Anti-comb diagnostics ──────────────────────────────────────────────────
     private int $antiCombCheckedTotal                  = 0;
     private int $antiCombRejectedTotal                 = 0;
     private int $antiCombRecentRangeRejectTotal        = 0;
+    private int $antiCombRecentSwingRejectTotal        = 0;
     private int $antiCombOppositeSwingRejectTotal      = 0;
     private int $antiCombWickChaosRejectTotal          = 0;
     private int $antiCombLowConsistencyRejectTotal     = 0;
@@ -98,11 +112,124 @@ final class ConfirmedContinuationService
     private int $dayRegimeLongBiasTotal  = 0;
     private int $dayRegimeShortBiasTotal = 0;
 
+    // ── Universe diagnostics (set by fetchUniverse) ────────────────────────────
+    private string $universeSource      = 'unknown';
+    private int    $universeTotal       = 0;
+    private int    $universeBatchCount  = 0;
+    /** @var list<string> */
+    private array  $universeExamples    = [];
+
     // ── Wall test diagnostics ──────────────────────────────────────────────────
     private int $wallTestPendingTotal        = 0;
     private int $wallTestConfirmedTotal      = 0;
     private int $wallTestRejectedTotal       = 0;
     private int $wallTestOppositeContextTotal= 0;
+    private int $wallPendingBlockedTotal     = 0;
+    /** @var list<array<string,mixed>> */
+    private array $wallPendingExamples       = [];
+
+    // ── Post-structure / entry timing / smooth trend diagnostics ───────────────
+    private int $postStructureFilterCheckedTotal   = 0;
+    private int $postStructureFilterRejectedTotal  = 0;
+    private int $entryTimingCheckedTotal           = 0;
+    private int $nearExitZoneRejectedTotal         = 0;
+    private int $controlledTrendGateCheckedTotal   = 0;
+    private int $controlledTrendGateRejectedTotal  = 0;
+    private int $controlledTrendScoreTooLowTotal   = 0;
+    private int $directionalConsistencyTooLowTotal = 0;
+    private int $wickChaosTooHighTotal             = 0;
+    private int $recentSwingTooHighTotal           = 0;
+    private int $oppositeSwingTooHighTotal         = 0;
+    private int $structureBreaksNotAllowedTotal    = 0;
+    private int $smoothTrendCheckedTotal           = 0;
+    private int $smoothTrendRejectedTotal          = 0;
+    private int $smoothTrendScoreTooLowTotal       = 0;
+    private int $verticalSpikeRejectedTotal        = 0;
+
+    // ── Funnel / split-reason diagnostics (new) ────────────────────────────────
+    private int $structuresDetectedTotal                   = 0;
+    private int $pattern123StructuresSeenTotal             = 0;
+    private int $pattern123ValidBeforeFiltersTotal         = 0;
+    private int $pattern123InvalidBeforeFiltersTotal       = 0;
+    private int $pattern123ValidButAntiCombRejectedTotal   = 0;
+    private int $pattern123ValidButEntryTimingRejectedTotal= 0;
+    private int $pattern123ValidButWallBlockedTotal        = 0;
+    private int $pattern123ValidSignalReadyTotal           = 0;
+    private int $postStructureCombDetectedTotal            = 0;
+    private int $antiCombPassedTotal                       = 0;
+    private int $entryTimingPassedTotal                    = 0;
+    private int $qualityGatePassedTotal                    = 0;
+    private int $wallTestPassedTotal                       = 0;
+    private int $signalReadyTotal                          = 0;
+    /** @var list<array<string,mixed>> */
+    private array $acceptedEarlyStructureExamples  = [];
+    /** @var list<array<string,mixed>> */
+    private array $acceptedMidTrendExamples        = [];
+    /** @var list<array<string,mixed>> */
+    private array $rejectedLateEntryExamples       = [];
+    /** @var list<array<string,mixed>> */
+    private array $rejectedCombExamples            = [];
+    /** @var list<array<string,mixed>> */
+    private array $pattern123ValidButAntiCombRejectedExamples = [];
+    /** @var array<string,int> */
+    private array $candleSourceUsedCounts = [
+        'parser2_history' => 0,
+        'bybit_fallback' => 0,
+        'none' => 0,
+    ];
+    private int $parser2HistoryUsedTotal = 0;
+    private int $bybitFallbackUsedTotal = 0;
+    private int $backward123CheckedTotal = 0;
+    private int $backward123ValidTotal = 0;
+    private int $backward123InvalidTotal = 0;
+    private int $recentPoint3CandidatesTotal = 0;
+    private int $point3NearEntryTotal = 0;
+    private int $point3TurnConfirmedTotal = 0;
+    private int $point2FoundTotal = 0;
+    private int $point1FoundTotal = 0;
+    private int $structureBreaksAfterPoint3Total = 0;
+    private int $structureBreaksBeforePoint3IgnoredTotal = 0;
+    /** @var list<array<string,mixed>> */
+    private array $backward123ValidExamples = [];
+    /** @var list<array<string,mixed>> */
+    private array $backward123InvalidExamples = [];
+    /** @var list<array<string,mixed>> */
+    private array $point3CandidateExamples = [];
+    /** @var list<array<string,mixed>> */
+    private array $parser2HistoryErrorExamples = [];
+    /** @var array<string,mixed> */
+    private array $lastCandleFetchDiag = [
+        'candle_source_used' => 'none',
+        'parser2_history_files_read' => 0,
+        'parser2_history_candles_loaded' => 0,
+        'parser2_history_candles_after_dedupe' => 0,
+        'parser2_history_oldest_ts' => null,
+        'parser2_history_newest_ts' => null,
+        'bybit_fallback_used' => false,
+        'candle_source_error' => null,
+    ];
+
+    // ── Handoff throttling diagnostics ──────────────────────────────────────────
+    private int $handoffCandidatesBeforeThrottleTotal = 0;
+    private int $handoffAfterThrottleTotal            = 0;
+    private int $handoffThrottledTotal                = 0;
+    /** @var array<string,int> */
+    private array $handoffThrottleReasonCounts        = [];
+    /** @var list<array<string,mixed>> */
+    private array $handoffThrottleExamples            = [];
+
+    // ── Handoff queue diagnostics ──────────────────────────────────────────────
+    private int $handoffQueueWrittenTotal       = 0;
+    private int $handoffQueueNewTotal           = 0;
+    private int $handoffQueueRefreshedTotal     = 0;
+    private int $handoffQueueMissingStatusTotal = 0;
+    /** @var list<array<string,mixed>> */
+    private array $handoffQueueExamples         = [];
+
+    // ── Deprecated config diagnostics ──────────────────────────────────────────
+    private bool $deprecatedExecutionModeKeySeen    = false;
+    private bool $deprecatedExecutionModeKeyIgnored = false;
+    private string $effectiveStrategyMode           = 'passive';
 
     public function __construct(?string $moduleDir = null)
     {
@@ -144,13 +271,84 @@ final class ConfirmedContinuationService
      */
     public function queueRun(): array
     {
+        $this->requireBootstrap();
+        $boot = ConfirmedContinuationBootstrap::instance($this->moduleDir)->load();
+        if (!$boot['valid']) {
+            return ['queued' => false, 'errors' => $boot['errors']];
+        }
+        $config = $boot['config'];
+
+        $allSymbols = $this->fetchUniverse($config);
+        $total      = count($allSymbols);
+        $batchSize  = max(1, (int)($config['batch_size'] ?? 50));
+        $maxTotal   = max(1, (int)($config['max_symbols_per_run'] ?? 50));
+        $continuousScanEnabled = (bool)($config['continuous_scan_enabled'] ?? true);
+        $autoRequeueWhenDone   = (bool)($config['auto_requeue_when_done'] ?? true);
+        $windowSize = $total > 0 ? min($maxTotal, $total) : 0;
+
+        $prevState   = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
+        $rawPrevCursor  = (int)($prevState['next_registry_cursor'] ?? 0);
+        $prevCursor  = $rawPrevCursor;
+        $cursorResetReason = null;
+        if ($total > 0 && ($prevCursor < 0 || $prevCursor >= $total)) {
+            $prevCursor = 0;
+            $cursorResetReason = 'cursor_out_of_range';
+        }
+        if ($total === 0) {
+            $prevCursor = 0;
+        }
+
+        $selectedSymbols = [];
+        if ($total > 0) {
+            for ($i = 0; $i < $windowSize; $i++) {
+                $idx = ($prevCursor + $i) % $total;
+                $selectedSymbols[] = $allSymbols[$idx];
+            }
+        }
+        $selectedTotal = count($selectedSymbols);
+        $windowStart   = $selectedTotal > 0 ? $prevCursor : 0;
+        $windowEnd     = $selectedTotal > 0 ? (($windowStart + $selectedTotal - 1) % $total) : 0;
+        $wrapped       = $selectedTotal > 0 && ($windowStart + $maxTotal > $total);
+        $nextCursor    = ($total > 0 && $selectedTotal > 0) ? (($windowStart + $selectedTotal) % $total) : 0;
+
+        $storageDir = $this->moduleDir . '/storage';
+        if (!is_dir($storageDir)) {
+            @mkdir($storageDir, 0755, true);
+        }
         $state = [
-            'status'       => 'queued',
-            'queued_at'    => date('c'),
-            'batch_offset' => 0,
+            'status'                    => 'queued',
+            'queued_at'                 => date('c'),
+            'batch_offset'              => 0,
+            'symbols'                   => $selectedSymbols,
+            'selected_window_total'     => $selectedTotal,
+            'universe_total'            => $total,
+            'max_symbols_per_run'       => $maxTotal,
+            'batch_size'                => $batchSize,
+            'continuous_scan_enabled'   => $continuousScanEnabled,
+            'auto_requeue_when_done'    => $autoRequeueWhenDone,
+            'registry_cursor'           => $windowStart,
+            'previous_registry_cursor'  => $rawPrevCursor,
+            'next_registry_cursor'      => $nextCursor,
+            'registry_window_start'     => $windowStart,
+            'registry_window_end'       => $windowEnd,
+            'registry_window_wrapped'   => $wrapped,
+            'registry_cursor_reset_reason' => $cursorResetReason,
+            'auto_requeued_from_status' => null,
+            'auto_requeue_at'           => null,
+            'auto_requeue_result'       => null,
+            'previous_next_registry_cursor_before_requeue' => null,
+            'registry_cursor_after_requeue' => null,
+            'next_registry_cursor_after_requeue' => null,
+            'auto_requeue_skipped_reason' => null,
         ];
         $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
-        return ['queued' => true, 'queued_at' => $state['queued_at']];
+        return [
+            'queued'                => true,
+            'queued_at'             => $state['queued_at'],
+            'selected_window_total' => $selectedTotal,
+            'registry_cursor'       => $windowStart,
+            'next_registry_cursor'  => $nextCursor,
+        ];
     }
 
     /**
@@ -159,24 +357,228 @@ final class ConfirmedContinuationService
     public function tickBatch(): array
     {
         $this->resetCounters();
+        $this->effectiveStrategyMode = 'passive';
 
-        $boot = (new ConfirmedContinuationBootstrap($this->moduleDir))->load();
+        $deprecatedModeDiag = $this->normalizeDeprecatedExecutionModeKeyInActiveConfig();
+        $this->deprecatedExecutionModeKeySeen    = (bool)($deprecatedModeDiag['seen'] ?? false);
+        $this->deprecatedExecutionModeKeyIgnored = (bool)($deprecatedModeDiag['ignored'] ?? false);
+
+        $this->requireBootstrap();
+        $boot = ConfirmedContinuationBootstrap::instance($this->moduleDir)->load();
         if (!$boot['valid'] || empty($boot['config']['enabled'])) {
             return ['status' => 'disabled', 'errors' => $boot['errors']];
         }
         $config = $boot['config'];
+        $continuousScanEnabled = (bool)($config['continuous_scan_enabled'] ?? true);
+        $autoRequeueWhenDone   = (bool)($config['auto_requeue_when_done'] ?? true);
 
-        $state = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
-        if (($state['status'] ?? '') === 'done') {
+        $state  = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
+        $status = (string)($state['status'] ?? '');
+        $statusForAuto = $status === '' ? 'idle' : $status;
+        $autoRequeueDiag = [
+            'continuous_scan_enabled'   => $continuousScanEnabled,
+            'auto_requeue_when_done'    => $autoRequeueWhenDone,
+            'auto_requeued_from_status' => null,
+            'auto_requeue_at'           => null,
+            'auto_requeue_result'       => null,
+            'previous_next_registry_cursor_before_requeue' => null,
+            'registry_cursor_after_requeue' => null,
+            'next_registry_cursor_after_requeue' => null,
+            'auto_requeue_skipped_reason' => null,
+        ];
+        $shouldAutoQueue = false;
+        if ($statusForAuto === 'idle') {
+            if ($continuousScanEnabled) {
+                $shouldAutoQueue = true;
+            } else {
+                $autoRequeueDiag['auto_requeue_result'] = 'skipped';
+                $autoRequeueDiag['auto_requeue_skipped_reason'] = 'continuous_scan_disabled';
+            }
+        } elseif ($statusForAuto === 'done') {
+            if (!$continuousScanEnabled) {
+                $autoRequeueDiag['auto_requeue_result'] = 'skipped';
+                $autoRequeueDiag['auto_requeue_skipped_reason'] = 'continuous_scan_disabled';
+            } elseif (!$autoRequeueWhenDone) {
+                $autoRequeueDiag['auto_requeue_result'] = 'skipped';
+                $autoRequeueDiag['auto_requeue_skipped_reason'] = 'disabled';
+            } else {
+                $shouldAutoQueue = true;
+            }
+        } else {
+            $autoRequeueDiag['auto_requeue_result'] = 'skipped';
+            $autoRequeueDiag['auto_requeue_skipped_reason'] = 'status_not_done_or_idle';
+        }
+
+        if ($shouldAutoQueue) {
+            $autoRequeueDiag['auto_requeued_from_status'] = $statusForAuto;
+            $autoRequeueDiag['auto_requeue_at'] = date('c');
+            $autoRequeueDiag['previous_next_registry_cursor_before_requeue'] = (int)($state['next_registry_cursor'] ?? 0);
+            $queueResult = $this->queueRun();
+            if (!($queueResult['queued'] ?? false)) {
+                $autoRequeueDiag['auto_requeue_result'] = 'queue_failed';
+                $autoRequeueDiag['auto_requeue_skipped_reason'] = 'queue_failed';
+                $state = array_merge($state, $autoRequeueDiag);
+                $state['continuous_scan_enabled'] = $continuousScanEnabled;
+                $state['auto_requeue_when_done'] = $autoRequeueWhenDone;
+                $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
+                return ['status' => 'queue_failed', 'errors' => $queueResult['errors'] ?? []];
+            }
+            $state  = $this->readJson($this->moduleDir . '/storage/run_state.json', []);
+            $autoRequeueDiag['auto_requeue_result'] = 'queued';
+            $autoRequeueDiag['registry_cursor_after_requeue'] = (int)($state['registry_cursor'] ?? 0);
+            $autoRequeueDiag['next_registry_cursor_after_requeue'] = (int)($state['next_registry_cursor'] ?? 0);
+            $state = array_merge($state, $autoRequeueDiag);
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
+            $status = (string)($state['status'] ?? '');
+        } else {
+            $state = array_merge($state, $autoRequeueDiag);
+            $state['continuous_scan_enabled'] = $continuousScanEnabled;
+            $state['auto_requeue_when_done'] = $autoRequeueWhenDone;
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
+        }
+        if (!$shouldAutoQueue && in_array($statusForAuto, ['idle', 'done'], true)) {
+            return ['status' => 'idle'];
+        }
+        if ($status === 'done') {
             return ['status' => 'idle'];
         }
 
-        $offset    = (int)($state['batch_offset'] ?? 0);
         $batchSize = max(1, (int)($config['batch_size'] ?? 50));
-        $maxTotal  = max(1, (int)($config['max_symbols_per_run'] ?? 50));
 
-        $symbols = $this->fetchUniverse($config);
-        $symbols = array_slice($symbols, $offset, $batchSize);
+        $allSymbols = $this->fetchUniverse($config);
+
+        // Empty universe: write diagnostic last_run and return early
+        if (empty($allSymbols)) {
+            $startedAt  = date('c');
+            $finishedAt = date('c');
+            $lastRun = [
+                'strategy_id'                     => 'confirmed_continuation',
+                'strategy_is_environment_neutral' => true,
+                'execution_mode_used_for_selection' => false,
+                'status'                          => 'no_universe',
+                'skip_reason'                     => 'universe_empty',
+                'started_at'                      => $startedAt,
+                'finished_at'                     => $finishedAt,
+                'universe_source'                 => $this->universeSource,
+                'universe_total'                  => 0,
+                'universe_batch_count'            => 0,
+                'universe_symbols_examples'       => [],
+                'candidates_total'                => 0,
+                'signals_total'                   => 0,
+                'handoff_ready_total'             => 0,
+                'rejected_total'                  => 0,
+                'reject_reason_counts'            => [],
+                'handoff_queue_written_total'     => 0,
+                'handoff_queue_new_total'         => 0,
+                'handoff_queue_refreshed_total'   => 0,
+                'handoff_queue_missing_status_total' => 0,
+                'handoff_queue_examples'          => [],
+                'deprecated_execution_mode_key_seen'    => $this->deprecatedExecutionModeKeySeen,
+                'deprecated_execution_mode_key_ignored' => $this->deprecatedExecutionModeKeyIgnored,
+                'effective_strategy_mode'         => $this->effectiveStrategyMode,
+                'selected_window_total'           => 0,
+                'batch_size'                      => $batchSize,
+                'max_symbols_per_run'             => max(1, (int)($config['max_symbols_per_run'] ?? 50)),
+                'batch_offset_before'             => 0,
+                'batch_offset_after'              => 0,
+                'registry_cursor'                 => (int)($state['registry_cursor'] ?? 0),
+                'previous_registry_cursor'        => (int)($state['previous_registry_cursor'] ?? 0),
+                'next_registry_cursor'            => (int)($state['next_registry_cursor'] ?? 0),
+                'registry_window_start'           => (int)($state['registry_window_start'] ?? 0),
+                'registry_window_end'             => (int)($state['registry_window_end'] ?? 0),
+                'registry_window_wrapped'         => (bool)($state['registry_window_wrapped'] ?? false),
+                'registry_cursor_reset_reason'    => $state['registry_cursor_reset_reason'] ?? null,
+                'batch_symbols_examples'          => [],
+                'post_structure_filter_checked_total' => 0,
+                'post_structure_filter_rejected_total' => 0,
+                'pattern_123_checked_total'       => 0,
+                'pattern_123_detected_total'      => 0,
+                'pattern_123_rejected_total'      => 0,
+                'backward_123_checked_total'      => 0,
+                'backward_123_valid_total'        => 0,
+                'backward_123_invalid_total'      => 0,
+                'recent_point3_candidates_total'  => 0,
+                'point3_near_entry_total'         => 0,
+                'point3_turn_confirmed_total'     => 0,
+                'point2_found_total'              => 0,
+                'point1_found_total'              => 0,
+                'structure_breaks_after_point3_total' => 0,
+                'structure_breaks_before_point3_ignored_total' => 0,
+                'pattern_123_missing_total'       => 0,
+                'point_3_breaks_point_1_total'    => 0,
+                'point_3_not_confirmed_total'     => 0,
+                'entry_too_far_from_point_3_total'=> 0,
+                'entry_timing_checked_total'      => 0,
+                'near_exit_zone_rejected_total'   => 0,
+                'controlled_trend_gate_checked_total' => 0,
+                'controlled_trend_gate_rejected_total' => 0,
+                'smooth_trend_checked_total'      => 0,
+                'smooth_trend_rejected_total'     => 0,
+                'vertical_spike_rejected_total'   => 0,
+                'wall_pending_blocked_total'      => 0,
+                'handoff_candidates_before_throttle_total' => 0,
+                'handoff_after_throttle_total'    => 0,
+                'handoff_throttled_total'         => 0,
+                'handoff_throttle_reason_counts'  => [],
+                'handoff_throttle_examples'       => [],
+                'candle_source_used_counts'       => ['parser2_history' => 0, 'bybit_fallback' => 0, 'none' => 0],
+                'parser2_history_used_total'      => 0,
+                'bybit_fallback_used_total'       => 0,
+                'backward_123_valid_examples'     => [],
+                'backward_123_invalid_examples'   => [],
+                'point3_candidate_examples'       => [],
+                'parser2_history_error_examples'  => [],
+                'continuous_scan_enabled'         => (bool)($state['continuous_scan_enabled'] ?? $continuousScanEnabled),
+                'auto_requeue_when_done'          => (bool)($state['auto_requeue_when_done'] ?? $autoRequeueWhenDone),
+                'auto_requeued_from_status'       => $state['auto_requeued_from_status'] ?? null,
+                'auto_requeue_at'                 => $state['auto_requeue_at'] ?? null,
+                'auto_requeue_result'             => $state['auto_requeue_result'] ?? null,
+                'previous_next_registry_cursor_before_requeue' => $state['previous_next_registry_cursor_before_requeue'] ?? null,
+                'registry_cursor_after_requeue'   => $state['registry_cursor_after_requeue'] ?? null,
+                'next_registry_cursor_after_requeue' => $state['next_registry_cursor_after_requeue'] ?? null,
+                'auto_requeue_skipped_reason'     => $state['auto_requeue_skipped_reason'] ?? null,
+            ];
+            $this->writeJson($this->moduleDir . '/storage/last_run.json', $lastRun);
+            $state['status']       = 'done';
+            $state['finished_at']  = $finishedAt;
+            $state['batch_offset'] = 0;
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
+            return $lastRun;
+        }
+
+        $windowSymbols = (isset($state['symbols']) && is_array($state['symbols'])) ? $state['symbols'] : [];
+        $selectedTotal = (int)($state['selected_window_total'] ?? count($windowSymbols));
+        if ((empty($windowSymbols) || $selectedTotal <= 0) && !empty($allSymbols)) {
+            $cursor   = (int)($state['registry_cursor'] ?? 0);
+            $maxTotal = max(1, (int)($state['max_symbols_per_run'] ?? $config['max_symbols_per_run'] ?? 50));
+            $fullTotal = count($allSymbols);
+            if ($fullTotal > 0 && ($cursor < 0 || $cursor >= $fullTotal)) {
+                $cursor = 0;
+            }
+            $windowSize = $fullTotal > 0 ? min($maxTotal, $fullTotal) : 0;
+            $windowSymbols = [];
+            if ($fullTotal > 0) {
+                for ($i = 0; $i < $windowSize; $i++) {
+                    $idx = ($cursor + $i) % $fullTotal;
+                    $windowSymbols[] = $allSymbols[$idx];
+                }
+            }
+            $selectedTotal = count($windowSymbols);
+            $state['symbols'] = $windowSymbols;
+            $state['selected_window_total'] = $selectedTotal;
+            $state['registry_window_start'] = $selectedTotal > 0 ? $cursor : 0;
+            $state['registry_window_end'] = $selectedTotal > 0 ? (($cursor + $selectedTotal - 1) % $fullTotal) : 0;
+            $state['registry_window_wrapped'] = $selectedTotal > 0 && ($cursor + $maxTotal > $fullTotal);
+            $state['next_registry_cursor'] = ($fullTotal > 0 && $selectedTotal > 0) ? (($cursor + $selectedTotal) % $fullTotal) : 0;
+            $state['universe_total'] = $fullTotal;
+            $state['batch_size'] = $batchSize;
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
+        }
+
+        $offsetBefore = max(0, min((int)($state['batch_offset'] ?? 0), max(0, $selectedTotal)));
+        $symbols = array_slice($windowSymbols, $offsetBefore, $batchSize);
+        $offsetAfter = min($selectedTotal, $offsetBefore + count($symbols));
+        $this->universeBatchCount = count($symbols);
 
         $startedAt = date('c');
         $t0        = microtime(true);
@@ -227,7 +629,7 @@ final class ConfirmedContinuationService
         unset($sig);
 
         $freshSignals = array_values($signalIndex);
-        $handoffQueue = $this->buildHandoffQueue($freshSignals, $config);
+        $handoffQueue = $this->buildHandoffQueue($freshSignals, $allHandoff, $config);
 
         // Persist rejects (append-style, capped)
         $allRejects = array_merge($allRejects, $newRejects);
@@ -235,28 +637,55 @@ final class ConfirmedContinuationService
             $allRejects = array_slice($allRejects, -500);
         }
 
-        $this->writeJson($this->moduleDir . '/storage/candidates.json',        array_values(array_merge($allCandidates, $newCandidates)));
+        // Persist candidates (append-style, capped; includes rejected for diagnostics visibility)
+        $allCandidates = array_merge($allCandidates, $newCandidates);
+        if (count($allCandidates) > 500) {
+            $allCandidates = array_slice($allCandidates, -500);
+        }
+
+        $this->writeJson($this->moduleDir . '/storage/candidates.json',        array_values($allCandidates));
         $this->writeJson($this->moduleDir . '/storage/signals.json',           $freshSignals);
         $this->writeJson($this->moduleDir . '/storage/bot_handoff_queue.json', $handoffQueue);
         $this->writeJson($this->moduleDir . '/storage/rejects.json',           $allRejects);
 
-        $newOffset = $offset + $batchSize;
-        if ($newOffset >= $maxTotal || count($symbols) < $batchSize) {
-            $this->writeJson($this->moduleDir . '/storage/run_state.json', [
-                'status'       => 'done',
-                'finished_at'  => date('c'),
-                'batch_offset' => 0,
-            ]);
+        if ($offsetAfter >= $selectedTotal) {
+            $state['status']       = 'done';
+            $state['finished_at']  = date('c');
+            $state['batch_offset'] = $offsetAfter;
+            $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
         } else {
             $state['status']       = 'running';
-            $state['batch_offset'] = $newOffset;
+            $state['batch_offset'] = $offsetAfter;
             $this->writeJson($this->moduleDir . '/storage/run_state.json', $state);
         }
 
         $finishedAt  = date('c');
         $durationMs  = (int)round((microtime(true) - $t0) * 1000);
 
-        $lastRun = $this->buildLastRun($config, $startedAt, $finishedAt, $durationMs, $freshSignals);
+        $lastRun = $this->buildLastRun($config, $startedAt, $finishedAt, $durationMs, $freshSignals, [
+            'selected_window_total'      => $selectedTotal,
+            'batch_size'                 => $batchSize,
+            'max_symbols_per_run'        => (int)($state['max_symbols_per_run'] ?? $config['max_symbols_per_run'] ?? 50),
+            'batch_offset_before'        => $offsetBefore,
+            'batch_offset_after'         => $offsetAfter,
+            'registry_cursor'            => (int)($state['registry_cursor'] ?? 0),
+            'previous_registry_cursor'   => (int)($state['previous_registry_cursor'] ?? 0),
+            'next_registry_cursor'       => (int)($state['next_registry_cursor'] ?? 0),
+            'registry_window_start'      => (int)($state['registry_window_start'] ?? 0),
+            'registry_window_end'        => (int)($state['registry_window_end'] ?? 0),
+            'registry_window_wrapped'    => (bool)($state['registry_window_wrapped'] ?? false),
+            'registry_cursor_reset_reason' => $state['registry_cursor_reset_reason'] ?? null,
+            'batch_symbols_examples'     => array_slice($symbols, 0, 5),
+            'continuous_scan_enabled'    => (bool)($state['continuous_scan_enabled'] ?? $continuousScanEnabled),
+            'auto_requeue_when_done'     => (bool)($state['auto_requeue_when_done'] ?? $autoRequeueWhenDone),
+            'auto_requeued_from_status'  => $state['auto_requeued_from_status'] ?? null,
+            'auto_requeue_at'            => $state['auto_requeue_at'] ?? null,
+            'auto_requeue_result'        => $state['auto_requeue_result'] ?? null,
+            'previous_next_registry_cursor_before_requeue' => $state['previous_next_registry_cursor_before_requeue'] ?? null,
+            'registry_cursor_after_requeue' => $state['registry_cursor_after_requeue'] ?? null,
+            'next_registry_cursor_after_requeue' => $state['next_registry_cursor_after_requeue'] ?? null,
+            'auto_requeue_skipped_reason' => $state['auto_requeue_skipped_reason'] ?? null,
+        ]);
         $this->writeJson($this->moduleDir . '/storage/last_run.json', $lastRun);
 
         return $lastRun;
@@ -300,6 +729,25 @@ final class ConfirmedContinuationService
 
             // Fetch candles
             $candles = $this->fetchCandles($symbol, (int)($config['lookback_candles'] ?? 60), $config);
+            $candleFetchDiag = $this->lastCandleFetchDiag;
+            $sourceUsed = (string)($candleFetchDiag['candle_source_used'] ?? 'none');
+            if (!isset($this->candleSourceUsedCounts[$sourceUsed])) {
+                $this->candleSourceUsedCounts[$sourceUsed] = 0;
+            }
+            $this->candleSourceUsedCounts[$sourceUsed]++;
+            if ($sourceUsed === 'parser2_history') {
+                $this->parser2HistoryUsedTotal++;
+            } elseif ($sourceUsed === 'bybit_fallback') {
+                $this->bybitFallbackUsedTotal++;
+            }
+            if ((string)($candleFetchDiag['candle_source_error'] ?? '') !== '' && count($this->parser2HistoryErrorExamples) < 12) {
+                $this->parser2HistoryErrorExamples[] = [
+                    'symbol' => $symbol,
+                    'side' => $side,
+                    'candle_source_error' => (string)$candleFetchDiag['candle_source_error'],
+                    'candle_source_used' => $sourceUsed,
+                ];
+            }
             if (count($candles) < 20) {
                 continue;
             }
@@ -312,7 +760,7 @@ final class ConfirmedContinuationService
             if ($structure === null) {
                 continue;
             }
-            $structure = array_merge($structure, $dayCtx);
+            $structure = array_merge($structure, $dayCtx, $candleFetchDiag);
             if ($side === 'long') {
                 $this->higherLowCandidatesTotal++;
             } else {
@@ -326,14 +774,31 @@ final class ConfirmedContinuationService
             }
 
             // Anti-comb / anti-chaos diagnostics
-            $antiComb = $this->computeAntiCombDiagnostics($candles, $side, $structure, $config);
+            $antiComb = $this->computeAntiCombDiagnostics($candles, $side, $structure, $config, $symbol);
             $structure = array_merge($structure, $antiComb);
+            $entryTiming = $this->computeEntryTimingDiagnostics($structure, $candles, $side, $config);
+            $structure = array_merge($structure, $entryTiming);
 
             $this->candidatesTotal++;
             if ($side === 'long') {
                 $this->longCandidatesTotal++;
             } else {
                 $this->shortCandidatesTotal++;
+            }
+
+            // ── Pre-filter 1-2-3 / funnel diagnostics (counted before gates) ────
+            $this->structuresDetectedTotal++;
+            $this->pattern123StructuresSeenTotal++;
+            $p123PreValid = (bool)($structure['pattern_123_detected'] ?? false)
+                && ($structure['pattern_123_invalid_reason'] ?? null) === null;
+            if ($p123PreValid) {
+                $this->pattern123ValidBeforeFiltersTotal++;
+            } else {
+                $this->pattern123InvalidBeforeFiltersTotal++;
+            }
+            // Track anti-comb pass for funnel (before hard reject gates)
+            if (!($structure['anti_comb_rejected'] ?? false)) {
+                $this->antiCombPassedTotal++;
             }
 
             // Hard reject filters
@@ -346,6 +811,10 @@ final class ConfirmedContinuationService
                     'side'         => $side,
                     'setup_class'  => $structure['setup_class'],
                     'reject_reason'=> $hardReject['reason'],
+                    'primary_reject_reason' => $hardReject['reason'],
+                    'secondary_reject_reasons' => is_array($hardReject['secondary_reject_reasons'] ?? null)
+                        ? array_values($hardReject['secondary_reject_reasons'])
+                        : (is_array($structure['secondary_reject_reasons'] ?? null) ? array_values($structure['secondary_reject_reasons']) : []),
                     'failed_stage' => $hardReject['stage'],
                     'rejected_at'  => date('c'),
                     'structure'    => $structure,
@@ -360,6 +829,9 @@ final class ConfirmedContinuationService
                     if (count($this->lateEntryRejectExamples) < 5) {
                         $this->lateEntryRejectExamples[] = $rejectRec;
                     }
+                    if (count($this->rejectedLateEntryExamples) < 8) {
+                        $this->rejectedLateEntryExamples[] = $rejectRec;
+                    }
                 } elseif (str_contains($hardReject['stage'], 'first_bounce')) {
                     $this->firstBounceRejectedTotal++;
                     if (count($this->firstBounceRejectExamples) < 5) {
@@ -369,9 +841,106 @@ final class ConfirmedContinuationService
                     if (count($this->noRetestRejectExamples) < 5) {
                         $this->noRetestRejectExamples[] = $rejectRec;
                     }
+                } elseif (($hardReject['stage'] ?? '') === 'pattern_123') {
+                    if (count($this->rejectedPattern123Examples) < 8) {
+                        $this->rejectedPattern123Examples[] = $rejectRec;
+                    }
                 }
+                if (($hardReject['reason'] ?? '') === 'entry_near_take_profit_zone') {
+                    $this->nearExitZoneRejectedTotal++;
+                }
+                // ── Funnel tracking: which stage did valid-123 fail at? ────────
+                if ($p123PreValid) {
+                    if (($hardReject['stage'] ?? '') === 'anti_comb') {
+                        $this->pattern123ValidButAntiCombRejectedTotal++;
+                        if (count($this->pattern123ValidButAntiCombRejectedExamples) < 12) {
+                            $this->pattern123ValidButAntiCombRejectedExamples[] = $this->buildFullDiagExample(
+                                $symbol, $side, $structure, $hardReject['reason'], $hardReject['stage']
+                            );
+                        }
+                    } elseif (in_array($hardReject['stage'] ?? '', [
+                        'entry_timing', 'late_entry', 'blowoff_reject',
+                        'no_retest', 'first_bounce_or_no_structure', 'first_dump_or_no_structure',
+                    ], true)) {
+                        $this->pattern123ValidButEntryTimingRejectedTotal++;
+                    }
+                }
+                // ── Write rejected candidate to candidates.json for visibility ─
+                $newCandidates[] = [
+                    'strategy_id'      => 'confirmed_continuation',
+                    'symbol'           => $symbol,
+                    'side'             => $side,
+                    'setup_class'      => $structure['setup_class'] ?? '',
+                    'candidate_state'  => 'rejected',
+                    'failed_stage'     => $hardReject['stage'],
+                    'reject_reason'    => $hardReject['reason'],
+                    'primary_reject_reason' => $hardReject['reason'],
+                    'secondary_reject_reasons' => is_array($hardReject['secondary_reject_reasons'] ?? null)
+                        ? array_values($hardReject['secondary_reject_reasons'])
+                        : (is_array($structure['secondary_reject_reasons'] ?? null) ? array_values($structure['secondary_reject_reasons']) : []),
+                    'block_reason'     => null,
+                    'handoff_ready'    => false,
+                    'executable'       => false,
+                    'active_final'     => false,
+                    'stale'            => false,
+                    'detected_at'      => date('c'),
+                    'entry_price'      => $structure['entry_price'] ?? null,
+                    'pattern_123_detected'           => $structure['pattern_123_detected'] ?? false,
+                    'pattern_123_detection_direction'=> $structure['pattern_123_detection_direction'] ?? null,
+                    'pattern_123_invalid_reason'     => $structure['pattern_123_invalid_reason'] ?? null,
+                    'pattern_123_entry_mode'         => $structure['pattern_123_entry_mode'] ?? 'none',
+                    'point_3_age_minutes'            => $structure['point_3_age_minutes'] ?? null,
+                    'point_3_distance_from_current_pct' => $structure['point_3_distance_from_current_pct'] ?? null,
+                    'candle_source_used'             => $structure['candle_source_used'] ?? null,
+                    'parser2_history_files_read'     => $structure['parser2_history_files_read'] ?? null,
+                    'parser2_history_candles_loaded' => $structure['parser2_history_candles_loaded'] ?? null,
+                    'parser2_history_candles_after_dedupe' => $structure['parser2_history_candles_after_dedupe'] ?? null,
+                    'parser2_history_oldest_ts'      => $structure['parser2_history_oldest_ts'] ?? null,
+                    'parser2_history_newest_ts'      => $structure['parser2_history_newest_ts'] ?? null,
+                    'bybit_fallback_used'            => $structure['bybit_fallback_used'] ?? null,
+                    'candle_source_error'            => $structure['candle_source_error'] ?? null,
+                    'anti_comb_rejected'             => $structure['anti_comb_rejected'] ?? false,
+                    'anti_comb_reject_reason'        => $structure['anti_comb_reject_reason'] ?? null,
+                    'anti_comb_reject_reason_detail' => $structure['anti_comb_reject_reason_detail'] ?? null,
+                    'secondary_reject_reasons'       => is_array($structure['secondary_reject_reasons'] ?? null) ? array_values($structure['secondary_reject_reasons']) : [],
+                    'primary_reject_reason'          => $structure['primary_reject_reason'] ?? ($structure['anti_comb_reject_reason'] ?? null),
+                    'structure_breaks_exceeded'      => (bool)($structure['structure_breaks_exceeded'] ?? false),
+                    'anti_comb_max_structure_breaks' => $structure['anti_comb_max_structure_breaks'] ?? null,
+                    'recent_swing_exceeded'          => (bool)($structure['recent_swing_exceeded'] ?? false),
+                    'opposite_swing_exceeded'        => (bool)($structure['opposite_swing_exceeded'] ?? false),
+                    'range_1m_exceeded'              => (bool)($structure['range_1m_exceeded'] ?? false),
+                    'range_3m_exceeded'              => (bool)($structure['range_3m_exceeded'] ?? false),
+                    'wick_chaos_exceeded'            => (bool)($structure['wick_chaos_exceeded'] ?? false),
+                    'directional_consistency_failed' => (bool)($structure['directional_consistency_failed'] ?? false),
+                    'post_structure_comb_detected'   => $structure['post_structure_comb_detected'] ?? false,
+                    'controlled_trend_score'         => $structure['controlled_trend_score'] ?? null,
+                    'directional_consistency_score'  => $structure['directional_consistency_score'] ?? null,
+                    'wick_chaos_score'               => $structure['wick_chaos_score'] ?? null,
+                    'smooth_trend_score'             => $structure['smooth_trend_score'] ?? null,
+                    'entry_timing_class'             => $structure['entry_timing_class'] ?? null,
+                    'strategy_signal_context'        => [
+                        'candidate_state' => 'rejected',
+                        'reject_reason'   => $hardReject['reason'],
+                        'primary_reject_reason' => $hardReject['reason'],
+                        'secondary_reject_reasons' => is_array($hardReject['secondary_reject_reasons'] ?? null)
+                            ? array_values($hardReject['secondary_reject_reasons'])
+                            : (is_array($structure['secondary_reject_reasons'] ?? null) ? array_values($structure['secondary_reject_reasons']) : []),
+                        'structure_breaks_exceeded' => (bool)($structure['structure_breaks_exceeded'] ?? false),
+                        'anti_comb_max_structure_breaks' => $structure['anti_comb_max_structure_breaks'] ?? null,
+                        'failed_stage'    => $hardReject['stage'],
+                        'anti_comb_reject_reason'    => $structure['anti_comb_reject_reason'] ?? null,
+                        'pattern_123_invalid_reason' => $structure['pattern_123_invalid_reason'] ?? null,
+                        'pattern_123_detection_direction' => $structure['pattern_123_detection_direction'] ?? null,
+                        'point_3_age_minutes' => $structure['point_3_age_minutes'] ?? null,
+                        'point_3_distance_from_current_pct' => $structure['point_3_distance_from_current_pct'] ?? null,
+                        'candle_source_used' => $structure['candle_source_used'] ?? null,
+                    ],
+                ];
                 continue;
             }
+
+            // Hard reject filters all passed: count entry-timing pass for funnel
+            $this->entryTimingPassedTotal++;
 
             // Score candidate
             $quality = $this->scoreCandidate($structure, $candles, $side, $config);
@@ -396,8 +965,38 @@ final class ConfirmedContinuationService
                     'structure_score'         => $quality['structure_score'] ?? null,
                     'controlled_trend_score'  => $quality['controlled_trend_score'] ?? ($structure['controlled_trend_score'] ?? null),
                 ];
+                // Write rejected candidate to candidates.json for visibility
+                $newCandidates[] = [
+                    'strategy_id'      => 'confirmed_continuation',
+                    'symbol'           => $symbol,
+                    'side'             => $side,
+                    'setup_class'      => $structure['setup_class'] ?? '',
+                    'candidate_state'  => 'rejected',
+                    'failed_stage'     => 'quality_gate',
+                    'reject_reason'    => $reason,
+                    'block_reason'     => null,
+                    'handoff_ready'    => false,
+                    'executable'       => false,
+                    'active_final'     => false,
+                    'stale'            => false,
+                    'detected_at'      => date('c'),
+                    'entry_price'      => $structure['entry_price'] ?? null,
+                    'candidate_quality_score' => $quality['candidate_quality_score'] ?? null,
+                    'structure_score'         => $quality['structure_score'] ?? null,
+                    'controlled_trend_score'  => $quality['controlled_trend_score'] ?? ($structure['controlled_trend_score'] ?? null),
+                    'pattern_123_detected'    => $structure['pattern_123_detected'] ?? false,
+                    'pattern_123_entry_mode'  => $structure['pattern_123_entry_mode'] ?? 'none',
+                    'entry_timing_class'      => $structure['entry_timing_class'] ?? null,
+                    'strategy_signal_context' => [
+                        'candidate_state' => 'rejected',
+                        'reject_reason'   => $reason,
+                        'failed_stage'    => 'quality_gate',
+                    ],
+                ];
                 continue;
             }
+
+            $this->qualityGatePassedTotal++;
 
             // OBC gate (only after cheap filters pass)
             $obcResult = $this->applyObcGate($symbol, $side, $structure['entry_price'] ?? 0.0, $quality, $config);
@@ -405,8 +1004,29 @@ final class ConfirmedContinuationService
             $wallTest  = $this->computeWallDecisionTest($side, $structure, $obcResult, $config);
             $structure = array_merge($structure, $wallTest);
 
+            // Track wall-test pass for funnel
+            if (!($structure['wall_test_blocked'] ?? false)) {
+                $this->wallTestPassedTotal++;
+            } elseif ($p123PreValid) {
+                $this->pattern123ValidButWallBlockedTotal++;
+            }
+
             $candidate = $this->buildCandidate($symbol, $side, $structure, $quality, $obcResult, $config);
             $newCandidates[] = $candidate;
+            if (!(bool)($candidate['handoff_ready'] ?? true) || !(bool)($candidate['executable'] ?? true)) {
+                $blockReason = (string)($candidate['block_reason'] ?? 'blocked');
+                $this->rejectedTotal++;
+                $this->rejectReasonCounts[$blockReason] = ($this->rejectReasonCounts[$blockReason] ?? 0) + 1;
+                $newRejects[] = [
+                    'symbol' => $symbol,
+                    'side' => $side,
+                    'setup_class' => $structure['setup_class'],
+                    'reject_reason' => $blockReason,
+                    'failed_stage' => 'handoff_gate',
+                    'rejected_at' => date('c'),
+                    'structure' => $candidate,
+                ];
+            }
 
             // Determine handoff_ready and executable
             $isHandoffReady = $candidate['handoff_ready'];
@@ -415,6 +1035,13 @@ final class ConfirmedContinuationService
             // Build signal
             $signal = $this->buildSignal($candidate, $config);
             $newSignals[] = $signal;
+
+            if ($isHandoffReady && $isExecutable) {
+                $this->signalReadyTotal++;
+                if ($p123PreValid) {
+                    $this->pattern123ValidSignalReadyTotal++;
+                }
+            }
 
             $this->signalsTotal++;
             if ($side === 'long') {
@@ -436,6 +1063,33 @@ final class ConfirmedContinuationService
                     'ob_soft_demoted'       => $obcResult['ob_soft_demoted'] ?? false,
                 ];
             }
+            $entryClass = (string)($structure['entry_timing_class'] ?? '');
+            if (in_array($entryClass, ['early_structure_entry', 'early_breakdown_entry'], true) && count($this->acceptedEarlyStructureExamples) < 8) {
+                $this->acceptedEarlyStructureExamples[] = [
+                    'symbol' => $symbol,
+                    'side' => $side,
+                    'entry_timing_class' => $entryClass,
+                    'candidate_quality_score' => $quality['candidate_quality_score'] ?? null,
+                ];
+            }
+            if (in_array($entryClass, ['mid_trend_structure_entry', 'mid_trend_breakdown_entry'], true) && count($this->acceptedMidTrendExamples) < 8) {
+                $this->acceptedMidTrendExamples[] = [
+                    'symbol' => $symbol,
+                    'side' => $side,
+                    'entry_timing_class' => $entryClass,
+                    'candidate_quality_score' => $quality['candidate_quality_score'] ?? null,
+                ];
+            }
+            if (($structure['pattern_123_detected'] ?? false) && count($this->acceptedPattern123Examples) < 8) {
+                $this->acceptedPattern123Examples[] = [
+                    'symbol' => $symbol,
+                    'side' => $side,
+                    'pattern_123_entry_mode' => $structure['pattern_123_entry_mode'] ?? 'none',
+                    'point_1_price' => $structure['point_1_price'] ?? null,
+                    'point_2_price' => $structure['point_2_price'] ?? null,
+                    'point_3_price' => $structure['point_3_price'] ?? null,
+                ];
+            }
         }
     }
 
@@ -452,238 +1106,671 @@ final class ConfirmedContinuationService
         if (count($candles) < 10) {
             return null;
         }
+        return $side === 'long'
+            ? $this->detectLong123FromRecentPoint3($candles, $config)
+            : $this->detectShort123FromRecentPoint3($candles, $config);
+    }
 
+    private function normalizeCandleTimestampToSeconds(int $ts): int
+    {
+        return $ts > self::TIMESTAMP_MS_TO_SECONDS_THRESHOLD ? (int)floor($ts / 1000) : $ts;
+    }
+
+    private function formatCandleTimestamp(?int $ts): ?string
+    {
+        if ($ts === null || $ts <= 0) {
+            return null;
+        }
+        return gmdate('c', $this->normalizeCandleTimestampToSeconds($ts));
+    }
+
+    private function getIdeaKeyTimeBucket(): int
+    {
+        return (int)(floor(time() / self::IDEA_KEY_BUCKET_SECONDS) * self::IDEA_KEY_BUCKET_SECONDS);
+    }
+
+    private function detectLong123FromRecentPoint3(array $candles, array $config): ?array
+    {
+        $this->backward123CheckedTotal++;
         $closes = array_column($candles, 'close');
         $highs  = array_column($candles, 'high');
         $lows   = array_column($candles, 'low');
-        $n      = count($closes);
-
-        $currentPrice = (float)end($closes);
-
-        if ($side === 'long') {
-            return $this->detectLongStructure($candles, $closes, $highs, $lows, $n, $currentPrice, $config);
-        } else {
-            return $this->detectShortStructure($candles, $closes, $highs, $lows, $n, $currentPrice, $config);
+        $n      = count($candles);
+        $currentPrice = (float)($closes[$n - 1] ?? 0.0);
+        if ($currentPrice <= 0.0 || $n < 10) {
+            $this->backward123InvalidTotal++;
+            return null;
         }
-    }
 
-    private function detectLongStructure(
-        array  $candles,
-        array  $closes,
-        array  $highs,
-        array  $lows,
-        int    $n,
-        float  $currentPrice,
-        array  $config
-    ): ?array {
-        $minHigherLows = max(2, (int)($config['min_higher_lows_long'] ?? 2));
+        $recentSearchMinutes = max(5, (int)($config['recent_point3_search_minutes'] ?? 30));
+        $maxPoint3AgeMinutes = max(5, (int)($config['pattern_123_max_point3_age_minutes'] ?? 30));
+        $maxEntryDistPct = (float)($config['pattern_123_max_entry_distance_from_point3_pct'] ?? 0.7);
+        $currentTs = $this->normalizeCandleTimestampToSeconds((int)($candles[$n - 1]['ts'] ?? time()));
+        $recentStartTs = $currentTs - ($recentSearchMinutes * 60);
 
-        // Find local swing lows (simple pivot detection: lower than neighbours)
-        $swingLows = [];
-        for ($i = 2; $i < $n - 2; $i++) {
-            if ($lows[$i] < $lows[$i - 1] && $lows[$i] < $lows[$i - 2]
-                && $lows[$i] < $lows[$i + 1] && $lows[$i] < $lows[$i + 2]) {
-                $swingLows[] = ['idx' => $i, 'price' => $lows[$i]];
+        $candidatePoint3 = [];
+        for ($i = $n - 3; $i >= 2; $i--) {
+            $tsi = $this->normalizeCandleTimestampToSeconds((int)($candles[$i]['ts'] ?? 0));
+            if ($tsi > 0 && $tsi < $recentStartTs) {
+                break;
+            }
+            if ($this->isLocalSwingLow($lows, $i)) {
+                $candidatePoint3[] = $i;
             }
         }
-
-        if (count($swingLows) < $minHigherLows) {
-            return null;
-        }
-
-        // Find sequence of higher lows
-        $higherLowSequence = [$swingLows[0]];
-        foreach (array_slice($swingLows, 1) as $sl) {
-            $last = end($higherLowSequence);
-            if ($sl['price'] > $last['price']) {
-                $higherLowSequence[] = $sl;
+        $this->recentPoint3CandidatesTotal += count($candidatePoint3);
+        foreach (array_slice($candidatePoint3, 0, 3) as $idx) {
+            if (count($this->point3CandidateExamples) >= 20) {
+                break;
             }
+            $point3Price = (float)($lows[$idx] ?? 0.0);
+            $dist = $point3Price > 0.0 ? abs(($currentPrice - $point3Price) / $point3Price * 100.0) : null;
+            $this->point3CandidateExamples[] = [
+                'side' => 'long',
+                'point_3_idx' => $idx,
+                'point_3_price' => $point3Price > 0 ? round($point3Price, 8) : null,
+                'point_3_time' => $this->formatCandleTimestamp((int)($candles[$idx]['ts'] ?? 0)),
+                'point_3_distance_from_current_pct' => $dist !== null ? round($dist, 4) : null,
+            ];
         }
-
-        if (count($higherLowSequence) < $minHigherLows) {
+        if (empty($candidatePoint3)) {
+            $this->backward123InvalidTotal++;
             return null;
         }
 
-        $lastHigherLow   = end($higherLowSequence);
-        $firstHigherLow  = $higherLowSequence[0];
-        $higherLowsCount = count($higherLowSequence);
-
-        // Rising support: linear interpolation between first and last higher low
-        $risingSupport = $lastHigherLow['price'];
-
-        // Current price must be above last higher low
-        if ($currentPrice <= $lastHigherLow['price']) {
-            return null;
-        }
-
-        // Detect pullback: recent candles should have pulled back toward last higher low
-        $recentLow = min(array_slice($lows, -5));
-        $maxPullbackDepthPct = (float)($config['max_pullback_depth_pct'] ?? 2.0);
-        $pullbackPct = ($currentPrice - $recentLow) / $currentPrice * 100;
-        $pullbackDetected = $pullbackPct >= 0.1 && $pullbackPct <= $maxPullbackDepthPct;
-
-        // Retest: recent low approached last higher low within 1%
-        $retestThreshold = $lastHigherLow['price'] * 1.01;
-        $retestPrice     = $recentLow;
-        $retestHeld      = $recentLow <= $retestThreshold && $recentLow >= $lastHigherLow['price'] * 0.99;
-
-        if ($config['require_retest'] ?? true) {
-            if (!$pullbackDetected) {
-                return null;  // No retest detected
+        $selected = null;
+        foreach ($candidatePoint3 as $point3Idx) {
+            $point3Price = (float)$lows[$point3Idx];
+            if ($point3Price <= 0.0 || $currentPrice <= $point3Price) {
+                continue;
             }
+            $point3Ts = $this->normalizeCandleTimestampToSeconds((int)($candles[$point3Idx]['ts'] ?? 0));
+            $point3Age = $point3Ts > 0 ? max(0.0, ($currentTs - $point3Ts) / 60.0) : 9999.0;
+            if ($point3Age > $maxPoint3AgeMinutes) {
+                continue;
+            }
+            $entryDistPoint3Pct = (($currentPrice - $point3Price) / $point3Price) * 100.0;
+            $entryNearPoint3 = $entryDistPoint3Pct <= $maxEntryDistPct;
+            if ($entryNearPoint3) {
+                $this->point3NearEntryTotal++;
+            }
+            $point3Turn = ($point3Idx < $n - 1)
+                && ((float)$closes[$n - 1] > max((float)$closes[$point3Idx], (float)$closes[max(0, $point3Idx + 1)]));
+            if ($point3Turn) {
+                $this->point3TurnConfirmedTotal++;
+            }
+            if (!$entryNearPoint3) {
+                continue;
+            }
+
+            $point2Idx = $this->findMaxIndex($highs, 1, $point3Idx - 1);
+            if ($point2Idx <= 1) {
+                continue;
+            }
+            $this->point2FoundTotal++;
+            $point1Idx = $this->findMinIndex($lows, 1, $point2Idx - 1);
+            if ($point1Idx < 0) {
+                continue;
+            }
+            $this->point1FoundTotal++;
+            $selected = [
+                'point1Idx' => $point1Idx,
+                'point2Idx' => $point2Idx,
+                'point3Idx' => $point3Idx,
+                'point3AgeMinutes' => $point3Age,
+                'entryDistPoint3Pct' => $entryDistPoint3Pct,
+                'point3Turn' => $point3Turn,
+            ];
+            break;
         }
 
-        // Structure hold: no fresh lower low after last higher low formed
-        $lastHLIdx         = $lastHigherLow['idx'];
-        $postStructureLows = array_slice($lows, $lastHLIdx);
-        $structureHolds    = (min($postStructureLows) >= $lastHigherLow['price'] * 0.985);
-
-        if (($config['require_structure_hold'] ?? true) && !$structureHolds) {
+        if ($selected === null) {
+            $this->backward123InvalidTotal++;
+            if (count($this->backward123InvalidExamples) < 16) {
+                $this->backward123InvalidExamples[] = [
+                    'side' => 'long',
+                    'reason' => 'recent_point3_not_found_or_not_near_entry',
+                    'symbol_context' => 'backward_from_recent_point3',
+                ];
+            }
             return null;
         }
 
-        // Continuation after retest: price recovering from retest
-        $recentCloses = array_slice($closes, -3);
-        $continuationPrice = (float)end($recentCloses);
-        $continuationConfirmed = $continuationPrice > $retestPrice && $continuationPrice > $risingSupport;
-
-        if (($config['require_continuation_after_retest'] ?? true) && !$continuationConfirmed) {
-            return null;
-        }
-
-        // Entry is current price
+        $point1Idx = (int)$selected['point1Idx'];
+        $point2Idx = (int)$selected['point2Idx'];
+        $point3Idx = (int)$selected['point3Idx'];
+        $point1Price = (float)$lows[$point1Idx];
+        $point2Price = (float)$highs[$point2Idx];
+        $point3Price = (float)$lows[$point3Idx];
+        $point3Holds = $point3Price > $point1Price;
+        $point3Distance = $point1Price > 0 ? (($point3Price - $point1Price) / $point1Price * 100.0) : 0.0;
         $entryPrice = $currentPrice;
 
-        // Entry distance from last higher low
-        $entryDistancePct = ($entryPrice - $lastHigherLow['price']) / $lastHigherLow['price'] * 100;
+        $recentLow = min(array_slice($lows, -5));
+        $maxPullbackDepthPct = (float)($config['max_pullback_depth_pct'] ?? 2.0);
+        $pullbackPct = ($currentPrice - $recentLow) / $currentPrice * 100.0;
+        $pullbackDetected = $pullbackPct >= 0.1 && $pullbackPct <= $maxPullbackDepthPct;
+        if (($config['require_retest'] ?? true) && !$pullbackDetected) {
+            $this->backward123InvalidTotal++;
+            return null;
+        }
+
+        $continuationPrice = (float)end($closes);
+        $continuationConfirmed = $continuationPrice > $point3Price;
+        if (($config['require_continuation_after_retest'] ?? true) && !$continuationConfirmed) {
+            $this->backward123InvalidTotal++;
+            return null;
+        }
+
+        $tolPct = (float)($config['structure_break_after_point3_tolerance_pct'] ?? 0.15);
+        $downBreakLevel = $point3Price * (1.0 - ($tolPct / 100.0));
+        $breaksAfter = 0;
+        $breaksBeforeIgnored = 0;
+        for ($i = 0; $i < $n; $i++) {
+            $low = (float)$lows[$i];
+            if ($low < $downBreakLevel) {
+                if ($i > $point3Idx) {
+                    $breaksAfter++;
+                } else {
+                    $breaksBeforeIgnored++;
+                }
+            }
+        }
+        $this->structureBreaksAfterPoint3Total += $breaksAfter;
+        $this->structureBreaksBeforePoint3IgnoredTotal += $breaksBeforeIgnored;
+
+        $entryDistancePct = (($entryPrice - $point3Price) / $point3Price) * 100.0;
+        $entryNearPoint3 = ((float)$selected['entryDistPoint3Pct']) <= $maxEntryDistPct;
+        $point3Turn = (bool)$selected['point3Turn'];
+        $point2Breakout = $entryPrice > $point2Price;
+        $point2Retest = $point2Price > 0 ? ($recentLow <= $point2Price * 1.006 && $recentLow >= $point2Price * 0.994) : false;
+        $patternMode = $point2Breakout && $point2Retest ? 'conservative_point2_retest' : (($entryNearPoint3 && $point3Turn) ? 'aggressive_point3' : 'none');
+        $patternDetected = $point1Idx < $point2Idx && $point2Idx < $point3Idx && $point2Price > $point1Price && $point3Price > $point1Price;
+        $patternInvalid = null;
+        if (!$patternDetected) {
+            $patternInvalid = 'pattern_123_missing';
+        } elseif (!$point3Holds) {
+            $patternInvalid = 'point_3_breaks_point_1';
+        } elseif ($point3Distance < (float)($config['pattern_123_min_point3_distance_from_point1_pct'] ?? 0.15)) {
+            $patternInvalid = 'point_3_not_confirmed';
+        } elseif (!$point3Turn && (bool)($config['pattern_123_require_point3_turn_confirmation'] ?? true)) {
+            $patternInvalid = 'point_3_not_confirmed';
+        } elseif (!$entryNearPoint3) {
+            $patternInvalid = 'entry_too_far_from_point_3';
+        }
+        if ($patternInvalid === null) {
+            $this->backward123ValidTotal++;
+            if (count($this->backward123ValidExamples) < 16) {
+                $this->backward123ValidExamples[] = [
+                    'side' => 'long',
+                    'point_1_price' => round($point1Price, 8),
+                    'point_2_price' => round($point2Price, 8),
+                    'point_3_price' => round($point3Price, 8),
+                    'point_3_age_minutes' => round((float)$selected['point3AgeMinutes'], 2),
+                ];
+            }
+        } else {
+            $this->backward123InvalidTotal++;
+            if (count($this->backward123InvalidExamples) < 16) {
+                $this->backward123InvalidExamples[] = [
+                    'side' => 'long',
+                    'reason' => $patternInvalid,
+                    'point_1_price' => round($point1Price, 8),
+                    'point_2_price' => round($point2Price, 8),
+                    'point_3_price' => round($point3Price, 8),
+                ];
+            }
+        }
 
         return [
             'setup_class'                          => 'higher_low_retest_continuation_long',
             'side'                                 => 'long',
             'entry_price'                          => $entryPrice,
             'current_price'                        => $currentPrice,
-            'higher_lows_count'                    => $higherLowsCount,
-            'last_higher_low_price'                => $lastHigherLow['price'],
-            'rising_support_price'                 => $risingSupport,
-            'retest_price'                         => $retestPrice,
-            'retest_held'                          => $retestHeld,
+            'higher_lows_count'                    => 2,
+            'last_higher_low_price'                => $point3Price,
+            'rising_support_price'                 => $point3Price,
+            'retest_price'                         => $recentLow,
+            'retest_held'                          => $pullbackDetected,
             'continuation_reclaim_price'           => $continuationPrice,
             'entry_distance_from_last_higher_low_pct' => round($entryDistancePct, 4),
+            'distance_from_rising_support_pct'         => round($entryDistancePct, 4),
+            'distance_from_last_higher_low_pct'        => round($entryDistancePct, 4),
+            'distance_from_falling_resistance_pct'     => null,
+            'distance_from_last_lower_high_pct'        => null,
             'trend_phase'                          => 'confirmed_mid_trend_continuation',
-            'structure_holds'                      => $structureHolds,
+            'structure_holds'                      => $breaksAfter === 0,
             'pullback_detected'                    => $pullbackDetected,
             'pullback_pct'                         => round($pullbackPct, 4),
             'continuation_confirmed'               => $continuationConfirmed,
+            'structure_anchor_type'                => 'point_1',
+            'structure_anchor_idx'                 => $point1Idx,
+            'structure_anchor_time'                => $this->formatCandleTimestamp((int)($candles[$point1Idx]['ts'] ?? 0)),
+            'structure_anchor_price'               => round($point1Price, 8),
+            'post_structure_window_start'          => max(0, $point1Idx),
+            'post_structure_window_minutes'        => max(1, $n - $point1Idx),
+            'pre_structure_impulse_pct'            => round($this->computeLongPreStructureImpulsePct($highs, $point1Idx, $point1Price), 4),
+            'pre_structure_impulse_roi'            => round($this->computeLongPreStructureImpulsePct($highs, $point1Idx, $point1Price) * max(1.0, (float)($config['anti_comb_roi_equiv_leverage'] ?? 15.0)), 4),
+            'pre_structure_impulse_allowed'        => true,
+            'post_structure_controlled_trend_score'=> 0.0,
+            'pattern_123_detected'                 => $patternDetected,
+            'pattern_123_side'                     => 'long',
+            'pattern_123_detection_direction'      => 'backward_from_recent_point3',
+            'point_1_price'                        => round($point1Price, 8),
+            'point_1_time'                         => $this->formatCandleTimestamp((int)($candles[$point1Idx]['ts'] ?? 0)),
+            'point_2_price'                        => round($point2Price, 8),
+            'point_2_time'                         => $this->formatCandleTimestamp((int)($candles[$point2Idx]['ts'] ?? 0)),
+            'point_3_price'                        => round($point3Price, 8),
+            'point_3_time'                         => $this->formatCandleTimestamp((int)($candles[$point3Idx]['ts'] ?? 0)),
+            'point_3_holds_structure'              => $point3Holds,
+            'point_3_distance_from_point_1_pct'    => round($point3Distance, 4),
+            'point_3_age_minutes'                  => round((float)$selected['point3AgeMinutes'], 4),
+            'point_3_distance_from_current_pct'    => round((float)$selected['entryDistPoint3Pct'], 4),
+            'entry_near_point_3'                   => $entryNearPoint3,
+            'entry_after_point_3_turn'             => $point3Turn,
+            'point_2_breakout_confirmed'           => $point2Breakout,
+            'point_2_retest_confirmed'             => $point2Retest,
+            'pattern_123_entry_mode'               => $patternMode,
+            'pattern_123_invalid_reason'           => $patternInvalid,
+            'structure_breaks_count_after_point3'  => $breaksAfter,
+            'structure_breaks_count_before_point3_ignored' => $breaksBeforeIgnored,
+            'structure_break_check_start_idx'      => $point3Idx + 1,
+            'structure_break_reference'            => 'point_3',
+            'structure_break_tolerance_pct'        => $tolPct,
+            'structure_breaks_count'               => $breaksAfter,
+            'point_3_idx'                          => $point3Idx,
         ];
     }
 
-    private function detectShortStructure(
-        array  $candles,
-        array  $closes,
-        array  $highs,
-        array  $lows,
-        int    $n,
-        float  $currentPrice,
-        array  $config
-    ): ?array {
-        $minLowerHighs = max(2, (int)($config['min_lower_highs_short'] ?? 2));
+    private function detectShort123FromRecentPoint3(array $candles, array $config): ?array
+    {
+        $this->backward123CheckedTotal++;
+        $closes = array_column($candles, 'close');
+        $highs  = array_column($candles, 'high');
+        $lows   = array_column($candles, 'low');
+        $n      = count($candles);
+        $currentPrice = (float)($closes[$n - 1] ?? 0.0);
+        if ($currentPrice <= 0.0 || $n < 10) {
+            $this->backward123InvalidTotal++;
+            return null;
+        }
 
-        // Find local swing highs (pivot detection)
-        $swingHighs = [];
-        for ($i = 2; $i < $n - 2; $i++) {
-            if ($highs[$i] > $highs[$i - 1] && $highs[$i] > $highs[$i - 2]
-                && $highs[$i] > $highs[$i + 1] && $highs[$i] > $highs[$i + 2]) {
-                $swingHighs[] = ['idx' => $i, 'price' => $highs[$i]];
+        $recentSearchMinutes = max(5, (int)($config['recent_point3_search_minutes'] ?? 30));
+        $maxPoint3AgeMinutes = max(5, (int)($config['pattern_123_max_point3_age_minutes'] ?? 30));
+        $maxEntryDistPct = (float)($config['pattern_123_max_entry_distance_from_point3_pct'] ?? 0.7);
+        $currentTs = $this->normalizeCandleTimestampToSeconds((int)($candles[$n - 1]['ts'] ?? time()));
+        $recentStartTs = $currentTs - ($recentSearchMinutes * 60);
+
+        $candidatePoint3 = [];
+        for ($i = $n - 3; $i >= 2; $i--) {
+            $tsi = $this->normalizeCandleTimestampToSeconds((int)($candles[$i]['ts'] ?? 0));
+            if ($tsi > 0 && $tsi < $recentStartTs) {
+                break;
+            }
+            if ($this->isLocalSwingHigh($highs, $i)) {
+                $candidatePoint3[] = $i;
             }
         }
-
-        if (count($swingHighs) < $minLowerHighs) {
-            return null;
-        }
-
-        // Find sequence of lower highs
-        $lowerHighSequence = [$swingHighs[0]];
-        foreach (array_slice($swingHighs, 1) as $sh) {
-            $last = end($lowerHighSequence);
-            if ($sh['price'] < $last['price']) {
-                $lowerHighSequence[] = $sh;
+        $this->recentPoint3CandidatesTotal += count($candidatePoint3);
+        foreach (array_slice($candidatePoint3, 0, 3) as $idx) {
+            if (count($this->point3CandidateExamples) >= 20) {
+                break;
             }
+            $point3Price = (float)($highs[$idx] ?? 0.0);
+            $dist = $point3Price > 0.0 ? abs(($point3Price - $currentPrice) / $point3Price * 100.0) : null;
+            $this->point3CandidateExamples[] = [
+                'side' => 'short',
+                'point_3_idx' => $idx,
+                'point_3_price' => $point3Price > 0 ? round($point3Price, 8) : null,
+                'point_3_time' => $this->formatCandleTimestamp((int)($candles[$idx]['ts'] ?? 0)),
+                'point_3_distance_from_current_pct' => $dist !== null ? round($dist, 4) : null,
+            ];
         }
-
-        if (count($lowerHighSequence) < $minLowerHighs) {
+        if (empty($candidatePoint3)) {
+            $this->backward123InvalidTotal++;
             return null;
         }
 
-        $lastLowerHigh   = end($lowerHighSequence);
-        $lowerHighsCount = count($lowerHighSequence);
+        $selected = null;
+        foreach ($candidatePoint3 as $point3Idx) {
+            $point3Price = (float)$highs[$point3Idx];
+            if ($point3Price <= 0.0 || $currentPrice >= $point3Price) {
+                continue;
+            }
+            $point3Ts = $this->normalizeCandleTimestampToSeconds((int)($candles[$point3Idx]['ts'] ?? 0));
+            $point3Age = $point3Ts > 0 ? max(0.0, ($currentTs - $point3Ts) / 60.0) : 9999.0;
+            if ($point3Age > $maxPoint3AgeMinutes) {
+                continue;
+            }
+            $entryDistPoint3Pct = (($point3Price - $currentPrice) / $point3Price) * 100.0;
+            $entryNearPoint3 = $entryDistPoint3Pct <= $maxEntryDistPct;
+            if ($entryNearPoint3) {
+                $this->point3NearEntryTotal++;
+            }
+            $point3Turn = ($point3Idx < $n - 1)
+                && ((float)$closes[$n - 1] < min((float)$closes[$point3Idx], (float)$closes[max(0, $point3Idx + 1)]));
+            if ($point3Turn) {
+                $this->point3TurnConfirmedTotal++;
+            }
+            if (!$entryNearPoint3) {
+                continue;
+            }
+            $point2Idx = $this->findMinIndex($lows, 1, $point3Idx - 1);
+            if ($point2Idx <= 1) {
+                continue;
+            }
+            $this->point2FoundTotal++;
+            $point1Idx = $this->findMaxIndex($highs, 1, $point2Idx - 1);
+            if ($point1Idx < 0) {
+                continue;
+            }
+            $this->point1FoundTotal++;
+            $selected = [
+                'point1Idx' => $point1Idx,
+                'point2Idx' => $point2Idx,
+                'point3Idx' => $point3Idx,
+                'point3AgeMinutes' => $point3Age,
+                'entryDistPoint3Pct' => $entryDistPoint3Pct,
+                'point3Turn' => $point3Turn,
+            ];
+            break;
+        }
 
-        // Falling resistance
-        $fallingResistance = $lastLowerHigh['price'];
-
-        // Current price must be below last lower high
-        if ($currentPrice >= $lastLowerHigh['price']) {
+        if ($selected === null) {
+            $this->backward123InvalidTotal++;
+            if (count($this->backward123InvalidExamples) < 16) {
+                $this->backward123InvalidExamples[] = [
+                    'side' => 'short',
+                    'reason' => 'recent_point3_not_found_or_not_near_entry',
+                    'symbol_context' => 'backward_from_recent_point3',
+                ];
+            }
             return null;
         }
 
-        // Detect bounce: recent candles should have bounced toward last lower high
-        $recentHigh          = max(array_slice($highs, -5));
+        $point1Idx = (int)$selected['point1Idx'];
+        $point2Idx = (int)$selected['point2Idx'];
+        $point3Idx = (int)$selected['point3Idx'];
+        $point1Price = (float)$highs[$point1Idx];
+        $point2Price = (float)$lows[$point2Idx];
+        $point3Price = (float)$highs[$point3Idx];
+        $point3Holds = $point3Price < $point1Price;
+        $point3Distance = $point1Price > 0 ? (($point1Price - $point3Price) / $point1Price * 100.0) : 0.0;
+        $entryPrice = $currentPrice;
+
+        $recentHigh = max(array_slice($highs, -5));
         $maxPullbackDepthPct = (float)($config['max_pullback_depth_pct'] ?? 2.0);
-        $bouncePct           = ($recentHigh - $currentPrice) / $currentPrice * 100;
-        $bounceDetected      = $bouncePct >= 0.1 && $bouncePct <= $maxPullbackDepthPct;
+        $bouncePct = ($recentHigh - $currentPrice) / $currentPrice * 100.0;
+        $bounceDetected = $bouncePct >= 0.1 && $bouncePct <= $maxPullbackDepthPct;
+        if (($config['require_retest'] ?? true) && !$bounceDetected) {
+            $this->backward123InvalidTotal++;
+            return null;
+        }
 
-        // Retest: recent high approached last lower high within 1%
-        $retestThreshold = $lastLowerHigh['price'] * 0.99;
-        $retestPrice     = $recentHigh;
-        $retestHeld      = $recentHigh >= $retestThreshold && $recentHigh <= $lastLowerHigh['price'] * 1.01;
+        $continuationPrice = (float)end($closes);
+        $continuationConfirmed = $continuationPrice < $point3Price;
+        if (($config['require_continuation_after_retest'] ?? true) && !$continuationConfirmed) {
+            $this->backward123InvalidTotal++;
+            return null;
+        }
 
-        if ($config['require_retest'] ?? true) {
-            if (!$bounceDetected) {
-                return null;
+        $tolPct = (float)($config['structure_break_after_point3_tolerance_pct'] ?? 0.15);
+        $upBreakLevel = $point3Price * (1.0 + ($tolPct / 100.0));
+        $breaksAfter = 0;
+        $breaksBeforeIgnored = 0;
+        for ($i = 0; $i < $n; $i++) {
+            $high = (float)$highs[$i];
+            if ($high > $upBreakLevel) {
+                if ($i > $point3Idx) {
+                    $breaksAfter++;
+                } else {
+                    $breaksBeforeIgnored++;
+                }
             }
         }
+        $this->structureBreaksAfterPoint3Total += $breaksAfter;
+        $this->structureBreaksBeforePoint3IgnoredTotal += $breaksBeforeIgnored;
 
-        // Structure hold: no fresh higher high after last lower high formed
-        $lastLHIdx          = $lastLowerHigh['idx'];
-        $postStructureHighs = array_slice($highs, $lastLHIdx);
-        $structureHolds     = (max($postStructureHighs) <= $lastLowerHigh['price'] * 1.015);
-
-        if (($config['require_structure_hold'] ?? true) && !$structureHolds) {
-            return null;
+        $entryDistancePct = (($point3Price - $entryPrice) / $point3Price) * 100.0;
+        $entryNearPoint3 = ((float)$selected['entryDistPoint3Pct']) <= $maxEntryDistPct;
+        $point3Turn = (bool)$selected['point3Turn'];
+        $point2Breakout = $entryPrice < $point2Price;
+        $point2Retest = $point2Price > 0 ? ($recentHigh >= $point2Price * 0.994 && $recentHigh <= $point2Price * 1.006) : false;
+        $patternMode = $point2Breakout && $point2Retest ? 'conservative_point2_retest' : (($entryNearPoint3 && $point3Turn) ? 'aggressive_point3' : 'none');
+        $patternDetected = $point1Idx < $point2Idx && $point2Idx < $point3Idx && $point2Price < $point1Price && $point3Price < $point1Price;
+        $patternInvalid = null;
+        if (!$patternDetected) {
+            $patternInvalid = 'pattern_123_missing';
+        } elseif (!$point3Holds) {
+            $patternInvalid = 'point_3_breaks_point_1';
+        } elseif ($point3Distance < (float)($config['pattern_123_min_point3_distance_from_point1_pct'] ?? 0.15)) {
+            $patternInvalid = 'point_3_not_confirmed';
+        } elseif (!$point3Turn && (bool)($config['pattern_123_require_point3_turn_confirmation'] ?? true)) {
+            $patternInvalid = 'point_3_not_confirmed';
+        } elseif (!$entryNearPoint3) {
+            $patternInvalid = 'entry_too_far_from_point_3';
         }
-
-        // Continuation after bounce: price declining from bounce
-        $recentCloses      = array_slice($closes, -3);
-        $continuationPrice = (float)end($recentCloses);
-        $continuationConfirmed = $continuationPrice < $retestPrice && $continuationPrice < $fallingResistance;
-
-        if (($config['require_continuation_after_retest'] ?? true) && !$continuationConfirmed) {
-            return null;
+        if ($patternInvalid === null) {
+            $this->backward123ValidTotal++;
+            if (count($this->backward123ValidExamples) < 16) {
+                $this->backward123ValidExamples[] = [
+                    'side' => 'short',
+                    'point_1_price' => round($point1Price, 8),
+                    'point_2_price' => round($point2Price, 8),
+                    'point_3_price' => round($point3Price, 8),
+                    'point_3_age_minutes' => round((float)$selected['point3AgeMinutes'], 2),
+                ];
+            }
+        } else {
+            $this->backward123InvalidTotal++;
+            if (count($this->backward123InvalidExamples) < 16) {
+                $this->backward123InvalidExamples[] = [
+                    'side' => 'short',
+                    'reason' => $patternInvalid,
+                    'point_1_price' => round($point1Price, 8),
+                    'point_2_price' => round($point2Price, 8),
+                    'point_3_price' => round($point3Price, 8),
+                ];
+            }
         }
-
-        $entryPrice         = $currentPrice;
-        $entryDistancePct   = ($lastLowerHigh['price'] - $entryPrice) / $lastLowerHigh['price'] * 100;
 
         return [
             'setup_class'                          => 'lower_high_retest_continuation_short',
             'side'                                 => 'short',
             'entry_price'                          => $entryPrice,
             'current_price'                        => $currentPrice,
-            'lower_highs_count'                    => $lowerHighsCount,
-            'last_lower_high_price'                => $lastLowerHigh['price'],
-            'falling_resistance_price'             => $fallingResistance,
-            'retest_price'                         => $retestPrice,
-            'retest_held'                          => $retestHeld,
+            'lower_highs_count'                    => 2,
+            'last_lower_high_price'                => $point3Price,
+            'falling_resistance_price'             => $point3Price,
+            'retest_price'                         => $recentHigh,
+            'retest_held'                          => $bounceDetected,
             'continuation_breakdown_price'         => $continuationPrice,
             'entry_distance_from_last_lower_high_pct' => round($entryDistancePct, 4),
+            'distance_from_falling_resistance_pct'    => round($entryDistancePct, 4),
+            'distance_from_last_lower_high_pct'       => round($entryDistancePct, 4),
+            'distance_from_rising_support_pct'        => null,
+            'distance_from_last_higher_low_pct'       => null,
             'trend_phase'                          => 'confirmed_downtrend_continuation',
-            'structure_holds'                      => $structureHolds,
+            'structure_holds'                      => $breaksAfter === 0,
             'bounce_detected'                      => $bounceDetected,
             'bounce_pct'                           => round($bouncePct, 4),
             'continuation_confirmed'               => $continuationConfirmed,
+            'structure_anchor_type'                => 'point_1',
+            'structure_anchor_idx'                 => $point1Idx,
+            'structure_anchor_time'                => $this->formatCandleTimestamp((int)($candles[$point1Idx]['ts'] ?? 0)),
+            'structure_anchor_price'               => round($point1Price, 8),
+            'post_structure_window_start'          => max(0, $point1Idx),
+            'post_structure_window_minutes'        => max(1, $n - $point1Idx),
+            'pre_structure_impulse_pct'            => round($this->computeShortPreStructureImpulsePct($lows, $point1Idx, $point1Price), 4),
+            'pre_structure_impulse_roi'            => round($this->computeShortPreStructureImpulsePct($lows, $point1Idx, $point1Price) * max(1.0, (float)($config['anti_comb_roi_equiv_leverage'] ?? 15.0)), 4),
+            'pre_structure_impulse_allowed'        => true,
+            'post_structure_controlled_trend_score'=> 0.0,
+            'pattern_123_detected'                 => $patternDetected,
+            'pattern_123_side'                     => 'short',
+            'pattern_123_detection_direction'      => 'backward_from_recent_point3',
+            'point_1_price'                        => round($point1Price, 8),
+            'point_1_time'                         => $this->formatCandleTimestamp((int)($candles[$point1Idx]['ts'] ?? 0)),
+            'point_2_price'                        => round($point2Price, 8),
+            'point_2_time'                         => $this->formatCandleTimestamp((int)($candles[$point2Idx]['ts'] ?? 0)),
+            'point_3_price'                        => round($point3Price, 8),
+            'point_3_time'                         => $this->formatCandleTimestamp((int)($candles[$point3Idx]['ts'] ?? 0)),
+            'point_3_holds_structure'              => $point3Holds,
+            'point_3_distance_from_point_1_pct'    => round($point3Distance, 4),
+            'point_3_age_minutes'                  => round((float)$selected['point3AgeMinutes'], 4),
+            'point_3_distance_from_current_pct'    => round((float)$selected['entryDistPoint3Pct'], 4),
+            'entry_near_point_3'                   => $entryNearPoint3,
+            'entry_after_point_3_turn'             => $point3Turn,
+            'point_2_breakout_confirmed'           => $point2Breakout,
+            'point_2_retest_confirmed'             => $point2Retest,
+            'pattern_123_entry_mode'               => $patternMode,
+            'pattern_123_invalid_reason'           => $patternInvalid,
+            'structure_breaks_count_after_point3'  => $breaksAfter,
+            'structure_breaks_count_before_point3_ignored' => $breaksBeforeIgnored,
+            'structure_break_check_start_idx'      => $point3Idx + 1,
+            'structure_break_reference'            => 'point_3',
+            'structure_break_tolerance_pct'        => $tolPct,
+            'structure_breaks_count'               => $breaksAfter,
+            'point_3_idx'                          => $point3Idx,
         ];
     }
 
+    private function isLocalSwingLow(array $lows, int $idx): bool
+    {
+        if ($idx < 2 || $idx > count($lows) - 3) {
+            return false;
+        }
+        return $lows[$idx] < $lows[$idx - 1]
+            && $lows[$idx] < $lows[$idx + 1]
+            && $lows[$idx] < $lows[$idx - 2]
+            && $lows[$idx] < $lows[$idx + 2];
+    }
+
+    private function isLocalSwingHigh(array $highs, int $idx): bool
+    {
+        if ($idx < 2 || $idx > count($highs) - 3) {
+            return false;
+        }
+        return $highs[$idx] > $highs[$idx - 1]
+            && $highs[$idx] > $highs[$idx + 1]
+            && $highs[$idx] > $highs[$idx - 2]
+            && $highs[$idx] > $highs[$idx + 2];
+    }
+
+    private function findMaxIndex(array $values, int $start, int $end): int
+    {
+        if ($start > $end || $start < 0 || $end >= count($values)) {
+            return -1;
+        }
+        $maxIdx = $start;
+        $maxVal = (float)$values[$start];
+        for ($i = $start + 1; $i <= $end; $i++) {
+            $val = (float)$values[$i];
+            if ($val > $maxVal) {
+                $maxVal = $val;
+                $maxIdx = $i;
+            }
+        }
+        return $maxIdx;
+    }
+
+    private function findMinIndex(array $values, int $start, int $end): int
+    {
+        if ($start > $end || $start < 0 || $end >= count($values)) {
+            return -1;
+        }
+        $minIdx = $start;
+        $minVal = (float)$values[$start];
+        for ($i = $start + 1; $i <= $end; $i++) {
+            $val = (float)$values[$i];
+            if ($val < $minVal) {
+                $minVal = $val;
+                $minIdx = $i;
+            }
+        }
+        return $minIdx;
+    }
+
+    private function computeLongPreStructureImpulsePct(array $highs, int $point1Idx, float $point1Price): float
+    {
+        if ($point1Idx <= 0 || $point1Price <= 0.0) {
+            return 0.0;
+        }
+        $preHigh = max(array_slice($highs, 0, $point1Idx + 1));
+        if ($preHigh <= 0.0) {
+            return 0.0;
+        }
+        return max(0.0, (($preHigh - $point1Price) / $preHigh) * 100.0);
+    }
+
+    private function computeShortPreStructureImpulsePct(array $lows, int $point1Idx, float $point1Price): float
+    {
+        if ($point1Idx <= 0 || $point1Price <= 0.0) {
+            return 0.0;
+        }
+        $preLow = min(array_slice($lows, 0, $point1Idx + 1));
+        if ($preLow <= 0.0) {
+            return 0.0;
+        }
+        return max(0.0, (($point1Price - $preLow) / $preLow) * 100.0);
+    }
+
     // ── Hard reject filters ────────────────────────────────────────────────────
+
+    private function computeEntryTimingDiagnostics(array $structure, array $candles, string $side, array $config): array
+    {
+        $highs = array_column($candles, 'high');
+        $lows  = array_column($candles, 'low');
+        $n     = count($candles);
+        $entry = (float)($structure['entry_price'] ?? 0.0);
+        $maxDist = (float)($config['max_entry_distance_from_structure_pct'] ?? 0.6);
+        $dist = $side === 'long'
+            ? (float)($structure['entry_distance_from_last_higher_low_pct'] ?? 0.0)
+            : (float)($structure['entry_distance_from_last_lower_high_pct'] ?? 0.0);
+
+        $entryClass = 'late_extended_entry';
+        if ($side === 'long') {
+            if ($dist <= $maxDist * 0.5) {
+                $entryClass = 'early_structure_entry';
+            } elseif ($dist <= $maxDist) {
+                $entryClass = 'mid_trend_structure_entry';
+            }
+        } else {
+            if ($dist <= $maxDist * 0.5) {
+                $entryClass = 'early_breakdown_entry';
+            } elseif ($dist <= $maxDist) {
+                $entryClass = 'mid_trend_breakdown_entry';
+            }
+        }
+
+        $expectedExit = null;
+        $upsideRoom = null;
+        $downsideRoom = null;
+        $nearTp = false;
+        if ($entry > 0.0) {
+            if ($side === 'long') {
+                $expectedExit = !empty($highs) ? max(array_slice($highs, -min(20, max(3, $n)))) : null;
+                if ($expectedExit !== null) {
+                    $upsideRoom = max(0.0, ($expectedExit - $entry) / $entry * 100.0);
+                    $nearTp = $upsideRoom <= (float)($config['min_upside_room_to_resistance_pct_long'] ?? 0.8);
+                }
+            } else {
+                $expectedExit = !empty($lows) ? min(array_slice($lows, -min(20, max(3, $n)))) : null;
+                if ($expectedExit !== null) {
+                    $downsideRoom = max(0.0, ($entry - $expectedExit) / $entry * 100.0);
+                    $nearTp = $downsideRoom <= (float)($config['min_downside_room_to_support_pct_short'] ?? 0.8);
+                }
+            }
+        }
+
+        return [
+            'entry_timing_class' => $entryClass,
+            'upside_room_to_resistance_pct' => $upsideRoom !== null ? round($upsideRoom, 4) : null,
+            'downside_room_to_support_pct' => $downsideRoom !== null ? round($downsideRoom, 4) : null,
+            'near_take_profit_zone' => $nearTp,
+            'expected_exit_zone_price' => $expectedExit !== null ? round((float)$expectedExit, 8) : null,
+            'late_entry_reject_reason' => $entryClass === 'late_extended_entry' ? 'late_extended_entry' : ($nearTp ? 'entry_near_take_profit_zone' : null),
+        ];
+    }
 
     /**
      * Returns ['reason' => string, 'stage' => string] or null if no hard reject.
@@ -691,6 +1778,8 @@ final class ConfirmedContinuationService
     private function checkHardRejects(array $structure, array $candles, string $side, array $config): ?array
     {
         $closes = array_column($candles, 'close');
+        $highs  = array_column($candles, 'high');
+        $lows   = array_column($candles, 'low');
         $n      = count($closes);
 
         $entryPrice = (float)($structure['entry_price'] ?? 0.0);
@@ -711,8 +1800,82 @@ final class ConfirmedContinuationService
             return [
                 'reason' => (string)($structure['anti_comb_reject_reason'] ?? 'anti_comb_rejected'),
                 'stage'  => 'anti_comb',
+                'secondary_reject_reasons' => is_array($structure['secondary_reject_reasons'] ?? null)
+                    ? array_values($structure['secondary_reject_reasons'])
+                    : [],
             ];
         }
+
+        // 1-2-3 structure gate (entry timing core)
+        $this->pattern123CheckedTotal++;
+        if ((bool)($config['pattern_123_enabled'] ?? true)) {
+            $patternDetected = (bool)($structure['pattern_123_detected'] ?? false);
+            if ((bool)($config['pattern_123_required_for_signal'] ?? true) && !$patternDetected) {
+                $this->pattern123RejectedTotal++;
+                $this->pattern123MissingTotal++;
+                return ['reason' => 'pattern_123_missing', 'stage' => 'pattern_123'];
+            }
+            $point3Holds = (bool)($structure['point_3_holds_structure'] ?? false);
+            if ($side === 'long' && !((bool)($config['pattern_123_require_point3_above_point1_long'] ?? true))) {
+                $point3Holds = true;
+            }
+            if ($side === 'short' && !((bool)($config['pattern_123_require_point3_below_point1_short'] ?? true))) {
+                $point3Holds = true;
+            }
+            if (!$point3Holds) {
+                $this->pattern123RejectedTotal++;
+                $this->point3BreaksPoint1Total++;
+                return ['reason' => 'point_3_breaks_point_1', 'stage' => 'pattern_123'];
+            }
+            $point3Distance = (float)($structure['point_3_distance_from_point_1_pct'] ?? 0.0);
+            if ($point3Distance < (float)($config['pattern_123_min_point3_distance_from_point1_pct'] ?? 0.15)) {
+                $this->pattern123RejectedTotal++;
+                $this->point3NotConfirmedTotal++;
+                return ['reason' => 'point_3_not_confirmed', 'stage' => 'pattern_123'];
+            }
+            $entryNearPoint3 = (bool)($structure['entry_near_point_3'] ?? false);
+            if (!$entryNearPoint3) {
+                $this->pattern123RejectedTotal++;
+                $this->entryTooFarFromPoint3Total++;
+                return ['reason' => 'entry_too_far_from_point_3', 'stage' => 'pattern_123'];
+            }
+            $point3Turn = (bool)($structure['entry_after_point_3_turn'] ?? false);
+            $point2Breakout = (bool)($structure['point_2_breakout_confirmed'] ?? false);
+            $point2Retest = (bool)($structure['point_2_retest_confirmed'] ?? false);
+            $allowAggressive = (bool)($config['pattern_123_allow_aggressive_point3_entry'] ?? true);
+            $allowConservative = (bool)($config['pattern_123_allow_conservative_point2_retest_entry'] ?? true);
+            $maxLateFromP2 = (float)($config['pattern_123_max_late_distance_from_point2_pct'] ?? 1.2);
+            $point2 = (float)($structure['point_2_price'] ?? 0.0);
+            $entry = (float)($structure['entry_price'] ?? 0.0);
+            if ($point2 > 0.0 && $entry > 0.0) {
+                $lateDist = $side === 'long'
+                    ? (($entry - $point2) / $point2 * 100.0)
+                    : (($point2 - $entry) / $point2 * 100.0);
+                if ($lateDist > $maxLateFromP2) {
+                    $this->pattern123RejectedTotal++;
+                    return ['reason' => 'entry_too_late_after_point_2', 'stage' => 'pattern_123'];
+                }
+            }
+            if ((bool)($config['pattern_123_require_point3_turn_confirmation'] ?? true) && !$point3Turn) {
+                $this->pattern123RejectedTotal++;
+                $this->point3NotConfirmedTotal++;
+                return ['reason' => 'point_3_not_confirmed', 'stage' => 'pattern_123'];
+            }
+            $validAggressive = $allowAggressive && $point3Turn;
+            $validConservative = $allowConservative && $point2Breakout && $point2Retest;
+            if (!$validAggressive && !$validConservative) {
+                $this->pattern123RejectedTotal++;
+                return ['reason' => 'no_point_2_breakout_or_point_3_turn', 'stage' => 'pattern_123'];
+            }
+            $this->pattern123DetectedTotal++;
+        }
+
+        $this->entryTimingCheckedTotal++;
+        $maxDist = (float)($config['max_entry_distance_from_structure_pct'] ?? 0.6);
+        $maxLate = (float)($config['max_late_entry_extension_from_structure_pct'] ?? 1.2);
+        $allowMid= (bool)($config['allow_mid_trend_entry'] ?? true);
+        $requireRetestNear = (bool)($config['require_retest_near_structure'] ?? true);
+        $rejectLate = (bool)($config['reject_late_extended_entry'] ?? true);
 
         // Reject: no structure higher lows / lower highs
         if ($side === 'long') {
@@ -722,9 +1885,15 @@ final class ConfirmedContinuationService
             if (($structure['pullback_detected'] ?? false) === false) {
                 return ['reason' => 'first_bounce_after_dump', 'stage' => 'first_bounce_or_no_structure'];
             }
-            // Reject: entry too far above last higher low
             $distPct      = (float)($structure['entry_distance_from_last_higher_low_pct'] ?? 0);
-            $maxDist      = (float)($config['max_entry_distance_from_structure_pct'] ?? 0.6);
+            $entryClass = $distPct <= ($maxDist * 0.5) ? 'early_structure_entry'
+                : ($distPct <= $maxDist ? 'mid_trend_structure_entry' : 'late_extended_entry');
+            if (!$allowMid && $entryClass === 'mid_trend_structure_entry') {
+                return ['reason' => 'entry_far_from_structure', 'stage' => 'entry_timing'];
+            }
+            if ($rejectLate && ($entryClass === 'late_extended_entry' || $distPct > $maxLate)) {
+                return ['reason' => 'late_extended_entry', 'stage' => 'late_entry'];
+            }
             if ($distPct > $maxDist) {
                 return ['reason' => 'entry_too_far_above_structure', 'stage' => 'late_entry'];
             }
@@ -737,6 +1906,15 @@ final class ConfirmedContinuationService
                     return ['reason' => 'too_extended_from_local_base', 'stage' => 'late_entry'];
                 }
             }
+            $expectedExit = max(array_slice($highs, -min(20, max(3, $n))));
+            $upsideRoomPct = $entryPrice > 0 ? max(0.0, ($expectedExit - $entryPrice) / $entryPrice * 100.0) : 0.0;
+            $minUpside = (float)($config['min_upside_room_to_resistance_pct_long'] ?? 0.8);
+            if ($upsideRoomPct <= $minUpside) {
+                if ($upsideRoomPct <= max(0.0, $minUpside * 0.5)) {
+                    return ['reason' => 'entry_near_take_profit_zone', 'stage' => 'entry_timing'];
+                }
+                return ['reason' => 'insufficient_room_to_next_wall_or_resistance', 'stage' => 'entry_timing'];
+            }
             // Reject: blowoff 1m candle at entry
             if ($n >= 2) {
                 $lastClose = $closes[$n - 1];
@@ -747,8 +1925,8 @@ final class ConfirmedContinuationService
                 }
             }
             // Reject: retest not held (structure broken)
-            if (!($structure['retest_held'] ?? false) && ($config['require_retest'] ?? true)) {
-                return ['reason' => 'retest_not_held', 'stage' => 'no_retest'];
+            if (!($structure['retest_held'] ?? false) && ($config['require_retest'] ?? true || $requireRetestNear)) {
+                return ['reason' => 'no_retest_near_structure', 'stage' => 'no_retest'];
             }
         } else {
             if (($structure['lower_highs_count'] ?? 0) < 2) {
@@ -758,7 +1936,14 @@ final class ConfirmedContinuationService
                 return ['reason' => 'first_dump_after_pump', 'stage' => 'first_dump_or_no_structure'];
             }
             $distPct = (float)($structure['entry_distance_from_last_lower_high_pct'] ?? 0);
-            $maxDist = (float)($config['max_entry_distance_from_structure_pct'] ?? 0.6);
+            $entryClass = $distPct <= ($maxDist * 0.5) ? 'early_breakdown_entry'
+                : ($distPct <= $maxDist ? 'mid_trend_breakdown_entry' : 'late_extended_entry');
+            if (!$allowMid && $entryClass === 'mid_trend_breakdown_entry') {
+                return ['reason' => 'entry_far_from_structure', 'stage' => 'entry_timing'];
+            }
+            if ($rejectLate && ($entryClass === 'late_extended_entry' || $distPct > $maxLate)) {
+                return ['reason' => 'late_extended_entry', 'stage' => 'late_entry'];
+            }
             if ($distPct > $maxDist) {
                 return ['reason' => 'entry_too_far_below_structure', 'stage' => 'late_entry'];
             }
@@ -770,6 +1955,15 @@ final class ConfirmedContinuationService
                     return ['reason' => 'too_extended_from_breakdown_base', 'stage' => 'late_entry'];
                 }
             }
+            $expectedExit = min(array_slice($lows, -min(20, max(3, $n))));
+            $downsideRoomPct = $entryPrice > 0 ? max(0.0, ($entryPrice - $expectedExit) / $entryPrice * 100.0) : 0.0;
+            $minDownside = (float)($config['min_downside_room_to_support_pct_short'] ?? 0.8);
+            if ($downsideRoomPct <= $minDownside) {
+                if ($downsideRoomPct <= max(0.0, $minDownside * 0.5)) {
+                    return ['reason' => 'entry_near_take_profit_zone', 'stage' => 'entry_timing'];
+                }
+                return ['reason' => 'insufficient_room_to_next_wall_or_resistance', 'stage' => 'entry_timing'];
+            }
             if ($n >= 2) {
                 $lastClose = $closes[$n - 1];
                 $prevClose = $closes[$n - 2];
@@ -778,8 +1972,8 @@ final class ConfirmedContinuationService
                     return ['reason' => 'panic_dump_candle_at_entry', 'stage' => 'blowoff_reject'];
                 }
             }
-            if (!($structure['retest_held'] ?? false) && ($config['require_retest'] ?? true)) {
-                return ['reason' => 'retest_not_held', 'stage' => 'no_retest'];
+            if (!($structure['retest_held'] ?? false) && ($config['require_retest'] ?? true || $requireRetestNear)) {
+                return ['reason' => 'no_retest_near_structure', 'stage' => 'no_retest'];
             }
         }
 
@@ -912,6 +2106,9 @@ final class ConfirmedContinuationService
         if (!$gateEnabled || $this->obcService === null) {
             return $defaultResult;
         }
+        if ($entryPrice <= 0.0) {
+            return array_merge($defaultResult, ['ob_skip_reason' => 'missing_entry_price']);
+        }
 
         $minQualityForFetch = (float)($config['orderbook_wall_fetch_after_score'] ?? 0.75);
         if ($quality['final_candidate_score'] < $minQualityForFetch) {
@@ -921,10 +2118,10 @@ final class ConfirmedContinuationService
         $this->obcCheckedTotal++;
 
         try {
-            $wallCtx = $this->obcService->getWallContext($symbol);
+            $wallCtx = $this->obcService->getWallContext($symbol, $entryPrice);
             if ($wallCtx === null) {
                 $this->obcFetchFailedTotal++;
-                return array_merge($defaultResult, ['ob_fetch_ok' => false]);
+                return array_merge($defaultResult, ['ob_fetch_ok' => false, 'ob_error' => true, 'ob_error_message' => 'null_context']);
             }
             $this->obcFetchSuccessTotal++;
 
@@ -997,9 +2194,13 @@ final class ConfirmedContinuationService
                 'ob_ask_wall_status'     => $askStatus,
                 'ob_bid_wall_status'     => $bidStatus,
             ];
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
             $this->obcFetchFailedTotal++;
-            return array_merge($defaultResult, ['ob_fetch_ok' => false, 'ob_error' => 'exception']);
+            return array_merge($defaultResult, [
+                'ob_fetch_ok'      => false,
+                'ob_error'         => true,
+                'ob_error_message' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -1082,28 +2283,81 @@ final class ConfirmedContinuationService
         return $ctx;
     }
 
-    private function computeAntiCombDiagnostics(array $candles, string $side, array $structure, array $config): array
+    private function computeAntiCombDiagnostics(array $candles, string $side, array $structure, array $config, string $symbol = ''): array
     {
         $diag = [
+            'recent_max_1m_range_pct'            => 0.0,
             'recent_max_1m_range_roi'            => 0.0,
+            'recent_max_3m_range_pct'            => 0.0,
             'recent_max_3m_range_roi'            => 0.0,
+            'recent_max_swing_pct'               => 0.0,
             'recent_max_swing_roi'               => 0.0,
+            'recent_opposite_swing_pct'          => 0.0,
             'recent_opposite_swing_roi'          => 0.0,
             'directional_consistency_score'      => 1.0,
             'wick_chaos_score'                   => 0.0,
             'structure_breaks_count'             => 0,
+            'anti_comb_max_structure_breaks'     => 0,
             'alternating_large_candles_detected' => false,
             'controlled_trend_score'             => 1.0,
+            'post_structure_controlled_trend_score' => 1.0,
             'anti_comb_rejected'                 => false,
             'anti_comb_reject_reason'            => null,
+            'anti_comb_reject_reason_detail'     => null,
+            'primary_reject_reason'              => null,
+            'secondary_reject_reasons'           => [],
+            'post_structure_comb_detected'       => false,
+            'anti_comb_window_mode'              => 'post_point1_and_post_point3',
+            'structure_breaks_exceeded'          => false,
+            'recent_swing_exceeded'              => false,
+            'opposite_swing_exceeded'            => false,
+            'range_1m_exceeded'                  => false,
+            'range_3m_exceeded'                  => false,
+            'wick_chaos_exceeded'                => false,
+            'directional_consistency_failed'     => false,
+            'structure_breaks_count_after_point3' => 0,
+            'structure_breaks_count_before_point3_ignored' => 0,
+            'structure_break_check_start_idx'    => null,
+            'structure_break_reference'          => 'point_3',
+            'structure_break_tolerance_pct'      => (float)($config['structure_break_after_point3_tolerance_pct'] ?? 0.15),
+            'structure_window_range_roi'         => 0.0,
+            'post_point3_range_roi'              => 0.0,
+            'post_point3_opposite_swing_roi'     => 0.0,
+            'post_point3_directional_consistency'=> 1.0,
+            'post_point3_wick_chaos'             => 0.0,
+            'smooth_trend_score'                 => 1.0,
+            'step_count'                         => 0,
+            'impulse_share'                      => 0.0,
+            'single_candle_contribution'         => 0.0,
+            'vertical_spike_detected'            => false,
+            'pullback_before_entry_detected'     => false,
+            'smooth_retest_confirmed'            => false,
         ];
         if (!(bool)($config['anti_comb_enabled'] ?? true)) {
             return $diag;
         }
         $this->antiCombCheckedTotal++;
+        $this->postStructureFilterCheckedTotal++;
+        $this->smoothTrendCheckedTotal++;
 
         $lookback = max(5, (int)($config['anti_comb_lookback_minutes'] ?? 20));
         $slice = array_slice($candles, -$lookback);
+        $usePostStructureOnly = (bool)($config['post_structure_filter_enabled'] ?? true)
+            && (bool)($config['ignore_pre_structure_impulse_for_anti_comb'] ?? true);
+        $postStart = (int)($structure['post_structure_window_start'] ?? 0);
+        $point1Idx = max(0, (int)($structure['structure_anchor_idx'] ?? $postStart));
+        $point3Idx = (int)($structure['point_3_idx'] ?? -1);
+        $structureWindow = ($point1Idx >= 0 && $point1Idx < count($candles))
+            ? array_slice($candles, $point1Idx, max(0, ($point3Idx >= $point1Idx ? ($point3Idx - $point1Idx + 1) : count($candles) - $point1Idx)))
+            : [];
+        $postPoint3Slice = ($point3Idx >= 0 && $point3Idx < count($candles))
+            ? array_slice($candles, $point3Idx)
+            : [];
+        if ($usePostStructureOnly && !empty($postPoint3Slice)) {
+            $slice = $postPoint3Slice;
+        } elseif ($usePostStructureOnly && $postStart > 0 && $postStart < count($candles)) {
+            $slice = array_slice($candles, $postStart);
+        }
         if (count($slice) < 5) {
             return $diag;
         }
@@ -1176,74 +2430,295 @@ final class ConfirmedContinuationService
         $consistency = $dirTotal > 0 ? ($dirGood / $dirTotal) : 0.0;
         $wickChaos   = !empty($wickSamples) ? (array_sum($wickSamples) / count($wickSamples)) : 1.0;
 
-        $structureBreaks = 0;
-        if ($side === 'long' && isset($structure['last_higher_low_price'])) {
-            $lvl = (float)$structure['last_higher_low_price'];
-            foreach ($lows as $v) {
-                if ((float)$v < $lvl * 0.995) {
-                    $structureBreaks++;
-                }
-            }
-        } elseif ($side === 'short' && isset($structure['last_lower_high_price'])) {
-            $lvl = (float)$structure['last_lower_high_price'];
-            foreach ($highs as $v) {
-                if ((float)$v > $lvl * 1.005) {
-                    $structureBreaks++;
-                }
+        $structureBreaks = (int)($structure['structure_breaks_count_after_point3'] ?? $structure['structure_breaks_count'] ?? 0);
+        $structureBreaksBeforeIgnored = (int)($structure['structure_breaks_count_before_point3_ignored'] ?? 0);
+
+        $diag['recent_max_1m_range_pct'] = round($max1m, 4);
+        $diag['recent_max_3m_range_pct'] = round($max3m, 4);
+        $diag['recent_max_swing_pct'] = round($recentSwing, 4);
+        $diag['recent_opposite_swing_pct'] = round($oppSwing, 4);
+
+        $leverage = max(1.0, (float)($config['anti_comb_roi_equiv_leverage'] ?? 15.0));
+        $diag['recent_max_1m_range_roi'] = round($max1m * $leverage, 4);
+        $diag['recent_max_3m_range_roi'] = round($max3m * $leverage, 4);
+        $diag['recent_max_swing_roi'] = round($recentSwing * $leverage, 4);
+        $diag['recent_opposite_swing_roi'] = round($oppSwing * $leverage, 4);
+        $diag['pre_structure_impulse_allowed'] = true;
+        $diag['anti_comb_window_mode'] = 'post_point1_and_post_point3';
+
+        $structureWindowRangePct = 0.0;
+        if (!empty($structureWindow)) {
+            $swOpens = array_column($structureWindow, 'open');
+            $swHighs = array_column($structureWindow, 'high');
+            $swLows  = array_column($structureWindow, 'low');
+            $swBase  = (float)($swOpens[0] ?? 0.0);
+            if ($swBase > 0.0 && !empty($swHighs) && !empty($swLows)) {
+                $structureWindowRangePct = abs(max($swHighs) - min($swLows)) / $swBase * 100.0;
             }
         }
+        $diag['structure_window_range_roi'] = round($structureWindowRangePct * $leverage, 4);
 
-        $diag['recent_max_1m_range_roi'] = round($max1m, 4);
-        $diag['recent_max_3m_range_roi'] = round($max3m, 4);
-        $diag['recent_max_swing_roi'] = round($recentSwing, 4);
-        $diag['recent_opposite_swing_roi'] = round($oppSwing, 4);
+        $postPoint3RangePct = 0.0;
+        $postPoint3OppSwingPct = 0.0;
+        $postPoint3DirConsistency = 1.0;
+        $postPoint3WickChaos = 0.0;
+        if (count($postPoint3Slice) >= 2) {
+            $ppOpens = array_column($postPoint3Slice, 'open');
+            $ppHighs = array_column($postPoint3Slice, 'high');
+            $ppLows  = array_column($postPoint3Slice, 'low');
+            $ppCloses = array_column($postPoint3Slice, 'close');
+            $ppBase = (float)($ppOpens[0] ?? 0.0);
+            if ($ppBase > 0.0) {
+                $postPoint3RangePct = abs(max($ppHighs) - min($ppLows)) / $ppBase * 100.0;
+                if ($side === 'long') {
+                    $postPoint3OppSwingPct = max(0.0, ($ppBase - min($ppLows)) / $ppBase * 100.0);
+                } else {
+                    $postPoint3OppSwingPct = max(0.0, (max($ppHighs) - $ppBase) / $ppBase * 100.0);
+                }
+            }
+            $ppDirGood = 0;
+            $ppDirTotal = 0;
+            $ppWickSamples = [];
+            for ($i = 0; $i < count($ppOpens); $i++) {
+                $o = (float)$ppOpens[$i];
+                $c = (float)$ppCloses[$i];
+                $h = (float)$ppHighs[$i];
+                $l = (float)$ppLows[$i];
+                $ppDirTotal++;
+                if (($side === 'long' && $c >= $o) || ($side === 'short' && $c <= $o)) {
+                    $ppDirGood++;
+                }
+                $body = abs($c - $o);
+                $range = max(0.0, $h - $l);
+                $wick = max(0.0, $range - $body);
+                $ppWickSamples[] = $range > 0.0 ? ($wick / $range) : 0.0;
+            }
+            $postPoint3DirConsistency = $ppDirTotal > 0 ? ($ppDirGood / $ppDirTotal) : 1.0;
+            $postPoint3WickChaos = !empty($ppWickSamples) ? (array_sum($ppWickSamples) / count($ppWickSamples)) : 0.0;
+        }
+        $diag['post_point3_range_roi'] = round($postPoint3RangePct * $leverage, 4);
+        $diag['post_point3_opposite_swing_roi'] = round($postPoint3OppSwingPct * $leverage, 4);
+        $diag['post_point3_directional_consistency'] = round($postPoint3DirConsistency, 4);
+        $diag['post_point3_wick_chaos'] = round($postPoint3WickChaos, 4);
+
         $diag['directional_consistency_score'] = round($consistency, 4);
         $diag['wick_chaos_score'] = round($wickChaos, 4);
         $diag['structure_breaks_count'] = $structureBreaks;
+        $diag['structure_breaks_count_after_point3'] = $structureBreaks;
+        $diag['structure_breaks_count_before_point3_ignored'] = $structureBreaksBeforeIgnored;
+        $diag['structure_break_check_start_idx'] = $structure['structure_break_check_start_idx'] ?? null;
+        $diag['structure_break_reference'] = 'point_3';
+        $diag['structure_break_tolerance_pct'] = (float)($structure['structure_break_tolerance_pct'] ?? ($config['structure_break_after_point3_tolerance_pct'] ?? 0.15));
+        $diag['anti_comb_max_structure_breaks'] = (int)($config['anti_comb_max_structure_breaks'] ?? 1);
         $diag['alternating_large_candles_detected'] = $alternating > 0;
 
         $controlledTrendScore = 1.0;
-        $controlledTrendScore -= min(0.35, $max1m / max(1.0, (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0)) * 0.35);
+        $controlledTrendScore -= min(0.35, $diag['recent_max_1m_range_roi'] / max(1.0, (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0)) * 0.35);
         $controlledTrendScore -= min(0.25, max(0.0, $wickChaos - 0.2));
         $controlledTrendScore -= min(0.20, max(0.0, 0.8 - $consistency));
         $controlledTrendScore -= min(0.20, $structureBreaks * 0.10);
         $diag['controlled_trend_score'] = round(max(0.0, min(1.0, $controlledTrendScore)), 4);
+        $diag['post_structure_controlled_trend_score'] = $diag['controlled_trend_score'];
+
+        $max1mRoi = (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0);
+        $max3mRoi = (float)($config['anti_comb_max_3m_range_roi'] ?? 30.0);
+        $maxRecentSwingRoi = (float)($config['anti_comb_max_recent_swing_roi'] ?? 35.0);
+        $maxOppSwingRoi = (float)($config['anti_comb_max_opposite_swing_roi'] ?? 25.0);
+        $maxWickChaos = (float)($config['anti_comb_max_wick_chaos_score'] ?? 0.55);
+        $minDirectionalConsistency = (float)($config['anti_comb_min_directional_consistency'] ?? 0.62);
+        $maxStructureBreaks = (int)($config['anti_comb_max_structure_breaks'] ?? 1);
+
+        $diag['range_1m_exceeded'] = $diag['recent_max_1m_range_roi'] > $max1mRoi;
+        $diag['range_3m_exceeded'] = $diag['recent_max_3m_range_roi'] > $max3mRoi;
+        $diag['recent_swing_exceeded'] = $diag['recent_max_swing_roi'] > $maxRecentSwingRoi;
+        $diag['opposite_swing_exceeded'] = $diag['recent_opposite_swing_roi'] > $maxOppSwingRoi;
+        $diag['wick_chaos_exceeded'] = $wickChaos > $maxWickChaos;
+        $diag['directional_consistency_failed'] = $consistency < $minDirectionalConsistency;
+        $diag['structure_breaks_exceeded'] = $structureBreaks > $maxStructureBreaks;
+
+        // Smooth stair-step trend diagnostics (post-structure segment)
+        $entryPrice = (float)($structure['entry_price'] ?? 0.0);
+        $segmentStart = (float)($closes[0] ?? 0.0);
+        $segmentEnd   = (float)($closes[count($closes) - 1] ?? 0.0);
+        $totalMoveAbs = abs($segmentEnd - $segmentStart);
+        $maxBodyAbs = 0.0;
+        $maxRangeAbs = 0.0;
+        $stepCount = 0;
+        for ($i = 1; $i < count($closes); $i++) {
+            $move = (float)$closes[$i] - (float)$closes[$i - 1];
+            if (($side === 'long' && $move > 0) || ($side === 'short' && $move < 0)) {
+                $stepCount++;
+            }
+            $bodyAbs = abs((float)$closes[$i] - (float)$opens[$i]);
+            $rangeAbs = abs((float)$highs[$i] - (float)$lows[$i]);
+            $maxBodyAbs = max($maxBodyAbs, $bodyAbs);
+            $maxRangeAbs = max($maxRangeAbs, $rangeAbs);
+        }
+        $impulseShare = $totalMoveAbs > 0 ? min(1.0, $maxBodyAbs / $totalMoveAbs) : 1.0;
+        $singleContribution = $totalMoveAbs > 0 ? min(1.0, $maxRangeAbs / max($totalMoveAbs, 1e-9)) : 1.0;
+        $verticalSpike = $diag['recent_max_1m_range_roi'] > (float)($config['max_1m_range_roi_for_signal'] ?? 10.0);
+        $pullbackDetected = $side === 'long'
+            ? (bool)($structure['pullback_detected'] ?? false)
+            : (bool)($structure['bounce_detected'] ?? false);
+        $smoothRetest = (bool)($structure['retest_held'] ?? false);
+        $smoothScore = max(
+            0.0,
+            min(
+                1.0,
+                0.35 * $diag['directional_consistency_score']
+                + 0.25 * (1.0 - min(1.0, $impulseShare))
+                + 0.20 * (1.0 - min(1.0, $singleContribution))
+                + 0.20 * min(1.0, $stepCount / max(1.0, (float)($config['smooth_trend_min_step_count'] ?? 2)))
+            )
+        );
+        $diag['smooth_trend_score'] = round($smoothScore, 4);
+        $diag['step_count'] = (int)$stepCount;
+        $diag['impulse_share'] = round($impulseShare, 4);
+        $diag['single_candle_contribution'] = round($singleContribution, 4);
+        $diag['vertical_spike_detected'] = $verticalSpike;
+        $diag['pullback_before_entry_detected'] = $pullbackDetected;
+        $diag['smooth_retest_confirmed'] = $smoothRetest;
 
         $rejectReason = null;
-        if ($max1m > (float)($config['anti_comb_max_1m_range_roi'] ?? 18.0) || $max3m > (float)($config['anti_comb_max_3m_range_roi'] ?? 30.0)) {
+        $secondaryReasons = [];
+
+        if ($diag['range_1m_exceeded'] || $diag['range_3m_exceeded']) {
             $rejectReason = 'anti_comb_recent_range_too_high';
             $this->antiCombRecentRangeRejectTotal++;
-        } elseif ($oppSwing > (float)($config['anti_comb_max_opposite_swing_roi'] ?? 25.0) || $recentSwing > (float)($config['anti_comb_max_recent_swing_roi'] ?? 35.0)) {
-            $rejectReason = 'anti_comb_opposite_swing_too_high';
+        }
+        if ($diag['recent_swing_exceeded']) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_recent_swing_too_high';
+            } else {
+                $secondaryReasons[] = 'anti_comb_recent_swing_too_high';
+            }
+            $this->antiCombRecentSwingRejectTotal++;
+        }
+        if ($diag['opposite_swing_exceeded']) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_opposite_swing_too_high';
+            } else {
+                $secondaryReasons[] = 'anti_comb_opposite_swing_too_high';
+            }
             $this->antiCombOppositeSwingRejectTotal++;
-        } elseif ($wickChaos > (float)($config['anti_comb_max_wick_chaos_score'] ?? 0.55)) {
-            $rejectReason = 'anti_comb_wick_chaos';
+        }
+        if ($diag['wick_chaos_exceeded']) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_wick_chaos';
+            } else {
+                $secondaryReasons[] = 'anti_comb_wick_chaos';
+            }
             $this->antiCombWickChaosRejectTotal++;
-        } elseif ($consistency < (float)($config['anti_comb_min_directional_consistency'] ?? 0.62)) {
-            $rejectReason = 'anti_comb_low_directional_consistency';
+        }
+        if ($diag['directional_consistency_failed']) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_low_directional_consistency';
+            } else {
+                $secondaryReasons[] = 'anti_comb_low_directional_consistency';
+            }
             $this->antiCombLowConsistencyRejectTotal++;
-        } elseif ($structureBreaks > (int)($config['anti_comb_max_structure_breaks'] ?? 1)) {
-            $rejectReason = 'anti_comb_too_many_structure_breaks';
+        }
+        if ($diag['structure_breaks_exceeded']) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_too_many_structure_breaks';
+            } else {
+                $secondaryReasons[] = 'anti_comb_too_many_structure_breaks';
+            }
             $this->antiCombStructureBreaksRejectTotal++;
-        } elseif (($config['anti_comb_reject_if_alternating_large_candles'] ?? true) && $alternating > 0) {
-            $rejectReason = 'anti_comb_alternating_large_candles';
+        }
+        if (($config['anti_comb_reject_if_alternating_large_candles'] ?? true) && $alternating > 0) {
+            if ($rejectReason === null) {
+                $rejectReason = 'anti_comb_alternating_large_candles';
+            } else {
+                $secondaryReasons[] = 'anti_comb_alternating_large_candles';
+            }
             $this->antiCombAlternatingCandlesRejectTotal++;
         }
 
+        if ((bool)($config['smooth_trend_filter_enabled'] ?? true)) {
+            if ($diag['smooth_trend_score'] < (float)($config['smooth_trend_min_score'] ?? 0.75)) {
+                if ($rejectReason === null) {
+                    $rejectReason = 'smooth_trend_score_too_low';
+                    $this->smoothTrendScoreTooLowTotal++;
+                } else {
+                    $secondaryReasons[] = 'smooth_trend_score_too_low';
+                }
+                $this->smoothTrendRejectedTotal++;
+            } elseif ((bool)($config['smooth_trend_reject_vertical_spike'] ?? true) && $diag['vertical_spike_detected']) {
+                if ($rejectReason === null) {
+                    $rejectReason = 'vertical_spike_reject';
+                } else {
+                    $secondaryReasons[] = 'vertical_spike_reject';
+                }
+                $this->smoothTrendRejectedTotal++;
+                $this->verticalSpikeRejectedTotal++;
+            } elseif ($diag['single_candle_contribution'] > (float)($config['smooth_trend_max_single_candle_contribution'] ?? 0.45)) {
+                if ($rejectReason === null) {
+                    $rejectReason = 'single_candle_dominates_move';
+                } else {
+                    $secondaryReasons[] = 'single_candle_dominates_move';
+                }
+                $this->smoothTrendRejectedTotal++;
+            } elseif ($diag['impulse_share'] > (float)($config['smooth_trend_max_impulse_share'] ?? 0.55)) {
+                if ($rejectReason === null) {
+                    $rejectReason = 'impulse_share_too_high';
+                } else {
+                    $secondaryReasons[] = 'impulse_share_too_high';
+                }
+                $this->smoothTrendRejectedTotal++;
+            } elseif ((bool)($config['smooth_trend_require_pullback_before_entry'] ?? true) && !$diag['pullback_before_entry_detected']) {
+                if ($rejectReason === null) {
+                    $rejectReason = 'no_controlled_pullback_before_entry';
+                } else {
+                    $secondaryReasons[] = 'no_controlled_pullback_before_entry';
+                }
+                $this->smoothTrendRejectedTotal++;
+            } elseif ($diag['step_count'] < (int)($config['smooth_trend_min_step_count'] ?? 2)) {
+                if ($rejectReason === null) {
+                    $rejectReason = 'post_structure_single_candle_dominates';
+                } else {
+                    $secondaryReasons[] = 'post_structure_single_candle_dominates';
+                }
+                $this->smoothTrendRejectedTotal++;
+            } elseif ($diag['directional_consistency_score'] < (float)($config['anti_comb_min_directional_consistency'] ?? 0.72)) {
+                if ($rejectReason === null) {
+                    $rejectReason = 'post_structure_directional_consistency_too_low';
+                } else {
+                    $secondaryReasons[] = 'post_structure_directional_consistency_too_low';
+                }
+                $this->smoothTrendRejectedTotal++;
+            }
+        }
+
         if ($rejectReason !== null) {
+            $secondaryReasons = array_filter(
+                $secondaryReasons,
+                static fn ($v): bool => is_string($v) && $v !== ''
+            );
+            $secondaryReasons = array_values(array_unique(array_values($secondaryReasons)));
             $diag['anti_comb_rejected'] = true;
+            $diag['anti_comb_reject_reason_detail'] = $rejectReason;
+            // Always use the specific reason as the primary reject_reason.
+            // post_structure_comb_detected is a boolean context field, NOT the reject reason.
             $diag['anti_comb_reject_reason'] = $rejectReason;
+            $diag['primary_reject_reason'] = $rejectReason;
+            $diag['secondary_reject_reasons'] = $secondaryReasons;
+            if ($usePostStructureOnly) {
+                $diag['post_structure_comb_detected'] = true;
+                $this->postStructureFilterRejectedTotal++;
+                $this->postStructureCombDetectedTotal++;
+            } else {
+                $diag['post_structure_comb_detected'] = false;
+            }
             $this->antiCombRejectedTotal++;
             if (count($this->antiCombExamples) < 8) {
-                $this->antiCombExamples[] = [
-                    'reject_reason' => $rejectReason,
-                    'recent_max_1m_range_roi' => $diag['recent_max_1m_range_roi'],
-                    'recent_max_3m_range_roi' => $diag['recent_max_3m_range_roi'],
-                    'recent_max_swing_roi' => $diag['recent_max_swing_roi'],
-                    'directional_consistency_score' => $diag['directional_consistency_score'],
-                    'wick_chaos_score' => $diag['wick_chaos_score'],
-                ];
+                $this->antiCombExamples[] = $this->buildFullDiagExample($symbol, $side, array_merge($structure, $diag), $rejectReason, 'anti_comb');
             }
+            if (count($this->rejectedCombExamples) < 8) {
+                $this->rejectedCombExamples[] = $this->buildFullDiagExample($symbol, $side, array_merge($structure, $diag), $rejectReason, 'anti_comb');
+            }
+        } else {
+            $diag['post_structure_comb_detected'] = false;
         }
 
         return $diag;
@@ -1265,15 +2740,18 @@ final class ConfirmedContinuationService
         }
 
         $now = date('c');
+        $nearWallPct = (float)($config['wall_test_near_wall_pct'] ?? 0.35);
+        $blockNewWalls = (bool)($config['wall_test_block_new_walls'] ?? true);
         if ($side === 'long') {
             $risk = (bool)($obcResult['ob_ask_wall_risk'] ?? false);
             $status = (string)($obcResult['ob_ask_wall_status'] ?? 'none');
+            $askDist = (float)($obcResult['ob_ask_wall_distance_pct'] ?? 999.0);
             $res['wall_test_level'] = $structure['rising_support_price'] ?? $structure['entry_price'] ?? null;
-            if ($risk && !in_array($status, ['eaten', 'broken'], true)) {
+            if (($risk || $askDist <= $nearWallPct) && !in_array($status, ['eaten', 'broken'], true) && $blockNewWalls) {
                 $res['wall_test_state'] = 'pending_breakout';
                 $res['wall_test_started_at'] = $now;
                 $res['wall_test_result'] = 'pending';
-                $res['wall_test_block_reason'] = 'wall_test_pending_breakout';
+                $res['wall_test_block_reason'] = 'pending_ask_wall_breakout_test';
                 $res['wall_test_blocked'] = true;
                 $this->wallTestPendingTotal++;
             } elseif (in_array($status, ['eaten', 'broken'], true)) {
@@ -1294,12 +2772,13 @@ final class ConfirmedContinuationService
         } else {
             $risk = (bool)($obcResult['ob_bid_wall_risk'] ?? false);
             $status = (string)($obcResult['ob_bid_wall_status'] ?? 'none');
+            $bidDist = (float)($obcResult['ob_bid_wall_distance_pct'] ?? 999.0);
             $res['wall_test_level'] = $structure['falling_resistance_price'] ?? $structure['entry_price'] ?? null;
-            if ($risk && !in_array($status, ['eaten', 'broken'], true)) {
+            if (($risk || $bidDist <= $nearWallPct) && !in_array($status, ['eaten', 'broken'], true) && $blockNewWalls) {
                 $res['wall_test_state'] = 'pending_breakdown';
                 $res['wall_test_started_at'] = $now;
                 $res['wall_test_result'] = 'pending';
-                $res['wall_test_block_reason'] = 'wall_test_pending_breakdown';
+                $res['wall_test_block_reason'] = 'pending_bid_wall_breakdown_test';
                 $res['wall_test_blocked'] = true;
                 $this->wallTestPendingTotal++;
             } elseif (in_array($status, ['eaten', 'broken'], true)) {
@@ -1355,6 +2834,60 @@ final class ConfirmedContinuationService
 
     // ── Candidate and signal builders ──────────────────────────────────────────
 
+    /**
+     * Build a full diagnostic example record for last_run example buckets.
+     * Used by anti-comb, 1-2-3 valid-but-rejected, and comb example buckets.
+     */
+    private function buildFullDiagExample(
+        string $symbol,
+        string $side,
+        array  $structure,
+        string $rejectReason,
+        string $failedStage
+    ): array {
+        return [
+            'symbol'                          => $symbol,
+            'side'                            => $side,
+            'failed_stage'                    => $failedStage,
+            'reject_reason'                   => $rejectReason,
+            'primary_reject_reason'           => $structure['primary_reject_reason'] ?? $rejectReason,
+            'secondary_reject_reasons'        => is_array($structure['secondary_reject_reasons'] ?? null) ? array_values($structure['secondary_reject_reasons']) : [],
+            'candidate_state'                 => 'rejected',
+            'pattern_123_detected'            => (bool)($structure['pattern_123_detected'] ?? false),
+            'pattern_123_detection_direction' => $structure['pattern_123_detection_direction'] ?? null,
+            'pattern_123_entry_mode'          => $structure['pattern_123_entry_mode'] ?? 'none',
+            'pattern_123_invalid_reason'      => $structure['pattern_123_invalid_reason'] ?? null,
+            'point_1_price'                   => $structure['point_1_price'] ?? null,
+            'point_2_price'                   => $structure['point_2_price'] ?? null,
+            'point_3_price'                   => $structure['point_3_price'] ?? null,
+            'point_3_age_minutes'             => $structure['point_3_age_minutes'] ?? null,
+            'point_3_distance_from_current_pct' => $structure['point_3_distance_from_current_pct'] ?? null,
+            'entry_near_point_3'              => $structure['entry_near_point_3'] ?? null,
+            'entry_after_point_3_turn'        => $structure['entry_after_point_3_turn'] ?? null,
+            'entry_timing_class'              => $structure['entry_timing_class'] ?? null,
+            'controlled_trend_score'          => $structure['controlled_trend_score'] ?? null,
+            'smooth_trend_score'              => $structure['smooth_trend_score'] ?? null,
+            'directional_consistency_score'   => $structure['directional_consistency_score'] ?? null,
+            'wick_chaos_score'                => $structure['wick_chaos_score'] ?? null,
+            'recent_max_1m_range_roi'         => $structure['recent_max_1m_range_roi'] ?? null,
+            'recent_max_3m_range_roi'         => $structure['recent_max_3m_range_roi'] ?? null,
+            'recent_max_swing_roi'            => $structure['recent_max_swing_roi'] ?? null,
+            'recent_opposite_swing_roi'       => $structure['recent_opposite_swing_roi'] ?? null,
+            'structure_breaks_count'          => $structure['structure_breaks_count'] ?? null,
+            'anti_comb_max_structure_breaks'  => $structure['anti_comb_max_structure_breaks'] ?? null,
+            'structure_breaks_exceeded'       => (bool)($structure['structure_breaks_exceeded'] ?? false),
+            'recent_swing_exceeded'           => (bool)($structure['recent_swing_exceeded'] ?? false),
+            'opposite_swing_exceeded'         => (bool)($structure['opposite_swing_exceeded'] ?? false),
+            'range_1m_exceeded'               => (bool)($structure['range_1m_exceeded'] ?? false),
+            'range_3m_exceeded'               => (bool)($structure['range_3m_exceeded'] ?? false),
+            'wick_chaos_exceeded'             => (bool)($structure['wick_chaos_exceeded'] ?? false),
+            'directional_consistency_failed'  => (bool)($structure['directional_consistency_failed'] ?? false),
+            'anti_comb_reject_reason'         => $structure['anti_comb_reject_reason'] ?? null,
+            'post_structure_comb_detected'    => (bool)($structure['post_structure_comb_detected'] ?? false),
+            'candle_source_used'              => $structure['candle_source_used'] ?? null,
+        ];
+    }
+
     private function buildCandidate(
         string $symbol,
         string $side,
@@ -1386,6 +2919,17 @@ final class ConfirmedContinuationService
             $blockReason  = (string)($structure['wall_test_block_reason'] ?? 'wall_test_pending');
             $handoffReady = false;
             $executable   = false;
+            if (str_starts_with((string)$blockReason, 'pending_')) {
+                $this->wallPendingBlockedTotal++;
+                if (count($this->wallPendingExamples) < 8) {
+                    $this->wallPendingExamples[] = [
+                        'symbol' => $symbol,
+                        'side' => $side,
+                        'wall_test_state' => $structure['wall_test_state'] ?? 'none',
+                        'block_reason' => $blockReason,
+                    ];
+                }
+            }
         }
 
         if ($isSoftDemoted && $softDemoteBlocksHandoff) {
@@ -1410,9 +2954,65 @@ final class ConfirmedContinuationService
             $handoffReady = false;
         }
 
+        // Hard controlled-trend gate before handoff/executable
+        $this->controlledTrendGateCheckedTotal++;
+        if ($handoffReady && $executable) {
+            $controlledTrend = (float)($structure['controlled_trend_score'] ?? 0.0);
+            $dirConsistency  = (float)($structure['directional_consistency_score'] ?? 0.0);
+            $wickChaos       = (float)($structure['wick_chaos_score'] ?? 1.0);
+            $structureBreaks = (int)($structure['structure_breaks_count'] ?? 0);
+            $recentSwingRoi  = (float)($structure['recent_max_swing_roi'] ?? 0.0);
+            $oppSwingRoi     = (float)($structure['recent_opposite_swing_roi'] ?? 0.0);
+            $r1m             = (float)($structure['recent_max_1m_range_roi'] ?? 0.0);
+            $r3m             = (float)($structure['recent_max_3m_range_roi'] ?? 0.0);
+
+            if ($controlledTrend < (float)($config['min_controlled_trend_score_for_signal'] ?? 0.78)) {
+                $blockReason = 'controlled_trend_score_too_low';
+                $this->controlledTrendScoreTooLowTotal++;
+            } elseif ($dirConsistency < (float)($config['min_directional_consistency_for_signal'] ?? 0.72)) {
+                $blockReason = 'directional_consistency_too_low';
+                $this->directionalConsistencyTooLowTotal++;
+            } elseif ($wickChaos > (float)($config['max_wick_chaos_for_signal'] ?? 0.35)) {
+                $blockReason = 'wick_chaos_too_high';
+                $this->wickChaosTooHighTotal++;
+            } elseif ($structureBreaks > (int)($config['max_structure_breaks_for_signal'] ?? 0)) {
+                $blockReason = 'structure_breaks_not_allowed';
+                $this->structureBreaksNotAllowedTotal++;
+            } elseif ($recentSwingRoi > (float)($config['max_recent_swing_roi_for_signal'] ?? 18.0)) {
+                $blockReason = 'recent_swing_too_high';
+                $this->recentSwingTooHighTotal++;
+            } elseif ($oppSwingRoi > (float)($config['max_opposite_swing_roi_for_signal'] ?? 8.0)) {
+                $blockReason = 'opposite_swing_too_high';
+                $this->oppositeSwingTooHighTotal++;
+            } elseif (
+                $r1m > (float)($config['max_1m_range_roi_for_signal'] ?? 10.0)
+                || $r3m > (float)($config['max_3m_range_roi_for_signal'] ?? 18.0)
+            ) {
+                $blockReason = 'short_range_too_volatile';
+            }
+            if ($blockReason !== null) {
+                $handoffReady = false;
+                $executable = false;
+                $this->controlledTrendGateRejectedTotal++;
+            }
+        }
+
         $detectedAt = date('c');
+
+        // Compute stable idea key for candidate (same formula as in buildSignal)
+        $structureLevel = ($side === 'long')
+            ? (float)($structure['last_higher_low_price'] ?? 0)
+            : (float)($structure['last_lower_high_price'] ?? 0);
+        $timeBucket = $this->getIdeaKeyTimeBucket();
+        $ideaKey = $symbol
+            . ':' . $side
+            . ':' . ($structure['setup_class'] ?? '')
+            . ':' . round($structureLevel, 6)
+            . ':' . $timeBucket;
+
         $candidate  = array_merge($structure, $quality, $obcResult, [
-            'strategy_id'    => 'confirmed_continuation',
+            'strategy_id'                     => 'confirmed_continuation',
+            'confirmed_continuation_idea_key' => $ideaKey,
             'symbol'         => $symbol,
             'side'           => $side,
             'detected_at'    => $detectedAt,
@@ -1423,6 +3023,7 @@ final class ConfirmedContinuationService
             'handoff_ready'  => $handoffReady,
             'executable'     => $executable,
             'block_reason'   => $blockReason,
+            'candidate_state'=> ($handoffReady && $executable) ? 'signal_ready' : 'blocked',
         ]);
 
         return $candidate;
@@ -1433,13 +3034,22 @@ final class ConfirmedContinuationService
         $side = (string)($candidate['side'] ?? 'long');
         $now  = date('c');
 
-        $signalId = 'cc_' . substr(md5(
-            ($candidate['symbol'] ?? '') . ':' . $side . ':' . ($candidate['entry_price'] ?? '') . ':' . $now
-        ), 0, 16);
+        // Stable idea key: symbol+side+setup_class+nearest structure level+10-minute bucket
+        $structureLevel = ($side === 'long')
+            ? (float)($candidate['last_higher_low_price'] ?? $candidate['entry_price'] ?? 0)
+            : (float)($candidate['last_lower_high_price'] ?? $candidate['entry_price'] ?? 0);
+        $timeBucket = $this->getIdeaKeyTimeBucket();
+        $ideaKey = ($candidate['symbol'] ?? '')
+            . ':' . $side
+            . ':' . ($candidate['setup_class'] ?? '')
+            . ':' . round($structureLevel, 6)
+            . ':' . $timeBucket;
+        $signalId = 'cc_' . substr(md5($ideaKey), 0, 16);
 
         $signal = [
-            'strategy_id'            => 'confirmed_continuation',
-            'signal_id'              => $signalId,
+            'strategy_id'                        => 'confirmed_continuation',
+            'signal_id'                          => $signalId,
+            'confirmed_continuation_idea_key'    => $ideaKey,
             'symbol'                 => $candidate['symbol'] ?? '',
             'side'                   => $side,
             'entry_price'            => $candidate['entry_price'] ?? null,
@@ -1481,6 +3091,92 @@ final class ConfirmedContinuationService
             'wall_test_result'       => $candidate['wall_test_result']       ?? null,
             'wall_test_block_reason' => $candidate['wall_test_block_reason'] ?? null,
             'wall_test_opposite_context_created' => $candidate['wall_test_opposite_context_created'] ?? false,
+            // 1-2-3 diagnostics
+            'pattern_123_detected' => $candidate['pattern_123_detected'] ?? false,
+            'pattern_123_side' => $candidate['pattern_123_side'] ?? $side,
+            'pattern_123_detection_direction' => $candidate['pattern_123_detection_direction'] ?? null,
+            'point_1_price' => $candidate['point_1_price'] ?? null,
+            'point_1_time' => $candidate['point_1_time'] ?? null,
+            'point_2_price' => $candidate['point_2_price'] ?? null,
+            'point_2_time' => $candidate['point_2_time'] ?? null,
+            'point_3_price' => $candidate['point_3_price'] ?? null,
+            'point_3_time' => $candidate['point_3_time'] ?? null,
+            'point_3_age_minutes' => $candidate['point_3_age_minutes'] ?? null,
+            'point_3_distance_from_current_pct' => $candidate['point_3_distance_from_current_pct'] ?? null,
+            'point_3_holds_structure' => $candidate['point_3_holds_structure'] ?? null,
+            'point_3_distance_from_point_1_pct' => $candidate['point_3_distance_from_point_1_pct'] ?? null,
+            'entry_near_point_3' => $candidate['entry_near_point_3'] ?? null,
+            'entry_after_point_3_turn' => $candidate['entry_after_point_3_turn'] ?? null,
+            'point_2_breakout_confirmed' => $candidate['point_2_breakout_confirmed'] ?? null,
+            'point_2_retest_confirmed' => $candidate['point_2_retest_confirmed'] ?? null,
+            'pattern_123_entry_mode' => $candidate['pattern_123_entry_mode'] ?? 'none',
+            'pattern_123_invalid_reason' => $candidate['pattern_123_invalid_reason'] ?? null,
+            // Structure/post-structure diagnostics
+            'structure_anchor_type'  => $candidate['structure_anchor_type'] ?? null,
+            'structure_anchor_time'  => $candidate['structure_anchor_time'] ?? null,
+            'structure_anchor_price' => $candidate['structure_anchor_price'] ?? null,
+            'post_structure_window_start' => $candidate['post_structure_window_start'] ?? null,
+            'post_structure_window_minutes' => $candidate['post_structure_window_minutes'] ?? null,
+            'pre_structure_impulse_pct' => $candidate['pre_structure_impulse_pct'] ?? null,
+            'pre_structure_impulse_roi' => $candidate['pre_structure_impulse_roi'] ?? null,
+            'pre_structure_impulse_allowed' => $candidate['pre_structure_impulse_allowed'] ?? true,
+            'post_structure_controlled_trend_score' => $candidate['post_structure_controlled_trend_score'] ?? null,
+            'candle_source_used' => $candidate['candle_source_used'] ?? null,
+            'parser2_history_files_read' => $candidate['parser2_history_files_read'] ?? null,
+            'parser2_history_candles_loaded' => $candidate['parser2_history_candles_loaded'] ?? null,
+            'parser2_history_candles_after_dedupe' => $candidate['parser2_history_candles_after_dedupe'] ?? null,
+            'parser2_history_oldest_ts' => $candidate['parser2_history_oldest_ts'] ?? null,
+            'parser2_history_newest_ts' => $candidate['parser2_history_newest_ts'] ?? null,
+            'bybit_fallback_used' => $candidate['bybit_fallback_used'] ?? null,
+            'candle_source_error' => $candidate['candle_source_error'] ?? null,
+            // Entry timing / room diagnostics
+            'entry_timing_class' => $candidate['entry_timing_class'] ?? null,
+            'distance_from_rising_support_pct' => $candidate['distance_from_rising_support_pct'] ?? null,
+            'distance_from_falling_resistance_pct' => $candidate['distance_from_falling_resistance_pct'] ?? null,
+            'distance_from_last_higher_low_pct' => $candidate['distance_from_last_higher_low_pct'] ?? null,
+            'distance_from_last_lower_high_pct' => $candidate['distance_from_last_lower_high_pct'] ?? null,
+            'upside_room_to_resistance_pct' => $candidate['upside_room_to_resistance_pct'] ?? null,
+            'downside_room_to_support_pct' => $candidate['downside_room_to_support_pct'] ?? null,
+            'near_take_profit_zone' => $candidate['near_take_profit_zone'] ?? false,
+            'expected_exit_zone_price' => $candidate['expected_exit_zone_price'] ?? null,
+            'late_entry_reject_reason' => $candidate['late_entry_reject_reason'] ?? null,
+            // Anti-comb / smooth diagnostics full
+            'recent_max_1m_range_pct' => $candidate['recent_max_1m_range_pct'] ?? null,
+            'recent_max_1m_range_roi' => $candidate['recent_max_1m_range_roi'] ?? null,
+            'recent_max_3m_range_pct' => $candidate['recent_max_3m_range_pct'] ?? null,
+            'recent_max_3m_range_roi' => $candidate['recent_max_3m_range_roi'] ?? null,
+            'recent_max_swing_pct' => $candidate['recent_max_swing_pct'] ?? null,
+            'recent_opposite_swing_pct' => $candidate['recent_opposite_swing_pct'] ?? null,
+            'recent_opposite_swing_roi' => $candidate['recent_opposite_swing_roi'] ?? null,
+            'structure_breaks_count' => $candidate['structure_breaks_count'] ?? null,
+            'anti_comb_max_structure_breaks' => $candidate['anti_comb_max_structure_breaks'] ?? null,
+            'structure_breaks_count_after_point3' => $candidate['structure_breaks_count_after_point3'] ?? null,
+            'structure_breaks_count_before_point3_ignored' => $candidate['structure_breaks_count_before_point3_ignored'] ?? null,
+            'structure_break_check_start_idx' => $candidate['structure_break_check_start_idx'] ?? null,
+            'structure_break_reference' => $candidate['structure_break_reference'] ?? null,
+            'structure_break_tolerance_pct' => $candidate['structure_break_tolerance_pct'] ?? null,
+            'anti_comb_window_mode' => $candidate['anti_comb_window_mode'] ?? null,
+            'structure_window_range_roi' => $candidate['structure_window_range_roi'] ?? null,
+            'post_point3_range_roi' => $candidate['post_point3_range_roi'] ?? null,
+            'post_point3_opposite_swing_roi' => $candidate['post_point3_opposite_swing_roi'] ?? null,
+            'post_point3_directional_consistency' => $candidate['post_point3_directional_consistency'] ?? null,
+            'post_point3_wick_chaos' => $candidate['post_point3_wick_chaos'] ?? null,
+            'primary_reject_reason' => $candidate['primary_reject_reason'] ?? null,
+            'secondary_reject_reasons' => is_array($candidate['secondary_reject_reasons'] ?? null) ? array_values($candidate['secondary_reject_reasons']) : [],
+            'structure_breaks_exceeded' => (bool)($candidate['structure_breaks_exceeded'] ?? false),
+            'recent_swing_exceeded' => (bool)($candidate['recent_swing_exceeded'] ?? false),
+            'opposite_swing_exceeded' => (bool)($candidate['opposite_swing_exceeded'] ?? false),
+            'range_1m_exceeded' => (bool)($candidate['range_1m_exceeded'] ?? false),
+            'range_3m_exceeded' => (bool)($candidate['range_3m_exceeded'] ?? false),
+            'wick_chaos_exceeded' => (bool)($candidate['wick_chaos_exceeded'] ?? false),
+            'directional_consistency_failed' => (bool)($candidate['directional_consistency_failed'] ?? false),
+            'alternating_large_candles_detected' => $candidate['alternating_large_candles_detected'] ?? false,
+            'smooth_trend_score' => $candidate['smooth_trend_score'] ?? null,
+            'step_count' => $candidate['step_count'] ?? null,
+            'impulse_share' => $candidate['impulse_share'] ?? null,
+            'single_candle_contribution' => $candidate['single_candle_contribution'] ?? null,
+            'vertical_spike_detected' => $candidate['vertical_spike_detected'] ?? false,
+            'pullback_before_entry_detected' => $candidate['pullback_before_entry_detected'] ?? false,
         ];
 
         // Side-specific fields
@@ -1541,6 +3237,87 @@ final class ConfirmedContinuationService
             'wall_test_result'           => $signal['wall_test_result'],
             'wall_test_block_reason'     => $signal['wall_test_block_reason'],
             'wall_test_opposite_context_created' => $signal['wall_test_opposite_context_created'],
+            'pattern_123_detected'       => $signal['pattern_123_detected'],
+            'pattern_123_side'           => $signal['pattern_123_side'],
+            'pattern_123_detection_direction' => $signal['pattern_123_detection_direction'],
+            'point_1_price'              => $signal['point_1_price'],
+            'point_1_time'               => $signal['point_1_time'],
+            'point_2_price'              => $signal['point_2_price'],
+            'point_2_time'               => $signal['point_2_time'],
+            'point_3_price'              => $signal['point_3_price'],
+            'point_3_time'               => $signal['point_3_time'],
+            'point_3_age_minutes'        => $signal['point_3_age_minutes'],
+            'point_3_distance_from_current_pct' => $signal['point_3_distance_from_current_pct'],
+            'point_3_holds_structure'    => $signal['point_3_holds_structure'],
+            'point_3_distance_from_point_1_pct' => $signal['point_3_distance_from_point_1_pct'],
+            'entry_near_point_3'         => $signal['entry_near_point_3'],
+            'entry_after_point_3_turn'   => $signal['entry_after_point_3_turn'],
+            'point_2_breakout_confirmed' => $signal['point_2_breakout_confirmed'],
+            'point_2_retest_confirmed'   => $signal['point_2_retest_confirmed'],
+            'pattern_123_entry_mode'     => $signal['pattern_123_entry_mode'],
+            'pattern_123_invalid_reason' => $signal['pattern_123_invalid_reason'],
+            'structure_anchor_type'      => $signal['structure_anchor_type'],
+            'structure_anchor_time'      => $signal['structure_anchor_time'],
+            'structure_anchor_price'     => $signal['structure_anchor_price'],
+            'post_structure_window_start' => $signal['post_structure_window_start'],
+            'post_structure_window_minutes' => $signal['post_structure_window_minutes'],
+            'pre_structure_impulse_pct'  => $signal['pre_structure_impulse_pct'],
+            'pre_structure_impulse_roi'  => $signal['pre_structure_impulse_roi'],
+            'pre_structure_impulse_allowed' => $signal['pre_structure_impulse_allowed'],
+            'post_structure_controlled_trend_score' => $signal['post_structure_controlled_trend_score'],
+            'candle_source_used'         => $signal['candle_source_used'],
+            'parser2_history_files_read' => $signal['parser2_history_files_read'],
+            'parser2_history_candles_loaded' => $signal['parser2_history_candles_loaded'],
+            'parser2_history_candles_after_dedupe' => $signal['parser2_history_candles_after_dedupe'],
+            'parser2_history_oldest_ts' => $signal['parser2_history_oldest_ts'],
+            'parser2_history_newest_ts' => $signal['parser2_history_newest_ts'],
+            'bybit_fallback_used'       => $signal['bybit_fallback_used'],
+            'candle_source_error'       => $signal['candle_source_error'],
+            'entry_timing_class'         => $signal['entry_timing_class'],
+            'distance_from_rising_support_pct' => $signal['distance_from_rising_support_pct'],
+            'distance_from_falling_resistance_pct' => $signal['distance_from_falling_resistance_pct'],
+            'distance_from_last_higher_low_pct' => $signal['distance_from_last_higher_low_pct'],
+            'distance_from_last_lower_high_pct' => $signal['distance_from_last_lower_high_pct'],
+            'upside_room_to_resistance_pct' => $signal['upside_room_to_resistance_pct'],
+            'downside_room_to_support_pct' => $signal['downside_room_to_support_pct'],
+            'near_take_profit_zone'      => $signal['near_take_profit_zone'],
+            'expected_exit_zone_price'   => $signal['expected_exit_zone_price'],
+            'recent_max_1m_range_pct'    => $signal['recent_max_1m_range_pct'],
+            'recent_max_1m_range_roi'    => $signal['recent_max_1m_range_roi'],
+            'recent_max_3m_range_pct'    => $signal['recent_max_3m_range_pct'],
+            'recent_max_3m_range_roi'    => $signal['recent_max_3m_range_roi'],
+            'recent_max_swing_pct'       => $signal['recent_max_swing_pct'],
+            'recent_opposite_swing_pct'  => $signal['recent_opposite_swing_pct'],
+            'recent_opposite_swing_roi'  => $signal['recent_opposite_swing_roi'],
+            'structure_breaks_count'     => $signal['structure_breaks_count'],
+            'structure_breaks_count_after_point3' => $signal['structure_breaks_count_after_point3'],
+            'structure_breaks_count_before_point3_ignored' => $signal['structure_breaks_count_before_point3_ignored'],
+            'structure_break_check_start_idx' => $signal['structure_break_check_start_idx'],
+            'structure_break_reference'  => $signal['structure_break_reference'],
+            'structure_break_tolerance_pct' => $signal['structure_break_tolerance_pct'],
+            'anti_comb_window_mode'      => $signal['anti_comb_window_mode'],
+            'structure_window_range_roi' => $signal['structure_window_range_roi'],
+            'post_point3_range_roi'      => $signal['post_point3_range_roi'],
+            'post_point3_opposite_swing_roi' => $signal['post_point3_opposite_swing_roi'],
+            'post_point3_directional_consistency' => $signal['post_point3_directional_consistency'],
+            'post_point3_wick_chaos'     => $signal['post_point3_wick_chaos'],
+            'anti_comb_max_structure_breaks' => $signal['anti_comb_max_structure_breaks'],
+            'primary_reject_reason'      => $signal['primary_reject_reason'],
+            'secondary_reject_reasons'   => $signal['secondary_reject_reasons'],
+            'structure_breaks_exceeded'  => $signal['structure_breaks_exceeded'],
+            'recent_swing_exceeded'      => $signal['recent_swing_exceeded'],
+            'opposite_swing_exceeded'    => $signal['opposite_swing_exceeded'],
+            'range_1m_exceeded'          => $signal['range_1m_exceeded'],
+            'range_3m_exceeded'          => $signal['range_3m_exceeded'],
+            'wick_chaos_exceeded'        => $signal['wick_chaos_exceeded'],
+            'directional_consistency_failed' => $signal['directional_consistency_failed'],
+            'alternating_large_candles_detected' => $signal['alternating_large_candles_detected'],
+            'smooth_trend_score'         => $signal['smooth_trend_score'],
+            'step_count'                 => $signal['step_count'],
+            'impulse_share'              => $signal['impulse_share'],
+            'single_candle_contribution' => $signal['single_candle_contribution'],
+            'vertical_spike_detected'    => $signal['vertical_spike_detected'],
+            'pullback_before_entry_detected' => $signal['pullback_before_entry_detected'],
             'block_reason'               => $signal['block_reason'],
             'handoff_ready'              => $signal['handoff_ready'],
             'executable'                 => $signal['executable'],
@@ -1578,16 +3355,40 @@ final class ConfirmedContinuationService
         return $signal;
     }
 
-    private function buildHandoffQueue(array $signals, array $config): array
+    private function buildHandoffQueue(array $signals, array $previousQueue = [], array $config = []): array
     {
-        $queue = [];
-        foreach ($signals as $sig) {
-            if (!($sig['executable'] ?? false) || ($sig['stale'] ?? false)) {
+        $prevBySignalId = [];
+        foreach ($previousQueue as $prev) {
+            if (!is_array($prev)) {
                 continue;
             }
+            $prevSignalId = (string)($prev['signal_id'] ?? '');
+            if ($prevSignalId !== '') {
+                $prevBySignalId[$prevSignalId] = true;
+            }
+        }
+
+        $candidates = [];
+        foreach ($signals as $sig) {
+            $isExecutable  = (bool)($sig['executable'] ?? false);
+            $isStale       = (bool)($sig['stale'] ?? false);
+            $isHandoffReady= (bool)($sig['handoff_ready'] ?? false);
+            $isActiveFinal = (bool)($sig['active_final'] ?? false);
+            $blockReason   = $sig['block_reason'] ?? null;
+            $isBlocked     = is_string($blockReason) ? trim($blockReason) !== '' : ($blockReason !== null);
+            if (!$isExecutable || $isStale || !$isHandoffReady || !$isActiveFinal || $isBlocked) {
+                continue;
+            }
+            $signalId = (string)($sig['signal_id'] ?? '');
+            if ($signalId === '') {
+                continue;
+            }
+            $isRefreshed = isset($prevBySignalId[$signalId]);
+            $handoffStatus = $isRefreshed ? 'refreshed' : 'new';
             $entry = [
                 'strategy_id'             => 'confirmed_continuation',
-                'signal_id'               => $sig['signal_id'] ?? '',
+                'signal_id'               => $signalId,
+                'confirmed_continuation_idea_key' => $sig['confirmed_continuation_idea_key'] ?? '',
                 'symbol'                  => $sig['symbol'] ?? '',
                 'side'                    => $sig['side'] ?? '',
                 'entry_price'             => $sig['entry_price'] ?? null,
@@ -1595,13 +3396,84 @@ final class ConfirmedContinuationService
                 'candidate_quality_score' => $sig['candidate_quality_score'] ?? 0.0,
                 'setup_class'             => $sig['setup_class'] ?? '',
                 'detected_at'             => $sig['detected_at'] ?? '',
+                'refreshed_at'            => $sig['refreshed_at'] ?? date('c'),
+                'handoff_status'          => $handoffStatus,
+                'queue_status'            => $isRefreshed ? 'ready' : 'new',
                 'handoff_ready'           => true,
                 'executable'              => true,
-                'active_final'            => $sig['active_final'] ?? true,
+                'active_final'            => true,
+                'stale'                   => false,
+                'block_reason'            => null,
                 'strategy_signal_context' => $sig['strategy_signal_context'] ?? [],
             ];
-            $queue[] = $entry;
+            $candidates[] = $entry;
         }
+
+        $this->handoffCandidatesBeforeThrottleTotal = count($candidates);
+        $preferHighest = (bool)($config['prefer_highest_quality_handoff'] ?? true);
+        if ($preferHighest) {
+            usort($candidates, static function (array $a, array $b): int {
+                $qa = (float)($a['candidate_quality_score'] ?? $a['confidence_score'] ?? 0.0);
+                $qb = (float)($b['candidate_quality_score'] ?? $b['confidence_score'] ?? 0.0);
+                return $qb <=> $qa;
+            });
+        }
+
+        $maxPerTick = max(1, (int)($config['max_handoff_signals_per_tick'] ?? 2));
+        $maxPerSide = max(1, (int)($config['max_handoff_signals_per_side_per_tick'] ?? 1));
+        $maxActiveTotal = max(1, (int)($config['max_active_confirmed_continuation_signals_total'] ?? 5));
+        $queue = [];
+        $sideCounts = ['long' => 0, 'short' => 0];
+        foreach ($candidates as $entry) {
+            $side = (string)($entry['side'] ?? '');
+            if (count($queue) >= $maxPerTick) {
+                $this->handoffThrottleReasonCounts['max_handoff_signals_per_tick'] = ($this->handoffThrottleReasonCounts['max_handoff_signals_per_tick'] ?? 0) + 1;
+                if (count($this->handoffThrottleExamples) < 8) {
+                    $this->handoffThrottleExamples[] = ['signal_id' => $entry['signal_id'] ?? '', 'reason' => 'max_handoff_signals_per_tick'];
+                }
+                continue;
+            }
+            if (($sideCounts[$side] ?? 0) >= $maxPerSide) {
+                $this->handoffThrottleReasonCounts['max_handoff_signals_per_side_per_tick'] = ($this->handoffThrottleReasonCounts['max_handoff_signals_per_side_per_tick'] ?? 0) + 1;
+                if (count($this->handoffThrottleExamples) < 8) {
+                    $this->handoffThrottleExamples[] = ['signal_id' => $entry['signal_id'] ?? '', 'reason' => 'max_handoff_signals_per_side_per_tick'];
+                }
+                continue;
+            }
+            if (count($queue) >= $maxActiveTotal) {
+                $this->handoffThrottleReasonCounts['max_active_confirmed_continuation_signals_total'] = ($this->handoffThrottleReasonCounts['max_active_confirmed_continuation_signals_total'] ?? 0) + 1;
+                if (count($this->handoffThrottleExamples) < 8) {
+                    $this->handoffThrottleExamples[] = ['signal_id' => $entry['signal_id'] ?? '', 'reason' => 'max_active_confirmed_continuation_signals_total'];
+                }
+                continue;
+            }
+            $queue[] = $entry;
+            $sideCounts[$side] = ($sideCounts[$side] ?? 0) + 1;
+
+            $this->handoffQueueWrittenTotal++;
+            $handoffStatus = (string)($entry['handoff_status'] ?? 'new');
+            if ($handoffStatus === 'refreshed') {
+                $this->handoffQueueRefreshedTotal++;
+            } else {
+                $this->handoffQueueNewTotal++;
+            }
+            if (count($this->handoffQueueExamples) < 5) {
+                $this->handoffQueueExamples[] = [
+                    'signal_id'      => $entry['signal_id'],
+                    'symbol'         => $entry['symbol'],
+                    'side'           => $entry['side'],
+                    'handoff_status' => $entry['handoff_status'],
+                    'queue_status'   => $entry['queue_status'],
+                ];
+            }
+        }
+        $this->handoffAfterThrottleTotal = count($queue);
+        $this->handoffThrottledTotal = max(0, $this->handoffCandidatesBeforeThrottleTotal - $this->handoffAfterThrottleTotal);
+        $this->handoffQueueMissingStatusTotal = count(array_filter(
+            $queue,
+            static fn(array $entry): bool => !isset($entry['handoff_status'])
+                || !in_array((string)$entry['handoff_status'], ['new', 'refreshed'], true)
+        ));
         return $queue;
     }
 
@@ -1612,12 +3484,14 @@ final class ConfirmedContinuationService
         string $startedAt,
         string $finishedAt,
         int    $durationMs,
-        array  $signals
+        array  $signals,
+        array  $runWindow = []
     ): array {
         return [
             'strategy_id'                     => 'confirmed_continuation',
             'strategy_is_environment_neutral' => true,
             'execution_mode_used_for_selection' => false,
+            'effective_strategy_mode'         => $this->effectiveStrategyMode,
             'status'                          => 'done',
             'started_at'                      => $startedAt,
             'finished_at'                     => $finishedAt,
@@ -1631,33 +3505,101 @@ final class ConfirmedContinuationService
             'handoff_ready_total'             => $this->handoffReadyTotal,
             'rejected_total'                  => $this->rejectedTotal,
             'reject_reason_counts'            => $this->rejectReasonCounts,
-            // Pattern diagnostics
+            // Pattern diagnostics (old names mapped to new counters for backward compat)
             'higher_low_candidates_total'     => $this->higherLowCandidatesTotal,
             'lower_high_candidates_total'     => $this->lowerHighCandidatesTotal,
             'retest_held_total'               => $this->retestHeldTotal,
             'continuation_confirmed_total'    => $this->continuationConfirmedTotal,
             'first_bounce_rejected_total'     => $this->firstBounceRejectedTotal,
             'late_entry_rejected_total'       => $this->lateEntryRejectedTotal,
+            // Old pattern_123 counters mapped to pre-filter counts for consistency
+            'pattern_123_checked_total'       => $this->pattern123StructuresSeenTotal,
+            'pattern_123_detected_total'      => $this->pattern123ValidBeforeFiltersTotal,
+            'pattern_123_rejected_total'      => $this->pattern123InvalidBeforeFiltersTotal,
+            'pattern_123_missing_total'       => $this->pattern123MissingTotal,
+            'point_3_breaks_point_1_total'    => $this->point3BreaksPoint1Total,
+            'point_3_not_confirmed_total'     => $this->point3NotConfirmedTotal,
+            'entry_too_far_from_point_3_total'=> $this->entryTooFarFromPoint3Total,
             // Anti-comb diagnostics
-            'anti_comb_checked_total'                 => $this->antiCombCheckedTotal,
-            'anti_comb_rejected_total'                => $this->antiCombRejectedTotal,
-            'anti_comb_recent_range_reject_total'     => $this->antiCombRecentRangeRejectTotal,
-            'anti_comb_opposite_swing_reject_total'   => $this->antiCombOppositeSwingRejectTotal,
-            'anti_comb_wick_chaos_reject_total'       => $this->antiCombWickChaosRejectTotal,
-            'anti_comb_low_consistency_reject_total'  => $this->antiCombLowConsistencyRejectTotal,
+            'anti_comb_checked_total'                       => $this->antiCombCheckedTotal,
+            'anti_comb_rejected_total'                      => $this->antiCombRejectedTotal,
+            'anti_comb_recent_range_reject_total'           => $this->antiCombRecentRangeRejectTotal,
+            'anti_comb_recent_range_too_high_total'         => $this->antiCombRecentRangeRejectTotal,
+            'anti_comb_recent_swing_too_high_total'         => $this->antiCombRecentSwingRejectTotal,
+            'anti_comb_opposite_swing_reject_total'         => $this->antiCombOppositeSwingRejectTotal,
+            'anti_comb_opposite_swing_too_high_total'       => $this->antiCombOppositeSwingRejectTotal,
+            'anti_comb_wick_chaos_reject_total'             => $this->antiCombWickChaosRejectTotal,
+            'anti_comb_wick_chaos_total'                    => $this->antiCombWickChaosRejectTotal,
+            'anti_comb_low_consistency_reject_total'        => $this->antiCombLowConsistencyRejectTotal,
+            'anti_comb_low_directional_consistency_total'   => $this->antiCombLowConsistencyRejectTotal,
+            'anti_comb_too_many_structure_breaks_total'     => $this->antiCombStructureBreaksRejectTotal,
+            'post_structure_comb_detected_total'            => $this->postStructureCombDetectedTotal,
+            'smooth_trend_score_too_low_total'              => $this->smoothTrendScoreTooLowTotal,
+            'post_structure_filter_checked_total'           => $this->postStructureFilterCheckedTotal,
+            'post_structure_filter_rejected_total'          => $this->postStructureFilterRejectedTotal,
+            'entry_timing_checked_total'              => $this->entryTimingCheckedTotal,
+            'near_exit_zone_rejected_total'           => $this->nearExitZoneRejectedTotal,
+            'controlled_trend_gate_checked_total'     => $this->controlledTrendGateCheckedTotal,
+            'controlled_trend_gate_rejected_total'    => $this->controlledTrendGateRejectedTotal,
+            'controlled_trend_score_too_low_total'    => $this->controlledTrendScoreTooLowTotal,
+            'directional_consistency_too_low_total'   => $this->directionalConsistencyTooLowTotal,
+            'wick_chaos_too_high_total'               => $this->wickChaosTooHighTotal,
+            'recent_swing_too_high_total'             => $this->recentSwingTooHighTotal,
+            'opposite_swing_too_high_total'           => $this->oppositeSwingTooHighTotal,
+            'structure_breaks_not_allowed_total'      => $this->structureBreaksNotAllowedTotal,
+            'smooth_trend_checked_total'              => $this->smoothTrendCheckedTotal,
+            'smooth_trend_rejected_total'             => $this->smoothTrendRejectedTotal,
+            'vertical_spike_rejected_total'           => $this->verticalSpikeRejectedTotal,
+            // Filter funnel diagnostics
+            'structures_detected_total'                        => $this->structuresDetectedTotal,
+            'pattern_123_structures_seen_total'                => $this->pattern123StructuresSeenTotal,
+            'pattern_123_valid_before_filters_total'           => $this->pattern123ValidBeforeFiltersTotal,
+            'pattern_123_invalid_before_filters_total'         => $this->pattern123InvalidBeforeFiltersTotal,
+            'pattern_123_valid_but_anti_comb_rejected_total'   => $this->pattern123ValidButAntiCombRejectedTotal,
+            'pattern_123_valid_but_entry_timing_rejected_total'=> $this->pattern123ValidButEntryTimingRejectedTotal,
+            'pattern_123_valid_but_wall_blocked_total'         => $this->pattern123ValidButWallBlockedTotal,
+            'pattern_123_valid_signal_ready_total'             => $this->pattern123ValidSignalReadyTotal,
+            'backward_123_checked_total'                       => $this->backward123CheckedTotal,
+            'backward_123_valid_total'                         => $this->backward123ValidTotal,
+            'backward_123_invalid_total'                       => $this->backward123InvalidTotal,
+            'recent_point3_candidates_total'                   => $this->recentPoint3CandidatesTotal,
+            'point3_near_entry_total'                          => $this->point3NearEntryTotal,
+            'point3_turn_confirmed_total'                      => $this->point3TurnConfirmedTotal,
+            'point2_found_total'                               => $this->point2FoundTotal,
+            'point1_found_total'                               => $this->point1FoundTotal,
+            'structure_breaks_after_point3_total'              => $this->structureBreaksAfterPoint3Total,
+            'structure_breaks_before_point3_ignored_total'     => $this->structureBreaksBeforePoint3IgnoredTotal,
+            'anti_comb_passed_total'                           => $this->antiCombPassedTotal,
+            'entry_timing_passed_total'                        => $this->entryTimingPassedTotal,
+            'quality_gate_passed_total'                        => $this->qualityGatePassedTotal,
+            'wall_test_passed_total'                           => $this->wallTestPassedTotal,
+            'signal_ready_total'                               => $this->signalReadyTotal,
             // 24h regime diagnostics
             'day_regime_checked_total'        => $this->dayRegimeCheckedTotal,
             'day_regime_blocked_total'        => $this->dayRegimeBlockedTotal,
             'day_regime_long_bias_total'      => $this->dayRegimeLongBiasTotal,
             'day_regime_short_bias_total'     => $this->dayRegimeShortBiasTotal,
+            // OBC/wall counters
             'obc_checked_total'               => $this->obcCheckedTotal,
+            'obc_fetch_success_total'         => $this->obcFetchSuccessTotal,
+            'obc_fetch_failed_total'          => $this->obcFetchFailedTotal,
             'obc_soft_demote_blocked_total'   => $this->obcSoftDemoteBlockedHandoff,
+            'obc_soft_demote_allowed_total'   => $this->obcSoftDemoteAllowedHandoff,
             'wall_test_pending_total'         => $this->wallTestPendingTotal,
             'wall_test_confirmed_total'       => $this->wallTestConfirmedTotal,
             'wall_test_rejected_total'        => $this->wallTestRejectedTotal,
             'wall_test_opposite_context_total'=> $this->wallTestOppositeContextTotal,
+            'wall_pending_blocked_total'      => $this->wallPendingBlockedTotal,
             'accepted_examples'               => $this->acceptedExamples,
             'rejected_examples'               => $this->rejectedExamples,
+            'accepted_early_structure_examples' => $this->acceptedEarlyStructureExamples,
+            'accepted_mid_trend_examples'     => $this->acceptedMidTrendExamples,
+            'accepted_pattern_123_examples'   => $this->acceptedPattern123Examples,
+            'rejected_pattern_123_examples'   => $this->rejectedPattern123Examples,
+            'rejected_late_entry_examples'    => $this->rejectedLateEntryExamples,
+            'rejected_comb_examples'          => $this->rejectedCombExamples,
+            'pattern_123_valid_but_anti_comb_rejected_examples' => $this->pattern123ValidButAntiCombRejectedExamples,
+            'wall_pending_examples'           => $this->wallPendingExamples,
             'obc_block_examples'              => $this->obcBlockExamples,
             'wall_test_examples'              => $this->wallTestExamples,
             'late_entry_reject_examples'      => $this->lateEntryRejectExamples,
@@ -1665,19 +3607,228 @@ final class ConfirmedContinuationService
             'no_retest_reject_examples'       => $this->noRetestRejectExamples,
             'anti_comb_examples'              => $this->antiCombExamples,
             'active_signals_total'            => count(array_filter($signals, fn($s) => !($s['stale'] ?? false) && ($s['active_final'] ?? false))),
+            'candle_source_used_counts'       => $this->candleSourceUsedCounts,
+            'parser2_history_used_total'      => $this->parser2HistoryUsedTotal,
+            'bybit_fallback_used_total'       => $this->bybitFallbackUsedTotal,
+            'backward_123_valid_examples'     => $this->backward123ValidExamples,
+            'backward_123_invalid_examples'   => $this->backward123InvalidExamples,
+            'point3_candidate_examples'       => $this->point3CandidateExamples,
+            'parser2_history_error_examples'  => $this->parser2HistoryErrorExamples,
+            // Handoff queue diagnostics
+            'handoff_queue_written_total'     => $this->handoffQueueWrittenTotal,
+            'handoff_queue_new_total'         => $this->handoffQueueNewTotal,
+            'handoff_queue_refreshed_total'   => $this->handoffQueueRefreshedTotal,
+            'handoff_queue_missing_status_total' => $this->handoffQueueMissingStatusTotal,
+            'handoff_queue_examples'          => $this->handoffQueueExamples,
+            'handoff_candidates_before_throttle_total' => $this->handoffCandidatesBeforeThrottleTotal,
+            'handoff_after_throttle_total'    => $this->handoffAfterThrottleTotal,
+            'handoff_throttled_total'         => $this->handoffThrottledTotal,
+            'handoff_throttle_reason_counts'  => $this->handoffThrottleReasonCounts,
+            'handoff_throttle_examples'       => $this->handoffThrottleExamples,
+            // Deprecated config diagnostics
+            'deprecated_execution_mode_key_seen'    => $this->deprecatedExecutionModeKeySeen,
+            'deprecated_execution_mode_key_ignored' => $this->deprecatedExecutionModeKeyIgnored,
+            // Universe diagnostics
+            'universe_source'                 => $this->universeSource,
+            'universe_total'                  => $this->universeTotal,
+            'universe_batch_count'            => $this->universeBatchCount,
+            'universe_symbols_examples'       => $this->universeExamples,
+            'selected_window_total'           => (int)($runWindow['selected_window_total'] ?? 0),
+            'batch_size'                      => (int)($runWindow['batch_size'] ?? (int)($config['batch_size'] ?? 50)),
+            'max_symbols_per_run'             => (int)($runWindow['max_symbols_per_run'] ?? (int)($config['max_symbols_per_run'] ?? 50)),
+            'batch_offset_before'             => (int)($runWindow['batch_offset_before'] ?? 0),
+            'batch_offset_after'              => (int)($runWindow['batch_offset_after'] ?? 0),
+            'registry_cursor'                 => (int)($runWindow['registry_cursor'] ?? 0),
+            'previous_registry_cursor'        => (int)($runWindow['previous_registry_cursor'] ?? 0),
+            'next_registry_cursor'            => (int)($runWindow['next_registry_cursor'] ?? 0),
+            'registry_window_start'           => (int)($runWindow['registry_window_start'] ?? 0),
+            'registry_window_end'             => (int)($runWindow['registry_window_end'] ?? 0),
+            'registry_window_wrapped'         => (bool)($runWindow['registry_window_wrapped'] ?? false),
+            'registry_cursor_reset_reason'    => $runWindow['registry_cursor_reset_reason'] ?? null,
+            'batch_symbols_examples'          => is_array($runWindow['batch_symbols_examples'] ?? null) ? array_slice($runWindow['batch_symbols_examples'], 0, 5) : [],
+            'continuous_scan_enabled'         => (bool)($runWindow['continuous_scan_enabled'] ?? (bool)($config['continuous_scan_enabled'] ?? true)),
+            'auto_requeue_when_done'          => (bool)($runWindow['auto_requeue_when_done'] ?? (bool)($config['auto_requeue_when_done'] ?? true)),
+            'auto_requeued_from_status'       => $runWindow['auto_requeued_from_status'] ?? null,
+            'auto_requeue_at'                 => $runWindow['auto_requeue_at'] ?? null,
+            'auto_requeue_result'             => $runWindow['auto_requeue_result'] ?? null,
+            'previous_next_registry_cursor_before_requeue' => $runWindow['previous_next_registry_cursor_before_requeue'] ?? null,
+            'registry_cursor_after_requeue'   => $runWindow['registry_cursor_after_requeue'] ?? null,
+            'next_registry_cursor_after_requeue' => $runWindow['next_registry_cursor_after_requeue'] ?? null,
+            'auto_requeue_skipped_reason'     => $runWindow['auto_requeue_skipped_reason'] ?? null,
         ];
     }
 
     // ── Candle fetch ───────────────────────────────────────────────────────────
 
     /**
-     * Fetch OHLCV candles from Bybit.  Returns [] on any failure.
+     * Fetch candles with parser2-history primary source and bybit fallback.
+     *
+     * @return list<array<string,mixed>>
      */
     private function fetchCandles(string $symbol, int $limit, array $config): array
     {
+        $this->lastCandleFetchDiag = [
+            'candle_source_used' => 'none',
+            'parser2_history_files_read' => 0,
+            'parser2_history_candles_loaded' => 0,
+            'parser2_history_candles_after_dedupe' => 0,
+            'parser2_history_oldest_ts' => null,
+            'parser2_history_newest_ts' => null,
+            'bybit_fallback_used' => false,
+            'candle_source_error' => null,
+        ];
+
+        $source = (string)($config['candle_source'] ?? 'parser2_history');
+        $fallback = (string)($config['candle_source_fallback'] ?? 'bybit');
+        $parser2Enabled = (bool)($config['parser2_history_enabled'] ?? true);
+        $parser2LookbackMinutes = max(30, (int)($config['parser2_history_lookback_minutes'] ?? 240));
+        $parser2MinCandles = max(20, (int)($config['parser2_history_min_candles'] ?? 80));
+        $bybitFallbackLimit = max($limit, (int)($config['bybit_fallback_limit'] ?? 120));
+
+        if ($source === 'parser2_history' && $parser2Enabled) {
+            $fromParser2 = $this->loadCandlesFromParser2History($symbol, $parser2LookbackMinutes, $parser2MinCandles, $this->lastCandleFetchDiag);
+            if (count($fromParser2) >= $parser2MinCandles) {
+                $this->lastCandleFetchDiag['candle_source_used'] = 'parser2_history';
+                return array_slice($fromParser2, -max($limit, $parser2MinCandles));
+            }
+            $this->lastCandleFetchDiag['candle_source_error'] = $this->lastCandleFetchDiag['candle_source_error'] ?? 'parser2_history_insufficient_candles';
+        }
+
+        if ($fallback === 'bybit') {
+            $candles = $this->fetchBybitCandles($symbol, $bybitFallbackLimit, $config);
+            if (!empty($candles)) {
+                $this->lastCandleFetchDiag['candle_source_used'] = 'bybit_fallback';
+                $this->lastCandleFetchDiag['bybit_fallback_used'] = true;
+                return array_slice($candles, -max($limit, 20));
+            }
+            $this->lastCandleFetchDiag['candle_source_error'] = $this->lastCandleFetchDiag['candle_source_error'] ?? 'bybit_fallback_empty';
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array<string,mixed> $diag
+     * @return list<array<string,mixed>>
+     */
+    private function loadCandlesFromParser2History(string $symbol, int $lookbackMinutes, int $minCandles, array &$diag): array
+    {
+        $normalizedSymbol = strtoupper(trim($symbol));
+        if (!preg_match('/^[A-Z0-9]{2,30}$/', $normalizedSymbol)) {
+            $diag['candle_source_error'] = 'parser2_history_invalid_symbol';
+            return [];
+        }
+        $storageRoot = $this->repoRoot . '/modules/parser/parser2_history_accumulator/storage/' . $normalizedSymbol;
+        $files = [
+            $storageRoot . '/' . gmdate('Y-m-d') . '.ndjson',
+            $storageRoot . '/' . gmdate('Y-m-d', time() - 86400) . '.ndjson',
+        ];
+
+        $rows = [];
+        $filesRead = 0;
+        foreach ($files as $file) {
+            if (!is_file($file)) {
+                continue;
+            }
+            $filesRead++;
+            $fh = @fopen($file, 'r');
+            if (!is_resource($fh)) {
+                $diag['candle_source_error'] = 'parser2_file_open_failed';
+                continue;
+            }
+            while (($line = fgets($fh)) !== false) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                $row = json_decode($line, true);
+                if (!is_array($row)) {
+                    continue;
+                }
+                $ts = 0;
+                if (isset($row['ts_unix'])) {
+                    $ts = (int)$row['ts_unix'];
+                } elseif (isset($row['ts'])) {
+                    $parsedTs = strtotime((string)$row['ts']);
+                    $ts = $parsedTs === false ? 0 : (int)$parsedTs;
+                }
+                $price = (float)($row['last_price'] ?? ($row['data']['lastPrice'] ?? 0.0));
+                $volume = (float)($row['volume24h'] ?? 0.0);
+                if ($ts <= 0 || $price <= 0.0) {
+                    continue;
+                }
+                $rows[] = ['ts' => $ts, 'price' => $price, 'volume' => $volume];
+            }
+            fclose($fh);
+        }
+
+        $diag['parser2_history_files_read'] = $filesRead;
+        $diag['parser2_history_candles_loaded'] = count($rows);
+        if (empty($rows)) {
+            $diag['candle_source_error'] = $diag['candle_source_error'] ?? 'parser2_history_empty';
+            return [];
+        }
+
+        usort($rows, static fn(array $a, array $b): int => ((int)$a['ts']) <=> ((int)$b['ts']));
+        $dedupedByTs = [];
+        foreach ($rows as $row) {
+            $dedupedByTs[(string)$row['ts']] = $row;
+        }
+        $rows = array_values($dedupedByTs);
+        usort($rows, static fn(array $a, array $b): int => ((int)$a['ts']) <=> ((int)$b['ts']));
+        $diag['parser2_history_candles_after_dedupe'] = count($rows);
+
+        $minuteBars = [];
+        foreach ($rows as $row) {
+            $bucket = (int)(floor(((int)$row['ts']) / 60) * 60);
+            $price = (float)$row['price'];
+            $volume = (float)$row['volume'];
+            if (!isset($minuteBars[$bucket])) {
+                $minuteBars[$bucket] = [
+                    'ts' => $bucket,
+                    'open' => $price,
+                    'high' => $price,
+                    'low' => $price,
+                    'close' => $price,
+                    'volume' => $volume,
+                ];
+            } else {
+                $minuteBars[$bucket]['high'] = max((float)$minuteBars[$bucket]['high'], $price);
+                $minuteBars[$bucket]['low'] = min((float)$minuteBars[$bucket]['low'], $price);
+                $minuteBars[$bucket]['close'] = $price;
+                $minuteBars[$bucket]['volume'] = (float)$minuteBars[$bucket]['volume'] + $volume;
+            }
+        }
+        ksort($minuteBars);
+        $candles = array_values($minuteBars);
+        if (empty($candles)) {
+            $diag['candle_source_error'] = $diag['candle_source_error'] ?? 'parser2_history_no_minute_bars';
+            return [];
+        }
+
+        $newestTs = (int)($candles[count($candles) - 1]['ts'] ?? 0);
+        $minTs = $newestTs - ($lookbackMinutes * 60);
+        $candles = array_values(array_filter($candles, static fn(array $c): bool => (int)$c['ts'] >= $minTs));
+
+        if (count($candles) < $minCandles) {
+            $candles = array_slice($candles, -$minCandles);
+        }
+        if (!empty($candles)) {
+            $diag['parser2_history_oldest_ts'] = $this->formatCandleTimestamp((int)$candles[0]['ts']);
+            $diag['parser2_history_newest_ts'] = $this->formatCandleTimestamp((int)$candles[count($candles) - 1]['ts']);
+        }
+        return $candles;
+    }
+
+    /**
+     * Fetch OHLCV candles from Bybit. Returns [] on any failure.
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function fetchBybitCandles(string $symbol, int $limit, array $config): array
+    {
         $baseUrl = rtrim((string)($config['bybit_base_url'] ?? 'https://api.bybit.com'), '/');
         $timeout = max(3, (int)($config['bybit_timeout_sec'] ?? 6));
-
         $url = $baseUrl . '/v5/market/kline?' . http_build_query([
             'category' => 'linear',
             'symbol'   => $symbol,
@@ -1694,7 +3845,6 @@ final class ConfirmedContinuationService
         ]);
         $raw = curl_exec($ch);
         curl_close($ch);
-
         if (!is_string($raw) || $raw === '') {
             return [];
         }
@@ -1724,25 +3874,78 @@ final class ConfirmedContinuationService
 
     private function fetchUniverse(array $config): array
     {
-        // Default: read from a shared symbols file if available; else return a small demo set
-        $symbolsFile = $this->repoRoot . '/modules/parser/storage/symbols.json';
-        if (is_file($symbolsFile)) {
-            $data = $this->readJson($symbolsFile, []);
-            if (is_array($data) && !empty($data)) {
-                $symbols = [];
+        $universeSource  = 'unknown';
+        $symbols         = [];
+        $diagTotal       = 0;
+
+        // Resolve parser1_market_registry path (same as double_bottom_long)
+        try {
+            $registryDir = \Core\System\SystemPaths::instance()
+                ->get('parser.parser1_market_registry');
+        } catch (\Throwable) {
+            $registryDir = $this->repoRoot . '/modules/parser/parser1_market_registry';
+        }
+
+        // Prefer active.json (symbol list); fall back to registry.json
+        $activePath   = rtrim($registryDir, '/') . '/storage/active.json';
+        $registryPath = rtrim($registryDir, '/') . '/storage/registry.json';
+
+        foreach ([$activePath, $registryPath] as $tryPath) {
+            if (!is_file($tryPath)) {
+                continue;
+            }
+            $raw = @file_get_contents($tryPath);
+            if ($raw === false || $raw === '') {
+                continue;
+            }
+            $data = json_decode($raw, true);
+            if (!is_array($data)) {
+                continue;
+            }
+
+            if (array_is_list($data)) {
+                // List of objects [{symbol: ...}] or flat strings
                 foreach ($data as $item) {
                     if (is_array($item) && isset($item['symbol'])) {
-                        $symbols[] = (string)$item['symbol'];
-                    } elseif (is_string($item)) {
+                        $sym = (string)$item['symbol'];
+                        if ($sym !== '') {
+                            $symbols[] = $sym;
+                        }
+                    } elseif (is_string($item) && $item !== '') {
                         $symbols[] = $item;
                     }
                 }
-                if (!empty($symbols)) {
-                    return array_slice($symbols, 0, (int)($config['max_symbols_per_run'] ?? 50));
+            } else {
+                // Keyed dict: {BTCUSDT: {...}}
+                foreach ($data as $key => $val) {
+                    if (is_array($val) && isset($val['symbol'])) {
+                        $sym = (string)$val['symbol'];
+                    } else {
+                        $sym = (string)$key;
+                    }
+                    // Only include active linear USDT perpetuals
+                    $status = is_array($val) ? (string)($val['status'] ?? 'active') : 'active';
+                    $type   = is_array($val) ? (string)($val['contract_type'] ?? $val['type'] ?? 'LinearPerpetual') : 'LinearPerpetual';
+                    if (str_ends_with($sym, 'USDT') && $status !== 'inactive' && str_contains(strtolower($type), 'linear')) {
+                        $symbols[] = $sym;
+                    }
                 }
             }
+
+            if (!empty($symbols)) {
+                $universeSource = $tryPath;
+                $diagTotal      = count($symbols);
+                break;
+            }
         }
-        return [];
+
+        // Write universe diagnostics into last_run context (via instance vars)
+        $this->universeSource       = $universeSource;
+        $this->universeTotal        = $diagTotal;
+        $this->universeBatchCount   = 0; // updated after slice
+        $this->universeExamples     = array_slice($symbols, 0, 5);
+
+        return $symbols;
     }
 
     // ── Utilities ──────────────────────────────────────────────────────────────
@@ -1778,9 +3981,19 @@ final class ConfirmedContinuationService
         $this->continuationConfirmedTotal  = 0;
         $this->firstBounceRejectedTotal    = 0;
         $this->lateEntryRejectedTotal      = 0;
+        $this->pattern123CheckedTotal      = 0;
+        $this->pattern123DetectedTotal     = 0;
+        $this->pattern123RejectedTotal     = 0;
+        $this->pattern123MissingTotal      = 0;
+        $this->point3BreaksPoint1Total     = 0;
+        $this->point3NotConfirmedTotal     = 0;
+        $this->entryTooFarFromPoint3Total  = 0;
+        $this->acceptedPattern123Examples  = [];
+        $this->rejectedPattern123Examples  = [];
         $this->antiCombCheckedTotal                  = 0;
         $this->antiCombRejectedTotal                 = 0;
         $this->antiCombRecentRangeRejectTotal        = 0;
+        $this->antiCombRecentSwingRejectTotal        = 0;
         $this->antiCombOppositeSwingRejectTotal      = 0;
         $this->antiCombWickChaosRejectTotal          = 0;
         $this->antiCombLowConsistencyRejectTotal     = 0;
@@ -1794,6 +4007,138 @@ final class ConfirmedContinuationService
         $this->wallTestConfirmedTotal      = 0;
         $this->wallTestRejectedTotal       = 0;
         $this->wallTestOppositeContextTotal= 0;
+        $this->wallPendingBlockedTotal     = 0;
+        $this->wallPendingExamples         = [];
+        $this->handoffQueueWrittenTotal       = 0;
+        $this->handoffQueueNewTotal           = 0;
+        $this->handoffQueueRefreshedTotal     = 0;
+        $this->handoffQueueMissingStatusTotal = 0;
+        $this->handoffQueueExamples           = [];
+        $this->postStructureFilterCheckedTotal   = 0;
+        $this->postStructureFilterRejectedTotal  = 0;
+        $this->entryTimingCheckedTotal           = 0;
+        $this->nearExitZoneRejectedTotal         = 0;
+        $this->controlledTrendGateCheckedTotal   = 0;
+        $this->controlledTrendGateRejectedTotal  = 0;
+        $this->controlledTrendScoreTooLowTotal   = 0;
+        $this->directionalConsistencyTooLowTotal = 0;
+        $this->wickChaosTooHighTotal             = 0;
+        $this->recentSwingTooHighTotal           = 0;
+        $this->oppositeSwingTooHighTotal         = 0;
+        $this->structureBreaksNotAllowedTotal    = 0;
+        $this->smoothTrendCheckedTotal           = 0;
+        $this->smoothTrendRejectedTotal          = 0;
+        $this->smoothTrendScoreTooLowTotal       = 0;
+        $this->verticalSpikeRejectedTotal        = 0;
+        $this->acceptedEarlyStructureExamples    = [];
+        $this->acceptedMidTrendExamples          = [];
+        $this->rejectedLateEntryExamples         = [];
+        $this->rejectedCombExamples              = [];
+        $this->pattern123ValidButAntiCombRejectedExamples = [];
+        $this->handoffCandidatesBeforeThrottleTotal = 0;
+        $this->handoffAfterThrottleTotal            = 0;
+        $this->handoffThrottledTotal                = 0;
+        $this->handoffThrottleReasonCounts          = [];
+        $this->handoffThrottleExamples              = [];
+        // Funnel / split-reason counters
+        $this->structuresDetectedTotal                    = 0;
+        $this->pattern123StructuresSeenTotal              = 0;
+        $this->pattern123ValidBeforeFiltersTotal          = 0;
+        $this->pattern123InvalidBeforeFiltersTotal        = 0;
+        $this->pattern123ValidButAntiCombRejectedTotal    = 0;
+        $this->pattern123ValidButEntryTimingRejectedTotal = 0;
+        $this->pattern123ValidButWallBlockedTotal         = 0;
+        $this->pattern123ValidSignalReadyTotal            = 0;
+        $this->candleSourceUsedCounts                     = ['parser2_history' => 0, 'bybit_fallback' => 0, 'none' => 0];
+        $this->parser2HistoryUsedTotal                    = 0;
+        $this->bybitFallbackUsedTotal                     = 0;
+        $this->backward123CheckedTotal                    = 0;
+        $this->backward123ValidTotal                      = 0;
+        $this->backward123InvalidTotal                    = 0;
+        $this->recentPoint3CandidatesTotal                = 0;
+        $this->point3NearEntryTotal                       = 0;
+        $this->point3TurnConfirmedTotal                   = 0;
+        $this->point2FoundTotal                           = 0;
+        $this->point1FoundTotal                           = 0;
+        $this->structureBreaksAfterPoint3Total            = 0;
+        $this->structureBreaksBeforePoint3IgnoredTotal    = 0;
+        $this->backward123ValidExamples                   = [];
+        $this->backward123InvalidExamples                 = [];
+        $this->point3CandidateExamples                    = [];
+        $this->parser2HistoryErrorExamples                = [];
+        $this->lastCandleFetchDiag = [
+            'candle_source_used' => 'none',
+            'parser2_history_files_read' => 0,
+            'parser2_history_candles_loaded' => 0,
+            'parser2_history_candles_after_dedupe' => 0,
+            'parser2_history_oldest_ts' => null,
+            'parser2_history_newest_ts' => null,
+            'bybit_fallback_used' => false,
+            'candle_source_error' => null,
+        ];
+        $this->postStructureCombDetectedTotal             = 0;
+        $this->antiCombPassedTotal                        = 0;
+        $this->entryTimingPassedTotal                     = 0;
+        $this->qualityGatePassedTotal                     = 0;
+        $this->wallTestPassedTotal                        = 0;
+        $this->signalReadyTotal                           = 0;
+        $this->deprecatedExecutionModeKeySeen    = false;
+        $this->deprecatedExecutionModeKeyIgnored = false;
+        $this->effectiveStrategyMode             = 'passive';
+        // Universe diagnostics
+        $this->universeSource     = 'unknown';
+        $this->universeTotal      = 0;
+        $this->universeBatchCount = 0;
+        $this->universeExamples   = [];
+    }
+
+    /**
+     * Ensure bootstrap class file is loaded (safe to call multiple times).
+     */
+    private function requireBootstrap(): void
+    {
+        if (!class_exists(ConfirmedContinuationBootstrap::class, false)) {
+            require_once $this->moduleDir . '/bootstrap.php';
+        }
+    }
+
+    /**
+     * Strategy is environment-neutral: legacy mode=demo/live in active config
+     * is ignored and removed so bootstrap falls back to base passive mode.
+     *
+     * @return array{seen:bool,ignored:bool}
+     */
+    private function normalizeDeprecatedExecutionModeKeyInActiveConfig(): array
+    {
+        $activePath = $this->moduleDir . '/config/active.php';
+        if (!is_file($activePath)) {
+            return ['seen' => false, 'ignored' => false];
+        }
+        try {
+            $active = require $activePath;
+            if (!is_array($active)) {
+                return ['seen' => false, 'ignored' => false];
+            }
+        } catch (\Throwable) {
+            return ['seen' => false, 'ignored' => false];
+        }
+
+        $mode = (string)($active['mode'] ?? '');
+        if (!in_array($mode, ['demo', 'live'], true)) {
+            return ['seen' => false, 'ignored' => false];
+        }
+
+        unset($active['mode']);
+        $safe = [];
+        foreach ($active as $k => $v) {
+            if (is_bool($v) || is_int($v) || is_float($v) || is_string($v)) {
+                $safe[(string)$k] = $v;
+            }
+        }
+        $php = "<?php\n\ndeclare(strict_types=1);\n\nreturn " . var_export($safe, true) . ";\n";
+        @file_put_contents($activePath, $php, LOCK_EX);
+
+        return ['seen' => true, 'ignored' => true];
     }
 
     private function readJson(string $path, mixed $default = []): mixed

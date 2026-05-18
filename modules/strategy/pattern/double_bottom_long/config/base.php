@@ -360,4 +360,174 @@ return [
     'hourly_stats_bad_winrate_threshold'    => 40.0,
     'hourly_stats_good_avg_roi_threshold'   => 5.0,
     'hourly_stats_good_winrate_threshold'   => 60.0,
+
+    // ── DBL garbage veto — conservative pre-handoff trash filter ─────────────
+    // Runs after normal DBL detection. Blocks obvious trash signals before they
+    // reach bot_handoff_queue. Does NOT change detection logic; only gates handoff.
+    'dbl_garbage_veto_enabled'                            => true,
+
+    // Hard veto 1: low quality + generic warning + no OBC confirmation
+    'dbl_garbage_low_quality_max_score'                   => 0.70,   // block if candidate_quality_score <= this
+    'dbl_garbage_low_quality_requires_generic_warning'    => true,   // also require generic_entry_context_score_low warning
+    'dbl_garbage_low_quality_requires_obc_missing_or_skipped' => true,  // also require OBC not checked / skipped
+
+    // Hard veto 2: OBC skipped specifically due to quality_below_threshold
+    'dbl_garbage_block_obc_quality_skip'                  => true,
+    'dbl_garbage_obc_quality_skip_max_score'              => 0.72,   // block if ob_skip_reason=quality_below_threshold AND score <= this
+
+    // Hard veto 3: late daily extension long
+    // Block if already strongly extended on 24h and entry is near the upper daily range.
+    'dbl_garbage_daily_extension_enabled'                 => true,
+    'dbl_garbage_day_change_hot_pct'                      => 35.0,   // 24h price change >= this → extended
+    'dbl_garbage_position_in_24h_range_max_pct'           => 80.0,   // position in 24h range >= this → near top
+    'dbl_garbage_min_room_to_24h_high_roi'                => 10.0,   // room to 24h high < this (with day_change >= 45) → block
+
+    // Hard veto 4: whipsaw + weak quality
+    // Blocks only if whipsaw metrics exceed threshold AND quality is weak.
+    // Strong/high-quality signals survive even when volatility is high.
+    'dbl_garbage_whipsaw_enabled'                         => true,
+    'dbl_garbage_whipsaw_max_10m_range_roi'               => 15.0,   // recent 10m range ROI > this → whipsaw flag
+    'dbl_garbage_whipsaw_max_60m_direction_flips'         => 10,     // recent 60m direction flip count > this → whipsaw flag
+    'dbl_garbage_whipsaw_requires_weak_quality'           => true,   // hard block only if quality is also weak
+    'dbl_garbage_whipsaw_weak_quality_max_score'          => 0.72,   // "weak quality" threshold
+
+    // Hard veto 5: late local entry after DBL recovery leg already spent.
+    // Quality-aware mode:
+    //   low quality  (q < low_quality_max)         -> block on >=2 flags
+    //   mid quality  (low_quality_max <= q < high) -> block on >=3 flags
+    //   high quality (q >= high_quality_min)       -> block on >=3 flags
+    //                                                AND near_high=true OR tiny_room=true
+    'dbl_garbage_late_local_entry_enabled'                => true,
+    'dbl_garbage_max_entry_distance_from_point3_pct'      => 1.2,
+    'dbl_garbage_max_post_point3_impulse_spent_pct'       => 70.0,
+    'dbl_garbage_min_room_to_recent_swing_high_roi'       => 5.0,
+    'dbl_garbage_near_recent_swing_high_pct'              => 0.35,
+    'dbl_garbage_late_local_quality_aware_enabled'        => true,
+    'dbl_garbage_late_local_low_quality_max'              => 0.78,
+    'dbl_garbage_late_local_high_quality_min'             => 0.82,
+    'dbl_garbage_late_local_flags_required_low_quality'   => 2,
+    'dbl_garbage_late_local_flags_required_mid_quality'   => 3,
+    'dbl_garbage_late_local_flags_required_high_quality'  => 3,
+    'dbl_garbage_late_local_high_quality_requires_near_high_or_tiny_room' => true,
+    'dbl_garbage_tiny_room_to_recent_swing_high_roi'      => 2.0,
+
+    // Hard veto 6: missing critical DBL trace (point3 / entry-distance null).
+    // Blocks handoff when the signal lacks point3/neckline/entry-distance metrics
+    // that are required to evaluate late-entry risk, unless the signal is very
+    // strong and OBC was checked with no ask-wall risk.
+    // Bypass requires: quality >= min_quality_to_bypass AND OBC checked AND no ask risk AND no generic warning.
+    'dbl_garbage_block_missing_critical_trace'              => true,
+    'dbl_garbage_missing_trace_min_quality_to_bypass'       => 0.82,
+    'dbl_garbage_missing_trace_requires_obc_confirmed_to_bypass' => true,
+
+    // Hard veto 7: reclaim not confirmed for medium-quality signals.
+    // Blocks handoff when quality is at or below the threshold and no reclaim
+    // confirmation is available (reclaim_confirmed, neckline_reclaim_confirmed,
+    // or reclaim_after_flat_detected).
+    'dbl_garbage_require_reclaim_confirmation_for_medium_quality' => true,
+    'dbl_garbage_reclaim_confirmation_medium_quality_max'         => 0.78,
+
+    // Veto 8: late-local + tiny-room + no reclaim confirmation.
+    // Targets entries far from point3, with tiny room to recent swing high,
+    // and no reclaim evidence (reclaim_confirmed, neckline_reclaim_confirmed,
+    // reclaim_after_flat_detected, or reclaim_retest_held all false).
+    // diagnostic_only=true means only a soft warning is written; the signal still passes.
+    // Set diagnostic_only=false to enable the hard block once the pattern is confirmed.
+    'dbl_garbage_late_local_tiny_room_diagnostic_only' => true,
+    'dbl_garbage_late_local_tiny_room_roi'             => 2.0,
+    'dbl_garbage_late_local_far_point3_pct'            => 1.8,
+
+    // ── Throughput health thresholds ──────────────────────────────────────────
+    // Diagnostics only — no auto-loosening based on these.
+    'dbl_expected_min_handoff_per_6h'                  => 3,
+
+    // ── Trend-shift confirmation gate (final gate before Bot handoff) ─────────
+    // Runs after garbage veto. Blocks handoff for signals where the DBL reversal
+    // is not yet confirmed by at least one strong confirmation path.
+    // Confirmed paths: reclaim_hold | retest_hold | higher_low_after_point3 | short_structure_break
+    // Unconfirmed high/mid-quality signals become pending/watch (not hard rejected)
+    // and are rechecked on each subsequent tick until confirmed or TTL expires.
+    'dbl_trend_shift_gate_enabled'                             => true,
+    'dbl_trend_shift_required_for_handoff'                     => true,
+    'dbl_trend_shift_min_closes_above_reclaim'                 => 2,
+    'dbl_trend_shift_reclaim_hold_minutes'                     => 2,
+    'dbl_trend_shift_max_reclaim_loss_pct'                     => 0.20,
+    'dbl_trend_shift_require_no_fresh_lower_low'               => true,
+    'dbl_trend_shift_point3_break_tolerance_pct'               => 0.20,
+    'dbl_trend_shift_allow_high_quality_pending'               => true,
+    'dbl_trend_shift_high_quality_threshold'                   => 0.82,
+    'dbl_trend_shift_pending_ttl_minutes'                      => 10,
+    'dbl_trend_shift_pending_recheck_enabled'                  => true,
+    // ── DBL pattern-status state machine (primary handoff gate) ───────────────
+    // Flow:
+    //   raw_candidate -> active -> confirmed -> (then) garbage_veto -> handoff_ready
+    //   raw/active    -> invalid
+    // Only confirmed patterns can proceed to garbage veto / Bot handoff.
+    'dbl_pattern_status_enabled'                               => true,
+    'dbl_pattern_confirmation_required_for_handoff'            => true,
+    'dbl_pattern_min_closes_above_neckline'                    => 2,
+    'dbl_pattern_reclaim_hold_bars'                            => 2,
+    'dbl_pattern_reclaim_hold_minutes'                         => 2,
+    'dbl_pattern_point3_break_tolerance_pct'                   => 0.20,
+    'dbl_pattern_higher_low_tolerance_pct'                     => 0.15,
+    'dbl_pattern_pending_enabled'                              => true,
+    'dbl_pattern_pending_ttl_minutes'                          => 10,
+    'dbl_pattern_pending_recheck_enabled'                      => true,
+    'dbl_pattern_pending_max_items'                            => 100,
+    'dbl_pattern_allow_active_to_pending'                      => true,
+    'dbl_pattern_allow_confirmed_to_handoff'                   => true,
+    // Point3 break refinement (diagnostics + pending recovery watch)
+    'dbl_point3_recovery_watch_enabled'                        => true,
+    'dbl_point3_break_terminal_requires_current_below_point3'  => true,
+    'dbl_point3_break_recovery_requires_reclaim_recovered'     => true,
+    'dbl_point3_recovery_watch_ttl_minutes'                    => 10,
+    'dbl_point3_recovery_min_confirm_bars'                     => 2,
+    // ── Reusable strategy filter engine (DBL profile) ─────────────────────────
+    'dbl_filter_engine_enabled'                                => true,
+    'dbl_filter_enforcement_mode'                              => 'diagnostic_only',
+    'dbl_filter_point3_terminal_enabled'                       => true,
+    'dbl_filter_low_quality_without_obc_enabled'               => true,
+    'dbl_filter_low_quality_without_obc_max_score'             => 0.70,
+    'dbl_filter_low_quality_without_obc_require_generic_warning' => true,
+    'dbl_filter_low_quality_without_obc_severity'              => 'soft_block',
+    'dbl_filter_missing_reclaim_enabled'                       => true,
+    'dbl_filter_missing_reclaim_severity'                      => 'warning',
+    'dbl_filter_late_local_entry_enabled'                      => true,
+    'dbl_filter_late_local_entry_max_distance_from_point3_pct' => 2.5,
+    'dbl_filter_late_local_entry_min_room_to_recent_high_roi'  => 3.0,
+    'dbl_filter_late_local_entry_severity'                     => 'soft_block',
+    'dbl_filter_tiny_room_enabled'                             => true,
+    'dbl_filter_tiny_room_min_room_roi'                        => 2.0,
+    'dbl_filter_tiny_room_severity'                            => 'warning',
+    'dbl_filter_daily_extension_enabled'                       => true,
+    'dbl_filter_daily_extension_hot_pct'                       => 35.0,
+    'dbl_filter_daily_extension_position_in_range_max_pct'     => 80.0,
+    'dbl_filter_daily_extension_severity'                      => 'hard_block',
+    'dbl_filter_whipsaw_enabled'                               => true,
+    'dbl_filter_whipsaw_max_10m_range_roi'                     => 15.0,
+    'dbl_filter_whipsaw_max_60m_direction_flips'               => 10,
+    'dbl_filter_whipsaw_requires_weak_quality'                 => true,
+    'dbl_filter_whipsaw_weak_quality_max_score'                => 0.72,
+    'dbl_filter_whipsaw_severity'                              => 'hard_block',
+    // ── DBL filter-audit calibration mode ─────────────────────────────────────
+    'dbl_filter_audit_mode_enabled'                            => true,
+    'dbl_filter_audit_mode_demo_only'                          => true,
+    'dbl_filter_audit_send_to_bot'                             => true,
+    'dbl_filter_audit_only_when_no_normal_ready'               => true,
+    'dbl_filter_audit_max_signals_per_cycle'                   => 5,
+    'dbl_filter_audit_max_signals_per_30m'                     => 15,
+    'dbl_filter_audit_max_signals_per_6h'                      => 999,
+    'dbl_filter_audit_min_quality_score'                       => 0.65,
+    'dbl_filter_audit_positive_roi_threshold'                  => 2.0,
+    'dbl_filter_audit_negative_roi_threshold'                  => -2.0,
+    'dbl_filter_audit_require_no_fatal_break'                  => true,
+    'dbl_filter_audit_ready_ttl_minutes'                       => 60,
+    'dbl_filter_audit_stale_ready_action'                      => 'withdraw',
+    // ── DBL confirmed-pattern freshness override ──────────────────────────────
+    // For signals with dbl_pattern_status=confirmed, bypass the generic current-run
+    // freshness window (300 s) and use confirmed-pattern TTL + validity check instead.
+    // This prevents valid confirmed patterns from being withdrawn by the generic gate.
+    'dbl_confirmed_pattern_ttl_minutes'                        => 10,
+    'dbl_confirmed_pattern_require_price_still_valid'          => true,
+    'dbl_confirmed_pattern_max_age_before_handoff_minutes'     => 10,
 ];

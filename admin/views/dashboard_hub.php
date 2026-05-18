@@ -23,6 +23,47 @@ function renderDashboardHub(): string
 {
     $botDir     = System::path('root') . '/modules/bot';
     $storageDir = $botDir . '/storage';
+    $dashboardStorageWarnings = [];
+    $uiSafeReadSkippedTotal = 0;
+    $safeJsonReadLimited = static function (string $path, int $maxBytes, mixed $default = []) use (&$dashboardStorageWarnings, &$uiSafeReadSkippedTotal): mixed {
+        if (!is_file($path)) {
+            return $default;
+        }
+        $size = (int)@filesize($path);
+        if ($size > $maxBytes) {
+            $dashboardStorageWarnings[] = [
+                'file' => $path,
+                'file_too_large_for_ui' => true,
+                'file_size_mb' => round($size / 1048576, 3),
+                'max_allowed_mb' => round($maxBytes / 1048576, 3),
+            ];
+            $uiSafeReadSkippedTotal++;
+            return $default;
+        }
+        $raw = @file_get_contents($path);
+        if (!is_string($raw) || trim($raw) === '') {
+            return $default;
+        }
+        $decoded = json_decode($raw, true);
+        return $decoded !== null ? $decoded : $default;
+    };
+    $estimateDirSizeMb = static function (string $dir): ?float {
+        if (!is_dir($dir)) {
+            return null;
+        }
+        $total = 0;
+        try {
+            $iter = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS));
+            foreach ($iter as $file) {
+                if ($file instanceof \SplFileInfo && $file->isFile()) {
+                    $total += $file->getSize();
+                }
+            }
+            return round($total / 1048576, 3);
+        } catch (\Throwable) {
+            return null;
+        }
+    };
 
     // ── read storage files ────────────────────────────────────────────────
     $readJson = static function (string $file, mixed $default = []) use ($storageDir): mixed {
@@ -83,6 +124,34 @@ function renderDashboardHub(): string
     } catch (\Throwable) {
         // keep empty
     }
+
+    // ── dynamic_learning runtime data ────────────────────────────────────
+    $dlModuleDir = System::path('root') . '/modules/dynamic_learning';
+    $dlLastRun   = [];
+    $dlLastRunTs = null;
+    $dlUiReadMaxBytes = 2 * 1024 * 1024;
+    $dlCurrentProfile = [];
+    $dlCandidateProfile = [];
+    $dlCandidateReplay = [];
+    try {
+        $dlLrPath = $dlModuleDir . '/storage/last_run.json';
+        $dlDec = $safeJsonReadLimited($dlLrPath, $dlUiReadMaxBytes, []);
+        if (is_array($dlDec) && $dlDec !== []) {
+            $dlLastRun = $dlDec;
+            $dlLastRunTs = @filemtime($dlLrPath) ?: null;
+        }
+        $dlCurrentProfile = (array)$safeJsonReadLimited($dlModuleDir . '/storage/profiles/early_impulse_growth_long/current_profile.json', $dlUiReadMaxBytes, []);
+        $dlCandidateProfile = (array)$safeJsonReadLimited($dlModuleDir . '/storage/profiles/early_impulse_growth_long/candidate_profile.json', $dlUiReadMaxBytes, []);
+        $dlCandidateReplay = (array)$safeJsonReadLimited($dlModuleDir . '/storage/profiles/early_impulse_growth_long/candidate_replay.json', $dlUiReadMaxBytes, []);
+    } catch (\Throwable) {
+        // keep empty
+    }
+    $dlStorageSizeMb = $estimateDirSizeMb($dlModuleDir . '/storage');
+    $eigStorageSizeMb = $estimateDirSizeMb(System::path('root') . '/modules/strategy/flow/early_impulse_growth_long/storage');
+    usort($dashboardStorageWarnings, static function (array $a, array $b): int {
+        return ((float)($b['file_size_mb'] ?? 0.0) <=> (float)($a['file_size_mb'] ?? 0.0));
+    });
+    $largestStorageWarnings = array_slice($dashboardStorageWarnings, 0, 5);
 
     // ── prof_manager runtime data ─────────────────────────────────────────
     $pmModuleDir = System::path('root') . '/modules/prof_manager';
@@ -353,66 +422,95 @@ function renderDashboardHub(): string
     }
 
     // ── summary counts ────────────────────────────────────────────────────
-    // Fallback: scan strategy module manifests if bot hasn't run yet.
-    // Scans two levels deep (e.g. modules/strategy/fish/ and
-    // modules/strategy/pattern/double_bottom_long/) so all concrete strategy
-    // modules are discovered regardless of nesting.
-    if (empty($registry)) {
-        $stratRoot = System::path('root') . '/modules/strategy';
-        $addFromManifest = static function (string $mfPath, string $relDir) use (&$registry): void {
-            if (!file_exists($mfPath)) {
-                return;
-            }
-            $mfRaw = file_get_contents($mfPath);
-            $mf    = ($mfRaw !== false) ? json_decode($mfRaw, true) : null;
-            if (!is_array($mf) || ($mf['category'] ?? '') !== 'strategy') {
-                return;
-            }
-            $mfId = (string)($mf['name'] ?? '');
-            if ($mfId === '') {
-                return;
-            }
-            // Avoid duplicates
-            foreach ($registry as $r) {
-                if (($r['strategy_id'] ?? '') === $mfId) {
-                    return;
-                }
-            }
-            $registry[] = [
-                'strategy_id'        => $mfId,
-                'module_path'        => $relDir,
-                'manifest_path'      => $relDir . '/manifest.json',
-                'title'              => (string)($mf['title'] ?? $mfId),
-                'category'           => 'strategy',
-                'enabled_by_default' => (bool)($mf['enabled_by_default'] ?? true),
-                'handoff_queue_path' => null,
-                'supports_long'      => true,
-                'supports_short'     => true,
-                'status'             => 'discovered',
-                'discovered_at'      => null,
-            ];
-        };
-        if (is_dir($stratRoot)) {
-            foreach (new \DirectoryIterator($stratRoot) as $entry) {
-                if (!$entry->isDir() || $entry->isDot()) {
-                    continue;
-                }
-                $relDir  = 'modules/strategy/' . $entry->getFilename();
-                $absDir  = $entry->getPathname();
-                // Try top-level manifest
-                $addFromManifest($absDir . '/manifest.json', $relDir);
-                // Try one level of subdirectories (e.g. pattern/double_bottom_long)
-                foreach (new \DirectoryIterator($absDir) as $sub) {
-                    if (!$sub->isDir() || $sub->isDot()) {
-                        continue;
-                    }
-                    $addFromManifest(
-                        $sub->getPathname() . '/manifest.json',
-                        $relDir . '/' . $sub->getFilename()
-                    );
-                }
+    // Always merge manifest-discovered strategy modules into registry view.
+    // Runtime fields from existing registry records win. Manifest metadata
+    // refreshes title/path/capabilities.
+    {
+        $registryById = [];
+        foreach ((array)$registry as $_regRec) {
+            $sid = (string)($_regRec['strategy_id'] ?? '');
+            if ($sid !== '') {
+                $registryById[$sid] = (array)$_regRec;
             }
         }
+
+        $manifestById = [];
+        $stratRoot = System::path('root') . '/modules/strategy';
+        // dashboard discovery is bounded to avoid deep recursive scans while still
+        // covering current strategy nesting (e.g. modules/strategy/pattern/<module>)
+        $manifestScanMaxDepth = 6;
+        if (is_dir($stratRoot)) {
+            try {
+                $iter = new \RecursiveIteratorIterator(
+                    new \RecursiveDirectoryIterator($stratRoot, \FilesystemIterator::SKIP_DOTS)
+                );
+                foreach ($iter as $fileInfo) {
+                    if ($iter->getDepth() > $manifestScanMaxDepth) {
+                        continue;
+                    }
+                    if (!$fileInfo->isFile() || $fileInfo->getFilename() !== 'manifest.json') {
+                        continue;
+                    }
+                    $mfPathAbs = $fileInfo->getPathname();
+                    $mfRaw = @file_get_contents($mfPathAbs);
+                    $mf    = ($mfRaw !== false) ? json_decode($mfRaw, true) : null;
+                    if (!is_array($mf) || (string)($mf['category'] ?? '') !== 'strategy') {
+                        continue;
+                    }
+                    $mfId = (string)($mf['name'] ?? '');
+                    if ($mfId === '') {
+                        continue;
+                    }
+
+                    $relModuleDir = ltrim(str_replace(System::path('root') . '/', '', dirname($mfPathAbs)), '/');
+                    $relManifest  = $relModuleDir . '/manifest.json';
+                    $mfDesc       = strtolower((string)($mf['description'] ?? ''));
+                    $mfSupportsLong  = !str_ends_with($mfId, '_short');
+                    $mfSupportsShort = !str_ends_with($mfId, '_long');
+                    if (str_contains($mfDesc, 'long') || str_contains($mfDesc, 'лонг')) {
+                        $mfSupportsLong  = true;
+                        $mfSupportsShort = str_contains($mfDesc, 'short') || str_contains($mfDesc, 'шорт');
+                    }
+
+                    $mfQueueAbs = System::path('root') . '/' . $relModuleDir . '/storage/bot_handoff_queue.json';
+                    $manifestById[$mfId] = [
+                        'strategy_id'        => $mfId,
+                        'module_path'        => $relModuleDir,
+                        'manifest_path'      => $relManifest,
+                        'title'              => (string)($mf['title'] ?? $mfId),
+                        'category'           => (string)($mf['category'] ?? 'strategy'),
+                        'enabled_by_default' => (bool)($mf['enabled_by_default'] ?? true),
+                        'supports_long'      => $mfSupportsLong,
+                        'supports_short'     => $mfSupportsShort,
+                        // Defaults for manifest-only additions (new modules)
+                        'status'             => 'not_run_yet',
+                        'handoff_queue_path' => file_exists($mfQueueAbs) ? ($relModuleDir . '/storage/bot_handoff_queue.json') : null,
+                        'discovered_at'      => null,
+                    ];
+                }
+            } catch (\Throwable) {
+                // keep existing registry-only view if manifest scan fails
+            }
+        }
+
+        foreach ($manifestById as $sid => $mfRec) {
+            if (isset($registryById[$sid])) {
+                // Existing registry record wins runtime fields.
+                // Refresh metadata fields from manifest.
+                $registryById[$sid]['title']              = $mfRec['title'];
+                $registryById[$sid]['module_path']        = $mfRec['module_path'];
+                $registryById[$sid]['manifest_path']      = $mfRec['manifest_path'];
+                $registryById[$sid]['supports_long']      = $mfRec['supports_long'];
+                $registryById[$sid]['supports_short']     = $mfRec['supports_short'];
+                $registryById[$sid]['enabled_by_default'] = $mfRec['enabled_by_default'];
+                $registryById[$sid]['category']           = $mfRec['category'];
+            } else {
+                // New manifest-only strategy.
+                $registryById[$sid] = $mfRec;
+            }
+        }
+
+        $registry = array_values($registryById);
     }
 
     // ── Pre-load strategy module configs (source of truth for enabled/mode) ─
@@ -466,35 +564,6 @@ function renderDashboardHub(): string
         } else {
             $disabledStrat++;
         }
-    }
-
-    // ── Lazy storage init for discovered pattern strategies ───────────────
-    // Ensures storage files exist before any render or run attempt.
-    // Files are only created if absent; existing content is never overwritten.
-    {
-        $lazyStorageDefaults = [
-            'signals.json'    => '[]',
-            'candidates.json' => '[]',
-            'runtime.json'    => '{}',
-            'last_run.json'   => '{}',
-        ];
-        foreach ($registry as $_lzRec) {
-            $_lzPath = (string)($_lzRec['module_path'] ?? '');
-            if ($_lzPath === '') {
-                continue;
-            }
-            $_lzStorageDir = System::path('root') . '/' . $_lzPath . '/storage';
-            if (!is_dir($_lzStorageDir)) {
-                @mkdir($_lzStorageDir, 0755, true);
-            }
-            foreach ($lazyStorageDefaults as $_lzFile => $_lzDefault) {
-                $_lzFilePath = $_lzStorageDir . '/' . $_lzFile;
-                if (!file_exists($_lzFilePath)) {
-                    @file_put_contents($_lzFilePath, $_lzDefault);
-                }
-            }
-        }
-        unset($_lzRec, $_lzPath, $_lzStorageDir, $_lzFile, $_lzDefault, $_lzFilePath);
     }
 
     $activeStatuses       = ['queued', 'ready'];
@@ -642,6 +711,9 @@ function renderDashboardHub(): string
                 $opMode    = array_key_exists('mode', $_cardCfg)
                     ? (string)$_cardCfg['mode']
                     : $defaultMode;
+                $opSideMode = array_key_exists('side_mode', $_cardCfg)
+                    ? (string)$_cardCfg['side_mode']
+                    : 'all';
             } else {
                 $op        = (array)($overrides[$stratId] ?? []);
                 $opEnabled = array_key_exists('enabled', $op)
@@ -650,12 +722,16 @@ function renderDashboardHub(): string
                 $opMode    = array_key_exists('mode', $op)
                     ? (string)$op['mode']
                     : $defaultMode;
+                $opSideMode = array_key_exists('side_mode', $op)
+                    ? (string)$op['side_mode']
+                    : 'all';
             }
 
             $esId    = $e($stratId);
             $esTitle = $e($title);
             $esPath  = $e($modulePath);
             $esMode  = $e($opMode);
+            $esSideMode = $e($opSideMode);
 
             // Status badge colour
             $statusColor = $status === 'bot_ready' ? '#3fb950' : '#8b949e';
@@ -698,6 +774,9 @@ function renderDashboardHub(): string
             $handoffStr = $opHandoffEnabled
                 ? '<span style="color:#3fb950;">Да</span>'
                 : '<span style="color:#8b949e;">Нет</span>';
+            if ($stratId === 'confirmed_continuation' && $signalCount === null) {
+                $signalCount = 0;
+            }
             $signalStr = ($signalCount !== null) ? $e((string)$signalCount) : '—';
 
             // ── Scan limit config (max_symbols_per_run, batch_size) ───────────
@@ -770,7 +849,8 @@ function renderDashboardHub(): string
             // ── strategy last_run for handoff trace ───────────────────────
             $stratLastRunPath = System::path('root') . '/' . $modulePath . '/storage/last_run.json';
             $stratLastRun = [];
-            if ($modulePath !== '' && file_exists($stratLastRunPath)) {
+            $stratLastRunExists = ($modulePath !== '' && file_exists($stratLastRunPath));
+            if ($stratLastRunExists) {
                 $slrRaw = file_get_contents($stratLastRunPath);
                 if ($slrRaw !== false) {
                     $slrDec = json_decode($slrRaw, true);
@@ -787,6 +867,21 @@ function renderDashboardHub(): string
             // For corridor_bottom_long: prefer generated_signals_count; for others: emitted total
             $slrGeneratedSig = (int)($stratLastRun['generated_signals_count']                   ?? $slrEmitted);
             $slrHasData      = $stratLastRun !== [];
+
+            // confirmed_continuation before first run: explicit not_run_yet + zero counters
+            if ($stratId === 'confirmed_continuation' && !$stratLastRunExists) {
+                $slrStatus       = 'not_run_yet';
+                $slrCandidates   = 0;
+                $slrGeneratedSig = 0;
+                $slrPoolTotal    = 0;
+                $slrHandoffReady = 0;
+                $slrHasData      = false;
+                if (empty($runState)) {
+                    $rsStatus = 'not_run_yet';
+                    $rsCursor = 0;
+                    $rsTotal  = 0;
+                }
+            }
 
             // ── corridor_bottom_long: remap top-card fields from its own last_run keys ──
             if (in_array($stratId, ['corridor_bottom_long', 'controlled_daily_momentum_long'], true) && $slrHasData) {
@@ -808,6 +903,16 @@ function renderDashboardHub(): string
                 $rsTotal    = (int)($stratLastRun['universe_total']     ?? $stratLastRun['symbols_checked'] ?? 0);
                 $rsCycleId  = (int)($stratLastRun['universe_cycle_id']  ?? 0);
                 $rsLastTick = $e((string)($stratLastRun['finished_at'] ?? $stratLastRun['started_at'] ?? '—'));
+            }
+
+            // ── early_impulse_growth_long: remap run_state fields (registry_cursor, universe_total) ──
+            if ($stratId === 'early_impulse_growth_long') {
+                // run_state.json uses registry_cursor / universe_total / updated_at
+                if (!empty($runState)) {
+                    $rsCursor   = (int)($runState['registry_cursor'] ?? $runState['batch_offset'] ?? 0);
+                    $rsTotal    = (int)($runState['universe_total']  ?? $runState['selected_window_total'] ?? 0);
+                    $rsLastTick = $e((string)($runState['updated_at'] ?? $runState['queued_at'] ?? '—'));
+                }
             }
 
             // ── Build cycle-line HTML (strategy-specific labels) ──────────
@@ -972,6 +1077,44 @@ function renderDashboardHub(): string
                     . $_dsThrLine
                     . $_dsSrcLine
                     . $_dsReplayLine;
+            } elseif ($stratId === 'confirmed_continuation') {
+                $_ccCandidates   = (int)($stratLastRun['candidates_total'] ?? 0);
+                $_ccSignals      = (int)($stratLastRun['signals_total'] ?? 0);
+                $_ccHandoffReady = (int)($stratLastRun['handoff_ready_total'] ?? 0);
+                $_ccObcChecked   = (int)($stratLastRun['obc_checked_total'] ?? 0);
+                $_ccAntiCombRej  = (int)($stratLastRun['anti_comb_rejected_total'] ?? 0);
+                $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
+                    . ' · mode <code>' . $esMode . '</code>'
+                    . ' · side <code>' . $esSideMode . '</code>'
+                    . ' · кандидатов <code>' . $_ccCandidates . '</code>'
+                    . ' · сигналов <code>' . $_ccSignals . '</code>'
+                    . ' · handoff-ready <code>' . $_ccHandoffReady . '</code>'
+                    . ' · OBC checked <code>' . $_ccObcChecked . '</code>'
+                    . ' · anti-comb rejected <code>' . $_ccAntiCombRej . '</code>';
+            } elseif ($stratId === 'early_impulse_growth_long') {
+                $_eigCandidates  = (int)($stratLastRun['candidates_total']   ?? 0);
+                $_eigSignals     = (int)($stratLastRun['signals_total']      ?? 0);
+                $_eigHandoff     = (int)($stratLastRun['handoff_ready_total'] ?? 0);
+                $_eigPricePass   = (int)($stratLastRun['price_impulse_pass_total'] ?? 0);
+                $_eigOiPass      = (int)($stratLastRun['oi_growth_pass_total'] ?? 0);
+                $_eigOiMissing   = (int)($stratLastRun['oi_missing_allowed_total'] ?? 0);
+                $_eigFilterEn    = (bool)($stratLastRun['filter_engine_enabled'] ?? false);
+                $_eigFilterCnt   = (int)($stratLastRun['enabled_filters_count'] ?? 0);
+                $_eigWin         = (int)($stratLastRun['selected_window_total'] ?? 0);
+                $_eigBatch       = (int)($stratLastRun['batch_symbols_total'] ?? 0);
+                $_eigNextCursor  = (int)($stratLastRun['next_registry_cursor'] ?? 0);
+                $_eigUniverse    = (int)($stratLastRun['universe_total'] ?? 0);
+                $cycleLineHtml = 'статус <code>' . $e($slrStatus) . '</code>'
+                    . ' · окно <code>' . $_eigWin . '</code>'
+                    . ' · батч <code>' . $_eigBatch . '</code>'
+                    . ' · cursor <code>' . $_eigNextCursor . '/' . $_eigUniverse . '</code>'
+                    . ' · кандидатов <code>' . $_eigCandidates . '</code>'
+                    . ' · сигналов <code>' . $_eigSignals . '</code>'
+                    . ' · handoff-ready <code>' . $_eigHandoff . '</code>'
+                    . ' · price✓ <code>' . $_eigPricePass . '</code>'
+                    . ' · oi✓ <code>' . $_eigOiPass . '</code>'
+                    . ($_eigOiMissing > 0 ? ' · oi-miss-ok <code>' . $_eigOiMissing . '</code>' : '')
+                    . ($_eigFilterEn ? ' · filters <code>' . $_eigFilterCnt . '</code>' : '');
             } else {
                 $cycleLineHtml = 'статус <code>' . $slrStatus . '</code>'
                     . ' · кандидатов <code>' . $slrCandidates . '</code>'
@@ -998,7 +1141,7 @@ function renderDashboardHub(): string
             // Manual run action buttons — only active for strategies with a wired service.
             // All other strategies show disabled/unavailable buttons so the operator can see
             // the actions exist but are not yet supported for that module.
-            if (in_array($stratId, ['double_bottom_long', 'confirmed_continuation'], true)) {
+            if (in_array($stratId, ['double_bottom_long', 'confirmed_continuation', 'early_impulse_growth_long'], true)) {
                 $actionButtonsHtml = <<<BTN
       <form method="post" action="{$stratActUrl}" style="margin:0;">
         <input type="hidden" name="dashboard_action" value="strategy_action">
@@ -1151,6 +1294,16 @@ BTN;
 BTN;
             }
 
+            // Strategy page links
+            $cfgUrl     = System::web('admin/strategy/' . $stratId . '/config');
+            $runtimeUrl = System::web('admin/strategy/' . $stratId . '/runtime');
+            $statsUrl   = System::web('admin/strategy/' . $stratId . '/stats');
+            $strategyLinksHtml = <<<LNK
+      <a class="btn btn-sm" href="{$cfgUrl}" style="background:rgba(88,166,255,.10);color:#58a6ff;border:1px solid #58a6ff44;">Config</a>
+      <a class="btn btn-sm" href="{$runtimeUrl}" style="background:rgba(56,189,248,.10);color:#38bdf8;border:1px solid #38bdf844;">Runtime</a>
+      <a class="btn btn-sm" href="{$statsUrl}" style="background:rgba(167,139,250,.10);color:#a78bfa;border:1px solid #a78bfa44;">Stats</a>
+LNK;
+
             // Handoff quick-toggle button (shows action to flip handoff_enabled)
             $_hoTarget = $opHandoffEnabled ? '0' : '1';
             $_hoLabel  = $opHandoffEnabled ? 'Отключить handoff' : 'Включить handoff';
@@ -1228,6 +1381,24 @@ HTML;
       </tr>
 HTML;
             }
+            // For early_impulse_growth_long: show registry window diagnostics when data is available.
+            if ($stratId === 'early_impulse_growth_long' && $slrHasData) {
+                $_eigWinStart = (int)($stratLastRun['registry_window_start'] ?? 0);
+                $_eigWinEnd   = (int)($stratLastRun['registry_window_end']   ?? 0);
+                $_eigUniverse = (int)($stratLastRun['universe_total']        ?? 0);
+                $_eigNextCursDash = (int)($stratLastRun['next_registry_cursor'] ?? 0);
+                if ($_eigUniverse > 0) {
+                    $_eigCursorStr = 'next ' . $e((string)$_eigNextCursDash)
+                        . ' · окно ' . $e((string)$_eigWinStart) . '–' . $e((string)$_eigWinEnd)
+                        . ' из ' . $e((string)$_eigUniverse);
+                    $stratCards .= <<<HTML
+      <tr>
+        <td style="padding:3px 12px 3px 0;color:var(--ui-text-muted);white-space:nowrap;">Cursor</td>
+        <td colspan="3" style="padding:3px 0;font-size:11px;color:var(--ui-text-muted);">{$_eigCursorStr}</td>
+      </tr>
+HTML;
+                }
+            }
             $stratCards .= <<<HTML
     </table>
 
@@ -1246,6 +1417,7 @@ HTML;
       <button type="button" class="btn btn-sm btn-primary" onclick="dhToggleEdit('{$cardId}')">
         Изменить
       </button>
+      {$strategyLinksHtml}
       {$handoffToggleHtml}
       {$actionButtonsHtml}
     </div>
@@ -2353,6 +2525,46 @@ ROWS;
         $scCronReason = 'не запускался';
     }
 
+    // Dynamic Learning badge
+    $dlEnabled        = (bool)($dlLastRun['enabled'] ?? false);
+    $dlApplyStrategy  = (bool)($dlLastRun['apply_learning_to_strategy_enabled'] ?? false);
+    $dlApplyLive      = (bool)($dlLastRun['apply_learning_to_live_enabled'] ?? false);
+    $dlExecMode       = (string)($dlLastRun['dynamic_learning_execution_mode'] ?? 'observe');
+    $dlManualGate     = (bool)($dlLastRun['manual_gate_demo_enabled'] ?? false);
+    $dlRollbackReq    = (bool)($dlLastRun['rollback_required'] ?? false);
+    $dlBybitErrors    = (int)($dlLastRun['bybit_kline_error_total'] ?? 0);
+    $dlFreshnessLimit = 600; // 10 minutes
+    $dlStale          = $dlLastRunTs !== null && (time() - $dlLastRunTs) > $dlFreshnessLimit;
+
+    if ($dlLastRun === [] || $dlLastRunTs === null) {
+        $scDlState  = 'WARN';
+        $scDlReason = 'last_run missing';
+    } elseif ($dlRollbackReq) {
+        $scDlState  = 'WARN';
+        $scDlReason = 'rollback_required: ' . (string)($dlLastRun['rollback_reason'] ?? 'degradation');
+    } elseif (!$dlEnabled) {
+        $scDlState  = 'OFF';
+        $scDlReason = 'disabled';
+    } elseif ($dlStale) {
+        $scDlState  = 'WARN';
+        $scDlReason = 'last_run stale >' . round($dlFreshnessLimit / 60, 0) . 'm';
+    } elseif ($dlBybitErrors > 0) {
+        $scDlState  = 'WARN';
+        $scDlReason = 'bybit_kline_errors: ' . $dlBybitErrors;
+    } elseif ($dlApplyLive) {
+        $scDlState  = 'WARN';
+        $scDlReason = 'live_apply_active';
+    } elseif ($dlExecMode === 'gate_demo' && $dlManualGate && $dlApplyStrategy) {
+        $scDlState  = 'ON';
+        $scDlReason = 'GATE DEMO';
+    } elseif ($dlExecMode === 'off') {
+        $scDlState  = 'OFF';
+        $scDlReason = 'OFF';
+    } else {
+        $scDlState  = 'ON';
+        $scDlReason = 'OBSERVE';
+    }
+
     // Build badge HTML helper
     $scBadge = static function (string $label, string $state, string $reason, string $tabId = '') use ($scColor, $e): string {
         [$clr, $bg] = $scColor($state);
@@ -2381,6 +2593,8 @@ ROWS;
         . $scBadge('Profit', $scPmState, $scPmReason, 'dh-pm')
         . '<span style="color:var(--ui-text-muted);font-size:18px;align-self:center;">→</span>'
         . $scBadge('Cron', $scCronState, $scCronReason, 'dh-ctrl')
+        . '<span style="color:var(--ui-text-muted);font-size:12px;margin:0 6px;align-self:center;">·</span>'
+        . '<a href="' . htmlspecialchars(System::web('admin/dynamic_learning/runtime'), ENT_QUOTES, 'UTF-8') . '" style="text-decoration:none;" title="Dynamic Learning — открыть Runtime">' . $scBadge('DL', $scDlState, $scDlReason) . '</a>'
         . '</div>';
 
     // ── Mode mismatch warning ─────────────────────────────────────────────
@@ -2607,6 +2821,34 @@ ROWS;
             $pmDiagRows .= '<tr><td colspan="2"><code style="color:#8b949e;font-size:11px;">live_profit_floor_sync_skipped_disabled</code></td></tr>';
         }
     }
+
+    // ── Real PM profile diagnostics ──────────────────────────────────────
+    $_realPmEnabled       = (bool)($pmRawLastRun['real_pm_profile_enabled']              ?? false);
+    $_realPmActivRoi      = (float)($pmRawLastRun['real_pm_activation_roi']              ?? 10.0);
+    $_realPmStopPairing   = (string)($pmRawLastRun['real_pm_stop_pairing']               ?? 'long_stop_-15');
+    $_longAbove8          = (int)($pmRawLastRun['long_positions_above_8_roi_total']      ?? 0);
+    $_longAbove10         = (int)($pmRawLastRun['long_positions_above_10_roi_total']     ?? 0);
+    $_longPmEligible      = (int)($pmRawLastRun['long_positions_pm_eligible_total']      ?? 0);
+    $_longPmSkippedBelow10= (int)($pmRawLastRun['long_positions_pm_skipped_below_10_total'] ?? 0);
+
+    $_realPmEnabledHtml = $_realPmEnabled
+        ? '<span style="color:#3fb950;">активен</span>'
+        : '<span style="color:#8b949e;">н/д</span>';
+
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;padding-top:6px;"><strong style="font-size:11px;">Real PM profile</strong></td>'
+        . '<td style="padding-top:6px;">' . $_realPmEnabledHtml . '</td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">real_pm_activation_roi</td>'
+        . '<td><code style="color:#f0883e;">' . $e($_realPmActivRoi) . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">real_pm_stop_pairing</td>'
+        . '<td><code style="color:#f85149;">' . $e($_realPmStopPairing) . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long positions ≥8 ROI</td>'
+        . '<td><code>' . $_longAbove8 . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">long positions ≥10 ROI</td>'
+        . '<td><code>' . $_longAbove10 . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">PM eligible</td>'
+        . '<td><code>' . $_longPmEligible . '</code></td></tr>';
+    $pmDiagRows .= '<tr><td style="color:var(--ui-text-muted);padding:3px 12px 3px 0;">PM skipped below 10</td>'
+        . '<td><code>' . $_longPmSkippedBelow10 . '</code></td></tr>';
 
     // ── PM per-position runtime table HTML ───────────────────────────────
     $pmPositionsTable = '';
@@ -4681,13 +4923,33 @@ HTML;
     // Cron
     [$modCronClr] = $scColor($scCronState);
     $modCronLastRunStr = $pmCronLastRunTs !== null ? date('d.m H:i', $pmCronLastRunTs) : '—';
-    $modStripRows .= '<tr>'
+    $modStripRows .= '<tr style="border-bottom:1px solid var(--ui-border);">'
         . '<td style="padding:5px 10px;font-weight:600;">Cron</td>'
         . '<td style="padding:5px 10px;color:' . $modCronClr . ';font-weight:600;">' . $scCronState . '</td>'
         . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . ($pmCronTaskEnabled ? 'включён' : 'выключен') . '</td>'
         . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . $e($modCronLastRunStr) . '</td>'
         . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;"><code style="font-size:10px;">' . $e($pmCronPath) . '</code></td>'
         . '<td style="padding:5px 10px;font-size:11px;color:#f85149;">' . $e($scCronReason) . '</td>'
+        . '</tr>';
+    // Dynamic Learning
+    [$modDlClr] = $scColor($scDlState);
+    $dlModeLabel = $dlLastRun === [] ? '—' : ($dlExecMode !== '' ? $dlExecMode : 'observe');
+    $dlLastTickStr = $dlLastRunTs !== null ? date('d.m H:i', $dlLastRunTs) : '—';
+    $dlActivityStr = 'epoch: ' . $e((string)($dlLastRun['real_learning_epoch_id'] ?? '—'))
+        . ' · outcomes: ' . (int)($dlLastRun['active_epoch_outcomes_total'] ?? 0)
+        . ' · rules: ' . (int)($dlLastRun['profile_rules_total'] ?? 0)
+        . ' · cand: ' . $e((string)($dlLastRun['candidate_status'] ?? '—'))
+        . ' · blocks: ' . (int)($dlLastRun['signals_blocked_demo_total'] ?? 0);
+    $dlIssueStr = !in_array($scDlReason, ['OBSERVE', 'GATE DEMO', 'OFF'], true) && $scDlReason !== '' ? $scDlReason : '';
+    $modStripRows .= '<tr>'
+        . '<td style="padding:5px 10px;font-weight:600;white-space:nowrap;">'
+          . '<a href="' . htmlspecialchars(System::web('admin/dynamic_learning/runtime'), ENT_QUOTES, 'UTF-8') . '" style="color:var(--ui-text);">Dynamic Learning</a>'
+        . '</td>'
+        . '<td style="padding:5px 10px;color:' . $modDlClr . ';font-weight:600;">' . $scDlState . '</td>'
+        . '<td style="padding:5px 10px;"><code style="font-size:11px;">' . $e($dlModeLabel) . '</code></td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . $e($dlLastTickStr) . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#8b949e;">' . $dlActivityStr . '</td>'
+        . '<td style="padding:5px 10px;font-size:11px;color:#f85149;">' . $e($dlIssueStr) . '</td>'
         . '</tr>';
     $modStripHtml = <<<HTML
 <div class="card" style="margin-bottom:16px;">
@@ -4710,6 +4972,131 @@ HTML;
 </div>
 HTML;
 
+    // ── Dynamic Learning compact block (for dh-overview) ──────────────────
+    {
+        [$_dlClr, $_dlBg] = $scColor($scDlState);
+        $_dlRiskProfile  = $e((string)($dlLastRun['risk_profile_mode'] ?? '—'));
+        $_dlClassProfile = $e((string)($dlLastRun['outcome_classification_profile'] ?? '—'));
+        $_dlEpochId      = $e((string)($dlLastRun['real_learning_epoch_id'] ?? $dlLastRun['micro_learning_epoch_id'] ?? '—'));
+        $_dlOutcomes     = (int)($dlLastRun['active_epoch_outcomes_total'] ?? 0);
+        $_dlBad          = (int)($dlLastRun['bad_entry_total'] ?? 0);
+        $_dlGood         = (int)($dlLastRun['good_or_do_not_touch_total'] ?? 0);
+        $_dlExitIssue    = (int)($dlLastRun['entry_ok_exit_issue_total'] ?? 0);
+        $_dlNeutral      = (int)($dlLastRun['neutral_total'] ?? 0);
+        $_dlRules        = (int)($dlLastRun['profile_rules_total'] ?? 0);
+        $_dlCandStatus   = $e((string)($dlLastRun['candidate_status'] ?? '—'));
+        $_dlPromoDecision = $e((string)($dlLastRun['promotion_decision'] ?? '—'));
+        $_dlRollback     = (bool)($dlLastRun['rollback_required'] ?? false);
+        $_dlRollbackReason = $e((string)($dlLastRun['rollback_reason'] ?? ''));
+        $_dlApplyStrat   = (bool)($dlLastRun['apply_learning_to_strategy_enabled'] ?? false);
+        $_dlApplyLive    = (bool)($dlLastRun['apply_learning_to_live_enabled'] ?? false);
+        $_dlExecMode     = $e((string)($dlLastRun['dynamic_learning_execution_mode'] ?? 'observe'));
+        $_dlManualGate   = (bool)($dlLastRun['manual_gate_demo_enabled'] ?? false);
+        $_dlSelectedId   = $e((string)($dlLastRun['selected_candidate_profile_id'] ?? '—'));
+        $_dlMicroReal    = (int)($dlLastRun['candle_micro_real_available_total'] ?? 0);
+        $_dlMicroDump    = (int)($dlLastRun['dump_micro_real_available_total'] ?? 0);
+        $_dlBybitErr     = (int)($dlLastRun['bybit_kline_error_total'] ?? 0);
+        $_dlSize         = $e((string)($dlLastRun['storage_size_estimate_mb'] ?? '—'));
+        $_dlStorageSize  = $e($dlStorageSizeMb !== null ? (string)$dlStorageSizeMb : '—');
+        $_eigStorageSize = $e($eigStorageSizeMb !== null ? (string)$eigStorageSizeMb : '—');
+        $_uiSafeSkipped  = (int)$uiSafeReadSkippedTotal;
+        $_storageWarnCnt = count($dashboardStorageWarnings);
+        $_dlDefScore     = $e((string)($dlLastRun['default_quality_score'] ?? '—'));
+        $_dlCandScore    = $e((string)($dlLastRun['candidate_quality_score'] ?? '—'));
+        $_dlDelta        = $e((string)($dlLastRun['candidate_vs_default_delta_pct'] ?? '—'));
+        $_dlCurrentProfileStatus = $e((string)($dlCurrentProfile['status'] ?? '—'));
+        $_dlCandidateProfileRules = (int)count((array)($dlCandidateProfile['rules'] ?? []));
+        $_dlCandidateReplayResult = $e((string)($dlCandidateReplay['replay_result'] ?? ($dlLastRun['replay_result'] ?? '—')));
+        $_largestWarningsHtml = '';
+        if ($largestStorageWarnings !== []) {
+            $parts = [];
+            foreach ($largestStorageWarnings as $_w) {
+                $parts[] = '<code>' . htmlspecialchars((string)basename((string)($_w['file'] ?? 'unknown')), ENT_QUOTES, 'UTF-8')
+                    . '</code> ' . htmlspecialchars((string)($_w['file_size_mb'] ?? '0'), ENT_QUOTES, 'UTF-8') . 'MB';
+            }
+            $_largestWarningsHtml = implode(' · ', $parts);
+        }
+        $_dlRollbackColor = $_dlRollback ? '#f87171' : '#86efac';
+        $_dlPromoDecisionRaw = (string)($dlLastRun['promotion_decision'] ?? '');
+        $_dlPromoColor = match($_dlPromoDecisionRaw) {
+            'promote_candidate_demo', 'candidate_ready_but_apply_disabled' => '#86efac',
+            'reject_candidate' => '#f87171',
+            'keep_current' => '#fcd34d',
+            default => '#94a3b8',
+        };
+        $_dlRuntimeUrl = htmlspecialchars(System::web('admin/dynamic_learning/runtime'), ENT_QUOTES, 'UTF-8');
+        $_dlConfigUrl  = htmlspecialchars(System::web('admin/dynamic_learning/config'), ENT_QUOTES, 'UTF-8');
+        $_dlStatsUrl   = htmlspecialchars(System::web('admin/dynamic_learning/stats'), ENT_QUOTES, 'UTF-8');
+
+        $dlBlockHtml = '<div class="card" style="margin-bottom:16px;border:1px solid ' . $_dlClr . '33;">'
+            . '<div class="card-header" style="display:flex;justify-content:space-between;align-items:center;background:' . $_dlBg . ';">'
+            . '<span><i class="bi bi-cpu" style="margin-right:6px;"></i>Dynamic Learning — Динамическое обучение'
+            . ' <span style="font-size:11px;font-weight:700;color:' . $_dlClr . ';margin-left:6px;">' . $scDlState . '</span>'
+            . ($_dlExecMode === 'gate_demo' && $_dlManualGate ? ' <span style="font-size:11px;font-weight:700;color:#fcd34d;margin-left:6px;">DEMO GATE ACTIVE</span>' : '')
+            . '</span>'
+            . '<span style="display:flex;gap:6px;">'
+            . '<a href="' . $_dlRuntimeUrl . '" class="btn btn-sm" style="font-size:11px;padding:2px 10px;">Runtime</a>'
+            . '<a href="' . $_dlConfigUrl . '" class="btn btn-sm" style="font-size:11px;padding:2px 10px;">Config</a>'
+            . '<a href="' . $_dlStatsUrl . '" class="btn btn-sm" style="font-size:11px;padding:2px 10px;">Stats</a>'
+            . '</span>'
+            . '</div>'
+            . '<div class="card-body">'
+            . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;font-size:12px;">'
+            . '<div><span style="color:var(--ui-text-muted);">Mode</span><br><code>' . $_dlExecMode . '</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Профиль</span><br><code style="font-size:11px;">' . $_dlClassProfile . '</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Эпоха</span><br><code>' . $_dlEpochId . '</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Outcomes</span><br><strong>' . $_dlOutcomes . '</strong>'
+              . ' <span style="color:#f87171;font-size:11px;">bad:' . $_dlBad . '</span>'
+              . ' <span style="color:#86efac;font-size:11px;">good:' . $_dlGood . '</span>'
+              . ' <span style="color:#fcd34d;font-size:11px;">ei:' . $_dlExitIssue . '</span>'
+              . ' <span style="color:#8b949e;font-size:11px;">n:' . $_dlNeutral . '</span>'
+            . '</div>'
+            . '<div><span style="color:var(--ui-text-muted);">Rules</span><br><strong>' . $_dlRules . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Manual gate</span><br>'
+              . '<code>' . ($_dlManualGate ? 'Y' : 'N') . '</code>'
+            . '</div>'
+            . '<div><span style="color:var(--ui-text-muted);">Candidate id</span><br><code>' . $_dlSelectedId . '</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Apply live / auto demo</span><br>'
+              . '<code>' . ($_dlApplyLive ? 'Y' : 'N') . '/' . ((bool)($dlLastRun['auto_apply_to_demo_enabled'] ?? false) ? 'Y' : 'N') . '</code>'
+            . '</div>'
+            . '<div><span style="color:var(--ui-text-muted);">Micro real/dump</span><br><code>' . $_dlMicroReal . '/' . $_dlMicroDump . '</code>'
+              . ($_dlBybitErr > 0 ? ' <span style="color:#f87171;font-size:11px;">⚠kline_err:' . $_dlBybitErr . '</span>' : '')
+            . '</div>'
+            . '<div><span style="color:var(--ui-text-muted);">Storage</span><br><code>' . $_dlSize . ' MB</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">DL storage dir</span><br><code>' . $_dlStorageSize . ' MB</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">EIG storage dir</span><br><code>' . $_eigStorageSize . ' MB</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">UI safe-read skipped</span><br><strong>' . $_uiSafeSkipped . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Storage warnings</span><br><strong>' . $_storageWarnCnt . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">current_profile.status</span><br><code>' . $_dlCurrentProfileStatus . '</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">candidate_profile.rules</span><br><strong>' . $_dlCandidateProfileRules . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">candidate_replay</span><br><code>' . $_dlCandidateReplayResult . '</code></div>'
+            . '</div>'
+            . ($_largestWarningsHtml !== ''
+                ? '<div style="margin-top:8px;font-size:11px;color:#fbbf24;"><strong>largest_storage_warnings:</strong> ' . $_largestWarningsHtml . '</div>'
+                : '')
+            . '<div style="margin-top:8px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;font-size:12px;padding-top:8px;border-top:1px solid var(--ui-border);">'
+            . '<div><span style="color:var(--ui-text-muted);">Default score</span><br><strong>' . $_dlDefScore . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Candidate score</span><br><strong>' . $_dlCandScore . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Delta</span><br><strong>' . $_dlDelta . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Candidate status</span><br><code style="color:#c4b5fd;">' . $_dlCandStatus . '</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Blocks this run</span><br><strong>' . (int)($dlLastRun['signals_blocked_demo_total'] ?? 0) . '</strong></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Decision</span><br><code style="color:' . $_dlPromoColor . ';">' . $_dlPromoDecision . '</code></div>'
+            . '<div style="border-left:3px solid ' . $_dlRollbackColor . ';padding-left:6px;">'
+              . '<span style="color:var(--ui-text-muted);">Rollback</span><br>'
+              . '<strong style="color:' . $_dlRollbackColor . ';">' . ($_dlRollback ? 'YES' : 'no') . '</strong>'
+              . ($_dlRollback && $_dlRollbackReason !== '' ? ' <span style="font-size:11px;color:#f87171;">' . $_dlRollbackReason . '</span>' : '')
+            . '</div>'
+            . '</div>'
+            . '</div>'
+            . '</div>';
+        unset($_dlClr, $_dlBg, $_dlRiskProfile, $_dlClassProfile, $_dlEpochId, $_dlOutcomes, $_dlBad, $_dlGood,
+              $_dlExitIssue, $_dlNeutral, $_dlRules, $_dlCandStatus, $_dlPromoDecision, $_dlRollback,
+              $_dlRollbackReason, $_dlApplyStrat, $_dlApplyLive, $_dlExecMode, $_dlManualGate, $_dlSelectedId, $_dlMicroReal, $_dlMicroDump, $_dlBybitErr,
+              $_dlSize, $_dlStorageSize, $_eigStorageSize, $_uiSafeSkipped, $_storageWarnCnt, $_dlCurrentProfileStatus,
+              $_dlCandidateProfileRules, $_dlCandidateReplayResult, $_largestWarningsHtml, $_dlDefScore, $_dlCandScore,
+              $_dlDelta, $_dlRollbackColor, $_dlPromoDecisionRaw,
+              $_dlPromoColor, $_dlRuntimeUrl, $_dlConfigUrl, $_dlStatsUrl);
+    }
     $flashHtml = '';
     if ($flash) {
         $ftype = ($flash['type'] === 'success') ? 'success' : 'danger';
@@ -5364,6 +5751,7 @@ BLCK;
 
 <!-- ── Overview pane (default) ─────────────────────────────────────── -->
 <div id="dh-overview" class="dh-pane dh-visible">
+  {$dlBlockHtml}
   <div class="card" style="margin-bottom:16px;">
     <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">
       <span><i class="bi bi-layers" style="margin-right:6px;"></i>Стратегии — сводка</span>
@@ -7585,6 +7973,10 @@ function handleDashboardStrategyAction(): void
             'path_key' => 'strategy.confirmed_continuation',
             'class'    => \Modules\Strategy\ConfirmedContinuation\ConfirmedContinuationService::class,
         ],
+        'early_impulse_growth_long' => [
+            'path_key' => 'strategy.early_impulse_growth_long',
+            'class'    => \Modules\Strategy\EarlyImpulseGrowthLong\EarlyImpulseGrowthLongService::class,
+        ],
     ];
     if (isset($strategyServiceMap[$stratId])) {
         $moduleDir = \Core\System\SystemPaths::instance()->get($strategyServiceMap[$stratId]['path_key']);
@@ -8211,7 +8603,7 @@ function handleDashboardChainRun(): void
     }
 
     // Strategies wired for manual runtime
-    $manualStrategyIds = ['double_bottom_long', 'confirmed_continuation'];
+    $manualStrategyIds = ['double_bottom_long', 'confirmed_continuation', 'early_impulse_growth_long'];
 
     foreach ($registry as $rec) {
         $sid = (string)($rec['strategy_id'] ?? '');
@@ -8235,9 +8627,10 @@ function handleDashboardChainRun(): void
             require_once $moduleDir . '/bootstrap.php';
             require_once $moduleDir . '/service.php';
             $svcClass = match ($sid) {
-                'double_bottom_long'     => \Modules\Strategy\DoubleBottomLong\DoubleBottomLongService::class,
-                'confirmed_continuation' => \Modules\Strategy\ConfirmedContinuation\ConfirmedContinuationService::class,
-                default                 => null,
+                'double_bottom_long'        => \Modules\Strategy\DoubleBottomLong\DoubleBottomLongService::class,
+                'confirmed_continuation'    => \Modules\Strategy\ConfirmedContinuation\ConfirmedContinuationService::class,
+                'early_impulse_growth_long' => \Modules\Strategy\EarlyImpulseGrowthLong\EarlyImpulseGrowthLongService::class,
+                default                    => null,
             };
             if ($svcClass === null) {
                 $steps[] = "Стратегия «{$sid}»: сервис не подключён";

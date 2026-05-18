@@ -57,6 +57,11 @@ final class DynamicLearningDecision
             'risk_threshold_pct' => $riskThreshold,
             'threshold_used' => $blockThreshold,
             'final_candidate_eligible_for_demo_apply' => (bool)($lastRun['final_candidate_eligible_for_demo_apply'] ?? $lastRun['candidate_eligible_for_demo_apply'] ?? false),
+            'allow_manual_demo_gate_with_insufficient_data' => (bool)($cfg['allow_manual_demo_gate_with_insufficient_data'] ?? true),
+            'manual_gate_override_applied' => false,
+            'manual_gate_reason' => null,
+            'selected_candidate_exists' => is_array($selectedProfile) && $selectedProfile !== [],
+            'selected_candidate_rules_total' => 0,
         ];
 
         if (strtolower(trim($strategyId)) !== self::STRATEGY_ID) {
@@ -109,6 +114,7 @@ final class DynamicLearningDecision
             ?? ($selectedProfile['candidate_status'] ?? $selectedProfile['status'] ?? 'pending'));
 
         $rules = array_values(array_filter((array)($selectedProfile['rules'] ?? []), static fn(mixed $rule): bool => is_array($rule)));
+        $response['selected_candidate_rules_total'] = count($rules);
         if ($rules === []) {
             if ($executionMode === 'observe') {
                 $response['decision'] = 'observe_only';
@@ -150,19 +156,33 @@ final class DynamicLearningDecision
             return $response;
         }
 
-        $allowedStatuses = ['eligible_for_manual_demo_gate', 'eligible_for_demo_apply', 'eligible_for_auto_demo'];
-        if (!in_array($response['candidate_status'], $allowedStatuses, true)) {
-            $response['decision'] = 'no_candidate';
-            $response['reason'] = 'candidate_status_not_eligible';
-            return $response;
-        }
+        $allowOverride = (bool)($cfg['allow_manual_demo_gate_with_insufficient_data'] ?? true);
+        $requiresUserSelection = (bool)($cfg['manual_demo_gate_requires_user_selection'] ?? true);
+        $selectedId = trim((string)($selection['selected_candidate_profile_id'] ?? ''));
+        $overrideApplied = false;
 
-        $manualEligible = (bool)$response['candidate_manual_demo_gate_eligible'];
-        $finalDemoEligible = (bool)$response['final_candidate_eligible_for_demo_apply'];
-        if (!$manualEligible && !$finalDemoEligible) {
-            $response['decision'] = 'no_candidate';
-            $response['reason'] = 'candidate_not_demo_eligible';
-            return $response;
+        if ($allowOverride && (!$requiresUserSelection || $selectedId !== '')) {
+            // User explicitly configured manual demo gate with insufficient data allowed.
+            // Rules already confirmed non-empty and selectedProfile non-null above.
+            $response['candidate_manual_demo_gate_eligible'] = true;
+            $response['manual_gate_override_applied'] = true;
+            $response['manual_gate_reason'] = 'user_selected_demo_test_candidate';
+            $overrideApplied = true;
+        } else {
+            $allowedStatuses = ['eligible_for_manual_demo_gate', 'eligible_for_demo_apply', 'eligible_for_auto_demo'];
+            if (!in_array($response['candidate_status'], $allowedStatuses, true)) {
+                $response['decision'] = 'no_candidate';
+                $response['reason'] = 'candidate_status_not_eligible';
+                return $response;
+            }
+
+            $manualEligible = (bool)$response['candidate_manual_demo_gate_eligible'];
+            $finalDemoEligible = (bool)$response['final_candidate_eligible_for_demo_apply'];
+            if (!$manualEligible && !$finalDemoEligible) {
+                $response['decision'] = 'no_candidate';
+                $response['reason'] = 'candidate_not_demo_eligible';
+                return $response;
+            }
         }
 
         if ($candidateReplay === []) {
@@ -171,11 +191,13 @@ final class DynamicLearningDecision
             return $response;
         }
 
-        $replayStatus = (string)($candidateReplay['replay_candidate_status'] ?? '');
-        if (in_array($replayStatus, ['rejected_on_replay', 'insufficient_replay_data'], true)) {
-            $response['decision'] = 'no_candidate';
-            $response['reason'] = 'candidate_replay_failed_safety_guard';
-            return $response;
+        if (!$overrideApplied) {
+            $replayStatus = (string)($candidateReplay['replay_candidate_status'] ?? '');
+            if (in_array($replayStatus, ['rejected_on_replay', 'insufficient_replay_data'], true)) {
+                $response['decision'] = 'no_candidate';
+                $response['reason'] = 'candidate_replay_failed_safety_guard';
+                return $response;
+            }
         }
 
         if ((float)$response['risk_score_pct'] >= $blockThreshold) {

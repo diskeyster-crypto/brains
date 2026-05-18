@@ -57,16 +57,31 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
   <h3 style="margin:0;">Dynamic Learning — Stats</h3>
   <div style="border:1px solid #38bdf844;border-radius:10px;padding:14px;background:rgba(56,189,248,.05);display:grid;gap:10px;">
     <div style="font-size:13px;font-weight:700;color:#38bdf8;">Eligibility & Manual Demo Gate</div>
+    <?php
+    $stGateDemoReady = (bool)($run['gate_demo_ready'] ?? false);
+    $stGateDemoNotReadyReason = (string)($run['gate_demo_not_ready_reason'] ?? '');
+    ?>
+    <?php if ($stGateDemoReady): ?>
+    <div style="padding:6px 10px;border-radius:6px;background:rgba(34,197,94,.12);border:1px solid #22c55e55;color:#86efac;font-weight:600;">✓ gate_demo_ready</div>
+    <?php else: ?>
+    <div style="padding:6px 10px;border-radius:6px;background:rgba(245,158,11,.10);border:1px solid #f59e0b55;color:#fcd34d;">gate_demo not ready<?= $stGateDemoNotReadyReason !== '' ? ': ' . htmlspecialchars($stGateDemoNotReadyReason, ENT_QUOTES, 'UTF-8') : '' ?></div>
+    <?php endif; ?>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;">
       <div><strong>Current mode:</strong> <?= $e((string)($run['dynamic_learning_execution_mode'] ?? 'observe')) ?></div>
       <div><strong>Manual gate enabled:</strong> <?= $e((bool)($run['manual_gate_demo_enabled'] ?? false) ? 'yes' : 'no') ?></div>
+      <div><strong>apply_learning_to_strategy_enabled:</strong> <?= $e((bool)($run['apply_learning_to_strategy_enabled'] ?? false) ? 'yes' : 'no') ?></div>
       <div><strong>Live:</strong> disabled</div>
+      <div><strong>Allow manual override:</strong> <?= $e((bool)($run['allow_manual_demo_gate_with_insufficient_data'] ?? false) ? 'yes' : 'no') ?></div>
+      <div><strong>Selected candidate id:</strong> <?= $e((string)($run['selected_candidate_profile_id'] ?? '—')) ?></div>
+      <div><strong>Selected candidate exists:</strong> <?= $e((bool)($run['selected_candidate_exists'] ?? false) ? 'yes' : 'no') ?></div>
+      <div><strong>Selected candidate rules:</strong> <?= $e((int)($run['selected_candidate_rules_total'] ?? 0)) ?></div>
       <div><strong>Manual demo-gate:</strong> <?= $e((bool)($run['candidate_manual_demo_gate_eligible'] ?? false) ? 'ready' : 'not ready') ?></div>
       <div><strong>Auto-demo:</strong> <?= $e((bool)($run['candidate_auto_demo_eligible'] ?? false) ? 'ready' : 'not ready') ?></div>
+      <div><strong>final_candidate_status:</strong> <?= $e((string)($run['final_candidate_status'] ?? $run['candidate_status'] ?? '—')) ?></div>
+      <div><strong>manual_gate_reason:</strong> <?= $e((string)($run['manual_gate_reason'] ?? '—')) ?></div>
       <div><strong>classifiable outcomes:</strong> <?= $e((int)($run['rolling_window_classifiable_outcomes_total'] ?? 0)) ?>/<?= $e((int)($run['manual_demo_gate_min_classifiable_outcomes'] ?? 30)) ?> manual · <?= $e((int)($run['auto_demo_min_classifiable_outcomes'] ?? 50)) ?> auto</div>
       <div><strong>bad entries:</strong> <?= $e((int)($run['rolling_window_bad_entry_total'] ?? 0)) ?>/<?= $e((int)($run['manual_demo_gate_min_bad_entries'] ?? 4)) ?> manual · <?= $e((int)($run['auto_demo_min_bad_entries'] ?? 8)) ?> auto</div>
       <div><strong>good entries:</strong> <?= $e((int)($run['rolling_window_good_entry_total'] ?? 0)) ?>/<?= $e((int)($run['manual_demo_gate_min_good_entries'] ?? 12)) ?> manual · <?= $e((int)($run['auto_demo_min_good_entries'] ?? 20)) ?> auto</div>
-      <div><strong>Selected candidate id:</strong> <?= $e((string)($run['selected_candidate_profile_id'] ?? '—')) ?></div>
       <div><strong>Signals evaluated:</strong> <?= $e((int)($run['signals_evaluated_total'] ?? 0)) ?></div>
       <div><strong>Signals passed:</strong> <?= $e((int)($run['signals_passed_total'] ?? 0)) ?></div>
       <div><strong>Signals blocked:</strong> <?= $e((int)($run['signals_blocked_demo_total'] ?? 0)) ?></div>

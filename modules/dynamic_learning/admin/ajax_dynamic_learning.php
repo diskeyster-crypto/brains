@@ -23,6 +23,26 @@ $jsonOut = static function (bool $ok, array $data = [], string $error = ''): nev
     exit;
 };
 
+if ($action === 'use_latest_candidate') {
+    $candidatePath = $moduleDir . '/storage/profiles/early_impulse_growth_long/candidate_profile.json';
+    if (!is_file($candidatePath)) {
+        $jsonOut(false, [], 'candidate_profile.json not found');
+    }
+    $rawCand = @file_get_contents($candidatePath);
+    $candData = is_string($rawCand) ? json_decode($rawCand, true) : null;
+    $profileId = trim((string)(is_array($candData) ? ($candData['profile_id'] ?? '') : ''));
+    if ($profileId === '') {
+        $jsonOut(false, [], 'candidate profile_id is empty');
+    }
+    $activePath = $moduleDir . '/config/active.php';
+    $active = is_file($activePath) ? ((array)require $activePath) : [];
+    $active['selected_candidate_profile_id'] = $profileId;
+    $active['selected_candidate_locked'] = true;
+    $php = "<?php\n\ndeclare(strict_types=1);\n\nreturn " . var_export($active, true) . ";\n";
+    @file_put_contents($activePath, $php, LOCK_EX);
+    $jsonOut(true, ['profile_id' => $profileId, 'source' => 'candidate_profile']);
+}
+
 if ($action === 'run_cycle') {
     try {
         $res = $svc->runCycle();
@@ -59,6 +79,8 @@ if ($action === 'save_config') {
         'rollback_cooldown_minutes', 'rollback_to',
         // Apply guard
         'auto_apply_to_demo_enabled', 'require_not_worse_than_default',
+        // Manual demo gate override
+        'allow_manual_demo_gate_with_insufficient_data', 'manual_demo_gate_requires_user_selection',
     ];
     $out = [];
     foreach ($keys as $k) {

@@ -79,12 +79,28 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
 
   <div style="border:1px solid #38bdf844;border-radius:10px;padding:14px;background:rgba(56,189,248,.05);display:grid;gap:10px;">
     <div style="font-size:13px;font-weight:700;color:#38bdf8;">Manual Demo Gate</div>
+    <?php
+    $rtGateDemoReady = (bool)($run['gate_demo_ready'] ?? false);
+    $rtGateDemoNotReadyReason = (string)($run['gate_demo_not_ready_reason'] ?? '');
+    ?>
+    <?php if ($rtGateDemoReady): ?>
+    <div style="padding:8px 12px;border-radius:6px;background:rgba(34,197,94,.12);border:1px solid #22c55e55;color:#86efac;font-weight:600;">✓ gate_demo_ready: true</div>
+    <?php else: ?>
+    <div style="padding:8px 12px;border-radius:6px;background:rgba(245,158,11,.10);border:1px solid #f59e0b55;color:#fcd34d;">
+      gate_demo_ready: false<?= $rtGateDemoNotReadyReason !== '' ? ' — ' . $e($rtGateDemoNotReadyReason) : '' ?>
+    </div>
+    <?php endif; ?>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;">
       <div><strong>Current mode:</strong> <?= $e((string)($run['dynamic_learning_execution_mode'] ?? 'observe')) ?></div>
       <div><strong>Manual gate enabled:</strong> <?= $e((bool)($run['manual_gate_demo_enabled'] ?? false) ? 'yes' : 'no') ?></div>
+      <div><strong>apply_learning_to_strategy_enabled:</strong> <?= $e((bool)($run['apply_learning_to_strategy_enabled'] ?? false) ? 'yes' : 'no') ?></div>
       <div><strong>Candidate profile id:</strong> <?= $e((string)($run['selected_candidate_profile_id'] ?? '—')) ?></div>
       <div><strong>Candidate source:</strong> <?= $e((string)($run['selected_candidate_source'] ?? '—')) ?></div>
+      <div><strong>Candidate exists:</strong> <?= $e((bool)($run['selected_candidate_exists'] ?? false) ? 'yes' : 'no') ?></div>
+      <div><strong>Candidate rules_total:</strong> <?= $e((int)($run['selected_candidate_rules_total'] ?? 0)) ?></div>
       <div><strong>Candidate status:</strong> <?= $e((string)($run['final_candidate_status'] ?? $run['candidate_status'] ?? '—')) ?></div>
+      <div><strong>Manual override enabled:</strong> <?= $e((bool)($run['allow_manual_demo_gate_with_insufficient_data'] ?? false) ? 'yes' : 'no') ?></div>
+      <div><strong>Manual gate reason:</strong> <?= $e((string)($run['manual_gate_reason'] ?? '—')) ?></div>
       <div><strong>Replay bad blocked:</strong> <?= $e((int)($run['replay_bad_blocked_total'] ?? 0)) ?></div>
       <div><strong>Replay good blocked:</strong> <?= $e((int)($run['replay_good_blocked_total'] ?? 0)) ?></div>
       <div><strong>Candidate vs default delta:</strong> <?= $e((string)($run['candidate_vs_default_delta_pct'] ?? '—')) ?></div>
@@ -96,6 +112,8 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       <div><strong>Blocked demo signals total:</strong> <?= $e((int)($run['blocked_demo_signals_total'] ?? 0)) ?></div>
       <div><strong>Live apply safety:</strong> <?= $e((bool)($run['live_apply_safety_ok'] ?? false) ? 'ok' : 'WARN') ?></div>
       <div><strong>Live apply reason:</strong> <?= $e((string)($run['live_apply_safety_reason'] ?? '—')) ?></div>
+      <div><strong>live apply:</strong> <span style="color:#86efac;">disabled</span></div>
+      <div><strong>auto apply:</strong> <span style="color:#86efac;">disabled</span></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
       <div style="background:#0f172a;border-radius:8px;padding:10px;">

@@ -266,6 +266,13 @@ final class DynamicLearningService
             'selected_candidate_profile_id' => (string)($cfg['selected_candidate_profile_id'] ?? ''),
             'selected_candidate_locked' => (bool)($cfg['selected_candidate_locked'] ?? true),
             'selected_candidate_source' => null,
+            'selected_candidate_exists' => false,
+            'selected_candidate_rules_total' => 0,
+            'allow_manual_demo_gate_with_insufficient_data' => (bool)($cfg['allow_manual_demo_gate_with_insufficient_data'] ?? true),
+            'manual_demo_gate_requires_user_selection' => (bool)($cfg['manual_demo_gate_requires_user_selection'] ?? true),
+            'manual_gate_reason' => null,
+            'gate_demo_ready' => false,
+            'gate_demo_not_ready_reason' => null,
             'entry_snapshot_examples' => [],
             'active_observation_examples' => [],
             'bad_entry_examples' => [],
@@ -928,6 +935,44 @@ final class DynamicLearningService
         $result['selected_candidate_locked'] = (bool)($selectionState['selected_candidate_locked'] ?? true);
         $result['selected_candidate_source'] = $selectionState['selected_candidate_source'] ?? null;
 
+        // Compute selected candidate diagnostics and gate_demo_ready
+        $selProfile = is_array($selectionState['selected_profile'] ?? null) ? (array)$selectionState['selected_profile'] : null;
+        $selProfileExists = is_array($selProfile) && $selProfile !== [];
+        $selProfileRules = $selProfileExists ? count(array_values(array_filter((array)($selProfile['rules'] ?? []), 'is_array'))) : 0;
+        $result['selected_candidate_exists'] = $selProfileExists;
+        $result['selected_candidate_rules_total'] = $selProfileRules;
+        $candidateReplayFilePath = $this->storagePath('profiles/early_impulse_growth_long/candidate_replay.json');
+        $gdExecMode = (string)($cfg['dynamic_learning_execution_mode'] ?? 'observe');
+        $gdManual = (bool)($cfg['manual_gate_demo_enabled'] ?? false);
+        $gdApplyStrat = (bool)($cfg['apply_learning_to_strategy_enabled'] ?? false);
+        $gdApplyLive = (bool)($cfg['apply_learning_to_live_enabled'] ?? false);
+        $gdAutoLive = (bool)($cfg['auto_apply_to_live_enabled'] ?? false);
+        $gdSelId = $result['selected_candidate_profile_id'];
+        $gdReplayExists = is_file($candidateReplayFilePath);
+        $gateDemoReady = false;
+        $gateDemoNotReadyReason = null;
+        if ($gdExecMode !== 'gate_demo') {
+            $gateDemoNotReadyReason = 'execution_mode_not_gate_demo';
+        } elseif (!$gdManual) {
+            $gateDemoNotReadyReason = 'manual_gate_demo_not_enabled';
+        } elseif (!$gdApplyStrat) {
+            $gateDemoNotReadyReason = 'apply_learning_to_strategy_disabled';
+        } elseif ($gdApplyLive || $gdAutoLive) {
+            $gateDemoNotReadyReason = 'live_apply_safety_violation';
+        } elseif ($gdSelId === '') {
+            $gateDemoNotReadyReason = 'no_selected_candidate_profile';
+        } elseif (!$selProfileExists) {
+            $gateDemoNotReadyReason = 'selected_candidate_profile_not_found';
+        } elseif ($selProfileRules === 0) {
+            $gateDemoNotReadyReason = 'selected_candidate_has_no_rules';
+        } elseif (!$gdReplayExists) {
+            $gateDemoNotReadyReason = 'candidate_replay_missing';
+        } else {
+            $gateDemoReady = true;
+        }
+        $result['gate_demo_ready'] = $gateDemoReady;
+        $result['gate_demo_not_ready_reason'] = $gateDemoNotReadyReason;
+
         $this->syncCandidateReplayFinalDiagnostics($cfg, $result, $candidateReplay);
 
         if ((bool)($result['replay_diagnostic_available'] ?? false)) {
@@ -1093,6 +1138,10 @@ final class DynamicLearningService
         $lastRun['selected_candidate_source'] = $selection['selected_candidate_source'] ?? null;
         $lastRun['candidate_manual_demo_gate_eligible'] = (bool)($decision['candidate_manual_demo_gate_eligible'] ?? ($lastRun['candidate_manual_demo_gate_eligible'] ?? false));
         $lastRun['candidate_auto_demo_eligible'] = (bool)($decision['candidate_auto_demo_eligible'] ?? ($lastRun['candidate_auto_demo_eligible'] ?? false));
+        $lastRun['allow_manual_demo_gate_with_insufficient_data'] = (bool)($cfg['allow_manual_demo_gate_with_insufficient_data'] ?? true);
+        $lastRun['selected_candidate_exists'] = (bool)($decision['selected_candidate_exists'] ?? false);
+        $lastRun['selected_candidate_rules_total'] = (int)($decision['selected_candidate_rules_total'] ?? 0);
+        $lastRun['manual_gate_reason'] = $decision['manual_gate_reason'] ?? ($lastRun['manual_gate_reason'] ?? null);
         $lastRun['signals_evaluated_total'] = (int)($lastRun['signals_evaluated_total'] ?? 0) + 1;
         $lastRun['signals_passed_total'] = (int)($lastRun['signals_passed_total'] ?? 0);
         $lastRun['signals_blocked_demo_total'] = (int)($lastRun['signals_blocked_demo_total'] ?? 0);

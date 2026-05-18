@@ -46,6 +46,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (string)($_POST['action'
             'selected_candidate_profile_id',
             'selected_candidate_locked',
             'log_passed_demo_signals_enabled',
+            'allow_manual_demo_gate_with_insufficient_data',
+            'manual_demo_gate_requires_user_selection',
             'max_blocked_demo_signals',
             'max_blocked_demo_signals_ndjson_size_mb',
             'max_passed_demo_signals_ndjson_size_mb',
@@ -74,6 +76,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (string)($_POST['action'
         $active['apply_learning_to_live_enabled'] = false;
         $active['auto_apply_to_demo_enabled'] = false;
         $active['auto_apply_to_live_enabled'] = false;
+        $active['allow_manual_demo_gate_with_insufficient_data'] = (bool)($active['allow_manual_demo_gate_with_insufficient_data'] ?? true);
+        $active['manual_demo_gate_requires_user_selection'] = (bool)($active['manual_demo_gate_requires_user_selection'] ?? true);
         $active['selected_candidate_profile_id'] = trim((string)($active['selected_candidate_profile_id'] ?? ''));
         $active['selected_candidate_locked'] = true;
         $active['log_passed_demo_signals_enabled'] = (bool)($active['log_passed_demo_signals_enabled'] ?? true);
@@ -104,7 +108,13 @@ if (($cfg['dynamic_learning_execution_mode'] ?? 'observe') === 'gate_demo' && $s
     $warnings[] = 'gate_demo enabled but no selected_candidate_profile_id is set';
 }
 if (($cfg['dynamic_learning_execution_mode'] ?? 'observe') === 'gate_demo' && !$candidateManualEligible && !$candidateAutoEligible) {
-    $warnings[] = 'gate_demo enabled but current candidate is not demo-eligible';
+    $warnings[] = 'gate_demo enabled but current candidate is not demo-eligible (override may apply if allow_manual_demo_gate_with_insufficient_data=true)';
+}
+if (($cfg['dynamic_learning_execution_mode'] ?? 'observe') === 'gate_demo' && !($cfg['apply_learning_to_strategy_enabled'] ?? false)) {
+    $warnings[] = 'gate_demo enabled but apply_learning_to_strategy_enabled is false — gate will not block signals';
+}
+if (($cfg['dynamic_learning_execution_mode'] ?? 'observe') === 'gate_demo' && !($cfg['manual_gate_demo_enabled'] ?? false)) {
+    $warnings[] = 'gate_demo mode set but manual_gate_demo_enabled is false';
 }
 if ((bool)($cfg['apply_learning_to_live_enabled'] ?? false) || (bool)($cfg['auto_apply_to_live_enabled'] ?? false)) {
     $warnings[] = 'live apply safety violation detected';
@@ -112,6 +122,13 @@ if ((bool)($cfg['apply_learning_to_live_enabled'] ?? false) || (bool)($cfg['auto
 if ($candidateReplay === []) {
     $warnings[] = 'candidate replay file is missing';
 }
+
+$gateDemoReady = (bool)($lastRun['gate_demo_ready'] ?? false);
+$gateDemoNotReadyReason = (string)($lastRun['gate_demo_not_ready_reason'] ?? '');
+$selectedCandidateExists = (bool)($lastRun['selected_candidate_exists'] ?? false);
+$selectedCandidateRulesTotal = (int)($lastRun['selected_candidate_rules_total'] ?? 0);
+$allowOverride = (bool)($cfg['allow_manual_demo_gate_with_insufficient_data'] ?? true);
+$requiresUserSelection = (bool)($cfg['manual_demo_gate_requires_user_selection'] ?? true);
 
 $currentProfileId = trim((string)($currentProfile['profile_id'] ?? ''));
 $candidateProfileId = trim((string)($candidateProfile['profile_id'] ?? ''));
@@ -175,8 +192,16 @@ if ($selectedCandidateId !== '' && $selectedCandidateId === $currentProfileId) {
           <input class="form-control" value="false" readonly>
         </label>
         <label>selected_candidate_profile_id
-          <input class="form-control" name="selected_candidate_profile_id" value="<?= $e($selectedCandidateId) ?>" placeholder="candidate profile_id to gate">
+          <input class="form-control" name="selected_candidate_profile_id" id="selected_candidate_profile_id" value="<?= $e($selectedCandidateId) ?>" placeholder="candidate profile_id to gate">
         </label>
+        <div style="display:flex;flex-direction:column;gap:4px;justify-content:flex-end;">
+          <?php if ($candidateProfileId !== ''): ?>
+          <button type="button" onclick="useLatestCandidate(this,<?= htmlspecialchars(json_encode($baseUrl), ENT_QUOTES) ?>)" class="btn btn-sm" style="background:#1e40af;color:#fff;margin-top:20px;">Use latest candidate</button>
+          <span id="use-cand-status" style="font-size:11px;color:#94a3b8;"><?= $e($candidateProfileId !== '' ? 'latest: ' . $candidateProfileId : 'no candidate profile') ?></span>
+          <?php else: ?>
+          <span style="font-size:11px;color:#f59e0b;margin-top:20px;">no candidate_profile.json available</span>
+          <?php endif; ?>
+        </div>
         <label>selected_candidate_locked
           <input class="form-control" name="selected_candidate_locked" value="1" readonly>
         </label>
@@ -201,16 +226,38 @@ if ($selectedCandidateId !== '' && $selectedCandidateId === $currentProfileId) {
         <label>auto_apply_to_live_enabled
           <input class="form-control" value="false" readonly>
         </label>
+        <label>allow_manual_demo_gate_with_insufficient_data
+          <select name="allow_manual_demo_gate_with_insufficient_data" class="form-control">
+            <option value="1" <?= $allowOverride ? 'selected' : '' ?>>true — allow demo gate even when data insufficient</option>
+            <option value="0" <?= !$allowOverride ? 'selected' : '' ?>>false — require normal eligibility</option>
+          </select>
+        </label>
+        <label>manual_demo_gate_requires_user_selection
+          <select name="manual_demo_gate_requires_user_selection" class="form-control">
+            <option value="1" <?= $requiresUserSelection ? 'selected' : '' ?>>true — selected_candidate_profile_id must be set</option>
+            <option value="0" <?= !$requiresUserSelection ? 'selected' : '' ?>>false — no selection required</option>
+          </select>
+        </label>
       </div>
     </div>
 
     <div style="border:1px solid var(--ui-border);border-radius:10px;padding:14px;background:rgba(99,102,241,.05);display:grid;gap:10px;">
       <h4 style="margin:0;">Current Candidate Diagnostics</h4>
+      <?php if ($gateDemoReady): ?>
+      <div style="padding:8px 12px;border-radius:6px;background:rgba(34,197,94,.12);border:1px solid #22c55e55;color:#86efac;font-weight:600;">✓ gate_demo_ready: true — gate is active and will evaluate signals</div>
+      <?php else: ?>
+      <div style="padding:8px 12px;border-radius:6px;background:rgba(245,158,11,.10);border:1px solid #f59e0b55;color:#fcd34d;">
+        gate_demo_ready: false<?= $gateDemoNotReadyReason !== '' ? ' — ' . $e($gateDemoNotReadyReason) : '' ?>
+      </div>
+      <?php endif; ?>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
         <div><strong>current candidate status:</strong> <?= $e($candidateStatus) ?></div>
         <div><strong>candidate_manual_demo_gate_eligible:</strong> <?= $e($candidateManualEligible ? 'true' : 'false') ?></div>
         <div><strong>candidate_auto_demo_eligible:</strong> <?= $e($candidateAutoEligible ? 'true' : 'false') ?></div>
         <div><strong>selected_candidate_source:</strong> <?= $e($selectedSource) ?></div>
+        <div><strong>selected_candidate_exists:</strong> <?= $e($selectedCandidateExists ? 'yes' : 'no') ?></div>
+        <div><strong>selected_candidate_rules_total:</strong> <?= $e($selectedCandidateRulesTotal) ?></div>
+        <div><strong>allow_manual_demo_override:</strong> <?= $e($allowOverride ? 'yes' : 'no') ?></div>
         <div><strong>current_profile_id:</strong> <?= $e($currentProfileId !== '' ? $currentProfileId : '—') ?></div>
         <div><strong>candidate_profile_id:</strong> <?= $e($candidateProfileId !== '' ? $candidateProfileId : '—') ?></div>
         <div><strong>candidate replay status:</strong> <?= $e($candidateReplayStatus) ?></div>
@@ -219,6 +266,8 @@ if ($selectedCandidateId !== '' && $selectedCandidateId === $currentProfileId) {
         <div><strong>replay good blocked:</strong> <?= $e((int)($lastRun['replay_good_blocked_total'] ?? 0)) ?></div>
         <div><strong>risk threshold:</strong> <?= $e((float)($cfg['replay_demo_only_threshold_candidate'] ?? 30.0)) ?>%</div>
         <div><strong>block threshold:</strong> <?= $e((float)($cfg['replay_risk_threshold_block_candidate'] ?? 60.0)) ?>%</div>
+        <div><strong>live apply:</strong> <span style="color:#86efac;">disabled</span></div>
+        <div><strong>auto apply:</strong> <span style="color:#86efac;">disabled</span></div>
       </div>
       <pre style="margin:0;overflow:auto;background:#0f172a;color:#cbd5e1;padding:10px;border-radius:8px;"><?= $e(json_encode($candidateReplaySummary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
     </div>
@@ -226,3 +275,25 @@ if ($selectedCandidateId !== '' && $selectedCandidateId === $currentProfileId) {
     <button type="submit" class="btn btn-primary">Save</button>
   </form>
 </div>
+<script>
+function useLatestCandidate(btn, baseUrl) {
+    btn.disabled = true;
+    var statusEl = document.getElementById('use-cand-status');
+    if (statusEl) { statusEl.textContent = 'Saving…'; }
+    fetch(baseUrl + '/ajax', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'action=use_latest_candidate'
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.ok) {
+            var input = document.getElementById('selected_candidate_profile_id');
+            if (input) { input.value = data.profile_id || ''; }
+            if (statusEl) { statusEl.textContent = 'Set: ' + (data.profile_id || ''); statusEl.style.color = '#86efac'; }
+        } else {
+            if (statusEl) { statusEl.textContent = 'Error: ' + (data.error || 'unknown'); statusEl.style.color = '#f87171'; }
+        }
+    }).catch(function() {
+        if (statusEl) { statusEl.textContent = 'Request failed'; statusEl.style.color = '#f87171'; }
+    }).finally(function() { btn.disabled = false; });
+}
+</script>

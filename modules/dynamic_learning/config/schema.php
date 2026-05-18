@@ -18,6 +18,8 @@ return [
     'selected_candidate_profile_id' => 'string',
     'selected_candidate_locked' => 'bool',
     'log_passed_demo_signals_enabled' => 'bool',
+    'allow_manual_demo_gate_with_insufficient_data' => 'bool',
+    'manual_demo_gate_requires_user_selection' => 'bool',
     'observation_interval_seconds' => 'int',
     'max_observations_per_position' => 'int',
     'observe_orderbook_enabled' => 'bool',

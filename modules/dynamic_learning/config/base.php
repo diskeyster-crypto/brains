@@ -20,6 +20,8 @@ return [
     'selected_candidate_profile_id' => '',
     'selected_candidate_locked' => true,
     'log_passed_demo_signals_enabled' => true,
+    'allow_manual_demo_gate_with_insufficient_data' => true,
+    'manual_demo_gate_requires_user_selection' => true,
 
     'observation_interval_seconds' => 30,
     'max_observations_per_position' => 40,

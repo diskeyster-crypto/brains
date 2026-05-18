@@ -15,6 +15,11 @@ return [
     'apply_learning_to_strategy_enabled' => false,
     'apply_learning_to_live_enabled' => false,
     'apply_learning_to_demo_enabled' => false,
+    'manual_gate_demo_enabled' => false,
+    'dynamic_learning_execution_mode' => 'observe',
+    'selected_candidate_profile_id' => '',
+    'selected_candidate_locked' => true,
+    'log_passed_demo_signals_enabled' => true,
 
     'observation_interval_seconds' => 30,
     'max_observations_per_position' => 40,
@@ -149,6 +154,8 @@ return [
     'candidate_max_rules' => 10,
     'candidate_allow_broad_features' => false,
     'candidate_replay_enabled' => true,
+    'replay_demo_only_threshold_candidate' => 30.0,
+    'replay_risk_threshold_block_candidate' => 60.0,
 
     // Composite candidate builder (diagnostic only)
     'composite_candidate_enabled' => true,
@@ -181,4 +188,7 @@ return [
     'max_rollback_history_records' => 200,
     'max_profile_history_lines' => 300,
     'max_profile_history_size_mb' => 3,
+    'max_blocked_demo_signals' => 1000,
+    'max_blocked_demo_signals_ndjson_size_mb' => 20,
+    'max_passed_demo_signals_ndjson_size_mb' => 20,
 ];

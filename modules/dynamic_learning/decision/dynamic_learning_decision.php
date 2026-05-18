@@ -7,174 +7,288 @@ namespace Modules\DynamicLearning\Decision;
 use Modules\DynamicLearning\Analyzers\DlHelpers;
 use Modules\DynamicLearning\Analyzers\Outcome\OutcomeClassifier;
 
-/**
- * Evaluates whether a strategy signal should be passed, blocked, or observed
- * based on the current dynamic learning profile and generated rules.
- *
- * Safety contract:
- * - If apply_learning_to_live_enabled = false: always pass (with diagnostics)
- * - If no profile or no rules: always pass
- * - Blocking is only possible when apply flags are active and rules are promoted beyond observe_only
- */
 final class DynamicLearningDecision
 {
     private const STRATEGY_ID = 'early_impulse_growth_long';
 
     /**
-     * Evaluate a signal packet for the given strategy.
-     *
-     * @param array<string,mixed> $cfg Dynamic learning config
-     * @param array<string,mixed> $signalPacket Signal data from strategy
-     * @param array<string,mixed>|null $profile Current profile or null
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed>|null $selectedProfile
+     * @param array<string,mixed> $candidateReplay
+     * @param array<string,mixed> $lastRun
+     * @param array<string,mixed> $selection
      * @return array<string,mixed>
      */
-    public static function evaluate(string $strategyId, array $signalPacket, array $cfg, ?array $profile): array
-    {
+    public static function evaluate(
+        string $strategyId,
+        array $signalPacket,
+        array $cfg,
+        ?array $selectedProfile,
+        array $candidateReplay = [],
+        array $lastRun = [],
+        array $selection = []
+    ): array {
+        $executionMode = (string)($cfg['dynamic_learning_execution_mode'] ?? 'observe');
+        $blockThreshold = (float)($cfg['replay_risk_threshold_block_candidate'] ?? 60.0);
+        $riskThreshold = (float)($cfg['replay_demo_only_threshold_candidate'] ?? 30.0);
+
         $response = [
-            'enabled' => (bool)$cfg['enabled'],
+            'enabled' => (bool)($cfg['enabled'] ?? false),
             'decision' => 'pass',
-            'mode' => (string)$cfg['mode'],
-            'profile_id' => null,
+            'mode' => (string)($cfg['mode'] ?? 'diagnostic_only'),
+            'execution_mode' => $executionMode,
+            'apply_scope' => 'demo_only',
+            'candidate_profile_id' => $selection['selected_candidate_profile_id'] ?? null,
+            'candidate_status' => (string)($lastRun['final_candidate_status'] ?? $lastRun['candidate_status'] ?? ($selection['candidate_status'] ?? 'pending')),
+            'candidate_manual_demo_gate_eligible' => (bool)($lastRun['final_candidate_manual_demo_gate_eligible'] ?? $lastRun['candidate_manual_demo_gate_eligible'] ?? ($selectedProfile['candidate_manual_demo_gate_eligible'] ?? false)),
+            'candidate_auto_demo_eligible' => (bool)($lastRun['final_candidate_auto_demo_eligible'] ?? $lastRun['candidate_auto_demo_eligible'] ?? ($selectedProfile['candidate_auto_demo_eligible'] ?? false)),
+            'candidate_live_eligible' => false,
+            'selected_candidate_profile_id' => $selection['selected_candidate_profile_id'] ?? null,
+            'selected_candidate_locked' => (bool)($selection['selected_candidate_locked'] ?? true),
+            'selected_candidate_source' => $selection['selected_candidate_source'] ?? null,
             'matched_rules' => [],
-            'reason' => 'no_profile_rules',
+            'reason' => 'dynamic_learning_pass',
             'confidence' => 'low',
-            'profile_status' => null,
-            'apply_learning_to_live_enabled' => (bool)$cfg['apply_learning_to_live_enabled'],
+            'profile_status' => $selectedProfile['status'] ?? null,
+            'apply_learning_to_live_enabled' => (bool)($cfg['apply_learning_to_live_enabled'] ?? false),
+            'risk_score_raw' => 0.0,
+            'risk_score_max' => 0.0,
+            'risk_score_pct' => 0.0,
+            'risk_threshold_pct' => $riskThreshold,
+            'threshold_used' => $blockThreshold,
+            'final_candidate_eligible_for_demo_apply' => (bool)($lastRun['final_candidate_eligible_for_demo_apply'] ?? $lastRun['candidate_eligible_for_demo_apply'] ?? false),
         ];
 
         if (strtolower(trim($strategyId)) !== self::STRATEGY_ID) {
-            $response['decision'] = 'no_signal';
             $response['reason'] = 'unsupported_strategy';
             return $response;
         }
-        if (!$cfg['enabled']) {
+        if (!($cfg['enabled'] ?? false)) {
             $response['reason'] = 'module_disabled';
             return $response;
         }
+        if ($executionMode === 'off') {
+            $response['reason'] = 'execution_mode_off';
+            return $response;
+        }
         if ($signalPacket === []) {
-            $response['decision'] = 'no_signal';
             $response['reason'] = 'signal_packet_missing';
-            return $response;
-        }
-
-        if (!is_array($profile) || $profile === []) {
-            $response['decision'] = 'pass';
-            $response['profile_status'] = 'missing';
-            $response['reason'] = 'no_profile_rules';
-            return $response;
-        }
-
-        $response['profile_id'] = $profile['profile_id'] ?? null;
-        $response['profile_status'] = (string)($profile['status'] ?? '');
-
-        if (strtolower(trim((string)($profile['strategy_id'] ?? ''))) !== self::STRATEGY_ID) {
-            $response['decision'] = 'no_profile';
-            $response['reason'] = 'profile_strategy_mismatch';
-            return $response;
-        }
-
-        $rules = array_values(array_filter((array)($profile['rules'] ?? []), static fn(mixed $r): bool => is_array($r)));
-        if ($rules === []) {
-            $response['reason'] = 'no_profile_rules';
             return $response;
         }
 
         $ctx = is_array($signalPacket['strategy_signal_context'] ?? null) ? (array)$signalPacket['strategy_signal_context'] : [];
         $features = OutcomeClassifier::extractEntryFeatures($ctx);
+        foreach ($ctx as $key => $value) {
+            if (!array_key_exists((string)$key, $features)) {
+                $features[(string)$key] = $value;
+            }
+        }
         if ($features === []) {
-            $response['decision'] = 'insufficient_data';
-            $response['reason'] = 'entry_features_missing';
+            $response['reason'] = $executionMode === 'observe' ? 'observe_only_entry_features_missing' : 'entry_features_missing';
+            $response['decision'] = $executionMode === 'observe' ? 'observe_only' : 'pass';
             return $response;
         }
-        foreach ($ctx as $k => $v) {
-            if (!array_key_exists((string)$k, $features)) {
-                $features[(string)$k] = $v;
+
+        if (!is_array($selectedProfile) || $selectedProfile === []) {
+            if ($executionMode === 'observe') {
+                $response['decision'] = 'observe_only';
+                $response['reason'] = 'observe_only_no_selected_candidate_profile';
+            } else {
+                $response['decision'] = 'no_candidate';
+                $response['reason'] = trim((string)($selection['selected_candidate_profile_id'] ?? '')) === ''
+                    ? 'no_selected_candidate_profile'
+                    : 'selected_candidate_profile_not_found';
             }
+            return $response;
         }
 
-        $matched = [];
-        $strongestAction = 'observe_only';
-        $hasDemoOnlyAction = false;
-        $confidenceRank = ['low' => 1, 'medium' => 2, 'high' => 3];
-        $bestConfidence = 'low';
+        $response['candidate_profile_id'] = $selectedProfile['profile_id'] ?? ($selection['selected_candidate_profile_id'] ?? null);
+        $response['profile_status'] = (string)($selectedProfile['status'] ?? '');
+        $response['candidate_status'] = (string)($lastRun['final_candidate_status']
+            ?? $lastRun['candidate_status']
+            ?? ($selectedProfile['candidate_status'] ?? $selectedProfile['status'] ?? 'pending'));
+
+        $rules = array_values(array_filter((array)($selectedProfile['rules'] ?? []), static fn(mixed $rule): bool => is_array($rule)));
+        if ($rules === []) {
+            if ($executionMode === 'observe') {
+                $response['decision'] = 'observe_only';
+                $response['reason'] = 'observe_only_no_profile_rules';
+            } else {
+                $response['decision'] = 'no_candidate';
+                $response['reason'] = 'no_profile_rules';
+            }
+            return $response;
+        }
+
+        $riskDetails = self::computeRiskScoreDetails($features, $rules);
+        $response['risk_score_raw'] = (float)($riskDetails['risk_score_raw'] ?? 0.0);
+        $response['risk_score_max'] = (float)($riskDetails['risk_score_max'] ?? 0.0);
+        $response['risk_score_pct'] = (float)($riskDetails['risk_score_pct'] ?? 0.0);
+        $response['matched_rules'] = (array)($riskDetails['matched_rules'] ?? []);
+
+        if ($executionMode === 'observe') {
+            $response['decision'] = 'observe_only';
+            $response['reason'] = 'observe_mode';
+            return $response;
+        }
+
+        $signalMode = strtolower(trim((string)($signalPacket['mode'] ?? 'demo')));
+        if ($signalMode === 'live') {
+            $response['reason'] = 'live_scope_disabled';
+            return $response;
+        }
+        if (!($cfg['manual_gate_demo_enabled'] ?? false)) {
+            $response['reason'] = 'manual_gate_demo_disabled';
+            return $response;
+        }
+        if (!($cfg['apply_learning_to_strategy_enabled'] ?? false)) {
+            $response['reason'] = 'apply_learning_to_strategy_disabled';
+            return $response;
+        }
+        if ((bool)($cfg['apply_learning_to_live_enabled'] ?? false) || (bool)($cfg['auto_apply_to_live_enabled'] ?? false)) {
+            $response['reason'] = 'live_apply_safety_violation';
+            return $response;
+        }
+
+        $allowedStatuses = ['eligible_for_manual_demo_gate', 'eligible_for_demo_apply', 'eligible_for_auto_demo'];
+        if (!in_array($response['candidate_status'], $allowedStatuses, true)) {
+            $response['decision'] = 'no_candidate';
+            $response['reason'] = 'candidate_status_not_eligible';
+            return $response;
+        }
+
+        $manualEligible = (bool)$response['candidate_manual_demo_gate_eligible'];
+        $finalDemoEligible = (bool)$response['final_candidate_eligible_for_demo_apply'];
+        if (!$manualEligible && !$finalDemoEligible) {
+            $response['decision'] = 'no_candidate';
+            $response['reason'] = 'candidate_not_demo_eligible';
+            return $response;
+        }
+
+        if ($candidateReplay === []) {
+            $response['decision'] = 'no_candidate';
+            $response['reason'] = 'candidate_replay_missing';
+            return $response;
+        }
+
+        $replayStatus = (string)($candidateReplay['replay_candidate_status'] ?? '');
+        if (in_array($replayStatus, ['rejected_on_replay', 'insufficient_replay_data'], true)) {
+            $response['decision'] = 'no_candidate';
+            $response['reason'] = 'candidate_replay_failed_safety_guard';
+            return $response;
+        }
+
+        if ((float)$response['risk_score_pct'] >= $blockThreshold) {
+            $response['decision'] = 'block_demo';
+            $response['reason'] = 'risk_score_above_block_threshold';
+            $response['confidence'] = 'high';
+            return $response;
+        }
+
+        $response['decision'] = 'pass';
+        $response['reason'] = 'risk_score_below_block_threshold';
+        return $response;
+    }
+
+    /**
+     * @param array<string,mixed> $features
+     * @param list<array<string,mixed>> $rules
+     * @return array{risk_score_raw:float,risk_score_max:float,risk_score_pct:float,matched_rules:list<array<string,mixed>>}
+     */
+    private static function computeRiskScoreDetails(array $features, array $rules): array
+    {
+        $rawScore = 0.0;
+        $maxScore = 0.0;
+        $matchedRules = [];
 
         foreach ($rules as $rule) {
-            $status = strtolower(trim((string)($rule['status'] ?? 'candidate')));
-            if ($status === 'quarantined') {
+            $weight = (float)($rule['weight'] ?? 10.0);
+            $maxScore += $weight;
+
+            if (isset($rule['feature'], $rule['threshold'])) {
+                $feature = (string)$rule['feature'];
+                $threshold = $rule['threshold'];
+                $op = strtolower(trim((string)($rule['op'] ?? 'gte')));
+                $value = self::getFeatureDotPath($features, $feature);
+                if ($feature === '' || $value === null || !is_numeric($value)) {
+                    continue;
+                }
+                $matches = $op === 'lte'
+                    ? (float)$value <= (float)$threshold
+                    : (float)$value >= (float)$threshold;
+                if (!$matches) {
+                    continue;
+                }
+                $rawScore += $weight;
+                $matchedRules[] = [
+                    'rule_id' => $rule['rule_id'] ?? null,
+                    'feature' => $feature,
+                    'op' => $op,
+                    'threshold' => (float)$threshold,
+                    'value' => (float)$value,
+                    'weight' => $weight,
+                ];
                 continue;
             }
-            $conditions = is_array($rule['conditions'] ?? null) ? (array)$rule['conditions'] : [];
+
+            $conditions = array_values(array_filter((array)($rule['conditions'] ?? []), static fn(mixed $cond): bool => is_array($cond)));
             if ($conditions === []) {
                 continue;
             }
-            $ok = true;
-            foreach ($conditions as $cond) {
-                if (!is_array($cond)) {
-                    $ok = false;
-                    break;
-                }
-                $field = (string)($cond['field'] ?? $cond['f'] ?? '');
-                $op = (string)($cond['op'] ?? 'eq');
-                $value = $cond['value'] ?? $cond['v'] ?? null;
-                if ($field === '' || !DlHelpers::cond($features[$field] ?? null, $op, $value)) {
-                    $ok = false;
+
+            $allMatched = true;
+            foreach ($conditions as $condition) {
+                $field = (string)($condition['field'] ?? $condition['f'] ?? '');
+                $op = (string)($condition['op'] ?? 'eq');
+                $value = $condition['value'] ?? $condition['v'] ?? null;
+                if ($field === '' || !DlHelpers::cond(self::getFeatureDotPath($features, $field), $op, $value)) {
+                    $allMatched = false;
                     break;
                 }
             }
-            if (!$ok) {
+            if (!$allMatched) {
                 continue;
             }
 
-            $action = strtolower(trim((string)($rule['action'] ?? 'observe_only')));
-            $scope = strtolower(trim((string)($rule['scope'] ?? 'demo_only')));
-            $confidence = strtolower(trim((string)($rule['confidence'] ?? 'low')));
-            if (!isset($confidenceRank[$confidence])) {
-                $confidence = 'low';
-            }
-
-            if (in_array($action, ['hard_block', 'hard'], true)) {
-                $strongestAction = 'hard_block';
-            } elseif (in_array($action, ['soft_block', 'soft'], true) && $strongestAction !== 'hard_block') {
-                $strongestAction = 'soft_block';
-            }
-            if (in_array($scope, ['demo_only', 'demo'], true) && in_array($action, ['hard_block', 'hard', 'soft_block', 'soft'], true)) {
-                $hasDemoOnlyAction = true;
-            }
-            if ($confidenceRank[$confidence] > $confidenceRank[$bestConfidence]) {
-                $bestConfidence = $confidence;
-            }
-
-            $matched[] = [
+            $rawScore += $weight;
+            $matchedRules[] = [
                 'rule_id' => $rule['rule_id'] ?? null,
-                'source_pattern' => $rule['source_pattern'] ?? null,
-                'action' => $action,
-                'scope' => $scope,
-                'confidence' => $confidence,
+                'feature' => 'compound_conditions',
+                'op' => 'match_all',
+                'threshold' => null,
+                'value' => null,
+                'weight' => $weight,
             ];
         }
 
-        if ($matched === []) {
-            $response['reason'] = 'no_rule_match';
-            return $response;
+        $scorePct = $maxScore > 0.0 ? ($rawScore / $maxScore) * 100.0 : 0.0;
+        return [
+            'risk_score_raw' => round($rawScore, 4),
+            'risk_score_max' => round($maxScore, 4),
+            'risk_score_pct' => round($scorePct, 4),
+            'matched_rules' => $matchedRules,
+        ];
+    }
+
+    private static function getFeatureDotPath(array $features, string $path): mixed
+    {
+        $path = trim($path);
+        if ($path === '') {
+            return null;
+        }
+        if (array_key_exists($path, $features)) {
+            return $features[$path];
         }
 
-        $response['matched_rules'] = $matched;
-        $response['confidence'] = $bestConfidence;
-
-        if ($strongestAction === 'observe_only') {
-            $response['decision'] = 'pass';
-            $response['reason'] = 'observe_only_rules';
-            return $response;
+        $segments = explode('.', $path);
+        $cursor = $features;
+        foreach ($segments as $segment) {
+            if (!is_array($cursor) || !array_key_exists($segment, $cursor)) {
+                return null;
+            }
+            $cursor = $cursor[$segment];
         }
 
-        if ($hasDemoOnlyAction) {
-            $response['decision'] = 'demo_only';
-            $response['reason'] = 'demo_only_rule_match';
-            return $response;
-        }
-
-        $response['decision'] = 'block';
-        $response['reason'] = 'rule_match_block';
-        return $response;
+        return $cursor;
     }
 }

@@ -261,6 +261,11 @@ final class DynamicLearningService
             'dynamic_filter_available' => is_file($this->repoRoot . '/modules/filter_engine/filters/dynamic_learning_filter.php'),
             'apply_learning_to_strategy_enabled' => (bool)$cfg['apply_learning_to_strategy_enabled'],
             'apply_learning_to_live_enabled' => (bool)$cfg['apply_learning_to_live_enabled'],
+            'manual_gate_demo_enabled' => (bool)($cfg['manual_gate_demo_enabled'] ?? false),
+            'dynamic_learning_execution_mode' => (string)($cfg['dynamic_learning_execution_mode'] ?? 'observe'),
+            'selected_candidate_profile_id' => (string)($cfg['selected_candidate_profile_id'] ?? ''),
+            'selected_candidate_locked' => (bool)($cfg['selected_candidate_locked'] ?? true),
+            'selected_candidate_source' => null,
             'entry_snapshot_examples' => [],
             'active_observation_examples' => [],
             'bad_entry_examples' => [],
@@ -306,6 +311,17 @@ final class DynamicLearningService
             'candidate_status' => 'pending',
             'promotion_decision' => 'none',
             'promotion_reason' => null,
+            'candidate_manual_demo_gate_eligible' => false,
+            'candidate_auto_demo_eligible' => false,
+            'candidate_live_eligible' => false,
+            'manual_demo_gate_missing_counts' => [],
+            'auto_demo_missing_counts' => [],
+            'final_candidate_status' => 'pending',
+            'final_promotion_decision' => 'none',
+            'final_promotion_reason' => null,
+            'final_candidate_eligible_for_demo_apply' => false,
+            'final_candidate_manual_demo_gate_eligible' => false,
+            'final_candidate_auto_demo_eligible' => false,
             'auto_apply_to_demo_enabled' => (bool)($cfg['auto_apply_to_demo_enabled'] ?? false),
             'auto_apply_to_live_enabled' => (bool)($cfg['auto_apply_to_live_enabled'] ?? false),
             'require_not_worse_than_default' => (bool)($cfg['require_not_worse_than_default'] ?? true),
@@ -346,6 +362,19 @@ final class DynamicLearningService
             'replay_expected_bad_avoided_total' => 0,
             'auto_apply_safety_blocked' => true,
             'auto_apply_safety_reason' => 'candidate_not_eligible_for_demo_apply',
+            'signals_evaluated_total' => 0,
+            'signals_passed_total' => 0,
+            'signals_blocked_demo_total' => 0,
+            'signals_observe_only_total' => 0,
+            'signals_no_candidate_total' => 0,
+            'block_reason_counts' => [],
+            'blocked_demo_examples' => [],
+            'passed_demo_examples' => [],
+            'blocked_demo_signals_total' => 0,
+            'live_apply_safety_ok' => !((bool)($cfg['apply_learning_to_live_enabled'] ?? false) || (bool)($cfg['auto_apply_to_live_enabled'] ?? false)),
+            'live_apply_safety_reason' => !((bool)($cfg['apply_learning_to_live_enabled'] ?? false) || (bool)($cfg['auto_apply_to_live_enabled'] ?? false))
+                ? 'live_apply_disabled'
+                : 'live_apply_flag_detected',
             'candidate_bad_entry_rate_delta_pct' => null,
             'candidate_good_capture_delta_pct' => null,
             'candidate_avg_roi_delta_pct' => null,
@@ -889,6 +918,15 @@ final class DynamicLearningService
         $result['final_candidate_manual_demo_gate_eligible'] = (bool)($result['candidate_manual_demo_gate_eligible'] ?? false);
         $result['final_candidate_auto_demo_eligible'] = (bool)($result['candidate_auto_demo_eligible'] ?? false);
         $result['candidate_replay_summary'] = $this->buildCandidateReplaySummary($candidateReplay, $result);
+        $selectionState = $this->resolveSelectedCandidateProfileState(
+            $cfg,
+            is_array($currentProfile ?? null) ? (array)$currentProfile : [],
+            is_array($candidateBuild['profile'] ?? null) ? (array)$candidateBuild['profile'] : [],
+            $result
+        );
+        $result['selected_candidate_profile_id'] = (string)($selectionState['selected_candidate_profile_id'] ?? '');
+        $result['selected_candidate_locked'] = (bool)($selectionState['selected_candidate_locked'] ?? true);
+        $result['selected_candidate_source'] = $selectionState['selected_candidate_source'] ?? null;
 
         $this->syncCandidateReplayFinalDiagnostics($cfg, $result, $candidateReplay);
 
@@ -960,9 +998,281 @@ final class DynamicLearningService
     public function evaluateSignalForStrategy(string $strategyId, array $signalPacket): array
     {
         $cfg = $this->loadConfig();
-        $profilePath = $this->storagePath('profiles/early_impulse_growth_long/current_profile.json');
-        $profile = (array)$this->readJson($profilePath, []);
-        return DynamicLearningDecision::evaluate($strategyId, $signalPacket, $cfg, $profile !== [] ? $profile : null);
+        $currentProfilePath = $this->storagePath('profiles/early_impulse_growth_long/current_profile.json');
+        $candidateProfilePath = $this->storagePath('profiles/early_impulse_growth_long/candidate_profile.json');
+        $candidateReplayPath = $this->storagePath('profiles/early_impulse_growth_long/candidate_replay.json');
+        $currentProfile = (array)$this->readJson($currentProfilePath, []);
+        $candidateProfile = (array)$this->readJson($candidateProfilePath, []);
+        $candidateReplay = (array)$this->readJson($candidateReplayPath, []);
+        $lastRun = $this->getLastRun();
+        $selection = $this->resolveSelectedCandidateProfileState($cfg, $currentProfile, $candidateProfile, $lastRun);
+        $selectedProfile = is_array($selection['selected_profile'] ?? null) ? (array)$selection['selected_profile'] : null;
+
+        $decision = DynamicLearningDecision::evaluate(
+            $strategyId,
+            $signalPacket,
+            $cfg,
+            $selectedProfile,
+            $candidateReplay,
+            $lastRun,
+            $selection
+        );
+        $this->recordSignalDecision($cfg, $signalPacket, $decision, $selection);
+        return $decision;
+    }
+
+    /**
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed> $currentProfile
+     * @param array<string,mixed> $candidateProfile
+     * @param array<string,mixed> $lastRun
+     * @return array<string,mixed>
+     */
+    private function resolveSelectedCandidateProfileState(array $cfg, array $currentProfile, array $candidateProfile, array $lastRun): array
+    {
+        $selectedId = trim((string)($cfg['selected_candidate_profile_id'] ?? ''));
+        $selectedLocked = (bool)($cfg['selected_candidate_locked'] ?? true);
+        $currentId = trim((string)($currentProfile['profile_id'] ?? ''));
+        $candidateId = trim((string)($candidateProfile['profile_id'] ?? ''));
+
+        $selectedProfile = null;
+        $selectedSource = null;
+        if ($selectedId !== '') {
+            if ($currentId !== '' && $selectedId === $currentId) {
+                $selectedProfile = $currentProfile;
+                $selectedSource = 'current_profile';
+            } elseif ($candidateId !== '' && $selectedId === $candidateId) {
+                $selectedProfile = $candidateProfile;
+                $selectedSource = 'candidate_profile';
+            } else {
+                $selectedSource = 'manual_selection';
+            }
+        }
+
+        $candidateStatus = (string)($lastRun['final_candidate_status']
+            ?? $lastRun['candidate_status']
+            ?? ($selectedProfile['candidate_status'] ?? $selectedProfile['status'] ?? 'pending'));
+
+        return [
+            'selected_candidate_profile_id' => $selectedId,
+            'selected_candidate_locked' => $selectedLocked,
+            'selected_candidate_source' => $selectedSource,
+            'selected_profile' => $selectedProfile,
+            'selected_profile_exists' => is_array($selectedProfile) && $selectedProfile !== [],
+            'current_profile_id' => $currentId,
+            'candidate_profile_id' => $candidateId,
+            'candidate_status' => $candidateStatus,
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $cfg
+     * @param array<string,mixed> $signalPacket
+     * @param array<string,mixed> $decision
+     * @param array<string,mixed> $selection
+     */
+    private function recordSignalDecision(array $cfg, array $signalPacket, array $decision, array $selection): void
+    {
+        $lastRunPath = $this->storagePath('last_run.json');
+        $lastRun = (array)$this->readJson($lastRunPath, []);
+        if ($lastRun === []) {
+            return;
+        }
+
+        $decisionValue = strtolower(trim((string)($decision['decision'] ?? 'pass')));
+        $reason = trim((string)($decision['reason'] ?? ''));
+        $signalMode = strtolower(trim((string)($signalPacket['mode'] ?? 'demo')));
+        $executionMode = (string)($decision['execution_mode'] ?? ($cfg['dynamic_learning_execution_mode'] ?? 'observe'));
+        $isLive = $signalMode === 'live';
+        $isDemo = !$isLive;
+
+        $lastRun['dynamic_learning_execution_mode'] = $executionMode;
+        $lastRun['manual_gate_demo_enabled'] = (bool)($cfg['manual_gate_demo_enabled'] ?? false);
+        $lastRun['selected_candidate_profile_id'] = (string)($selection['selected_candidate_profile_id'] ?? '');
+        $lastRun['selected_candidate_locked'] = (bool)($selection['selected_candidate_locked'] ?? true);
+        $lastRun['selected_candidate_source'] = $selection['selected_candidate_source'] ?? null;
+        $lastRun['candidate_manual_demo_gate_eligible'] = (bool)($decision['candidate_manual_demo_gate_eligible'] ?? ($lastRun['candidate_manual_demo_gate_eligible'] ?? false));
+        $lastRun['candidate_auto_demo_eligible'] = (bool)($decision['candidate_auto_demo_eligible'] ?? ($lastRun['candidate_auto_demo_eligible'] ?? false));
+        $lastRun['signals_evaluated_total'] = (int)($lastRun['signals_evaluated_total'] ?? 0) + 1;
+        $lastRun['signals_passed_total'] = (int)($lastRun['signals_passed_total'] ?? 0);
+        $lastRun['signals_blocked_demo_total'] = (int)($lastRun['signals_blocked_demo_total'] ?? 0);
+        $lastRun['signals_observe_only_total'] = (int)($lastRun['signals_observe_only_total'] ?? 0);
+        $lastRun['signals_no_candidate_total'] = (int)($lastRun['signals_no_candidate_total'] ?? 0);
+        $lastRun['block_reason_counts'] = (array)($lastRun['block_reason_counts'] ?? []);
+        $lastRun['blocked_demo_examples'] = array_values(array_filter((array)($lastRun['blocked_demo_examples'] ?? []), 'is_array'));
+        $lastRun['passed_demo_examples'] = array_values(array_filter((array)($lastRun['passed_demo_examples'] ?? []), 'is_array'));
+
+        $liveSafetyOk = !((bool)($cfg['apply_learning_to_live_enabled'] ?? false) || (bool)($cfg['auto_apply_to_live_enabled'] ?? false));
+        $lastRun['live_apply_safety_ok'] = $liveSafetyOk;
+        $lastRun['live_apply_safety_reason'] = $liveSafetyOk ? 'live_apply_disabled' : 'live_apply_flag_detected';
+
+        if ($decisionValue === 'block_demo' && $isDemo) {
+            $lastRun['signals_blocked_demo_total']++;
+            if ($reason !== '') {
+                $lastRun['block_reason_counts'][$reason] = (int)($lastRun['block_reason_counts'][$reason] ?? 0) + 1;
+            }
+        } elseif ($decisionValue === 'observe_only') {
+            $lastRun['signals_observe_only_total']++;
+        } elseif ($decisionValue === 'no_candidate') {
+            $lastRun['signals_no_candidate_total']++;
+        } else {
+            $lastRun['signals_passed_total']++;
+        }
+
+        $journalEntry = $this->buildSignalDecisionJournalEntry($signalPacket, $decision, $selection);
+        $maxExamples = max(1, (int)($cfg['max_examples_per_last_run_section'] ?? 10));
+        if ($decisionValue === 'block_demo' && $isDemo) {
+            $blockedJsonPath = $this->storagePath('blocked_demo_signals.json');
+            $blockedNdjsonPath = $this->storagePath('blocked_demo_signals.ndjson');
+            $this->appendJsonRingRecord($blockedJsonPath, $journalEntry, (int)($cfg['max_blocked_demo_signals'] ?? 1000));
+            $this->appendNdjsonBounded($blockedNdjsonPath, $journalEntry, (float)($cfg['max_blocked_demo_signals_ndjson_size_mb'] ?? 20.0));
+            $lastRun['blocked_demo_examples'][] = $journalEntry;
+            $lastRun['blocked_demo_examples'] = array_slice($lastRun['blocked_demo_examples'], -$maxExamples);
+            $blockedTotal = (array)$this->readJson($blockedJsonPath, []);
+            $lastRun['blocked_demo_signals_total'] = count($blockedTotal);
+        } elseif ($isDemo && (bool)($cfg['log_passed_demo_signals_enabled'] ?? true) && in_array($decisionValue, ['pass', 'observe_only', 'no_candidate'], true)) {
+            $passedNdjsonPath = $this->storagePath('passed_demo_signals.ndjson');
+            $compactPassed = $journalEntry;
+            unset($compactPassed['matched_rules']);
+            $this->appendNdjsonBounded($passedNdjsonPath, $compactPassed, (float)($cfg['max_passed_demo_signals_ndjson_size_mb'] ?? 20.0));
+            $lastRun['passed_demo_examples'][] = $compactPassed;
+            $lastRun['passed_demo_examples'] = array_slice($lastRun['passed_demo_examples'], -$maxExamples);
+        }
+
+        $this->writeJson($lastRunPath, $lastRun);
+    }
+
+    /**
+     * @param array<string,mixed> $signalPacket
+     * @param array<string,mixed> $decision
+     * @param array<string,mixed> $selection
+     * @return array<string,mixed>
+     */
+    private function buildSignalDecisionJournalEntry(array $signalPacket, array $decision, array $selection): array
+    {
+        $ctx = is_array($signalPacket['strategy_signal_context'] ?? null) ? (array)$signalPacket['strategy_signal_context'] : [];
+        $matchedRules = array_values(array_filter((array)($decision['matched_rules'] ?? []), 'is_array'));
+        $candidateRuleIds = [];
+        foreach ($matchedRules as $rule) {
+            $ruleId = trim((string)($rule['rule_id'] ?? ''));
+            if ($ruleId !== '') {
+                $candidateRuleIds[] = $ruleId;
+            }
+        }
+
+        return [
+            'created_at' => date('c'),
+            'strategy_id' => (string)($signalPacket['strategy_id'] ?? self::STRATEGY_ID),
+            'symbol' => strtoupper((string)($signalPacket['symbol'] ?? '')),
+            'side' => strtolower((string)($signalPacket['side'] ?? 'long')),
+            'signal_id' => (string)($signalPacket['signal_id'] ?? ''),
+            'entry_price' => (float)($signalPacket['entry_price'] ?? 0.0),
+            'candidate_profile_id' => $decision['candidate_profile_id'] ?? ($selection['selected_candidate_profile_id'] ?? null),
+            'candidate_rule_ids' => $candidateRuleIds,
+            'risk_score_raw' => (float)($decision['risk_score_raw'] ?? 0.0),
+            'risk_score_max' => (float)($decision['risk_score_max'] ?? 0.0),
+            'risk_score_pct' => (float)($decision['risk_score_pct'] ?? 0.0),
+            'threshold_used' => (float)($decision['threshold_used'] ?? 0.0),
+            'matched_rules' => array_slice($matchedRules, 0, 10),
+            'block_reason' => (string)($decision['reason'] ?? ''),
+            'decision' => (string)($decision['decision'] ?? 'pass'),
+            'execution_mode' => (string)($decision['execution_mode'] ?? 'observe'),
+            'strategy_signal_context' => $this->compactAssociativeSummary([
+                'strategy_signal_key' => $ctx['strategy_signal_key'] ?? ($signalPacket['strategy_signal_key'] ?? null),
+                'entry_phase' => $ctx['entry_phase'] ?? null,
+                'entry_timing' => $ctx['entry_timing'] ?? null,
+                'signal_quality' => $ctx['signal_quality'] ?? null,
+                'dynamic_risk_score' => $ctx['dynamic_risk_score'] ?? null,
+                'dynamic_quality_score' => $ctx['dynamic_quality_score'] ?? null,
+            ]),
+            'micro_feature_summary' => $this->compactAssociativeSummary([
+                'micro_window_10m' => $ctx['micro_window_10m'] ?? null,
+                'micro_window_5m' => $ctx['micro_window_5m'] ?? null,
+                'late_spike_risk_score' => $ctx['late_spike_risk_score'] ?? null,
+                'bounce_only_risk_score' => $ctx['bounce_only_risk_score'] ?? null,
+            ]),
+            'orderbook_summary' => $this->compactAssociativeSummary($ctx['orderbook_context'] ?? ($ctx['orderbook_summary'] ?? [])),
+            'wave_context_summary' => $this->compactAssociativeSummary($ctx['wave_context'] ?? []),
+        ];
+    }
+
+    /**
+     * @param array<string,mixed> $summary
+     * @return array<string,mixed>
+     */
+    private function compactAssociativeSummary(mixed $summary, int $maxItems = 8, int $depth = 0): array
+    {
+        if (!is_array($summary) || $summary === [] || $depth > 2) {
+            return [];
+        }
+
+        $out = [];
+        $count = 0;
+        foreach ($summary as $key => $value) {
+            if ($count >= $maxItems) {
+                break;
+            }
+            if ($value === null || $value === '' || $value === []) {
+                continue;
+            }
+            if (is_array($value)) {
+                $nested = $this->compactAssociativeSummary($value, 6, $depth + 1);
+                if ($nested === []) {
+                    continue;
+                }
+                $out[(string)$key] = $nested;
+            } elseif (is_scalar($value)) {
+                $out[(string)$key] = $value;
+            }
+            $count++;
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<string,mixed> $record
+     */
+    private function appendJsonRingRecord(string $path, array $record, int $maxRecords): void
+    {
+        $records = (array)$this->readJson($path, []);
+        $records = array_values(array_filter($records, 'is_array'));
+        $records[] = $record;
+        if (count($records) > $maxRecords) {
+            $records = array_slice($records, -$maxRecords);
+        }
+        $this->writeJson($path, $records);
+    }
+
+    /**
+     * @param array<string,mixed> $record
+     */
+    private function appendNdjsonBounded(string $path, array $record, float $maxSizeMb): void
+    {
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0755, true);
+        }
+
+        $line = json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (!is_string($line) || $line === '') {
+            return;
+        }
+        @file_put_contents($path, $line . PHP_EOL, FILE_APPEND | LOCK_EX);
+
+        $maxBytes = (int)round($maxSizeMb * 1048576);
+        $size = (int)@filesize($path);
+        if ($size <= $maxBytes || $maxBytes <= 0) {
+            return;
+        }
+
+        $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!is_array($lines) || $lines === []) {
+            return;
+        }
+        while ($lines !== [] && strlen(implode(PHP_EOL, $lines) . PHP_EOL) > $maxBytes) {
+            array_shift($lines);
+        }
+        @file_put_contents($path, ($lines === [] ? '' : implode(PHP_EOL, $lines) . PHP_EOL), LOCK_EX);
     }
 
     /** @param array<string,mixed> $comparison */
@@ -1210,6 +1520,11 @@ final class DynamicLearningService
         $profile['candidate_manual_demo_gate_eligible'] = (bool)($result['candidate_manual_demo_gate_eligible'] ?? false);
         $profile['candidate_auto_demo_eligible'] = (bool)($result['candidate_auto_demo_eligible'] ?? false);
         $profile['candidate_live_eligible'] = false;
+        $profile['dynamic_learning_execution_mode'] = (string)($result['dynamic_learning_execution_mode'] ?? 'observe');
+        $profile['manual_gate_demo_enabled'] = (bool)($result['manual_gate_demo_enabled'] ?? false);
+        $profile['selected_candidate_profile_id'] = (string)($result['selected_candidate_profile_id'] ?? '');
+        $profile['selected_candidate_locked'] = (bool)($result['selected_candidate_locked'] ?? true);
+        $profile['selected_candidate_source'] = $result['selected_candidate_source'] ?? null;
         $profile['manual_demo_gate_missing_counts'] = $result['manual_demo_gate_missing_counts'] ?? [];
         $profile['auto_demo_missing_counts'] = $result['auto_demo_missing_counts'] ?? [];
         $profile['replay_diagnostic_available'] = (bool)($result['replay_diagnostic_available'] ?? false);
@@ -1300,6 +1615,11 @@ final class DynamicLearningService
         $candidate['candidate_manual_demo_gate_eligible'] = (bool)($result['candidate_manual_demo_gate_eligible'] ?? false);
         $candidate['candidate_auto_demo_eligible'] = (bool)($result['candidate_auto_demo_eligible'] ?? false);
         $candidate['candidate_live_eligible'] = false;
+        $candidate['dynamic_learning_execution_mode'] = (string)($result['dynamic_learning_execution_mode'] ?? 'observe');
+        $candidate['manual_gate_demo_enabled'] = (bool)($result['manual_gate_demo_enabled'] ?? false);
+        $candidate['selected_candidate_profile_id'] = (string)($result['selected_candidate_profile_id'] ?? '');
+        $candidate['selected_candidate_locked'] = (bool)($result['selected_candidate_locked'] ?? true);
+        $candidate['selected_candidate_source'] = $result['selected_candidate_source'] ?? null;
         $candidate['manual_demo_gate_missing_counts'] = $result['manual_demo_gate_missing_counts'] ?? [];
         $candidate['auto_demo_missing_counts'] = $result['auto_demo_missing_counts'] ?? [];
         $candidate['promotion_blocked_by_min_data'] = $blockedByMinData;
@@ -3884,6 +4204,11 @@ final class DynamicLearningService
         $payload['final_candidate_eligible_for_demo_apply'] = (bool)($result['final_candidate_eligible_for_demo_apply'] ?? ($result['candidate_eligible_for_demo_apply'] ?? false));
         $payload['final_candidate_manual_demo_gate_eligible'] = (bool)($result['final_candidate_manual_demo_gate_eligible'] ?? ($result['candidate_manual_demo_gate_eligible'] ?? false));
         $payload['final_candidate_auto_demo_eligible'] = (bool)($result['final_candidate_auto_demo_eligible'] ?? ($result['candidate_auto_demo_eligible'] ?? false));
+        $payload['dynamic_learning_execution_mode'] = (string)($result['dynamic_learning_execution_mode'] ?? 'observe');
+        $payload['manual_gate_demo_enabled'] = (bool)($result['manual_gate_demo_enabled'] ?? false);
+        $payload['selected_candidate_profile_id'] = (string)($result['selected_candidate_profile_id'] ?? '');
+        $payload['selected_candidate_locked'] = (bool)($result['selected_candidate_locked'] ?? true);
+        $payload['selected_candidate_source'] = $result['selected_candidate_source'] ?? null;
         $payload['promotion_blocked_by_min_data'] = (bool)($result['promotion_blocked_by_min_data'] ?? false);
         $payload['promotion_blocked_reason'] = $result['promotion_blocked_reason'] ?? null;
         $payload['promotion_guard_scope'] = (string)($result['promotion_guard_scope'] ?? 'sliding_window');
@@ -7027,6 +7352,17 @@ final class DynamicLearningService
         $cfg['apply_learning_to_strategy_enabled'] = (bool)($cfg['apply_learning_to_strategy_enabled'] ?? false);
         $cfg['apply_learning_to_live_enabled'] = (bool)($cfg['apply_learning_to_live_enabled'] ?? false);
         $cfg['apply_learning_to_demo_enabled'] = (bool)($cfg['apply_learning_to_demo_enabled'] ?? false);
+        $legacyExecutionMode = strtolower(trim((string)($cfg['mode'] ?? 'diagnostic_only')));
+        $cfg['dynamic_learning_execution_mode'] = $this->normalizeDynamicLearningExecutionMode(
+            (string)($cfg['dynamic_learning_execution_mode'] ?? $legacyExecutionMode)
+        );
+        $cfg['manual_gate_demo_enabled'] = (bool)($cfg['manual_gate_demo_enabled'] ?? ($cfg['apply_learning_to_demo_enabled'] ?? false));
+        $cfg['selected_candidate_profile_id'] = trim((string)($cfg['selected_candidate_profile_id'] ?? ''));
+        $cfg['selected_candidate_locked'] = (bool)($cfg['selected_candidate_locked'] ?? true);
+        $cfg['log_passed_demo_signals_enabled'] = (bool)($cfg['log_passed_demo_signals_enabled'] ?? true);
+        $cfg['max_blocked_demo_signals'] = max(1, (int)($cfg['max_blocked_demo_signals'] ?? 1000));
+        $cfg['max_blocked_demo_signals_ndjson_size_mb'] = max(1.0, (float)($cfg['max_blocked_demo_signals_ndjson_size_mb'] ?? 20.0));
+        $cfg['max_passed_demo_signals_ndjson_size_mb'] = max(1.0, (float)($cfg['max_passed_demo_signals_ndjson_size_mb'] ?? 20.0));
         $cfg['observation_interval_seconds'] = max(5, (int)($cfg['observation_interval_seconds'] ?? 30));
         $cfg['max_observations_per_position'] = max(1, (int)($cfg['max_observations_per_position'] ?? 40));
         $cfg['risk_profile_mode'] = strtolower(trim((string)($cfg['risk_profile_mode'] ?? 'working_real')));
@@ -7159,6 +7495,17 @@ final class DynamicLearningService
         $cfg['max_profile_history_lines'] = max(50, (int)($cfg['max_profile_history_lines'] ?? 300));
         $cfg['max_profile_history_size_mb'] = max(1.0, (float)($cfg['max_profile_history_size_mb'] ?? 3.0));
         return $cfg;
+    }
+
+    private function normalizeDynamicLearningExecutionMode(string $mode): string
+    {
+        $mode = strtolower(trim($mode));
+        return match ($mode) {
+            'off' => 'off',
+            'gate_demo' => 'gate_demo',
+            'observe', 'shadow', 'paper', 'gate_live', 'diagnostic_only' => 'observe',
+            default => 'observe',
+        };
     }
 
     /** @return array<string,mixed> */

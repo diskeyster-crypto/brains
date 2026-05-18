@@ -55,6 +55,23 @@ $e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UT
 ?>
 <div style="max-width:1200px;display:grid;gap:12px;">
   <h3 style="margin:0;">Dynamic Learning — Stats</h3>
+  <div style="border:1px solid #38bdf844;border-radius:10px;padding:14px;background:rgba(56,189,248,.05);display:grid;gap:10px;">
+    <div style="font-size:13px;font-weight:700;color:#38bdf8;">Eligibility & Manual Demo Gate</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;">
+      <div><strong>Current mode:</strong> <?= $e((string)($run['dynamic_learning_execution_mode'] ?? 'observe')) ?></div>
+      <div><strong>Manual gate enabled:</strong> <?= $e((bool)($run['manual_gate_demo_enabled'] ?? false) ? 'yes' : 'no') ?></div>
+      <div><strong>Live:</strong> disabled</div>
+      <div><strong>Manual demo-gate:</strong> <?= $e((bool)($run['candidate_manual_demo_gate_eligible'] ?? false) ? 'ready' : 'not ready') ?></div>
+      <div><strong>Auto-demo:</strong> <?= $e((bool)($run['candidate_auto_demo_eligible'] ?? false) ? 'ready' : 'not ready') ?></div>
+      <div><strong>classifiable outcomes:</strong> <?= $e((int)($run['rolling_window_classifiable_outcomes_total'] ?? 0)) ?>/<?= $e((int)($run['manual_demo_gate_min_classifiable_outcomes'] ?? 30)) ?> manual · <?= $e((int)($run['auto_demo_min_classifiable_outcomes'] ?? 50)) ?> auto</div>
+      <div><strong>bad entries:</strong> <?= $e((int)($run['rolling_window_bad_entry_total'] ?? 0)) ?>/<?= $e((int)($run['manual_demo_gate_min_bad_entries'] ?? 4)) ?> manual · <?= $e((int)($run['auto_demo_min_bad_entries'] ?? 8)) ?> auto</div>
+      <div><strong>good entries:</strong> <?= $e((int)($run['rolling_window_good_entry_total'] ?? 0)) ?>/<?= $e((int)($run['manual_demo_gate_min_good_entries'] ?? 12)) ?> manual · <?= $e((int)($run['auto_demo_min_good_entries'] ?? 20)) ?> auto</div>
+      <div><strong>Selected candidate id:</strong> <?= $e((string)($run['selected_candidate_profile_id'] ?? '—')) ?></div>
+      <div><strong>Signals evaluated:</strong> <?= $e((int)($run['signals_evaluated_total'] ?? 0)) ?></div>
+      <div><strong>Signals passed:</strong> <?= $e((int)($run['signals_passed_total'] ?? 0)) ?></div>
+      <div><strong>Signals blocked:</strong> <?= $e((int)($run['signals_blocked_demo_total'] ?? 0)) ?></div>
+    </div>
+  </div>
   <?php if ($outcomesTooLarge): ?>
   <div style="background:rgba(251,191,36,.10);border:1px solid #fbbf2455;border-radius:6px;padding:8px 12px;font-size:12px;color:#fbbf24;">
     ⚠ closed_outcomes.json is too large to load in UI (<?= $e($outcomesSizeMb) ?> MB). Showing count from last_run.

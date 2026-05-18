@@ -2529,6 +2529,8 @@ ROWS;
     $dlEnabled        = (bool)($dlLastRun['enabled'] ?? false);
     $dlApplyStrategy  = (bool)($dlLastRun['apply_learning_to_strategy_enabled'] ?? false);
     $dlApplyLive      = (bool)($dlLastRun['apply_learning_to_live_enabled'] ?? false);
+    $dlExecMode       = (string)($dlLastRun['dynamic_learning_execution_mode'] ?? 'observe');
+    $dlManualGate     = (bool)($dlLastRun['manual_gate_demo_enabled'] ?? false);
     $dlRollbackReq    = (bool)($dlLastRun['rollback_required'] ?? false);
     $dlBybitErrors    = (int)($dlLastRun['bybit_kline_error_total'] ?? 0);
     $dlFreshnessLimit = 600; // 10 minutes
@@ -2552,12 +2554,15 @@ ROWS;
     } elseif ($dlApplyLive) {
         $scDlState  = 'WARN';
         $scDlReason = 'live_apply_active';
-    } elseif ($dlApplyStrategy) {
+    } elseif ($dlExecMode === 'gate_demo' && $dlManualGate && $dlApplyStrategy) {
         $scDlState  = 'ON';
         $scDlReason = 'GATE DEMO';
+    } elseif ($dlExecMode === 'off') {
+        $scDlState  = 'OFF';
+        $scDlReason = 'OFF';
     } else {
         $scDlState  = 'ON';
-        $scDlReason = 'SHADOW';
+        $scDlReason = 'OBSERVE';
     }
 
     // Build badge HTML helper
@@ -4928,19 +4933,14 @@ HTML;
         . '</tr>';
     // Dynamic Learning
     [$modDlClr] = $scColor($scDlState);
-    $dlModeLabel = $dlLastRun === [] ? '—' : (
-        !(bool)($dlLastRun['enabled'] ?? false) ? 'off' : (
-            (bool)($dlLastRun['apply_learning_to_live_enabled'] ?? false) ? 'live' : (
-                (bool)($dlLastRun['apply_learning_to_strategy_enabled'] ?? false) ? 'gate_demo' : 'shadow'
-            )
-        )
-    );
+    $dlModeLabel = $dlLastRun === [] ? '—' : ($dlExecMode !== '' ? $dlExecMode : 'observe');
     $dlLastTickStr = $dlLastRunTs !== null ? date('d.m H:i', $dlLastRunTs) : '—';
     $dlActivityStr = 'epoch: ' . $e((string)($dlLastRun['real_learning_epoch_id'] ?? '—'))
         . ' · outcomes: ' . (int)($dlLastRun['active_epoch_outcomes_total'] ?? 0)
         . ' · rules: ' . (int)($dlLastRun['profile_rules_total'] ?? 0)
-        . ' · cand: ' . $e((string)($dlLastRun['candidate_status'] ?? '—'));
-    $dlIssueStr = $scDlReason !== 'SHADOW' && $scDlReason !== 'GATE DEMO' && $scDlReason !== '' ? $scDlReason : '';
+        . ' · cand: ' . $e((string)($dlLastRun['candidate_status'] ?? '—'))
+        . ' · blocks: ' . (int)($dlLastRun['signals_blocked_demo_total'] ?? 0);
+    $dlIssueStr = !in_array($scDlReason, ['OBSERVE', 'GATE DEMO', 'OFF'], true) && $scDlReason !== '' ? $scDlReason : '';
     $modStripRows .= '<tr>'
         . '<td style="padding:5px 10px;font-weight:600;white-space:nowrap;">'
           . '<a href="' . htmlspecialchars(System::web('admin/dynamic_learning/runtime'), ENT_QUOTES, 'UTF-8') . '" style="color:var(--ui-text);">Dynamic Learning</a>'
@@ -4990,6 +4990,9 @@ HTML;
         $_dlRollbackReason = $e((string)($dlLastRun['rollback_reason'] ?? ''));
         $_dlApplyStrat   = (bool)($dlLastRun['apply_learning_to_strategy_enabled'] ?? false);
         $_dlApplyLive    = (bool)($dlLastRun['apply_learning_to_live_enabled'] ?? false);
+        $_dlExecMode     = $e((string)($dlLastRun['dynamic_learning_execution_mode'] ?? 'observe'));
+        $_dlManualGate   = (bool)($dlLastRun['manual_gate_demo_enabled'] ?? false);
+        $_dlSelectedId   = $e((string)($dlLastRun['selected_candidate_profile_id'] ?? '—'));
         $_dlMicroReal    = (int)($dlLastRun['candle_micro_real_available_total'] ?? 0);
         $_dlMicroDump    = (int)($dlLastRun['dump_micro_real_available_total'] ?? 0);
         $_dlBybitErr     = (int)($dlLastRun['bybit_kline_error_total'] ?? 0);
@@ -5028,7 +5031,9 @@ HTML;
         $dlBlockHtml = '<div class="card" style="margin-bottom:16px;border:1px solid ' . $_dlClr . '33;">'
             . '<div class="card-header" style="display:flex;justify-content:space-between;align-items:center;background:' . $_dlBg . ';">'
             . '<span><i class="bi bi-cpu" style="margin-right:6px;"></i>Dynamic Learning — Динамическое обучение'
-            . ' <span style="font-size:11px;font-weight:700;color:' . $_dlClr . ';margin-left:6px;">' . $scDlState . '</span></span>'
+            . ' <span style="font-size:11px;font-weight:700;color:' . $_dlClr . ';margin-left:6px;">' . $scDlState . '</span>'
+            . ($_dlExecMode === 'gate_demo' && $_dlManualGate ? ' <span style="font-size:11px;font-weight:700;color:#fcd34d;margin-left:6px;">DEMO GATE ACTIVE</span>' : '')
+            . '</span>'
             . '<span style="display:flex;gap:6px;">'
             . '<a href="' . $_dlRuntimeUrl . '" class="btn btn-sm" style="font-size:11px;padding:2px 10px;">Runtime</a>'
             . '<a href="' . $_dlConfigUrl . '" class="btn btn-sm" style="font-size:11px;padding:2px 10px;">Config</a>'
@@ -5037,7 +5042,7 @@ HTML;
             . '</div>'
             . '<div class="card-body">'
             . '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;font-size:12px;">'
-            . '<div><span style="color:var(--ui-text-muted);">Режим</span><br><code>' . $_dlRiskProfile . '</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Mode</span><br><code>' . $_dlExecMode . '</code></div>'
             . '<div><span style="color:var(--ui-text-muted);">Профиль</span><br><code style="font-size:11px;">' . $_dlClassProfile . '</code></div>'
             . '<div><span style="color:var(--ui-text-muted);">Эпоха</span><br><code>' . $_dlEpochId . '</code></div>'
             . '<div><span style="color:var(--ui-text-muted);">Outcomes</span><br><strong>' . $_dlOutcomes . '</strong>'
@@ -5047,8 +5052,12 @@ HTML;
               . ' <span style="color:#8b949e;font-size:11px;">n:' . $_dlNeutral . '</span>'
             . '</div>'
             . '<div><span style="color:var(--ui-text-muted);">Rules</span><br><strong>' . $_dlRules . '</strong></div>'
-            . '<div><span style="color:var(--ui-text-muted);">Apply strat/live</span><br>'
-              . '<code>' . ($_dlApplyStrat ? 'Y' : 'N') . '/' . ($_dlApplyLive ? 'Y' : 'N') . '</code>'
+            . '<div><span style="color:var(--ui-text-muted);">Manual gate</span><br>'
+              . '<code>' . ($_dlManualGate ? 'Y' : 'N') . '</code>'
+            . '</div>'
+            . '<div><span style="color:var(--ui-text-muted);">Candidate id</span><br><code>' . $_dlSelectedId . '</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Apply live / auto demo</span><br>'
+              . '<code>' . ($_dlApplyLive ? 'Y' : 'N') . '/' . ((bool)($dlLastRun['auto_apply_to_demo_enabled'] ?? false) ? 'Y' : 'N') . '</code>'
             . '</div>'
             . '<div><span style="color:var(--ui-text-muted);">Micro real/dump</span><br><code>' . $_dlMicroReal . '/' . $_dlMicroDump . '</code>'
               . ($_dlBybitErr > 0 ? ' <span style="color:#f87171;font-size:11px;">⚠kline_err:' . $_dlBybitErr . '</span>' : '')
@@ -5070,6 +5079,7 @@ HTML;
             . '<div><span style="color:var(--ui-text-muted);">Candidate score</span><br><strong>' . $_dlCandScore . '</strong></div>'
             . '<div><span style="color:var(--ui-text-muted);">Delta</span><br><strong>' . $_dlDelta . '</strong></div>'
             . '<div><span style="color:var(--ui-text-muted);">Candidate status</span><br><code style="color:#c4b5fd;">' . $_dlCandStatus . '</code></div>'
+            . '<div><span style="color:var(--ui-text-muted);">Blocks this run</span><br><strong>' . (int)($dlLastRun['signals_blocked_demo_total'] ?? 0) . '</strong></div>'
             . '<div><span style="color:var(--ui-text-muted);">Decision</span><br><code style="color:' . $_dlPromoColor . ';">' . $_dlPromoDecision . '</code></div>'
             . '<div style="border-left:3px solid ' . $_dlRollbackColor . ';padding-left:6px;">'
               . '<span style="color:var(--ui-text-muted);">Rollback</span><br>'
@@ -5081,7 +5091,7 @@ HTML;
             . '</div>';
         unset($_dlClr, $_dlBg, $_dlRiskProfile, $_dlClassProfile, $_dlEpochId, $_dlOutcomes, $_dlBad, $_dlGood,
               $_dlExitIssue, $_dlNeutral, $_dlRules, $_dlCandStatus, $_dlPromoDecision, $_dlRollback,
-              $_dlRollbackReason, $_dlApplyStrat, $_dlApplyLive, $_dlMicroReal, $_dlMicroDump, $_dlBybitErr,
+              $_dlRollbackReason, $_dlApplyStrat, $_dlApplyLive, $_dlExecMode, $_dlManualGate, $_dlSelectedId, $_dlMicroReal, $_dlMicroDump, $_dlBybitErr,
               $_dlSize, $_dlStorageSize, $_eigStorageSize, $_uiSafeSkipped, $_storageWarnCnt, $_dlCurrentProfileStatus,
               $_dlCandidateProfileRules, $_dlCandidateReplayResult, $_largestWarningsHtml, $_dlDefScore, $_dlCandScore,
               $_dlDelta, $_dlRollbackColor, $_dlPromoDecisionRaw,

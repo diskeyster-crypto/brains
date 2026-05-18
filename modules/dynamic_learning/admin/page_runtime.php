@@ -76,6 +76,38 @@ $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
       </form>
     </div>
   </div>
+
+  <div style="border:1px solid #38bdf844;border-radius:10px;padding:14px;background:rgba(56,189,248,.05);display:grid;gap:10px;">
+    <div style="font-size:13px;font-weight:700;color:#38bdf8;">Manual Demo Gate</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;">
+      <div><strong>Current mode:</strong> <?= $e((string)($run['dynamic_learning_execution_mode'] ?? 'observe')) ?></div>
+      <div><strong>Manual gate enabled:</strong> <?= $e((bool)($run['manual_gate_demo_enabled'] ?? false) ? 'yes' : 'no') ?></div>
+      <div><strong>Candidate profile id:</strong> <?= $e((string)($run['selected_candidate_profile_id'] ?? '—')) ?></div>
+      <div><strong>Candidate source:</strong> <?= $e((string)($run['selected_candidate_source'] ?? '—')) ?></div>
+      <div><strong>Candidate status:</strong> <?= $e((string)($run['final_candidate_status'] ?? $run['candidate_status'] ?? '—')) ?></div>
+      <div><strong>Replay bad blocked:</strong> <?= $e((int)($run['replay_bad_blocked_total'] ?? 0)) ?></div>
+      <div><strong>Replay good blocked:</strong> <?= $e((int)($run['replay_good_blocked_total'] ?? 0)) ?></div>
+      <div><strong>Candidate vs default delta:</strong> <?= $e((string)($run['candidate_vs_default_delta_pct'] ?? '—')) ?></div>
+      <div><strong>Signals evaluated:</strong> <?= $e((int)($run['signals_evaluated_total'] ?? 0)) ?></div>
+      <div><strong>Signals passed:</strong> <?= $e((int)($run['signals_passed_total'] ?? 0)) ?></div>
+      <div><strong>Signals blocked this run:</strong> <?= $e((int)($run['signals_blocked_demo_total'] ?? 0)) ?></div>
+      <div><strong>Signals observe_only:</strong> <?= $e((int)($run['signals_observe_only_total'] ?? 0)) ?></div>
+      <div><strong>Signals no_candidate:</strong> <?= $e((int)($run['signals_no_candidate_total'] ?? 0)) ?></div>
+      <div><strong>Blocked demo signals total:</strong> <?= $e((int)($run['blocked_demo_signals_total'] ?? 0)) ?></div>
+      <div><strong>Live apply safety:</strong> <?= $e((bool)($run['live_apply_safety_ok'] ?? false) ? 'ok' : 'WARN') ?></div>
+      <div><strong>Live apply reason:</strong> <?= $e((string)($run['live_apply_safety_reason'] ?? '—')) ?></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div style="background:#0f172a;border-radius:8px;padding:10px;">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:6px;">Last blocked examples</div>
+        <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['blocked_demo_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+      </div>
+      <div style="background:#0f172a;border-radius:8px;padding:10px;">
+        <div style="font-size:12px;color:#94a3b8;margin-bottom:6px;">Last passed examples</div>
+        <pre style="margin:0;overflow:auto;"><?= $e(json_encode((array)($run['passed_demo_examples'] ?? []), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
+      </div>
+    </div>
+  </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
     <div style="background:#111827;color:#e5e7eb;border-radius:8px;padding:10px;">
       <div style="font-size:12px;opacity:.8;">risk_profile_mode</div>

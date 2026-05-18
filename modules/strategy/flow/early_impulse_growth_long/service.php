@@ -3720,12 +3720,7 @@ final class EarlyImpulseGrowthLongService
             $signal['strategy_signal_context']['wave_context'] = $candidate['wave_context'];
         }
 
-        $dynamicLearningEnabled = (bool)($config['dynamic_learning_enabled'] ?? false);
-        $dynamicLearningMode = (string)($config['dynamic_learning_mode'] ?? 'shadow');
-        $dynamicLearningCheckable = $dynamicLearningEnabled
-            && $dynamicLearningMode !== 'off'
-            && $isEarlyEntryPhase
-            && is_array($signal);
+        $dynamicLearningCheckable = $isEarlyEntryPhase && is_array($signal);
 
         if ($dynamicLearningCheckable) {
             $metrics['dynamic_learning_checked'] = true;
@@ -3738,7 +3733,7 @@ final class EarlyImpulseGrowthLongService
             $dlReason = (string)($dlEval['reason'] ?? '');
             $dlConfidence = $dlEval['confidence'] ?? null;
             $dlProfileId = $dlEval['profile_id'] ?? null;
-            $dlMode = (string)($dlEval['mode'] ?? $dynamicLearningMode);
+            $dlMode = (string)($dlEval['execution_mode'] ?? $dlEval['mode'] ?? 'observe');
             $dlProfileStatus = (string)($dlEval['profile_status'] ?? '');
             $dlMatchedRules = is_array($dlEval['matched_rules'] ?? null) ? (array)$dlEval['matched_rules'] : [];
 
@@ -3759,12 +3754,8 @@ final class EarlyImpulseGrowthLongService
             $signal['dynamic_learning_reason'] = $dlReason;
             $signal['dynamic_learning_profile_status'] = $dlProfileStatus;
             $signal['dynamic_learning_matched_rules'] = $dlMatchedRules;
-
-            if ($dynamicLearningMode === 'shadow') {
-                $wouldBlock = $dlDecision !== 'pass';
-                if ($wouldBlock) {
-                    $metrics['dynamic_learning_shadow_blocked'] = true;
-                }
+            $wouldBlock = $dlDecision === 'block_demo';
+            if ($dlMode === 'observe') {
                 $candidate['dynamic_learning_shadow_decision'] = $dlDecision;
                 $candidate['dynamic_learning_shadow_would_block'] = $wouldBlock;
                 $signal['dynamic_learning_shadow_decision'] = $dlDecision;
@@ -3772,38 +3763,39 @@ final class EarlyImpulseGrowthLongService
                 $signal['strategy_signal_context']['dynamic_learning_shadow_decision'] = $dlDecision;
                 $signal['strategy_signal_context']['dynamic_learning_shadow_would_block'] = $wouldBlock;
                 $signal['strategy_signal_context']['dynamic_learning_shadow_reason'] = $dlReason;
-            } else {
-                $isLiveSignal = strtolower(trim((string)($signal['mode'] ?? ''))) === 'live';
-                $canApplyLive = (bool)($dlEval['apply_learning_to_live_enabled'] ?? false);
-                $gateApplies = $dynamicLearningMode === 'gate_demo'
-                    || ($dynamicLearningMode === 'gate_live' && $isLiveSignal && $canApplyLive);
-                $blockedByDynamicLearning = $gateApplies && $dlDecision !== 'pass';
-
-                $candidate['dynamic_learning_decision'] = $dlDecision;
-                $signal['dynamic_learning_decision'] = $dlDecision;
-                $signal['strategy_signal_context']['dynamic_learning_decision'] = $dlDecision;
-                $signal['strategy_signal_context']['dynamic_learning_reason'] = $dlReason;
-                $signal['strategy_signal_context']['dynamic_learning_confidence'] = $dlConfidence;
-                $signal['strategy_signal_context']['dynamic_learning_profile_id'] = $dlProfileId;
-                $signal['strategy_signal_context']['dynamic_learning_profile_status'] = $dlProfileStatus;
-                $signal['strategy_signal_context']['dynamic_learning_matched_rules'] = $dlMatchedRules;
-
-                if ($blockedByDynamicLearning) {
-                    $metrics['dynamic_learning_blocked'] = true;
-                    $candidate['handoff_ready'] = false;
-                    $candidate['executable'] = false;
-                    $candidate['active_final'] = false;
-                    $candidate['diagnostic_handoff_ready'] = false;
-                    $candidate['handoff_block_reason'] = 'dynamic_learning';
-                    $candidate['dynamic_learning_reason'] = $dlReason !== '' ? $dlReason : 'dynamic_learning_block';
-
-                    $signal['handoff_ready'] = false;
-                    $signal['executable'] = false;
-                    $signal['active_final'] = false;
-                    $signal['diagnostic_handoff_ready'] = false;
-                    $signal['handoff_block_reason'] = 'dynamic_learning';
-                    $signal['handoff_status'] = null;
+                if ($wouldBlock) {
+                    $metrics['dynamic_learning_shadow_blocked'] = true;
                 }
+            }
+
+            $candidate['dynamic_learning_decision'] = $dlDecision;
+            $signal['dynamic_learning_decision'] = $dlDecision;
+            $signal['strategy_signal_context']['dynamic_learning_decision'] = $dlDecision;
+            $signal['strategy_signal_context']['dynamic_learning_reason'] = $dlReason;
+            $signal['strategy_signal_context']['dynamic_learning_confidence'] = $dlConfidence;
+            $signal['strategy_signal_context']['dynamic_learning_profile_id'] = $dlProfileId;
+            $signal['strategy_signal_context']['dynamic_learning_profile_status'] = $dlProfileStatus;
+            $signal['strategy_signal_context']['dynamic_learning_matched_rules'] = $dlMatchedRules;
+            $signal['strategy_signal_context']['dynamic_learning_execution_mode'] = $dlMode;
+            $signal['strategy_signal_context']['dynamic_learning_risk_score_pct'] = $dlEval['risk_score_pct'] ?? null;
+
+            if ($dlMode === 'gate_demo' && $dlDecision === 'block_demo') {
+                $metrics['dynamic_learning_blocked'] = true;
+                $candidate['handoff_ready'] = false;
+                $candidate['executable'] = false;
+                $candidate['active_final'] = false;
+                $candidate['diagnostic_handoff_ready'] = false;
+                $candidate['handoff_block_reason'] = 'dynamic_learning';
+                $candidate['dynamic_learning_blocked'] = true;
+                $candidate['dynamic_learning_reason'] = $dlReason !== '' ? $dlReason : 'dynamic_learning_block';
+
+                $signal['handoff_ready'] = false;
+                $signal['executable'] = false;
+                $signal['active_final'] = false;
+                $signal['diagnostic_handoff_ready'] = false;
+                $signal['handoff_block_reason'] = 'dynamic_learning';
+                $signal['handoff_status'] = null;
+                $signal['dynamic_learning_blocked'] = true;
             }
         }
 
@@ -5316,7 +5308,8 @@ final class EarlyImpulseGrowthLongService
         $fallback = [
             'enabled' => false,
             'decision' => 'pass',
-            'mode' => (string)($config['dynamic_learning_mode'] ?? 'shadow'),
+            'mode' => 'observe',
+            'execution_mode' => 'observe',
             'profile_id' => null,
             'matched_rules' => [],
             'reason' => 'dynamic_learning_unavailable',

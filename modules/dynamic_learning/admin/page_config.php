@@ -14,182 +14,213 @@ $moduleDir = dirname(__DIR__);
 require_once $moduleDir . '/service.php';
 $svc = \Modules\DynamicLearning\DynamicLearningService::instance($moduleDir);
 $cfg = $svc->getConfig();
-$e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
-$autoApplyDemoEnabled = filter_var($cfg['auto_apply_to_demo_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-$autoApplyDemoEnabled = $autoApplyDemoEnabled ?? false;
+$activePath = $moduleDir . '/config/active.php';
+$schema = (array)require $moduleDir . '/config/schema.php';
+$safeReadJson = static function (string $path): array {
+    if (!is_file($path)) {
+        return [];
+    }
+    $raw = @file_get_contents($path);
+    if (!is_string($raw) || trim($raw) === '') {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) ? $decoded : [];
+};
+$currentProfile = $safeReadJson($moduleDir . '/storage/profiles/early_impulse_growth_long/current_profile.json');
+$candidateProfile = $safeReadJson($moduleDir . '/storage/profiles/early_impulse_growth_long/candidate_profile.json');
+$candidateReplay = $safeReadJson($moduleDir . '/storage/profiles/early_impulse_growth_long/candidate_replay.json');
+$lastRun = $svc->getLastRun();
 $baseUrl = rtrim(System::web('admin/dynamic_learning'), '/');
+$e = static fn(mixed $v): string => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+
+$saved = false;
+$saveError = '';
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && (string)($_POST['action'] ?? '') === 'save_config') {
+    try {
+        $active = is_file($activePath) ? ((array)require $activePath) : [];
+        $editableKeys = [
+            'dynamic_learning_execution_mode',
+            'manual_gate_demo_enabled',
+            'apply_learning_to_strategy_enabled',
+            'selected_candidate_profile_id',
+            'selected_candidate_locked',
+            'log_passed_demo_signals_enabled',
+            'max_blocked_demo_signals',
+            'max_blocked_demo_signals_ndjson_size_mb',
+            'max_passed_demo_signals_ndjson_size_mb',
+        ];
+
+        foreach ($editableKeys as $key) {
+            $type = (string)($schema[$key] ?? 'string');
+            $raw = $_POST[$key] ?? ($cfg[$key] ?? null);
+            $active[$key] = match ($type) {
+                'bool' => isset($_POST[$key]) ? (string)$raw === '1' : (bool)($cfg[$key] ?? false),
+                'int' => (int)$raw,
+                'float' => (float)$raw,
+                default => trim((string)$raw),
+            };
+        }
+
+        $executionMode = strtolower(trim((string)($active['dynamic_learning_execution_mode'] ?? 'observe')));
+        if (!in_array($executionMode, ['off', 'observe', 'gate_demo'], true)) {
+            $executionMode = 'observe';
+        }
+        $active['dynamic_learning_execution_mode'] = $executionMode;
+        $active['mode'] = $executionMode;
+        $active['manual_gate_demo_enabled'] = (bool)($active['manual_gate_demo_enabled'] ?? false);
+        $active['apply_learning_to_demo_enabled'] = $active['manual_gate_demo_enabled'];
+        $active['apply_learning_to_strategy_enabled'] = (bool)($active['apply_learning_to_strategy_enabled'] ?? false);
+        $active['apply_learning_to_live_enabled'] = false;
+        $active['auto_apply_to_demo_enabled'] = false;
+        $active['auto_apply_to_live_enabled'] = false;
+        $active['selected_candidate_profile_id'] = trim((string)($active['selected_candidate_profile_id'] ?? ''));
+        $active['selected_candidate_locked'] = true;
+        $active['log_passed_demo_signals_enabled'] = (bool)($active['log_passed_demo_signals_enabled'] ?? true);
+        $active['max_blocked_demo_signals'] = max(1, (int)($active['max_blocked_demo_signals'] ?? 1000));
+        $active['max_blocked_demo_signals_ndjson_size_mb'] = max(1.0, (float)($active['max_blocked_demo_signals_ndjson_size_mb'] ?? 20.0));
+        $active['max_passed_demo_signals_ndjson_size_mb'] = max(1.0, (float)($active['max_passed_demo_signals_ndjson_size_mb'] ?? 20.0));
+
+        $php = "<?php\n\ndeclare(strict_types=1);\n\nreturn " . var_export($active, true) . ";\n";
+        if (@file_put_contents($activePath, $php, LOCK_EX) === false) {
+            throw new RuntimeException('Failed to write active config.');
+        }
+        $cfg = $svc->getConfig();
+        $saved = true;
+    } catch (\Throwable $t) {
+        $saveError = $t->getMessage();
+    }
+}
+
+$selectedCandidateId = trim((string)($cfg['selected_candidate_profile_id'] ?? ''));
+$candidateStatus = (string)($lastRun['final_candidate_status'] ?? $lastRun['candidate_status'] ?? 'pending');
+$candidateReplayStatus = (string)($candidateReplay['replay_candidate_status'] ?? 'missing');
+$candidateReplaySummary = (array)($candidateReplay['replay_summary'] ?? $lastRun['candidate_replay_summary'] ?? []);
+$candidateManualEligible = (bool)($lastRun['final_candidate_manual_demo_gate_eligible'] ?? $lastRun['candidate_manual_demo_gate_eligible'] ?? false);
+$candidateAutoEligible = (bool)($lastRun['final_candidate_auto_demo_eligible'] ?? $lastRun['candidate_auto_demo_eligible'] ?? false);
+
+$warnings = [];
+if (($cfg['dynamic_learning_execution_mode'] ?? 'observe') === 'gate_demo' && $selectedCandidateId === '') {
+    $warnings[] = 'gate_demo enabled but no selected_candidate_profile_id is set';
+}
+if (($cfg['dynamic_learning_execution_mode'] ?? 'observe') === 'gate_demo' && !$candidateManualEligible && !$candidateAutoEligible) {
+    $warnings[] = 'gate_demo enabled but current candidate is not demo-eligible';
+}
+if ((bool)($cfg['apply_learning_to_live_enabled'] ?? false) || (bool)($cfg['auto_apply_to_live_enabled'] ?? false)) {
+    $warnings[] = 'live apply safety violation detected';
+}
+if ($candidateReplay === []) {
+    $warnings[] = 'candidate replay file is missing';
+}
+
+$currentProfileId = trim((string)($currentProfile['profile_id'] ?? ''));
+$candidateProfileId = trim((string)($candidateProfile['profile_id'] ?? ''));
+$selectedSource = 'manual_selection';
+if ($selectedCandidateId !== '' && $selectedCandidateId === $currentProfileId) {
+    $selectedSource = 'current_profile';
+} elseif ($selectedCandidateId !== '' && $selectedCandidateId === $candidateProfileId) {
+    $selectedSource = 'candidate_profile';
+}
 ?>
-<div style="max-width:900px;display:grid;gap:12px;">
+<div style="max-width:980px;display:grid;gap:14px;">
   <h3 style="margin:0;">Dynamic Learning — Config</h3>
-  <form method="post" action="<?= $e($baseUrl) ?>/ajax" style="display:grid;gap:10px;">
+
+  <?php if ($saved): ?>
+    <div style="padding:10px 12px;border:1px solid #23863655;border-radius:8px;background:rgba(35,134,54,.10);color:#86efac;">
+      Config saved.
+    </div>
+  <?php endif; ?>
+  <?php if ($saveError !== ''): ?>
+    <div style="padding:10px 12px;border:1px solid #f8514955;border-radius:8px;background:rgba(248,81,73,.10);color:#f87171;">
+      <?= $e($saveError) ?>
+    </div>
+  <?php endif; ?>
+  <?php if ($warnings !== []): ?>
+    <div style="padding:10px 12px;border:1px solid #f59e0b55;border-radius:8px;background:rgba(245,158,11,.10);color:#fcd34d;">
+      <strong>Warnings:</strong>
+      <ul style="margin:8px 0 0 18px;">
+        <?php foreach ($warnings as $warning): ?>
+          <li><?= $e($warning) ?></li>
+        <?php endforeach; ?>
+      </ul>
+    </div>
+  <?php endif; ?>
+
+  <form method="post" action="<?= $e($baseUrl) ?>/config" style="display:grid;gap:14px;">
     <input type="hidden" name="action" value="save_config">
-    <?php
-    $boolFields = [
-        'enabled',
-        'collect_entry_snapshots_enabled',
-        'observe_active_positions_enabled',
-        'analyze_closed_outcomes_enabled',
-        'build_dynamic_profile_enabled',
-        'apply_learning_to_strategy_enabled',
-        'apply_learning_to_live_enabled',
-        'apply_learning_to_demo_enabled',
-        'profile_history_enabled',
-    ];
-    foreach ($boolFields as $key): ?>
-      <label><?= $e($key) ?>
-        <select name="<?= $e($key) ?>" class="form-control">
-          <option value="1" <?= !empty($cfg[$key]) ? 'selected' : '' ?>>true</option>
-          <option value="0" <?= empty($cfg[$key]) ? 'selected' : '' ?>>false</option>
-        </select>
-      </label>
-    <?php endforeach; ?>
-    <label>mode <input class="form-control" name="mode" value="<?= $e((string)($cfg['mode'] ?? 'diagnostic_only')) ?>"></label>
-    <label>supported_strategy_id <input class="form-control" name="supported_strategy_id" value="<?= $e((string)($cfg['supported_strategy_id'] ?? 'early_impulse_growth_long')) ?>"></label>
-    <label>risk_profile_mode
-      <select name="risk_profile_mode" class="form-control">
-        <?php foreach (['fast_demo', 'working_normal', 'working_real', 'custom'] as $option): ?>
-          <option value="<?= $e($option) ?>" <?= (($cfg['risk_profile_mode'] ?? 'fast_demo') === $option) ? 'selected' : '' ?>><?= $e($option) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </label>
-    <label>outcome_classification_profile
-      <select name="outcome_classification_profile" class="form-control">
-        <?php foreach (['fast_demo_corridor_3_5', 'working_normal_8_10', 'working_real_8_15', 'custom'] as $option): ?>
-          <option value="<?= $e($option) ?>" <?= (($cfg['outcome_classification_profile'] ?? 'fast_demo_corridor_3_5') === $option) ? 'selected' : '' ?>><?= $e($option) ?></option>
-        <?php endforeach; ?>
-      </select>
-    </label>
-    <label>observation_interval_seconds <input type="number" class="form-control" name="observation_interval_seconds" value="<?= $e((int)($cfg['observation_interval_seconds'] ?? 30)) ?>"></label>
-    <label>max_observations_per_position <input type="number" class="form-control" name="max_observations_per_position" value="<?= $e((int)($cfg['max_observations_per_position'] ?? 40)) ?>"></label>
-    <label>bad_drawdown_roi_threshold <input type="number" step="0.01" class="form-control" name="bad_drawdown_roi_threshold" value="<?= $e((float)($cfg['bad_drawdown_roi_threshold'] ?? -10)) ?>"></label>
-    <label>hard_stop_reference_roi <input type="number" step="0.01" class="form-control" name="hard_stop_reference_roi" value="<?= $e((float)($cfg['hard_stop_reference_roi'] ?? -5)) ?>"></label>
-    <label>good_close_roi_threshold <input type="number" step="0.01" class="form-control" name="good_close_roi_threshold" value="<?= $e((float)($cfg['good_close_roi_threshold'] ?? 5)) ?>"></label>
-    <label>good_max_profit_roi_threshold <input type="number" step="0.01" class="form-control" name="good_max_profit_roi_threshold" value="<?= $e((float)($cfg['good_max_profit_roi_threshold'] ?? 5)) ?>"></label>
-    <label>stop_slippage_buffer_roi <input type="number" step="0.01" class="form-control" name="stop_slippage_buffer_roi" value="<?= $e((float)($cfg['stop_slippage_buffer_roi'] ?? 2)) ?>"></label>
-    <label>pm_profit_reference_roi <input type="number" step="0.01" class="form-control" value="<?= $e((float)($cfg['pm_profit_reference_roi'] ?? 10)) ?>" readonly></label>
-    <label>neutral_close_roi_min <input type="number" step="0.01" class="form-control" name="neutral_close_roi_min" value="<?= $e((float)($cfg['neutral_close_roi_min'] ?? -2)) ?>"></label>
-    <label>neutral_close_roi_max <input type="number" step="0.01" class="form-control" name="neutral_close_roi_max" value="<?= $e((float)($cfg['neutral_close_roi_max'] ?? 2)) ?>"></label>
-    <label>real_learning_epoch_enabled <input type="text" class="form-control" value="<?= $e(!empty($cfg['real_learning_epoch_enabled']) ? 'true' : 'false') ?>" readonly></label>
-    <label>real_learning_epoch_id <input type="text" class="form-control" value="<?= $e((string)($cfg['real_learning_epoch_id'] ?? 'auto')) ?>" readonly></label>
-    <label>real_learning_epoch_start_at <input type="text" class="form-control" value="<?= $e((string)($cfg['real_learning_epoch_start_at'] ?? 'null')) ?>" readonly></label>
-    <label>ignore_fast_demo_outcomes_in_real_profile <input type="text" class="form-control" value="<?= $e(!empty($cfg['ignore_fast_demo_outcomes_in_real_profile']) ? 'true' : 'false') ?>" readonly></label>
-    <label>preserve_fast_demo_history <input type="text" class="form-control" value="<?= $e(!empty($cfg['preserve_fast_demo_history']) ? 'true' : 'false') ?>" readonly></label>
 
-    <hr style="border-color:var(--ui-border);margin:8px 0;">
-    <h5 style="margin:4px 0;color:#a5b4fc;">Rolling Learning Guard</h5>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-      <label>rolling_learning_enabled
-        <select name="rolling_learning_enabled" class="form-control">
-          <option value="1" <?= !empty($cfg['rolling_learning_enabled']) ? 'selected' : '' ?>>true</option>
-          <option value="0" <?= empty($cfg['rolling_learning_enabled']) ? 'selected' : '' ?>>false</option>
-        </select>
-      </label>
-      <label>rolling_learning_window_minutes
-        <input type="number" class="form-control" name="rolling_learning_window_minutes" value="<?= $e((int)($cfg['rolling_learning_window_minutes'] ?? 120)) ?>">
-      </label>
-      <label>rolling_retrain_interval_minutes
-        <input type="number" class="form-control" name="rolling_retrain_interval_minutes" value="<?= $e((int)($cfg['rolling_retrain_interval_minutes'] ?? 60)) ?>">
-      </label>
-      <label>rolling_min_closed_outcomes
-        <input type="number" class="form-control" name="rolling_min_closed_outcomes" value="<?= $e((int)($cfg['rolling_min_closed_outcomes'] ?? 20)) ?>">
-      </label>
-      <label>rolling_min_bad_entries
-        <input type="number" class="form-control" name="rolling_min_bad_entries" value="<?= $e((int)($cfg['rolling_min_bad_entries'] ?? 3)) ?>">
-      </label>
-      <label>rolling_min_good_entries
-        <input type="number" class="form-control" name="rolling_min_good_entries" value="<?= $e((int)($cfg['rolling_min_good_entries'] ?? 3)) ?>">
-      </label>
+    <div style="border:1px solid var(--ui-border);border-radius:10px;padding:14px;background:rgba(56,189,248,.05);display:grid;gap:10px;">
+      <h4 style="margin:0;">Manual Demo Gate</h4>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+        <label>dynamic_learning_execution_mode
+          <select name="dynamic_learning_execution_mode" class="form-control">
+            <?php foreach (['off', 'observe', 'gate_demo'] as $mode): ?>
+              <option value="<?= $e($mode) ?>" <?= (($cfg['dynamic_learning_execution_mode'] ?? 'observe') === $mode) ? 'selected' : '' ?>><?= $e($mode) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </label>
+        <label>manual_gate_demo_enabled
+          <select name="manual_gate_demo_enabled" class="form-control">
+            <option value="1" <?= !empty($cfg['manual_gate_demo_enabled']) ? 'selected' : '' ?>>true</option>
+            <option value="0" <?= empty($cfg['manual_gate_demo_enabled']) ? 'selected' : '' ?>>false</option>
+          </select>
+        </label>
+        <label>apply_learning_to_strategy_enabled
+          <select name="apply_learning_to_strategy_enabled" class="form-control">
+            <option value="1" <?= !empty($cfg['apply_learning_to_strategy_enabled']) ? 'selected' : '' ?>>true</option>
+            <option value="0" <?= empty($cfg['apply_learning_to_strategy_enabled']) ? 'selected' : '' ?>>false</option>
+          </select>
+        </label>
+        <label>apply_learning_to_live_enabled
+          <input class="form-control" value="false" readonly>
+        </label>
+        <label>selected_candidate_profile_id
+          <input class="form-control" name="selected_candidate_profile_id" value="<?= $e($selectedCandidateId) ?>" placeholder="candidate profile_id to gate">
+        </label>
+        <label>selected_candidate_locked
+          <input class="form-control" name="selected_candidate_locked" value="1" readonly>
+        </label>
+        <label>log_passed_demo_signals_enabled
+          <select name="log_passed_demo_signals_enabled" class="form-control">
+            <option value="1" <?= !empty($cfg['log_passed_demo_signals_enabled']) ? 'selected' : '' ?>>true</option>
+            <option value="0" <?= empty($cfg['log_passed_demo_signals_enabled']) ? 'selected' : '' ?>>false</option>
+          </select>
+        </label>
+        <label>max_blocked_demo_signals
+          <input type="number" class="form-control" name="max_blocked_demo_signals" value="<?= $e((int)($cfg['max_blocked_demo_signals'] ?? 1000)) ?>">
+        </label>
+        <label>max_blocked_demo_signals_ndjson_size_mb
+          <input type="number" step="0.1" class="form-control" name="max_blocked_demo_signals_ndjson_size_mb" value="<?= $e((float)($cfg['max_blocked_demo_signals_ndjson_size_mb'] ?? 20.0)) ?>">
+        </label>
+        <label>max_passed_demo_signals_ndjson_size_mb
+          <input type="number" step="0.1" class="form-control" name="max_passed_demo_signals_ndjson_size_mb" value="<?= $e((float)($cfg['max_passed_demo_signals_ndjson_size_mb'] ?? 20.0)) ?>">
+        </label>
+        <label>auto_apply_to_demo_enabled
+          <input class="form-control" value="false" readonly>
+        </label>
+        <label>auto_apply_to_live_enabled
+          <input class="form-control" value="false" readonly>
+        </label>
+      </div>
     </div>
 
-    <hr style="border-color:var(--ui-border);margin:8px 0;">
-    <h5 style="margin:4px 0;color:#fcd34d;">Quality Guard Thresholds</h5>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-      <label>min_candidate_improvement_pct
-        <input type="number" step="0.1" class="form-control" name="min_candidate_improvement_pct" value="<?= $e((float)($cfg['min_candidate_improvement_pct'] ?? 7.0)) ?>">
-      </label>
-      <label>no_change_band_pct
-        <input type="number" step="0.1" class="form-control" name="no_change_band_pct" value="<?= $e((float)($cfg['no_change_band_pct'] ?? 5.0)) ?>">
-      </label>
-      <label>max_allowed_quality_degradation_pct
-        <input type="number" step="0.1" class="form-control" name="max_allowed_quality_degradation_pct" value="<?= $e((float)($cfg['max_allowed_quality_degradation_pct'] ?? 10.0)) ?>">
-      </label>
-      <label>max_allowed_winrate_degradation_pct
-        <input type="number" step="0.1" class="form-control" name="max_allowed_winrate_degradation_pct" value="<?= $e((float)($cfg['max_allowed_winrate_degradation_pct'] ?? 10.0)) ?>">
-      </label>
-      <label>max_allowed_avg_roi_degradation_pct
-        <input type="number" step="0.1" class="form-control" name="max_allowed_avg_roi_degradation_pct" value="<?= $e((float)($cfg['max_allowed_avg_roi_degradation_pct'] ?? 10.0)) ?>">
-      </label>
-      <label>max_allowed_bad_entry_rate_increase_pct
-        <input type="number" step="0.1" class="form-control" name="max_allowed_bad_entry_rate_increase_pct" value="<?= $e((float)($cfg['max_allowed_bad_entry_rate_increase_pct'] ?? 10.0)) ?>">
-      </label>
-      <label>max_allowed_drawdown_increase_pct
-        <input type="number" step="0.1" class="form-control" name="max_allowed_drawdown_increase_pct" value="<?= $e((float)($cfg['max_allowed_drawdown_increase_pct'] ?? 10.0)) ?>">
-      </label>
-    </div>
-
-    <hr style="border-color:var(--ui-border);margin:8px 0;">
-    <h5 style="margin:4px 0;color:#86efac;">Quality Score Weights</h5>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-      <label>quality_weight_good_capture
-        <input type="number" step="0.1" class="form-control" name="quality_weight_good_capture" value="<?= $e((float)($cfg['quality_weight_good_capture'] ?? 1.0)) ?>">
-      </label>
-      <label>quality_weight_avg_roi
-        <input type="number" step="0.1" class="form-control" name="quality_weight_avg_roi" value="<?= $e((float)($cfg['quality_weight_avg_roi'] ?? 1.0)) ?>">
-      </label>
-      <label>quality_weight_bad_entry
-        <input type="number" step="0.1" class="form-control" name="quality_weight_bad_entry" value="<?= $e((float)($cfg['quality_weight_bad_entry'] ?? 1.5)) ?>">
-      </label>
-      <label>quality_weight_drawdown
-        <input type="number" step="0.1" class="form-control" name="quality_weight_drawdown" value="<?= $e((float)($cfg['quality_weight_drawdown'] ?? 1.0)) ?>">
-      </label>
-      <label>quality_weight_entry_ok_exit_issue
-        <input type="number" step="0.1" class="form-control" name="quality_weight_entry_ok_exit_issue" value="<?= $e((float)($cfg['quality_weight_entry_ok_exit_issue'] ?? 0.5)) ?>">
-      </label>
-    </div>
-
-    <hr style="border-color:var(--ui-border);margin:8px 0;">
-    <h5 style="margin:4px 0;color:#f87171;">Rollback Guard</h5>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-      <label>rollback_guard_enabled
-        <select name="rollback_guard_enabled" class="form-control">
-          <option value="1" <?= !empty($cfg['rollback_guard_enabled']) ? 'selected' : '' ?>>true</option>
-          <option value="0" <?= empty($cfg['rollback_guard_enabled']) ? 'selected' : '' ?>>false</option>
-        </select>
-      </label>
-      <label>rollback_cooldown_minutes
-        <input type="number" class="form-control" name="rollback_cooldown_minutes" value="<?= $e((int)($cfg['rollback_cooldown_minutes'] ?? 120)) ?>">
-      </label>
-      <label>rollback_to
-        <select name="rollback_to" class="form-control">
-          <option value="previous_good_or_default" <?= (($cfg['rollback_to'] ?? 'previous_good_or_default') === 'previous_good_or_default') ? 'selected' : '' ?>>previous_good_or_default</option>
-          <option value="default_config" <?= (($cfg['rollback_to'] ?? '') === 'default_config') ? 'selected' : '' ?>>default_config</option>
-        </select>
-      </label>
-    </div>
-
-    <hr style="border-color:var(--ui-border);margin:8px 0;">
-    <h5 style="margin:4px 0;color:#94a3b8;">Apply Guard</h5>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-      <label>auto_apply_to_demo_enabled
-        <select name="auto_apply_to_demo_enabled" class="form-control">
-          <option value="0" <?= !$autoApplyDemoEnabled ? 'selected' : '' ?>>false</option>
-          <option value="1" <?= $autoApplyDemoEnabled ? 'selected' : '' ?>>true</option>
-        </select>
-      </label>
-      <label>auto_apply_to_live_enabled <span style="color:#f85149;font-size:11px;">(always false)</span>
-        <input type="text" class="form-control" value="false" readonly>
-      </label>
-      <label>require_not_worse_than_default
-        <select name="require_not_worse_than_default" class="form-control">
-          <option value="1" <?= !empty($cfg['require_not_worse_than_default']) ? 'selected' : '' ?>>true</option>
-          <option value="0" <?= empty($cfg['require_not_worse_than_default']) ? 'selected' : '' ?>>false</option>
-        </select>
-      </label>
+    <div style="border:1px solid var(--ui-border);border-radius:10px;padding:14px;background:rgba(99,102,241,.05);display:grid;gap:10px;">
+      <h4 style="margin:0;">Current Candidate Diagnostics</h4>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;">
+        <div><strong>current candidate status:</strong> <?= $e($candidateStatus) ?></div>
+        <div><strong>candidate_manual_demo_gate_eligible:</strong> <?= $e($candidateManualEligible ? 'true' : 'false') ?></div>
+        <div><strong>candidate_auto_demo_eligible:</strong> <?= $e($candidateAutoEligible ? 'true' : 'false') ?></div>
+        <div><strong>selected_candidate_source:</strong> <?= $e($selectedSource) ?></div>
+        <div><strong>current_profile_id:</strong> <?= $e($currentProfileId !== '' ? $currentProfileId : '—') ?></div>
+        <div><strong>candidate_profile_id:</strong> <?= $e($candidateProfileId !== '' ? $candidateProfileId : '—') ?></div>
+        <div><strong>candidate replay status:</strong> <?= $e($candidateReplayStatus) ?></div>
+        <div><strong>candidate vs default delta:</strong> <?= $e($lastRun['candidate_vs_default_delta_pct'] ?? '—') ?></div>
+        <div><strong>replay bad blocked:</strong> <?= $e((int)($lastRun['replay_bad_blocked_total'] ?? 0)) ?></div>
+        <div><strong>replay good blocked:</strong> <?= $e((int)($lastRun['replay_good_blocked_total'] ?? 0)) ?></div>
+        <div><strong>risk threshold:</strong> <?= $e((float)($cfg['replay_demo_only_threshold_candidate'] ?? 30.0)) ?>%</div>
+        <div><strong>block threshold:</strong> <?= $e((float)($cfg['replay_risk_threshold_block_candidate'] ?? 60.0)) ?>%</div>
+      </div>
+      <pre style="margin:0;overflow:auto;background:#0f172a;color:#cbd5e1;padding:10px;border-radius:8px;"><?= $e(json_encode($candidateReplaySummary, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) ?></pre>
     </div>
 
     <button type="submit" class="btn btn-primary">Save</button>
